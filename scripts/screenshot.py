@@ -202,7 +202,10 @@ def main(argv: list[str]) -> int:
         settle()
         name = stats.tabs.tabText(stats.tabs.currentIndex()).lower()
         window.grab().save(str(out / f"statistics-{name}.png"))
-    for tool in ("mpo", "binning", "selectivity", "similarity", "diverse_subset", "cluster"):
+    for tool in (
+        *("mpo", "binning", "selectivity", "similarity", "diverse_subset", "cluster"),
+        *("rgroups", "free_wilson", "hansch", "mmp", "sali"),
+    ):
         dialog = window.open_tool(tool)
         if tool == "mpo":
             dialog.add_property()

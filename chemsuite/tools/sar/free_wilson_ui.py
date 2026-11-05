@@ -1,0 +1,312 @@
+# This file is part of chemsuite.
+# Copyright (C) 2026 Hunter Picard
+#
+# chemsuite is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# chemsuite is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
+"""Free-Wilson…: additive substituent contributions and the best unmade combinations."""
+
+from __future__ import annotations
+
+import numpy as np
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSpinBox,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from chemsuite.app.tools import ToolContext
+from chemsuite.core.mols import mol_to_blob, smiles_of
+from chemsuite.core.table.columns import NumberColumn, StructureColumn
+from chemsuite.plotting.data import numbers
+from chemsuite.sar.free_wilson import FreeWilson, free_wilson
+from chemsuite.sar.rgroups import HYDROGEN, Decomposition, assemble
+from chemsuite.tools.similarity.common import scope_combo, scope_oids
+
+from .common import CoreChooser, ResultTable, activity_combo, number_text
+
+PREDICTED_COLUMN = "FW Predicted"
+UNMADE_LIMIT = 200
+
+
+def fit_summary(fit, skipped) -> str:
+    text = (
+        f"n = {fit.n}, parameters = {fit.parameters}, R² = {fit.r2:.3f}, "
+        f"q² (LOO) = {number_text(fit.q2)}, s = {number_text(fit.s)}"
+    )
+    left_out = ", ".join(f"{count:,} {why}" for why, count in skipped.items() if count)
+    if left_out:
+        text += f"\nLeft out: {left_out}"
+    return text
+
+
+class FreeWilsonDialog(QDialog):
+    def __init__(self, ctx: ToolContext) -> None:
+        super().__init__(ctx.parent)
+        self.setWindowTitle("Free-Wilson Analysis")
+        self.ctx = ctx
+        self.job = None
+        self.panel: FreeWilsonPanel | None = None
+        self.core = CoreChooser(ctx)
+        self.activity = activity_combo(ctx)
+        self.rows = scope_combo(ctx, "shown")
+        self.min_count = QSpinBox()
+        self.min_count.setRange(1, 100)
+        self.min_count.setValue(2)
+        self.min_count.setToolTip(
+            "Leave out compounds carrying a substituent seen fewer times than this:\n"
+            "a substituent seen once is fitted exactly and its contribution means nothing."
+        )
+        self.higher_is_better = QCheckBox("Higher activity is better")
+        self.higher_is_better.setChecked(True)
+        self.output = QLineEdit(PREDICTED_COLUMN)
+        self.status = QLabel()
+        self.status.setWordWrap(True)
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Analyse")
+        form = QFormLayout()
+        form.addRow("Activity:", self.activity)
+        form.addRow("Rows:", self.rows)
+        form.addRow("Minimum occurrences:", self.min_count)
+        form.addRow("", self.higher_is_better)
+        form.addRow("Prediction column:", self.output)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.core)
+        layout.addLayout(form)
+        layout.addWidget(self.status)
+        layout.addWidget(self.buttons)
+        self.resize(620, 0)
+        self.core.core.textChanged.connect(lambda *_: self._update())
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        self._update()
+
+    def problem(self) -> str:
+        if not self.core.core.text().strip():
+            return "Enter or suggest a core with the varying positions open."
+        if not self.activity.currentText():
+            return "There is no number column for activity."
+        return self.core.problem()
+
+    def _update(self) -> None:
+        problem = self.problem()
+        self.status.setText(problem)
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
+
+    def accept(self) -> None:
+        if self.problem():
+            return
+        self.job = self.analyse()
+        super().accept()
+
+    def analyse(self):
+        ctx = self.ctx
+        oids = scope_oids(ctx, self.rows.currentData())
+        activity = numbers(ctx.table, self.activity.currentText(), oids)
+        decompose = self.core.task(oids)
+        min_count = self.min_count.value()
+        name = self.output.text().strip() or PREDICTED_COLUMN
+        options = {
+            "activity": self.activity.currentText(),
+            "higher_is_better": self.higher_is_better.isChecked(),
+            "structure": self.core.structure.currentText(),
+        }
+
+        def work(job):
+            d = decompose(job)
+            return d, free_wilson(d, activity, min_count=min_count)
+
+        def done(result) -> None:
+            d, model = result
+            self.finish(oids, d, model, name, options)
+
+        return ctx.run("Free-Wilson analysis…", work, done)
+
+    def finish(self, oids, d: Decomposition, model: FreeWilson, name: str, options: dict):
+        ctx = self.ctx
+        names = ctx.apply_results(
+            {name: (oids, NumberColumn.from_floats(model.predicted, 2))},
+            label="Free-Wilson",
+            overwrite=True,
+        )
+        self.panel = FreeWilsonPanel(ctx, oids, d, model, options)
+        ctx.add_panel(self.panel, self.panel.title())
+        ctx.show_message(
+            f"Free-Wilson: R² {model.fit.r2:.2f} on {model.fit.n:,} compound(s); "
+            f"predictions in “{names[name]}”",
+            10_000,
+        )
+        return self.panel
+
+
+class FreeWilsonPanel(QWidget):
+    """Results of one Free-Wilson analysis (not kept with the document: rerun to refresh)."""
+
+    titleChanged = Signal(str)
+    tool_id = "free_wilson"
+
+    def __init__(self, ctx: ToolContext, oids, d: Decomposition, model: FreeWilson, options):
+        super().__init__()
+        self.ctx = ctx
+        self.decomposition = d
+        self.model = model
+        self.options = options
+        self.oids = np.asarray(oids)
+        summary = QLabel(fit_summary(model.fit, model.skipped))
+        summary.setWordWrap(True)
+        reference = ", ".join(f"{p} = {r}" for p, r in model.reference.items())
+        summary.setToolTip(
+            "Fujita-Ban: the change from the reference substituent at each position "
+            f"({reference}).\nFree-Wilson: the contribution relative to the series mean."
+        )
+        self.terms = ResultTable(
+            ["Position", "Substituent", "N", "Fujita-Ban", "± SE", "Free-Wilson"]
+        )
+        self.terms.fill(
+            [
+                [
+                    t.position,
+                    t.label + (" (ref)" if t.reference else ""),
+                    t.count,
+                    t.fujita_ban,
+                    t.error,
+                    t.free_wilson,
+                ]
+                for t in model.terms
+            ],
+            model.terms,
+        )
+        better = options.get("higher_is_better", True)
+        self.unmade = model.best_unmade(UNMADE_LIMIT, higher_is_better=better)
+        self.best = ResultTable([*model.positions, "Predicted"])
+        self.best.fill([[*labels_, value] for labels_, value in self.unmade], self.unmade)
+        add = QPushButton("Add Selected to Table")
+        add.setToolTip("Build the chosen combinations and add them as new rows.")
+        add.clicked.connect(lambda: self.add_to_table())
+        select = QPushButton("Select Compounds")
+        select.setToolTip("Select the compounds carrying the chosen substituents.")
+        select.clicked.connect(lambda: self.select_carriers())
+        copy = QPushButton("Copy")
+        copy.clicked.connect(lambda: self.tabs.currentWidget().findChild(ResultTable).copy_text())
+
+        self.tabs = QTabWidget()
+        terms_tab = QWidget()
+        box = QVBoxLayout(terms_tab)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(self.terms)
+        row = QHBoxLayout()
+        row.addWidget(select)
+        row.addStretch(1)
+        box.addLayout(row)
+        best_tab = QWidget()
+        box = QVBoxLayout(best_tab)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(
+            QLabel(
+                f"Best of {model.combinations():,} possible combinations not in the data "
+                f"({'higher' if better else 'lower'} is better)."
+            )
+        )
+        box.addWidget(self.best)
+        row = QHBoxLayout()
+        row.addWidget(add)
+        row.addStretch(1)
+        box.addLayout(row)
+        self.tabs.addTab(terms_tab, "Contributions")
+        self.tabs.addTab(best_tab, "Best Unmade")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.addWidget(summary)
+        layout.addWidget(self.tabs, 1)
+        layout.addWidget(copy)
+
+    def title(self) -> str:
+        return f"Free-Wilson: {self.options.get('activity', '')}"
+
+    def select_carriers(self) -> list[int]:
+        terms = [t for t in self.terms.selected_data() if t is not None]
+        d = self.decomposition
+        hit = np.zeros(len(d), dtype=bool)
+        for t in terms:
+            hit |= np.array([lab == t.label for lab in d.labels[t.position]]) & d.matched
+        oids = self.oids[hit].tolist()
+        if oids:
+            self.ctx.selection.set(oids, "free_wilson")
+        return oids
+
+    def add_to_table(self, choices=None) -> np.ndarray:
+        """Add structures for *choices* (default: the selected best-unmade rows)."""
+        d = self.decomposition
+        choices = choices if choices is not None else [c for c in self.best.selected_data() if c]
+        blobs, texts, values, failed = [], [], [], 0
+        for labels_, value in choices:
+            fragments = {}
+            for position, label in zip(self.model.positions, labels_, strict=True):
+                fragments[position] = d.fragments.get((position, label), _hydrogen(position, label))
+            for position in d.positions:  # fixed positions: their single substituent
+                if position not in fragments:
+                    only = d.counts(position).most_common(1)
+                    label = only[0][0] if only else HYDROGEN
+                    fragments[position] = d.fragments.get(
+                        (position, label), _hydrogen(position, label)
+                    )
+            mol = assemble(d.core, fragments) if None not in fragments.values() else None
+            if mol is None:
+                failed += 1
+                continue
+            blobs.append(mol_to_blob(mol))
+            texts.append(smiles_of(mol))
+            values.append(value)
+        if not blobs:
+            self.ctx.show_message("Choose rows in Best Unmade to add (none could be built).")
+            return np.empty(0, dtype=np.int64)
+        structure = self.options.get("structure") or "Structure"
+        new = self.ctx.table.add_rows(
+            {
+                structure: StructureColumn.from_parsed(blobs, texts),
+                PREDICTED_COLUMN: NumberColumn.from_floats(np.array(values), 2),
+                "Source": ["Free-Wilson (not made)"] * len(blobs),
+            },
+            label="Add Free-Wilson proposals",
+        )
+        message = f"Added {len(new):,} proposed compound(s) at the end of the table"
+        if failed:
+            message += f"; {failed} could not be built"
+        self.ctx.show_message(message, 8000)
+        return new
+
+    def state(self) -> dict:
+        return {}
+
+    def set_state(self, state: dict) -> None:
+        pass
+
+    def close_panel(self) -> None:
+        pass
+
+
+def _hydrogen(position: str, label: str) -> str | None:
+    if label != HYDROGEN:
+        return None
+    return f"[H][*:{position.removeprefix('R')}]"
