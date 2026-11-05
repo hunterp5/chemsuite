@@ -66,6 +66,7 @@ from .jobs import Job, JobRunner
 from .list_actions import ListActions
 from .search_bar import SearchBar
 from .selection_browser import SelectionBrowser
+from .split_join import JoinColumnsDialog, SplitColumnDialog
 from .structure_editor import StructureEditor, copy_structure
 from .table_model import TableModel
 from .table_view import StructureImages, TableView
@@ -190,6 +191,8 @@ class MainWindow(QMainWindow):
             workspace.table,
             lambda message: self.statusBar().showMessage(message, 4000),
             add_filter=self.filter_column,
+            split=self.split_column,
+            join=self.join_columns,
         )
         self._lists = ListActions(
             self,
@@ -389,6 +392,9 @@ class MainWindow(QMainWindow):
         table_menu.addAction(self._action("Add &Rows…", self.add_rows))
         table_menu.addAction(self._action("Add &Column…", self.add_column))
         table_menu.addSeparator()
+        table_menu.addAction(self._action("&Split Column…", lambda: self.split_column()))
+        table_menu.addAction(self._action("&Join Columns…", lambda: self.join_columns()))
+        table_menu.addSeparator()
         table_menu.addAction(self._action("Clear Sort", lambda: self.workspace.table.set_sort([])))
         self._lists_menu = data.addMenu("&Lists")
         self._add_to_list = self._action(
@@ -483,6 +489,43 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Add Column", f"A column named “{name}” already exists.")
                 return
             table.add_column(name)
+
+    # -- split / join ------------------------------------------------------------------------
+    def _current_column(self) -> str | None:
+        current = self.view.currentIndex()
+        return self.workspace.model.column_name(current.column()) if current.isValid() else None
+
+    def split_column(self, name: str | None = None) -> SplitColumnDialog | None:
+        workspace = self.workspace
+        if not workspace.table.column_names:
+            self.statusBar().showMessage("The table has no columns", 4000)
+            return None
+        dialog = SplitColumnDialog(
+            workspace.table, workspace.selection, name or self._current_column(), self
+        )
+        dialog.accepted.connect(
+            lambda: self.statusBar().showMessage(
+                f"Added {len(dialog.result_names)} column(s)", 4000
+            )
+        )
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
+
+    def join_columns(self, names: list[str] | None = None) -> JoinColumnsDialog | None:
+        workspace = self.workspace
+        if len(workspace.table.column_names) < 2:
+            self.statusBar().showMessage("Joining needs at least two columns", 4000)
+            return None
+        if not names or len(names) < 2:
+            names = self.view.selected_column_names() or names
+        dialog = JoinColumnsDialog(workspace.table, workspace.selection, list(names or []), self)
+        dialog.accepted.connect(
+            lambda: self.statusBar().showMessage(f"Added column {dialog.result_name}", 4000)
+        )
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
 
     # -- structures --------------------------------------------------------------------------
     def _structure_cell(self) -> tuple[int, str] | None:

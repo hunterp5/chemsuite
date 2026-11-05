@@ -41,11 +41,15 @@ class ColumnActions:
         table: Table,
         show_message: Callable[[str], None] = lambda _m: None,
         add_filter: Callable[[str], object] | None = None,
+        split: Callable[[str], object] | None = None,
+        join: Callable[[list[str]], object] | None = None,
     ) -> None:
         self._parent = parent
         self._table = table
         self._show = show_message
         self._add_filter = add_filter
+        self._split = split
+        self._join = join
 
     # -- sorting ------------------------------------------------------------------------------
     def sort(self, name: str, ascending: bool) -> None:
@@ -157,6 +161,16 @@ class ColumnActions:
             "Delete Column" if len(targets) == 1 else f"Delete {len(targets)} Columns",
             lambda: self.delete(targets),
         )
+        menu.addSeparator()
+        if self._split is not None:
+            split = self._split
+            add("Split Column…", lambda: split(name))
+        if self._join is not None:
+            join = self._join
+            add(
+                "Join Columns…" if len(targets) < 2 else f"Join {len(targets)} Columns…",
+                lambda: join(targets),
+            )
         menu.addSeparator()
 
         kinds = menu.addMenu("Column Type")

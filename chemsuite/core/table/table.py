@@ -501,17 +501,20 @@ class Table:
         results: Mapping[str, tuple[Sequence[int] | np.ndarray, Sequence[object] | Column]],
         *,
         label: str = "Add results",
+        position: int | None = None,
     ) -> dict[str, str]:
         """Write a tool's output columns as one undoable step.
 
         *results* maps a requested column name to ``(oids, values)``. An existing column is
         reused only when every cell in it is blank; otherwise the result goes to a new column
-        named ``name (2)``, ``name (3)``…. Returns ``{requested name: actual name}``.
+        named ``name (2)``, ``name (3)``…, inserted at *position* (default: the end).
+        Returns ``{requested name: actual name}``.
         """
         ops: list[Op] = []
         names: dict[str, str] = {}
         taken: set[str] = set()
-        position = len(self._columns)
+        end = len(self._columns)
+        position = end if position is None else max(0, min(position, end))
         for requested, (oids, values) in results.items():
             oids = as_slots(oids)
             if len(oids) != len(values):
