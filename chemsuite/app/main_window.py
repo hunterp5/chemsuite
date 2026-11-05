@@ -22,6 +22,7 @@ menus. It holds no tool logic: tools will plug in through the registry (phase 4)
 
 from __future__ import annotations
 
+import functools
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -70,6 +71,7 @@ from .split_join import JoinColumnsDialog, SplitColumnDialog
 from .structure_editor import StructureEditor, copy_structure
 from .table_model import TableModel
 from .table_view import StructureImages, TableView
+from .tools import Tool, ToolContext, load_tools
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +83,13 @@ OPEN_FILTER = (
 EXPORT_FILTER = "SD file (*.sdf);;CSV (*.csv);;TSV (*.tsv);;SMILES (*.smi);;Excel (*.xlsx)"
 
 _windows: list[MainWindow] = []
+
+
+@functools.cache
+def registered_tools() -> tuple[Tool, ...]:
+    from chemsuite.tools import TOOL_MODULES
+
+    return tuple(load_tools(TOOL_MODULES))
 
 
 class Workspace:
@@ -413,6 +422,11 @@ class MainWindow(QMainWindow):
         data.addSeparator()
         data.addAction(self._action("Show All Rows", self.show_all_rows))
 
+        self._tool_actions: dict[str, QAction] = {}
+        menus = {("File",): file_menu, ("Edit",): edit, ("Data",): data}
+        for tool in registered_tools():
+            self._add_tool(tool, menus)
+
         view = bar.addMenu("&View")
         toggle = self.filter_dock.toggleViewAction()
         toggle.setText("&Filters")
@@ -420,6 +434,35 @@ class MainWindow(QMainWindow):
         view.addAction(toggle)
         browse = self._action("Selection &Browser", self.toggle_browser, "Ctrl+Shift+B")
         view.addAction(browse)
+
+    def _add_tool(self, tool: Tool, menus: dict[tuple[str, ...], Any]) -> None:
+        """Put *tool* in its menu, creating the menu path as needed."""
+        for depth in range(1, len(tool.menu) + 1):
+            path = tool.menu[:depth]
+            if path not in menus:
+                parent = self.menuBar() if depth == 1 else menus[path[:-1]]
+                menus[path] = parent.addMenu(f"&{path[-1]}" if depth == 1 else path[-1])
+                menus[path].setToolTipsVisible(True)
+        action = QAction(tool.title, self)
+        if tool.shortcut:
+            action.setShortcut(QKeySequence(tool.shortcut))
+        missing = tool.missing()
+        action.setToolTip(
+            f"Needs {', '.join(missing)}, which is not installed" if missing else tool.tip
+        )
+        action.setEnabled(not missing)
+        action.triggered.connect(lambda _checked=False, t=tool: self.open_tool(t))
+        menus[tool.menu].addAction(action)
+        self._tool_actions[tool.id] = action
+
+    def tool_action(self, tool_id: str) -> QAction:
+        return self._tool_actions[tool_id]
+
+    def open_tool(self, tool: Tool | str) -> Any:
+        """Open a tool (by declaration or id) on this window's document."""
+        if isinstance(tool, str):
+            tool = next(t for t in registered_tools() if t.id == tool)
+        return tool.open(ToolContext(self))
 
     def toggle_browser(self) -> None:
         if self.browser_dock.isVisible():
@@ -430,7 +473,12 @@ class MainWindow(QMainWindow):
     def _update_actions(self) -> None:
         if self._workspace is None:
             return
-        history = self.workspace.table.history
+        table = self.workspace.table
+        has_structures = any(table.kind(n) == STRUCTURE for n in table.column_names)
+        for tool in registered_tools():
+            ready = not tool.missing() and (has_structures or not tool.needs_structures)
+            self._tool_actions[tool.id].setEnabled(ready)
+        history = table.history
         self._undo.setEnabled(history.can_undo)
         self._redo.setEnabled(history.can_redo)
         self._undo.setText(f"&Undo {history.undo_label}" if history.can_undo else "&Undo")

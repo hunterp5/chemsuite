@@ -502,13 +502,15 @@ class Table:
         *,
         label: str = "Add results",
         position: int | None = None,
+        overwrite: bool = False,
     ) -> dict[str, str]:
         """Write a tool's output columns as one undoable step.
 
         *results* maps a requested column name to ``(oids, values)``. An existing column is
-        reused only when every cell in it is blank; otherwise the result goes to a new column
-        named ``name (2)``, ``name (3)``…, inserted at *position* (default: the end).
-        Returns ``{requested name: actual name}``.
+        reused when every cell in it is blank, or always with *overwrite* (rerunning a tool
+        updates its columns; rows outside *oids* keep their values). Otherwise the result goes
+        to a new column named ``name (2)``, ``name (3)``…, inserted at *position* (default: the
+        end). Returns ``{requested name: actual name}``.
         """
         ops: list[Op] = []
         names: dict[str, str] = {}
@@ -522,7 +524,10 @@ class Table:
             slots = self.slots_of(oids)
             incoming = values if isinstance(values, Column) else column_from_values(values)
             existing = self._columns.get(requested)
-            if existing is not None and existing.is_all_blank() and requested not in taken:
+            reusable = existing is not None and (
+                existing.is_all_blank() or (overwrite and existing.kind != STRUCTURE)
+            )
+            if reusable and requested not in taken:
                 self._put_ops(requested, oids, incoming, ops)
                 names[requested] = requested
             else:

@@ -13,5 +13,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
+"""Tool packages, one folder per menu feature.
 
-"""One sub-package per menu feature; each declares a ``TOOL`` for the registry."""
+Tools are listed here explicitly rather than discovered at run time, so a frozen build
+(PyInstaller) sees every import. Each module defines ``TOOL`` (see :mod:`chemsuite.app.tools`).
+Keep these modules light: heavy imports belong inside the function that opens the tool.
+"""
+
+TOOL_MODULES: tuple[str, ...] = ("chemsuite.tools.descriptors.tool",)

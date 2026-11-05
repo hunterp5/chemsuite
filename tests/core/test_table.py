@@ -387,3 +387,33 @@ def test_every_filter_can_be_negated() -> None:
     assert value_counts(t.column("x"))[0] == ("", 1)
     values = number_values(t.column("x"))
     assert values[:2].tolist() == [1.0, 5.0] and np.isnan(values[2])
+
+
+def test_apply_results_overwrite_updates_existing_columns() -> None:
+    table = Table()
+    table.add_rows({"ID": ["a", "b", "c"], "MW": ["1", "2", "3"]}, undoable=False)
+    oids = table.oids
+    names = table.apply_results({"MW": (oids[:2], [10, 20])}, label="Recalc", overwrite=True)
+    assert names == {"MW": "MW"}
+    assert [table.cell("MW", o) for o in oids] == ["10", "20", "3"]  # row c keeps its value
+    names = table.apply_results({"MW": (oids, [1, 1, 1])}, label="Again")
+    assert names == {"MW": "MW (2)"}  # without overwrite a filled column is kept
+    table.undo()
+    table.undo()
+    assert [table.cell("MW", o) for o in oids] == ["1", "2", "3"]
+
+
+def test_apply_results_never_overwrites_a_structure_column() -> None:
+    from chemsuite.core.table.columns import StructureColumn
+
+    table = Table()
+    table.add_rows({"Structure": StructureColumn.from_texts(["C", "CC"])}, undoable=False)
+    names = table.apply_results({"Structure": (table.oids, ["x", "y"])}, label="r", overwrite=True)
+    assert names == {"Structure": "Structure (2)"}
+
+
+def test_apply_results_position() -> None:
+    table = Table()
+    table.add_rows({"A": [1], "B": [2]}, undoable=False)
+    table.apply_results({"N": (table.oids, [3])}, label="r", position=1)
+    assert table.column_names == ["A", "N", "B"]
