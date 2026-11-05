@@ -23,7 +23,17 @@ import io
 from collections import OrderedDict
 
 import numpy as np
-from PySide6.QtCore import QItemSelection, QItemSelectionModel, QModelIndex, QRect, QSize, Qt
+from PySide6.QtCore import (
+    QItemSelection,
+    QItemSelectionModel,
+    QModelIndex,
+    QPoint,
+    QRect,
+    QSize,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -128,7 +138,16 @@ class CellDelegate(QStyledItemDelegate):
 
 
 class TableView(QTableView):
-    """A table view bound to one :class:`TableModel` and the table's :class:`Selection`."""
+    """A table view bound to one :class:`TableModel` and the table's :class:`Selection`.
+
+    Column widths are remembered by column name, so a model reset (filtering, adding rows)
+    keeps widths the user set; only new columns, or columns whose kind changed, are fitted.
+    Dragging a header moves the column in the table (one undoable step) rather than only in
+    the view.
+    """
+
+    #: (column index, global position) for a right-click on the horizontal header
+    headerMenuRequested = Signal(int, QPoint)
 
     def __init__(
         self,
@@ -142,6 +161,8 @@ class TableView(QTableView):
         self._selection = selection
         self._syncing = False
         self._anchor_oid: int | None = None
+        self._widths: dict[str, int] = {}
+        self._kinds: dict[str, str] = {}
         self.setModel(model)
         self.setItemDelegate(CellDelegate(images, self))
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -160,10 +181,20 @@ class TableView(QTableView):
         horizontal.setResizeContentsPrecision(200)  # never measure all 200k rows
         horizontal.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         self.setSortingEnabled(True)
+        horizontal.setSectionsMovable(True)
+        horizontal.sectionMoved.connect(self._on_section_moved)
+        horizontal.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        horizontal.customContextMenuRequested.connect(self._on_header_menu)
+        # A click on an unsortable column moves the indicator but sorts nothing: put it back.
+        horizontal.sortIndicatorChanged.connect(
+            lambda *_: QTimer.singleShot(0, self._sync_sort_indicator)
+        )
 
         model.modelAboutToBeReset.connect(self._remember_anchor)
         model.modelReset.connect(self._after_reset)
         model.layoutChanged.connect(self._restore_selection)
+        model.layoutChanged.connect(self._sync_sort_indicator)
+        model.headerDataChanged.connect(self._on_header_data_changed)
         self.selectionModel().selectionChanged.connect(self._on_view_selection)
         self._unsubscribe = selection.subscribe(self._on_store_selection)
         self._fit_layout()
@@ -176,21 +207,79 @@ class TableView(QTableView):
         self._unsubscribe()
 
     # -- layout -------------------------------------------------------------------------------
+    def _capture_widths(self) -> None:
+        """Remember current widths by name (call while the header still matches the model)."""
+        header = self.horizontalHeader()
+        model = self.table_model
+        for col in range(min(header.count(), model.columnCount())):
+            self._widths[model.column_name(col)] = header.sectionSize(col)
+
     def _fit_layout(self) -> None:
         model = self.table_model
-        has_structures = any(
-            model.table.kind(name) == STRUCTURE for name in model.table.column_names
-        )
+        table = model.table
+        has_structures = any(table.kind(name) == STRUCTURE for name in table.column_names)
         self.verticalHeader().setDefaultSectionSize(
             STRUCTURE_ROW_HEIGHT if has_structures else self.fontMetrics().height() + 8
         )
-        self.resizeColumnsToContents()
         for col in range(model.columnCount()):
             name = model.column_name(col)
-            if model.table.kind(name) == STRUCTURE:
+            kind = table.kind(name)
+            known = self._widths.get(name)
+            if known is not None and self._kinds.get(name) == kind:
+                self.setColumnWidth(col, known)
+            elif kind == STRUCTURE:
                 self.setColumnWidth(col, STRUCTURE_COLUMN_WIDTH)
-            elif self.columnWidth(col) > MAX_AUTO_COLUMN_WIDTH:
-                self.setColumnWidth(col, MAX_AUTO_COLUMN_WIDTH)
+            else:
+                self.resizeColumnToContents(col)
+                self.setColumnWidth(col, min(self.columnWidth(col), MAX_AUTO_COLUMN_WIDTH))
+        self._kinds = {name: table.kind(name) for name in table.column_names}
+        self._sync_sort_indicator()
+
+    def _on_header_data_changed(self, orientation: Qt.Orientation, *_args) -> None:
+        if orientation == Qt.Orientation.Horizontal:  # e.g. a column changed kind
+            self._capture_widths()
+            self._fit_layout()
+
+    def _sync_sort_indicator(self) -> None:
+        """Show the table's primary sort key without triggering another sort."""
+        model = self.table_model
+        header = self.horizontalHeader()
+        keys = model.table.sort_keys
+        blocked = header.blockSignals(True)
+        try:
+            if keys and keys[0][0] in model.table:
+                order = Qt.SortOrder.AscendingOrder if keys[0][1] else Qt.SortOrder.DescendingOrder
+                header.setSortIndicator(model.column_index(keys[0][0]), order)
+            else:
+                header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
+        finally:
+            header.blockSignals(blocked)
+
+    def _on_section_moved(self, logical: int, old_visual: int, new_visual: int) -> None:
+        """Turn a header drag into a table column move (undoable, saved with the document)."""
+        header = self.horizontalHeader()
+        blocked = header.blockSignals(True)
+        try:
+            header.moveSection(new_visual, old_visual)  # the view itself stays unmoved
+        finally:
+            header.blockSignals(blocked)
+        name = self.table_model.column_name(logical)
+        QTimer.singleShot(0, lambda: self.table_model.table.move_column(name, new_visual))
+
+    def _on_header_menu(self, pos: QPoint) -> None:
+        column = self.horizontalHeader().logicalIndexAt(pos)
+        if column >= 0:
+            self.headerMenuRequested.emit(column, self.horizontalHeader().mapToGlobal(pos))
+
+    def selected_column_names(self) -> list[str]:
+        """Names of the columns that are selected top to bottom."""
+        model = self.table_model
+        selection = self.selectionModel()
+        return [
+            model.column_name(col)
+            for col in range(model.columnCount())
+            if selection.isColumnSelected(col, QModelIndex())
+        ]
 
     # -- selection: view <-> store ------------------------------------------------------------
     def selected_rows(self) -> np.ndarray:
@@ -244,6 +333,7 @@ class TableView(QTableView):
         self._apply_rows(self._rows_for(self._selection.oids))
 
     def _remember_anchor(self) -> None:
+        self._capture_widths()
         index = self.indexAt(self.viewport().rect().topLeft())
         self._anchor_oid = self.table_model.oid_at(index.row()) if index.isValid() else None
 

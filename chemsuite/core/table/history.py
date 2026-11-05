@@ -140,6 +140,19 @@ class RemoveColumn(Op):
 
 
 @dataclass(eq=False)
+class MoveColumn(Op):
+    name: str
+    old: int
+    new: int
+
+    def apply(self, table: Table) -> None:
+        table._move_column(self.name, self.new)
+
+    def inverse(self) -> Op:
+        return MoveColumn(self.name, self.new, self.old)
+
+
+@dataclass(eq=False)
 class RenameColumn(Op):
     old: str
     new: str

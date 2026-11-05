@@ -18,31 +18,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from chemsuite.core.document import load_document
 from chemsuite.core.table import Table
 
 from .conftest import gui
 
 pytestmark = gui
-
-
-@pytest.fixture
-def window(qtbot):
-    from chemsuite.app.jobs import JobRunner
-    from chemsuite.app.main_window import MainWindow, Workspace
-    from chemsuite.app.table_view import StructureImages
-
-    runner = JobRunner()
-    table = Table()
-    table.add_rows({"ID": ["A", "B", "C"], "pIC50": ["5", "6", "7"]}, undoable=False)
-    w = MainWindow(runner, StructureImages(), Workspace(table))
-    # Not qtbot.addWidget: pytest-qt would close it before this fixture can mark it clean.
-    yield w
-    w.workspace.table.history.mark_clean()
-    w.close()
-    runner.shutdown()
 
 
 def test_edit_marks_modified_and_undo_label(window) -> None:

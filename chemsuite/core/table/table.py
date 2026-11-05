@@ -44,6 +44,7 @@ import numpy as np
 from . import events as ev
 from .columns import (
     NUMBER,
+    STRUCTURE,
     TEXT,
     Column,
     StructureColumn,
@@ -52,6 +53,7 @@ from .columns import (
     coerce,
     column_from_values,
     to_number,
+    to_structure,
     to_text,
 )
 from .filters import Filter
@@ -61,6 +63,7 @@ from .history import (
     History,
     InsertColumn,
     InsertRows,
+    MoveColumn,
     Op,
     PutCells,
     RemoveColumn,
@@ -437,6 +440,33 @@ class Table:
             Command(label or f"Delete column {name}", [RemoveColumn(name, position, column)])
         )
 
+    def remove_columns(self, names: Sequence[str], *, label: str | None = None) -> None:
+        """Remove several columns as one undoable step."""
+        for name in names:
+            self.column(name)  # raises KeyError for unknown names
+        order = self.column_names
+        positions = sorted({order.index(n) for n in names})
+        if not positions:
+            return
+        # Right to left, so each recorded position is still valid when undone left to right.
+        ops: list[Op] = [
+            RemoveColumn(order[p], p, self._columns[order[p]]) for p in reversed(positions)
+        ]
+        default = (
+            f"Delete column {order[positions[0]]}"
+            if len(positions) == 1
+            else f"Delete {len(positions)} columns"
+        )
+        self._execute(Command(label or default, ops))
+
+    def move_column(self, name: str, position: int) -> None:
+        """Move column *name* to *position* (its index after the move)."""
+        self.column(name)  # raises KeyError for an unknown name
+        old = self.column_names.index(name)
+        position = max(0, min(int(position), len(self._columns) - 1))
+        if position != old:
+            self._execute(Command(f"Move column {name}", [MoveColumn(name, old, position)]))
+
     def rename_column(self, old: str, new: str) -> None:
         self.column(old)
         if new == old:
@@ -459,6 +489,8 @@ class Table:
             if converted is None:
                 raise ValueError(f"column {name!r} has values that are not plain numbers")
             new, blanked = converted
+        elif kind == STRUCTURE:
+            new, blanked = to_structure(column), 0
         else:
             raise ValueError(f"unknown column kind {kind!r}")
         self._execute(Command(f"Convert {name} to {kind}", [ReplaceColumn(name, column, new)]))
@@ -594,12 +626,15 @@ class Table:
         """Make *incoming* storable in column *name*.
 
         Returns ``(incoming as the column's kind, the column as it will be)``. When the kinds
-        differ, an all-blank column takes the incoming kind, and a number column receiving text
-        is demoted to text; either way a ``ReplaceColumn`` op is appended to *ops*.
+        differ, a structure column reads incoming text as structures, an all-blank column takes
+        the incoming kind, and a number column receiving text is demoted to text (the last two
+        append a ``ReplaceColumn`` op to *ops*).
         """
         target = self._columns[name]
         if target.kind == incoming.kind:
             return incoming, target
+        if target.kind == STRUCTURE:  # a structure column is chosen on purpose: keep its kind
+            return to_structure(incoming), target
         if target.is_all_blank() and not incoming.is_all_blank():
             replacement = blank_column(incoming.kind, len(target))
             ops.append(ReplaceColumn(name, target, replacement))
@@ -662,6 +697,13 @@ class Table:
             self._sort = sort
             self._invalidate_view()
 
+    def _move_column(self, name: str, position: int) -> None:
+        items = list(self._columns.items())
+        old = [k for k, _ in items].index(name)
+        items.insert(position, items.pop(old))
+        self._columns = dict(items)
+        self._pending.append(ev.ColumnMoved(name, old, position))
+
     def _rename_column(self, old: str, new: str) -> None:
         self._columns = {(new if k == old else k): v for k, v in self._columns.items()}
         self._filters = {k: f.renamed(old, new) for k, f in self._filters.items()}
@@ -671,7 +713,17 @@ class Table:
     def _replace_column(self, name: str, column: Column) -> None:
         if len(column) != len(self._oids):
             raise ValueError("replacement column has the wrong length")
+        previous = self._columns[name]
         self._columns[name] = column
+        if column.kind != previous.kind:
+            # Sort keys and filters were built for the old kind; drop those that no longer fit.
+            sort = tuple(k for k in self._sort if k[0] != name or column.sortable)
+            stale = [k for k, f in self._filters.items() if name in f.columns]
+            for key in stale:
+                del self._filters[key]
+            if stale or sort != self._sort:
+                self._sort = sort
+                self._invalidate_view()
         if self._affects_view(name):
             self._view = None
         self._pending.append(ev.ColumnKindChanged(name, column.kind))

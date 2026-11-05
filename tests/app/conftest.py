@@ -64,3 +64,23 @@ def no_modal_dialogs(monkeypatch):
         monkeypatch.setattr(QInputDialog, name, refuse("QInputDialog", name))
     for name in ("getOpenFileName", "getOpenFileNames", "getSaveFileName"):
         monkeypatch.setattr(QFileDialog, name, refuse("QFileDialog", name))
+
+
+@pytest.fixture
+def window(qtbot):
+    """A main window on a small table (ID, pIC50), closed without a save prompt."""
+    from chemsuite.app.jobs import JobRunner
+    from chemsuite.app.main_window import MainWindow, Workspace
+    from chemsuite.app.table_view import StructureImages
+
+    runner = JobRunner()
+    from chemsuite.core.table import Table
+
+    table = Table()
+    table.add_rows({"ID": ["A", "B", "C"], "pIC50": ["5", "6", "7"]}, undoable=False)
+    w = MainWindow(runner, StructureImages(), Workspace(table))
+    # Not qtbot.addWidget: pytest-qt would close it before this fixture can mark it clean.
+    yield w
+    w.workspace.table.history.mark_clean()
+    w.close()
+    runner.shutdown()

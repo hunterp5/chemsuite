@@ -27,7 +27,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtCore import QEventLoop, QPoint, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -51,7 +51,10 @@ from chemsuite.core.io.load import (
 )
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Changed, Table
+from chemsuite.core.table import events as ev
+from chemsuite.core.table.columns import STRUCTURE
 
+from .column_actions import ColumnActions
 from .jobs import Job, JobRunner
 from .table_model import TableModel
 from .table_view import StructureImages, TableView
@@ -100,6 +103,8 @@ class MainWindow(QMainWindow):
         self._workspace: Workspace | None = None
         self._view: TableView | None = None
         self._parse_job: Job | None = None
+        self._parse_again = False
+        self._columns: ColumnActions | None = None
         self._unsubscribe: Callable[[], None] | None = None
         self._status = QLabel()
         self.statusBar().addPermanentWidget(self._status)
@@ -124,6 +129,10 @@ class MainWindow(QMainWindow):
         self._workspace = workspace
         self._view = TableView(workspace.model, workspace.selection, self._images, self)
         self.setCentralWidget(self._view)
+        self._columns = ColumnActions(
+            self, workspace.table, lambda message: self.statusBar().showMessage(message, 4000)
+        )
+        self._view.headerMenuRequested.connect(self._show_header_menu)
         self._unsubscribe = workspace.table.subscribe(self._on_table_event)
         workspace.selection.subscribe(lambda *_: self._update_status())
         self._update_title()
@@ -148,6 +157,35 @@ class MainWindow(QMainWindow):
             self._update_title()
             self._update_actions()
             self._update_status()
+            if self._may_leave_unparsed(event):
+                QTimer.singleShot(0, self._start_parsing)
+
+    def _may_leave_unparsed(self, event: Changed) -> bool:
+        """Could this change have left structure cells waiting to be parsed?"""
+        table = self.workspace.table
+        for change in event.changes:
+            if isinstance(change, ev.ColumnKindChanged) and change.kind == STRUCTURE:
+                return True
+            if isinstance(change, ev.RowsInserted | ev.ColumnInserted):
+                return True
+            if (
+                isinstance(change, ev.CellsChanged)
+                and change.column in table
+                and table.kind(change.column) == STRUCTURE
+            ):
+                return True
+        return False
+
+    @property
+    def columns(self) -> ColumnActions:
+        assert self._columns is not None
+        return self._columns
+
+    def _show_header_menu(self, column: int, pos: QPoint) -> None:
+        name = self.workspace.model.column_name(column)
+        menu = self.columns.build_menu(name, self.view.selected_column_names(), column)
+        menu.exec(pos)
+        menu.deleteLater()
 
     # -- menus -------------------------------------------------------------------------------
     def _action(
@@ -411,6 +449,12 @@ class MainWindow(QMainWindow):
 
     def _start_parsing(self) -> None:
         """Parse text structures (CSV, SMILES, Excel) in the background after opening."""
+        if self._workspace is None:
+            return
+        if self._parse_job is not None and self._parse_job.running:
+            self._parse_again = True  # look again once the running job ends
+            return
+        self._parse_again = False
         table = self.workspace.table
         chunks = pending_structure_chunks(table)
         if not chunks:
@@ -441,6 +485,7 @@ class MainWindow(QMainWindow):
         job.partial.connect(apply)
         job.finished.connect(finished)
         job.failed.connect(lambda err: self._show_error("Reading structures", err))
+        job.done.connect(lambda: self._parse_again and self._start_parsing())
         self._parse_job = job
 
     # -- closing -----------------------------------------------------------------------------

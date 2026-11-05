@@ -316,3 +316,56 @@ def test_listeners_see_history_updated() -> None:
     t.set_cells("a", [1], ["2"], label="Edit a")
     t.undo()
     assert seen == [("Edit a", False), (None, True)]
+
+
+def test_remove_columns_is_one_undo_step() -> None:
+    t = Table()
+    t.add_rows({"a": ["1"], "b": ["2"], "c": ["3"], "d": ["4"]}, undoable=False)
+    t.remove_columns(["d", "b"])
+    assert t.column_names == ["a", "c"]
+    assert t.history.undo_label == "Delete 2 columns"
+    t.undo()
+    assert t.column_names == ["a", "b", "c", "d"]
+    assert t.cell("b", 1) == "2"
+    t.redo()
+    assert t.column_names == ["a", "c"]
+
+
+def test_move_column_and_undo() -> None:
+    t = Table()
+    t.add_rows({"a": ["1"], "b": ["2"], "c": ["3"]}, undoable=False)
+    events: list[object] = []
+    t.subscribe(events.append)
+    t.move_column("a", 2)
+    assert t.column_names == ["b", "c", "a"]
+    assert any(
+        isinstance(c, ev.ColumnMoved) for e in events if isinstance(e, Changed) for c in e.changes
+    )
+    t.move_column("a", 99)  # clamped; already last, so no new undo step
+    assert t.history.undo_label == "Move column a"
+    t.undo()
+    assert t.column_names == ["a", "b", "c"]
+
+
+def test_convert_to_structure_drops_sort_and_filters() -> None:
+    t = Table()
+    t.add_rows({"smiles": ["CCO", "c1ccccc1"], "x": ["1", "2"]}, undoable=False)
+    t.set_sort([("smiles", False)])
+    t.set_filter("f", TextFilter("smiles", "C"))
+    t.convert_column("smiles", "structure")
+    assert t.kind("smiles") == "structure"
+    assert t.sort_keys == () and t.filters == {}
+    assert len(t.view()) == 2
+    t.set_sort([("x", True)])  # the table stays usable
+    t.undo()  # back to text
+    assert t.kind("smiles") == "text"
+
+
+def test_empty_structure_column_keeps_its_kind() -> None:
+    from chemsuite.core.table.columns import StructureColumn
+
+    t = Table()
+    t.add_rows({"Structure": StructureColumn.from_texts(["", ""])}, undoable=False)
+    t.set_cells("Structure", [1], ["CCO"])
+    assert t.kind("Structure") == "structure"
+    assert t.column("Structure").pending_mask().tolist() == [True, False]

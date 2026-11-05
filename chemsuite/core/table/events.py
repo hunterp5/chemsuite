@@ -60,6 +60,13 @@ class ColumnRemoved:
 
 
 @dataclass(frozen=True)
+class ColumnMoved:
+    name: str
+    old: int
+    new: int
+
+
+@dataclass(frozen=True)
 class ColumnRenamed:
     old: str
     new: str
@@ -82,6 +89,7 @@ Change = (
     | CellsChanged
     | ColumnInserted
     | ColumnRemoved
+    | ColumnMoved
     | ColumnRenamed
     | ColumnKindChanged
     | ViewChanged
