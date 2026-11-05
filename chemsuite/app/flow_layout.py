@@ -13,106 +13,126 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""A layout that wraps its widgets onto more lines when there is not room for one.
+"""A row of widgets that wraps onto more lines when there is not room for one.
 
 Panels docked beside the table use it for their control rows. A plain row is as wide as all its
 controls together, and that width becomes the dock's minimum, so the dock could not be made
 narrow. Wrapped, the minimum is only the widest single control.
+
+It is a widget that places its children itself, not a ``QLayout`` subclass: Qt calls a layout's
+pure virtual methods while it destroys it, and a Python-implemented layout can be called after
+its Python half is gone, which aborts the process at exit.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QMargins, QPoint, QRect, QSize, Qt
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QLayout, QLayoutItem, QWidget
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QSizePolicy, QWidget
+
+#: child events that can change how the row should be laid out
+_RELAYOUT_EVENTS = (QEvent.Type.Show, QEvent.Type.Hide, QEvent.Type.LayoutRequest)
 
 
-class FlowLayout(QLayout):
+class FlowRow(QWidget):
     def __init__(self, parent: QWidget | None = None, spacing: int = 6) -> None:
         super().__init__(parent)
-        self._items: list[QLayoutItem] = []
-        self.setContentsMargins(0, 0, 0, 0)
-        self.setSpacing(spacing)
+        self._widgets: list[QWidget] = []
+        self._spacing = spacing
+        policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
 
-    # -- QLayout ------------------------------------------------------------------------------
-    def addItem(self, item: QLayoutItem) -> None:
-        self._items.append(item)
+    def addWidget(self, widget: QWidget) -> None:
+        hidden = widget.isHidden() and widget.testAttribute(
+            Qt.WidgetAttribute.WA_WState_ExplicitShowHide
+        )
+        widget.setParent(self)
+        widget.installEventFilter(self)
+        self._widgets.append(widget)
+        if not hidden:
+            widget.show()
+        self._relayout()
 
-    def count(self) -> int:
-        return len(self._items)
+    def widgets(self) -> list[QWidget]:
+        return list(self._widgets)
 
-    def itemAt(self, index: int) -> QLayoutItem | None:
-        return self._items[index] if 0 <= index < len(self._items) else None
+    # -- size ---------------------------------------------------------------------------------
+    def _visible(self) -> list[QWidget]:
+        return [w for w in self._widgets if not w.isHidden()]
 
-    def takeAt(self, index: int) -> QLayoutItem | None:
-        return self._items.pop(index) if 0 <= index < len(self._items) else None
+    def sizeHint(self) -> QSize:
+        """Everything on one line."""
+        width = height = 0
+        for widget in self._visible():
+            hint = widget.sizeHint()
+            width += hint.width() + (self._spacing if width else 0)
+            height = max(height, hint.height())
+        return QSize(width, height)
 
-    def expandingDirections(self) -> Qt.Orientation:
-        return Qt.Orientation(0)
+    def minimumSizeHint(self) -> QSize:
+        """The widest single widget: everything else can wrap."""
+        size = QSize(0, 0)
+        for widget in self._visible():
+            size = size.expandedTo(widget.minimumSizeHint())
+        return QSize(size.width(), self.heightForWidth(max(size.width(), 1)))
 
     def hasHeightForWidth(self) -> bool:
         return True
 
     def heightForWidth(self, width: int) -> int:
-        return self._arrange(QRect(0, 0, width, 0), apply=False)
-
-    def setGeometry(self, rect: QRect) -> None:
-        super().setGeometry(rect)
-        self._arrange(rect, apply=True)
-
-    def sizeHint(self) -> QSize:
-        """Everything on one line."""
-        width = height = 0
-        for item in self._visible():
-            hint = item.sizeHint()
-            width += hint.width() + (self.spacing() if width else 0)
-            height = max(height, hint.height())
-        return QSize(width, height).grownBy(self.contentsMargins())
-
-    def minimumSize(self) -> QSize:
-        """The widest single item: everything else can wrap."""
-        size = QSize()
-        for item in self._visible():
-            size = size.expandedTo(item.minimumSize())
-        return size.grownBy(self.contentsMargins())
+        return self._arrange(width, apply=False)
 
     # -- placing ------------------------------------------------------------------------------
-    def _visible(self) -> list[QLayoutItem]:
-        return [item for item in self._items if not item.isEmpty()]
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._arrange(self.width(), apply=True)
 
-    def _arrange(self, rect: QRect, *, apply: bool) -> int:
-        """Lay items out left to right, wrapping; returns the height used."""
-        margins: QMargins = self.contentsMargins()
-        area = rect.marginsRemoved(margins)
-        spacing = self.spacing()
-        x, y, line_height = area.x(), area.y(), 0
-        line: list[tuple[QLayoutItem, QSize]] = []
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() in _RELAYOUT_EVENTS and watched in self._widgets:
+            self._relayout()
+        return False
+
+    def event(self, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.LayoutRequest:  # a child's size hint changed
+            self._relayout()
+        return super().event(event)
+
+    def _relayout(self) -> None:
+        self.updateGeometry()
+        self._arrange(self.width(), apply=True)
+
+    def _arrange(self, width: int, *, apply: bool) -> int:
+        """Lay widgets out left to right, wrapping at *width*; returns the height used."""
+        spacing = self._spacing
+        x = y = line_height = 0
+        line: list[tuple[QWidget, QSize]] = []
 
         def place_line() -> None:
-            # Centre each item vertically on its line, so labels and fields line up.
+            # Centre each widget vertically on its line, so labels and fields line up.
             if apply:
-                left = area.x()
-                for item, size in line:
+                left = 0
+                for widget, size in line:
                     top = y + (line_height - size.height()) // 2
-                    item.setGeometry(QRect(QPoint(left, top), size))
+                    widget.setGeometry(QRect(QPoint(left, top), size))
                     left += size.width() + spacing
 
-        for item in self._visible():
-            size = item.sizeHint().boundedTo(QSize(area.width(), 10**6))
-            size = size.expandedTo(item.minimumSize())
-            if line and x + size.width() > area.right() + 1:
+        for widget in self._visible():
+            size = widget.sizeHint().boundedTo(QSize(max(width, 1), 10**6))
+            size = size.expandedTo(widget.minimumSizeHint())
+            if line and x + size.width() > width:
                 place_line()
-                x = area.x()
+                x = 0
                 y += line_height + spacing
                 line, line_height = [], 0
-            line.append((item, size))
+            line.append((widget, size))
             x += size.width() + spacing
             line_height = max(line_height, size.height())
         place_line()
-        return y + line_height - rect.y() + margins.bottom()
+        return y + line_height
 
 
 def field(label: str | QLabel, *widgets: QWidget) -> QWidget:
-    """*widgets* with a label in front, kept together on one line of a :class:`FlowLayout`."""
+    """*widgets* with a label in front, kept together on one line of a :class:`FlowRow`."""
     holder = QWidget()
     row = QHBoxLayout(holder)
     row.setContentsMargins(0, 0, 0, 0)

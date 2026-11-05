@@ -132,6 +132,17 @@ class Table:
         copy._sort = self._sort
         return copy
 
+    def rows_copy(self, slots: np.ndarray) -> Table:
+        """A new, independent table of the rows at *slots*, in that order, with new oids.
+
+        Columns keep their order and kinds; history, filters, sort and listeners are not
+        copied. Used for "Copy Shown Rows to New Document".
+        """
+        slots = np.asarray(slots, dtype=np.int64)
+        return Table.from_columns(
+            {name: column.take(slots) for name, column in self._columns.items()}
+        )
+
     @property
     def next_oid(self) -> int:
         """The oid the next new row will get (oids are never reused)."""

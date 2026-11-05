@@ -19,17 +19,22 @@
 Each card owns one key in the table's filters (``panel:<n>``); the table ANDs them. Changes are
 applied after a short pause so typing or dragging a slider does not refilter on every event.
 Filters are view state, not edits: they are not undoable and do not mark the document modified.
+They are saved with the document (:meth:`FilterPanel.state`), as are named filter *sets*: saved
+groups of cards you can switch between ("Actives, MW < 450").
 """
 
 from __future__ import annotations
 
 import itertools
+import logging
 from collections.abc import Callable
+from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMenu,
     QScrollArea,
@@ -44,7 +49,9 @@ from chemsuite.core.table import events as ev
 from .cards import FilterCard, card_for
 
 APPLY_DELAY_MS = 120
+EXTRAS_KEY = "filters"
 _keys = itertools.count(1)
+log = logging.getLogger(__name__)
 
 
 class FilterPanel(QWidget):
@@ -52,6 +59,7 @@ class FilterPanel(QWidget):
         super().__init__(parent)
         self.table = table
         self.searcher = searcher  # runs structure cards' searches (None: no structure cards)
+        self.sets: dict[str, list[dict]] = {}  # named filter sets: saved card states
         self._cards: dict[FilterCard, str] = {}  # card -> filter key
         self._dirty: set[FilterCard] = set()
         self._stale: set[FilterCard] = set()
@@ -73,12 +81,20 @@ class FilterPanel(QWidget):
         self.clear_button = QToolButton()
         self.clear_button.setText("Remove All")
         self.clear_button.clicked.connect(self.remove_all)
+        self.sets_button = QToolButton()
+        self.sets_button.setText("Sets")
+        self.sets_button.setToolTip("Save these filters under a name, or switch to a saved set")
+        self.sets_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.sets_menu = QMenu(self.sets_button)
+        self.sets_menu.aboutToShow.connect(self._fill_sets_menu)
+        self.sets_button.setMenu(self.sets_menu)
         self.summary = QLabel()
         self.summary.setStyleSheet("color: palette(placeholder-text)")
 
         bar = QHBoxLayout()
         bar.addWidget(self.add_button)
         bar.addWidget(self.clear_button)
+        bar.addWidget(self.sets_button)
         bar.addStretch(1)
         self._cards_box = QVBoxLayout()
         self._cards_box.setSpacing(8)
@@ -146,6 +162,100 @@ class FilterPanel(QWidget):
         for card in self._cards:
             card.dispose()
         return super().close()
+
+    # -- saving and sets ----------------------------------------------------------------------
+    def card_states(self) -> list[dict]:
+        return [card.state() for card in self._cards]
+
+    def load_cards(self, states: list[Any]) -> int:
+        """Replace the cards with saved ones; returns how many could not be restored."""
+        skipped = 0
+        with self.table.batch():
+            self.remove_all()
+            for state in states:
+                column = state.get("column") if isinstance(state, dict) else None
+                kind = state.get("kind") if isinstance(state, dict) else None
+                if column not in self.table or kind not in (
+                    "range",
+                    "text",
+                    "category",
+                    "structure",
+                ):
+                    skipped += 1
+                    continue
+                if kind == "structure" and (
+                    self.searcher is None or self.table.kind(column) != "structure"
+                ):
+                    skipped += 1
+                    continue
+                if kind == "range" and self.table.kind(column) != "number":
+                    skipped += 1
+                    continue
+                try:
+                    self.add_filter(column, kind).restore(state)
+                except (TypeError, ValueError):
+                    log.exception("could not restore filter %r", state)
+                    skipped += 1
+            self.apply_now()
+        return skipped
+
+    def state(self) -> dict[str, Any]:
+        """The cards and filter sets, to save with the document ({} when there are none)."""
+        out: dict[str, Any] = {}
+        if self._cards:
+            out["cards"] = self.card_states()
+        if self.sets:
+            out["sets"] = {name: list(cards) for name, cards in self.sets.items()}
+        return out
+
+    def load_state(self, saved: dict[str, Any]) -> None:
+        sets = saved.get("sets")
+        if isinstance(sets, dict):
+            self.sets = {
+                str(name): cards for name, cards in sets.items() if isinstance(cards, list)
+            }
+        cards = saved.get("cards")
+        if isinstance(cards, list) and cards:
+            skipped = self.load_cards(cards)
+            if skipped:
+                log.warning("%d saved filter(s) no longer fit the table", skipped)
+
+    def save_set(self, name: str) -> None:
+        name = name.strip()
+        if not name:
+            raise ValueError("A filter set needs a name.")
+        self.sets[name] = self.card_states()
+
+    def apply_set(self, name: str) -> int:
+        """Switch to the saved set *name*; returns how many of its filters no longer fit."""
+        return self.load_cards(self.sets[name])
+
+    def delete_set(self, name: str) -> None:
+        self.sets.pop(name, None)
+
+    def ask_save_set(self) -> None:
+        name, ok = QInputDialog.getText(
+            self, "Save Filter Set", "Name for the current filters (an existing name is replaced):"
+        )
+        if ok and name.strip():
+            self.save_set(name)
+
+    def _fill_sets_menu(self) -> None:
+        menu = self.sets_menu
+        menu.clear()
+        save = menu.addAction("Save Current Filters as Set…")
+        save.setEnabled(bool(self._cards))
+        save.triggered.connect(lambda _c=False: self.ask_save_set())
+        if not self.sets:
+            return
+        menu.addSeparator()
+        for name, cards in self.sets.items():
+            action = menu.addAction(f"{name}  ({len(cards)})")
+            action.setToolTip(", ".join(str(c.get("column")) for c in cards))
+            action.triggered.connect(lambda _c=False, n=name: self.apply_set(n))
+        delete = menu.addMenu("Delete Set")
+        for name in self.sets:
+            delete.addAction(name).triggered.connect(lambda _c=False, n=name: self.delete_set(n))
 
     # -- applying -----------------------------------------------------------------------------
     def _mark_dirty(self, card: FilterCard) -> None:

@@ -49,7 +49,7 @@ from chemsuite.core.table.columns import NUMBER, TEXT
 from chemsuite.plotting.data import colorable_columns, number_columns, shown_oids
 from chemsuite.plotting.stats import CURVES
 
-from ..flow_layout import FlowLayout, compact, field
+from ..flow_layout import FlowRow, compact, field
 from .renderers import RENDERERS, Hover, PlotSpec
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
 
@@ -135,7 +135,7 @@ class PlotPanel(QWidget):
         compact(self.x, self.y, self.color, self.size, self.curve, self.guide)
         self._labels: dict[QWidget, QLabel] = {}
         self._fields: dict[QWidget, QWidget] = {}
-        controls = FlowLayout()
+        controls = FlowRow()
         controls.addWidget(self.kind)
         for title, widget in (
             ("X", self.x),
@@ -154,7 +154,7 @@ class PlotPanel(QWidget):
 
         self.mode_buttons: dict[str, QToolButton] = {}
         modes = QButtonGroup(self)
-        tools = FlowLayout()
+        tools = FlowRow()
         for mode, text, tip in (
             (ZOOM, "Zoom", "Drag to pan, scroll or right-drag to zoom; click a point to select"),
             (BOX, "Box", "Drag a rectangle to select (Shift adds, ⌘/Ctrl toggles)"),
@@ -189,8 +189,8 @@ class PlotPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.addLayout(controls)
-        layout.addLayout(tools)
+        layout.addWidget(controls)
+        layout.addWidget(tools)
         layout.addWidget(self.plot_widget, 1)
         layout.addWidget(self.status)
 

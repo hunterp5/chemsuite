@@ -70,6 +70,7 @@ from .column_actions import ColumnActions
 from .commands import apply_shortcuts, register
 from .error_report import details_of, show_error, show_log_folder
 from .filters.cards import FilterCard
+from .filters.panel import EXTRAS_KEY as FILTERS_KEY
 from .filters.panel import FilterPanel
 from .find_replace import FindReplaceDialog
 from .jobs import QUEUE, QUICK, Job, JobRunner
@@ -145,15 +146,25 @@ class Workspace:
     """Everything that belongs to one open table."""
 
     def __init__(
-        self, table: Table, path: Path | None = None, extras: dict[str, Any] | None = None
+        self,
+        table: Table,
+        path: Path | None = None,
+        extras: dict[str, Any] | None = None,
+        *,
+        unsaved: bool = False,
     ) -> None:
         self.table = table
+        #: new content that was never saved (e.g. rows copied from another document)
+        self._unsaved = unsaved
         self.path = path
         self.selection = Selection(table)
         self.model = TableModel(table)
         self.lists = RowLists(table)
         if extras and LISTS_KEY in extras:
             self.lists.load_json(extras[LISTS_KEY])
+        filters = (extras or {}).get(FILTERS_KEY)
+        #: filter cards and filter sets saved with the document
+        self.saved_filters: dict[str, Any] = filters if isinstance(filters, dict) else {}
         search = (extras or {}).get(ADVANCED_KEY)
         #: the advanced search saved with the document
         self.saved_search: dict[str, Any] = search if isinstance(search, dict) else {}
@@ -168,8 +179,12 @@ class Workspace:
 
     @property
     def is_modified(self) -> bool:
-        """Unsaved table edits or list changes."""
-        return not self.table.history.is_clean or self.lists.revision != self._saved_lists
+        """Unsaved table edits or list changes, or content that was never saved."""
+        return (
+            self._unsaved
+            or not self.table.history.is_clean
+            or self.lists.revision != self._saved_lists
+        )
 
     def extras(self) -> dict[str, Any]:
         """Document state saved beside the table."""
@@ -178,6 +193,7 @@ class Workspace:
     def mark_saved(self, checkpoint: Any, lists_revision: int) -> None:
         self.table.history.mark_clean(checkpoint)
         self._saved_lists = lists_revision
+        self._unsaved = False
 
     def close(self) -> None:
         self.model.close()
@@ -287,6 +303,9 @@ class MainWindow(QMainWindow):
         )
         self._filters = FilterPanel(workspace.table, searcher=self._searcher)
         self.filter_dock.setWidget(self._filters)
+        self._filters.load_state(workspace.saved_filters)
+        if self._filters.cards:
+            self.filter_dock.show()  # say why rows are hidden
         self._advanced = AdvancedSearchPanel(
             workspace.table,
             workspace.selection,
@@ -676,6 +695,13 @@ class MainWindow(QMainWindow):
         self._building = "Data"
         data.addSeparator()
         data.addAction(A("data.show_all_rows", "Show All Rows", self.show_all_rows))
+        data.addAction(
+            A(
+                "data.copy_shown_rows",
+                "Copy Shown Rows to New Document",
+                self.copy_shown_rows_to_new_document,
+            )
+        )
 
         self._tool_actions: dict[str, QAction] = {}
         menus = {
@@ -1050,6 +1076,19 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Pick a cell with a valid structure to copy", 4000)
 
     # -- files -------------------------------------------------------------------------------
+    def copy_shown_rows_to_new_document(self) -> MainWindow | None:
+        """A new window holding the rows the filters and searches leave shown, in view order."""
+        table = self.workspace.table
+        shown = table.view()
+        if not len(shown):
+            self.show_message("No rows are shown")
+            return None
+        copy = table.rows_copy(shown)
+        window = MainWindow(self._runner, self._images, Workspace(copy, unsaved=True))
+        window.show()
+        window.show_message(f"{len(shown):,} of {len(table):,} rows from {self.document_name}")
+        return window
+
     def new_window(self) -> MainWindow:
         window = MainWindow(self._runner, self._images)
         window.show()
@@ -1119,6 +1158,8 @@ class MainWindow(QMainWindow):
             extras[PANELS_KEY] = self.panel_states()
         if self.advanced_search.state():
             extras[ADVANCED_KEY] = self.advanced_search.state()
+        if self.filters.state():
+            extras[FILTERS_KEY] = self.filters.state()
         saved: list[bool] = []
 
         def work(job: Job) -> None:

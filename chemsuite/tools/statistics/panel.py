@@ -56,7 +56,7 @@ from chemsuite.analysis.statistics import (
     run_test,
     summarize,
 )
-from chemsuite.app.flow_layout import FlowLayout, compact, field
+from chemsuite.app.flow_layout import FlowRow, compact, field
 from chemsuite.app.jobs import QUICK
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table import Changed
@@ -300,13 +300,13 @@ class CorrelationTab(QWidget):
         self.grid.cellDoubleClicked.connect(self._scatter)
         copy = QPushButton("Copy Table")
         copy.clicked.connect(lambda: copy_table(self.grid))
-        top = FlowLayout()
+        top = FlowRow()
         top.addWidget(field("Method:", self.method))
         top.addWidget(self.calculate_button)
         top.addWidget(copy)
         self.note.setWordWrap(True)
         layout = QVBoxLayout(self)
-        layout.addLayout(top)
+        layout.addWidget(top)
         layout.addWidget(self.note)
         layout.addWidget(self.grid, 1)
         self.method.currentIndexChanged.connect(lambda _i: self.refresh())

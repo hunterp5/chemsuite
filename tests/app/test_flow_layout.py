@@ -25,23 +25,31 @@ pytestmark = gui
 MAX_PANEL_MIN_WIDTH = 300
 
 
-def test_flow_layout_wraps_instead_of_widening(qtbot) -> None:
-    from PySide6.QtWidgets import QPushButton, QWidget
+def test_flow_row_wraps_instead_of_widening(qtbot) -> None:
+    from PySide6.QtWidgets import QPushButton
 
-    from chemsuite.app.flow_layout import FlowLayout
+    from chemsuite.app.flow_layout import FlowRow
 
-    host = QWidget()
-    qtbot.addWidget(host)
-    flow = FlowLayout(host)
+    flow = FlowRow()
+    qtbot.addWidget(flow)
     buttons = [QPushButton(f"Button number {i}") for i in range(6)]
     for button in buttons:
         flow.addWidget(button)
     widest = max(b.minimumSizeHint().width() for b in buttons)
-    assert flow.minimumSize().width() == widest
+    assert flow.minimumSizeHint().width() == widest
     one_line = flow.heightForWidth(flow.sizeHint().width())
     assert flow.heightForWidth(widest) > 3 * one_line  # one button per line
+    flow.show()
+    flow.resize(widest, flow.heightForWidth(widest))
+    assert buttons[1].y() > buttons[0].y()  # placed on separate lines
+    width = flow.sizeHint().width()
     buttons[0].hide()
-    assert flow.sizeHint().width() < sum(b.sizeHint().width() for b in buttons)
+    assert flow.sizeHint().width() < width
+    assert buttons[0].isHidden()
+    hidden = QPushButton("hidden before adding")
+    hidden.hide()
+    flow.addWidget(hidden)
+    assert hidden.isHidden()  # stays hidden: adding does not show it
 
 
 def test_plot_panels_can_be_docked_narrow(window) -> None:

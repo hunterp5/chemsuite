@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from chemsuite.app.flow_layout import FlowLayout, compact, field
+from chemsuite.app.flow_layout import FlowRow, compact, field
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table import Changed
 from chemsuite.plotting.data import number_columns, numbers, shown_oids
@@ -103,7 +103,7 @@ class SarMatrixPanel(QWidget):
         copy.clicked.connect(self.copy_text)
 
         compact(self.rows_axis, self.columns_axis, self.pages_axis, self.activity, self.page)
-        controls = FlowLayout()
+        controls = FlowRow()
         for title, widget in (
             ("Rows:", self.rows_axis),
             ("Columns:", self.columns_axis),
@@ -113,14 +113,14 @@ class SarMatrixPanel(QWidget):
             ("Page:", self.page),
         ):
             controls.addWidget(field(title, widget))
-        options = FlowLayout()
+        options = FlowRow()
         options.addWidget(self.predict)
         options.addWidget(self.higher_is_better)
         options.addWidget(copy)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.addLayout(controls)
-        layout.addLayout(options)
+        layout.addWidget(controls)
+        layout.addWidget(options)
         layout.addWidget(self.grid, 1)
         layout.addWidget(self.status)
 

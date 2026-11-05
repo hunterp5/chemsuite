@@ -58,7 +58,7 @@ from chemsuite.core.table.criteria import (
     ops_for,
 )
 
-from .flow_layout import FlowLayout, compact
+from .flow_layout import FlowRow, compact
 from .structure_search import QueryInput, StructureSearcher
 
 FILTER_KEY = "advanced"
@@ -101,7 +101,7 @@ class CriterionRow(QFrame):
         self.error.setStyleSheet("color: #d33")
         self.error.hide()
 
-        flow = FlowLayout()
+        flow = FlowRow()
         for widget in (
             self.column,
             self.op,
@@ -117,7 +117,7 @@ class CriterionRow(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(4)
-        layout.addLayout(flow)
+        layout.addWidget(flow)
         layout.addWidget(self.error)
 
         self.refresh_columns()
@@ -260,7 +260,7 @@ class AdvancedSearchPanel(QWidget):
         self.recent_menu = QMenu(self.recent_button)
         self.recent_menu.aboutToShow.connect(self._fill_recent)
         self.recent_button.setMenu(self.recent_menu)
-        header = FlowLayout()
+        header = FlowRow()
         header.addWidget(QLabel("Match"))
         header.addWidget(self.combine)
         header.addWidget(QLabel("of these conditions"))
@@ -292,10 +292,10 @@ class AdvancedSearchPanel(QWidget):
         to_list_row.setSpacing(4)
         to_list_row.addWidget(self.list_button)
         to_list_row.addWidget(self.list_name)
-        actions = FlowLayout()
+        actions = FlowRow()
         for widget in (self.show_button, self.select_button, self.clear_button, to_list):
             actions.addWidget(widget)
-        tools = FlowLayout()
+        tools = FlowRow()
         tools.addWidget(add)
         tools.addWidget(self.recent_button)
         self.status = QLabel()
@@ -304,10 +304,10 @@ class AdvancedSearchPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.addLayout(header)
+        layout.addWidget(header)
         layout.addWidget(scroll, 1)
-        layout.addLayout(tools)
-        layout.addLayout(actions)
+        layout.addWidget(tools)
+        layout.addWidget(actions)
         layout.addWidget(self.status)
         self.setMinimumWidth(220)
 

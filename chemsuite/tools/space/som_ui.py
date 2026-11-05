@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.som import MAX_SIDE, Som, default_size, som
-from chemsuite.app.flow_layout import FlowLayout, compact, field
+from chemsuite.app.flow_layout import FlowRow, compact, field
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table import Changed
 from chemsuite.core.table.columns import NumberColumn
@@ -196,13 +196,13 @@ class SomPanel(QWidget):
         self.status = QLabel()
         self.status.setWordWrap(True)
         compact(self.value)
-        controls = FlowLayout()
+        controls = FlowRow()
         controls.addWidget(field("Show:", self.value))
         controls.addWidget(self.aggregate)
         controls.addWidget(self.higher_is_better)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.addLayout(controls)
+        layout.addWidget(controls)
         layout.addWidget(self.grid, 1)
         layout.addWidget(self.status)
         self._fill_values(initial=True)

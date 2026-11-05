@@ -186,6 +186,27 @@ class StructureCard(FilterCard):
         self._highlighting = wanted is not None
 
     # -- FilterCard ---------------------------------------------------------------------------
+    def body_state(self) -> dict:
+        query = self.current_query()
+        return {
+            "query": query.text,
+            "mode": query.mode,
+            "stereo": query.stereo,
+            "threshold": query.threshold,
+            "highlight": self.highlight_matches,
+        }
+
+    def restore_body(self, state: dict) -> None:
+        mode = state.get("mode")
+        threshold = state.get("threshold")
+        query = StructureQuery(
+            str(state.get("query", "")),
+            mode if mode in ("substructure", "exact", "similarity") else "substructure",
+            stereo=bool(state.get("stereo", False)),
+            threshold=float(threshold) if isinstance(threshold, int | float) else 0.7,
+        )
+        self.set_query(query, highlight=bool(state.get("highlight", True)))
+
     @property
     def hits(self) -> frozenset[int] | None:
         return self._hits

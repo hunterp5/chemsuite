@@ -104,7 +104,7 @@ alone (as a filter card), selected, or added to a list. Substructure matches are
 table (Edit ▸ Clear Structure Highlighting). Speed: pattern fingerprints are cached per column, and
 the bench (`tests/analysis/test_bench_structure_search.py`) measures 0.5–0.9 s over 200k rows
 once they are cached. The first search of a column computes them (about 8 s at 200k rows). Not
-yet: saving structure filters with the document (with the rest of item 4).
+yet: nothing (structure filters are saved with the other filters, see item 4).
 
 **Status (2026-11-05): advanced search (item 2) built.** Edit ▸ Advanced Search… opens a panel
 docked with Filters. Each condition picks a column or "any column", an operator that fits the column
@@ -114,6 +114,13 @@ panel), selected, or added to a list. Text and number conditions follow edits as
 Structure conditions (substructure or exact) run as background searches and run again when the
 structure column changes. The search, whether it is showing, and the last 10 searches are
 saved with the document. Show All Rows clears it. Core: `chemsuite/core/table/criteria.py`.
+
+**Status (2026-11-05): filters (item 4) built.** Filter cards are saved with the document,
+including their settings and on/off state, and the Filters panel opens on load when there are
+any. Named filter sets (Filters ▸ Sets) save the current cards under a name and switch between
+sets. Data ▸ Copy Shown Rows to New Document opens the shown rows, in view order, as a new
+unsaved document. Like the other view state, changing filters does not mark the document
+modified.
 
 1. **Structure search** (Edit ▸ Structure Search…, and a card in the Filters panel):
    - **Modes:**

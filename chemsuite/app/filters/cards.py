@@ -144,6 +144,30 @@ class FilterCard(QFrame):
     def dispose(self) -> None:
         """The card is being removed: stop background work and undo side effects."""
 
+    # -- saving -------------------------------------------------------------------------------
+    def state(self) -> dict:
+        """The card's settings as JSON-ready data (see :meth:`restore`)."""
+        return {
+            "column": self.column,
+            "kind": self.kind,
+            "enabled": self.is_enabled,
+            "negate": self.negated,
+            **self.body_state(),
+        }
+
+    def restore(self, state: dict) -> None:
+        """Apply settings saved by :meth:`state` (unknown or bad values are ignored)."""
+        self.not_button.setChecked(bool(state.get("negate", False)))
+        self.restore_body(state)
+        self.set_enabled(bool(state.get("enabled", True)))
+        self.changed.emit()
+
+    def body_state(self) -> dict:
+        return {}
+
+    def restore_body(self, state: dict) -> None:
+        pass
+
     def rename(self, new: str) -> None:
         self.column = new
         self._update_title()
@@ -236,6 +260,16 @@ class RangeCard(FilterCard):
     def bounds(self) -> tuple[float | None, float | None]:
         return self._low, self._high
 
+    def body_state(self) -> dict:
+        return {"low": self._low, "high": self._high, "blanks": self.blanks.isChecked()}
+
+    def restore_body(self, state: dict) -> None:
+        def number(value) -> float | None:
+            return float(value) if isinstance(value, int | float) else None
+
+        self.blanks.setChecked(bool(state.get("blanks", True)))
+        self.set_bounds(number(state.get("low")), number(state.get("high")))
+
     def build(self, negate: bool) -> Filter | None:
         low, high = self._low, self._high
         include_blank = self.blanks.isChecked()
@@ -305,6 +339,20 @@ class TextCard(FilterCard):
         self.query.textChanged.connect(lambda _t: self.changed.emit())
         self.mode.currentIndexChanged.connect(lambda _i: self.changed.emit())
         self.case.toggled.connect(lambda _on: self.changed.emit())
+
+    def body_state(self) -> dict:
+        return {
+            "query": self.query.text(),
+            "mode": self.mode.currentData(),
+            "case": self.case.isChecked(),
+        }
+
+    def restore_body(self, state: dict) -> None:
+        self.query.setText(str(state.get("query", "")))
+        index = self.mode.findData(state.get("mode"))
+        if index >= 0:
+            self.mode.setCurrentIndex(index)
+        self.case.setChecked(bool(state.get("case", False)))
 
     def build(self, negate: bool) -> Filter | None:
         text = self.query.text()
@@ -406,6 +454,15 @@ class CategoryCard(FilterCard):
         finally:
             self.values.blockSignals(False)
         self.changed.emit()
+
+    def body_state(self) -> dict:
+        return {"unticked": sorted(self._unchecked)}
+
+    def restore_body(self, state: dict) -> None:
+        unticked = state.get("unticked")
+        if isinstance(unticked, list):
+            self._unchecked = {str(v) for v in unticked}
+            self.refresh()
 
     def build(self, negate: bool) -> Filter | None:
         # Expressed as "hide the unticked values", so values too rare to be listed stay visible.
