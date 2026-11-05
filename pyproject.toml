@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chemsuite"
+version = "0.1.0.dev0"
+description = "Desktop medicinal chemistry workbench (PySide6 + RDKit)"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Hunter Picard" }]
+dependencies = [
+    "PySide6-Essentials>=6.8",  # Essentials only: no QtWebEngine, no Qt3D, no QtMultimedia
+    "pyqtgraph>=0.13.7",
+    "rdkit>=2025.9.1",          # official PyPI name; never install rdkit-pypi alongside it
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "scikit-learn>=1.5",
+    "umap-learn>=0.5.7",        # base install by decision (docs/PLAN.md §5); imported lazily
+    "openpyxl>=3.1",            # Excel (.xlsx) read/write; base install by decision
+]
+
+[project.optional-dependencies]
+confab = ["openbabel>=3.2.0"]
+conforge = ["cdpkit"]
+dev = [
+    "pytest>=8",
+    "pytest-qt>=4.4",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["chemsuite*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "bench: performance benchmarks; run with `pytest -m bench`",
+]
+qt_api = "pyside6"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["chemsuite", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",   # pycodestyle + pyflakes
+    "I",             # import order
+    "B",             # bugbear
+    "UP",            # pyupgrade
+    "SIM",           # simplifications
+    "BLE001",        # no blind `except Exception` (allowed only where it logs and re-raises,
+    "S110",          #   or at a top-level handler with an explicit noqa and a reason)
+    "RUF100",        # no stale noqa comments
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["chemsuite"]
