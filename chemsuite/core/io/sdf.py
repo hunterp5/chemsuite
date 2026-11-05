@@ -189,11 +189,14 @@ def write_sdf(
     columns: Sequence[str] | None = None,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
+    all_conformers: bool = False,
 ) -> None:
     """Write rows as an SD file. Other columns become data fields (all of them by default).
 
     *structure* defaults to the first structure column. A ``Title`` column becomes each
     record's title line. Invalid structures read from a molfile are written back as read.
+    With *all_conformers*, a row whose molecule has several conformers is written once per
+    conformer (lowest energy first, as stored), with a ``Conformer`` field numbering them.
     """
     structure = structure or first_structure_column(table)
     column = table.column(structure)
@@ -209,26 +212,34 @@ def write_sdf(
             values = {name: table.column(name).displays(chunk) for name in fields}
             for i, slot in enumerate(chunk.tolist()):
                 title = titles.display(slot) if titles is not None else ""
-                handle.write(_molblock(column, slot, title))
-                handle.write("\n")
-                for name in fields:
-                    handle.write(f"> <{name}>\n{values[name][i]}\n\n")
-                handle.write("$$$$\n")
+                mol = column.mol(slot) if all_conformers else None
+                conformers = mol.GetNumConformers() if mol is not None else 0
+                for index in range(max(1, conformers)):
+                    conformer = index if conformers > 1 else None
+                    handle.write(_molblock(column, slot, title, conformer))
+                    handle.write("\n")
+                    if conformer is not None:
+                        handle.write(f"> <Conformer>\n{index + 1}\n\n")
+                    for name in fields:
+                        handle.write(f"> <{name}>\n{values[name][i]}\n\n")
+                    handle.write("$$$$\n")
             if progress is not None:
                 progress(min(start + 2048, len(slots)), len(slots))
 
 
-def _molblock(column: StructureColumn, slot: int, title: str) -> str:
+def _molblock(column: StructureColumn, slot: int, title: str, conformer: int | None = None) -> str:
+    """One molfile; *conformer* picks a conformer by position (default: the first)."""
     mol = column.mol(slot)
     if mol is not None:
         with rdBase.BlockLogs():
             if not mol.GetNumConformers():
                 mol = Chem.Mol(mol)
                 rdDepictor.Compute2DCoords(mol)
+            conf_id = mol.GetConformers()[conformer].GetId() if conformer is not None else -1
             try:
-                block = Chem.MolToMolBlock(mol)
+                block = Chem.MolToMolBlock(mol, confId=conf_id)
             except (RuntimeError, ValueError):
-                block = Chem.MolToMolBlock(mol, kekulize=False)
+                block = Chem.MolToMolBlock(mol, kekulize=False, confId=conf_id)
     else:
         text = column.display(slot)
         block = text if looks_like_molblock(text) else _EMPTY_MOLBLOCK

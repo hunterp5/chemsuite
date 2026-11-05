@@ -412,6 +412,19 @@ def test_apply_results_never_overwrites_a_structure_column() -> None:
     assert names == {"Structure": "Structure (2)"}
 
 
+def test_apply_results_overwrites_structures_with_structures() -> None:
+    from chemsuite.core.table.columns import StructureColumn
+
+    table = Table()
+    table.add_rows({"Structure 3D": StructureColumn.from_texts(["C", "CC"])}, undoable=False)
+    incoming = StructureColumn.from_texts(["N"])
+    names = table.apply_results(
+        {"Structure 3D": (table.oids[:1], incoming)}, label="r", overwrite=True
+    )
+    assert names == {"Structure 3D": "Structure 3D"}
+    assert table.column("Structure 3D").displays(table.slots_of(table.oids)) == ["N", "CC"]
+
+
 def test_apply_results_position() -> None:
     table = Table()
     table.add_rows({"A": [1], "B": [2]}, undoable=False)

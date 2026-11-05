@@ -508,7 +508,8 @@ class Table:
 
         *results* maps a requested column name to ``(oids, values)``. An existing column is
         reused when every cell in it is blank, or always with *overwrite* (rerunning a tool
-        updates its columns; rows outside *oids* keep their values). Otherwise the result goes
+        updates its columns; rows outside *oids* keep their values). A structure column is only
+        ever overwritten by structures (regenerated conformers). Otherwise the result goes
         to a new column named ``name (2)``, ``name (3)``…, inserted at *position* (default: the
         end). Returns ``{requested name: actual name}``.
         """
@@ -525,7 +526,8 @@ class Table:
             incoming = values if isinstance(values, Column) else column_from_values(values)
             existing = self._columns.get(requested)
             reusable = existing is not None and (
-                existing.is_all_blank() or (overwrite and existing.kind != STRUCTURE)
+                existing.is_all_blank()
+                or (overwrite and (existing.kind != STRUCTURE or incoming.kind == STRUCTURE))
             )
             if reusable and requested not in taken:
                 self._put_ops(requested, oids, incoming, ops)

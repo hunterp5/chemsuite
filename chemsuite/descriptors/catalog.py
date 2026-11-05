@@ -61,6 +61,66 @@ def _murcko(mol: Chem.Mol) -> str:
     return Chem.MolToSmiles(MurckoScaffold.GetScaffoldForMol(mol))
 
 
+def _shape(fn: Callable[..., float]) -> Callable[[Chem.Mol], float]:
+    """A 3D descriptor of the first (lowest-energy) conformer; NaN without 3D coordinates."""
+
+    def compute(mol: Chem.Mol) -> float:
+        if not mol.GetNumConformers() or not mol.GetConformer().Is3D():
+            raise ValueError("no 3D conformer")
+        return fn(mol)
+
+    compute.__name__ = fn.__name__
+    return compute
+
+
+SHAPE_GROUP = "3D Shape"
+_SHAPE_HELP = " Needs 3D structures (Chemistry ▸ Generate Conformers); uses the first conformer."
+
+_SHAPES = (
+    ("PMI1", "PMI 1", rdMolDescriptors.CalcPMI1, 1, "Smallest principal moment of inertia."),
+    ("PMI2", "PMI 2", rdMolDescriptors.CalcPMI2, 1, "Middle principal moment of inertia."),
+    ("PMI3", "PMI 3", rdMolDescriptors.CalcPMI3, 1, "Largest principal moment of inertia."),
+    (
+        "NPR1",
+        "NPR1",
+        rdMolDescriptors.CalcNPR1,
+        3,
+        "Normalised PMI ratio I1/I3: 0 rod, 0.5 disc, 1 sphere (x of the PMI triangle).",
+    ),
+    (
+        "NPR2",
+        "NPR2",
+        rdMolDescriptors.CalcNPR2,
+        3,
+        "Normalised PMI ratio I2/I3 (y of the PMI triangle).",
+    ),
+    ("PBF", "PBF", rdMolDescriptors.CalcPBF, 3, "Plane of best fit: mean distance from it (Å)."),
+    (
+        "RadiusOfGyration",
+        "Radius of Gyration",
+        rdMolDescriptors.CalcRadiusOfGyration,
+        2,
+        "Size of the 3D structure (Å).",
+    ),
+    ("Asphericity", "Asphericity", rdMolDescriptors.CalcAsphericity, 3, "0 for a sphere."),
+    ("Eccentricity", "Eccentricity", rdMolDescriptors.CalcEccentricity, 3, "0 for a sphere."),
+    (
+        "SpherocityIndex",
+        "Spherocity Index",
+        rdMolDescriptors.CalcSpherocityIndex,
+        3,
+        "1 for a sphere, 0 for a flat molecule.",
+    ),
+    (
+        "InertialShapeFactor",
+        "Inertial Shape Factor",
+        rdMolDescriptors.CalcInertialShapeFactor,
+        5,
+        "I2 / (I1 · I3).",
+    ),
+)
+
+
 def _generic_murcko(mol: Chem.Mol) -> str:
     core = MurckoScaffold.GetScaffoldForMol(mol)
     return Chem.MolToSmiles(MurckoScaffold.MakeScaffoldGeneric(core)) if core.GetNumAtoms() else ""
@@ -261,6 +321,10 @@ _ITEMS: tuple[Descriptor, ...] = (
         "Gasteiger charges.",
     ),
     # -- identifiers --
+    *(
+        Descriptor(key, title, SHAPE_GROUP, _shape(fn), decimals, help + _SHAPE_HELP)
+        for key, title, fn, decimals, help in _SHAPES
+    ),
     Descriptor("SMILES", "Canonical SMILES", "Identifiers", Chem.MolToSmiles, TEXT),
     Descriptor("INCHIKEY", "InChIKey", "Identifiers", inchi.MolToInchiKey, TEXT),
     Descriptor("INCHI", "InChI", "Identifiers", inchi.MolToInchi, TEXT),

@@ -28,7 +28,7 @@ from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text
 from chemsuite.core.table.columns import Column, NumberColumn, TextColumn
 
-from .catalog import CATALOG
+from .catalog import CATALOG, SHAPE_GROUP
 
 #: A structure cell for a worker: its RDKit blob, or its text when not parsed yet (None: blank).
 Cell = bytes | str | None
@@ -46,6 +46,17 @@ def _mol(cell: Cell) -> Chem.Mol | None:
     return None
 
 
+def _as_drawn(mol: Chem.Mol) -> Chem.Mol:
+    """A 3D structure carries explicit hydrogens; 2D descriptors (H counts, SMILES…) see it
+    without them, as drawn, so they match the same compound's 2D cell."""
+    if not mol.GetNumConformers() or not mol.GetConformer().Is3D():
+        return mol
+    try:
+        return Chem.RemoveHs(mol)
+    except _FAILURES:
+        return mol
+
+
 def compute_chunk(args: tuple[tuple[str, ...], Sequence[Cell]]) -> dict[str, list]:
     """``{key: values}`` for one chunk (a picklable worker entry point).
 
@@ -57,13 +68,14 @@ def compute_chunk(args: tuple[tuple[str, ...], Sequence[Cell]]) -> dict[str, lis
     with rdBase.BlockLogs():
         for cell in cells:
             mol = _mol(cell)
+            drawn = _as_drawn(mol) if mol is not None else None
             for spec in specs:
                 value: object
                 if mol is None:
                     value = "" if spec.is_text else np.nan
                 else:
                     try:
-                        value = spec.fn(mol)
+                        value = spec.fn(mol if spec.group == SHAPE_GROUP else drawn)
                     except _FAILURES:
                         value = "" if spec.is_text else np.nan
                     if not spec.is_text:

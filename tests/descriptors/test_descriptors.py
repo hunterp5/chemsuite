@@ -44,7 +44,11 @@ def test_catalog_is_consistent() -> None:
 
 
 def test_every_descriptor_runs_on_a_drug() -> None:
-    out = compute_chunk((tuple(CATALOG), [parse_structure(ASPIRIN)[0]]))
+    from chemsuite.conformers.etkdg import generate
+    from chemsuite.core.mols import mol_from_blob, mol_to_blob
+
+    three_d = generate(mol_from_blob(parse_structure(ASPIRIN)[0])).mol  # for the 3D shapes
+    out = compute_chunk((tuple(CATALOG), [mol_to_blob(three_d)]))
     for key, (value,) in out.items():
         spec = CATALOG[key]
         if spec.is_text:

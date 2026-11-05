@@ -35,10 +35,14 @@ _BOND_PX = 22.0
 
 
 def depiction_mol(mol: Chem.Mol) -> Chem.Mol:
-    """*mol* itself if it has 2D coordinates, else a copy with a computed 2D layout."""
+    """*mol* itself if it has 2D coordinates, else a copy with a computed 2D layout.
+
+    3D structures (conformers) are drawn without their explicit hydrogens, as chemists draw.
+    """
     if mol.GetNumConformers() and not mol.GetConformer().Is3D():
         return mol
-    copy = Chem.Mol(mol)
+    with rdBase.BlockLogs():
+        copy = Chem.RemoveHs(mol) if mol.GetNumConformers() else Chem.Mol(mol)
     copy.RemoveAllConformers()
     with rdBase.BlockLogs():
         rdDepictor.Compute2DCoords(copy)
