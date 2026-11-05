@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from concurrent.futures import Executor
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -129,6 +130,70 @@ def load_table(
     return table
 
 
+@dataclass(frozen=True, eq=False)
+class ParseChunk:
+    """Structure texts snapshotted from the table, with their parse results once computed."""
+
+    column: str
+    oids: np.ndarray
+    texts: list[str]
+    blobs: list[bytes] | None = None
+
+
+def pending_structure_chunks(
+    table: Table, columns: Sequence[str] | None = None, *, chunk: int = PARSE_CHUNK
+) -> list[ParseChunk]:
+    """Snapshot every not-yet-parsed structure cell (call on the thread that owns the table)."""
+    names = columns or [
+        n for n in table.column_names if isinstance(table.column(n), StructureColumn)
+    ]
+    out: list[ParseChunk] = []
+    for name in names:
+        column = table.column(name)
+        if not isinstance(column, StructureColumn):
+            raise TypeError(f"column {name!r} is not a structure column")
+        pending = np.flatnonzero(column.pending_mask())
+        for i in range(0, len(pending), chunk):
+            slots = pending[i : i + chunk]
+            out.append(ParseChunk(name, table.oids[slots].copy(), column.displays(slots)))
+    return out
+
+
+def parse_chunks(
+    chunks: Iterable[ParseChunk],
+    *,
+    executor: Executor | None = None,
+    cancel: CancelToken | None = None,
+) -> Iterable[ParseChunk]:
+    """Parse snapshotted chunks (safe on any thread; in worker processes with *executor*)."""
+    chunks = list(chunks)
+    texts = (c.texts for c in chunks)
+    for parsed, blobs in zip(chunks, ordered_map(parse_structures, texts, executor), strict=True):
+        check(cancel)
+        yield ParseChunk(parsed.column, parsed.oids, parsed.texts, blobs)
+
+
+def apply_parsed(table: Table, chunk: ParseChunk) -> int:
+    """Store one parsed chunk; returns how many of its cells were invalid.
+
+    Rows deleted or edited since the snapshot are skipped: their text no longer matches, so the
+    result would describe a structure that is not there any more.
+    """
+    if chunk.blobs is None:
+        raise ValueError("chunk has not been parsed")
+    if chunk.column not in table or not isinstance(table.column(chunk.column), StructureColumn):
+        return 0
+    keep = [
+        i
+        for i, oid in enumerate(chunk.oids.tolist())
+        if table.has_oid(oid) and table.cell(chunk.column, oid) == chunk.texts[i]
+    ]
+    if not keep:
+        return 0
+    table.fill_structures(chunk.column, chunk.oids[keep], [chunk.blobs[i] for i in keep])
+    return sum(1 for i in keep if not chunk.blobs[i])
+
+
 def parse_pending_structures(
     table: Table,
     *,
@@ -137,53 +202,20 @@ def parse_pending_structures(
     cancel: CancelToken | None = None,
     columns: Sequence[str] | None = None,
 ) -> int:
-    """Parse every not-yet-parsed structure cell; returns how many cells were invalid.
+    """Snapshot, parse and apply in one call (for scripts and tests); returns invalid count.
 
-    Texts are snapshotted per chunk, parsed (in worker processes if *executor* is given) and
-    written back with :meth:`Table.fill_structures`, which must run on the thread that owns the
-    table. A row deleted or edited meanwhile is skipped: its text no longer matches.
+    The GUI runs :func:`parse_chunks` on a worker thread and :func:`apply_parsed` on the GUI
+    thread instead, so the window stays responsive while a large file is parsed.
     """
-    names = columns or [
-        n for n in table.column_names if isinstance(table.column(n), StructureColumn)
-    ]
-    invalid = 0
-    for name in names:
-        column = table.column(name)
-        assert isinstance(column, StructureColumn)
-        pending = np.flatnonzero(column.pending_mask())
-        oid_chunks = [
-            table.oids[pending[i : i + PARSE_CHUNK]].copy()
-            for i in range(0, len(pending), PARSE_CHUNK)
-        ]
-        text_chunks = [
-            column.displays(pending[i : i + PARSE_CHUNK])
-            for i in range(0, len(pending), PARSE_CHUNK)
-        ]
-        done = 0
-        for oids, texts, blobs in zip(
-            oid_chunks,
-            text_chunks,
-            ordered_map(parse_structures, text_chunks, executor),
-            strict=True,
-        ):
-            check(cancel)
-            keep = [
-                i for i, oid in enumerate(oids.tolist()) if _unchanged(table, name, oid, texts[i])
-            ]
-            if keep:
-                table.fill_structures(name, oids[keep], [blobs[i] for i in keep])
-                invalid += sum(1 for i in keep if not blobs[i])
-            done += len(oids)
-            if progress is not None:
-                progress(done, len(pending))
+    chunks = pending_structure_chunks(table, columns)
+    total = sum(len(c.oids) for c in chunks)
+    invalid = done = 0
+    for parsed in parse_chunks(chunks, executor=executor, cancel=cancel):
+        invalid += apply_parsed(table, parsed)
+        done += len(parsed.oids)
+        if progress is not None:
+            progress(done, total)
     return invalid
-
-
-def _unchanged(table: Table, name: str, oid: int, text: str) -> bool:
-    if name not in table or not table.has_oid(oid):
-        return False
-    column = table.column(name)
-    return isinstance(column, StructureColumn) and table.cell(name, oid) == text
 
 
 def save_table(

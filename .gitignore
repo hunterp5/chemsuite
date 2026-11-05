@@ -6,7 +6,7 @@ build/
 dist/
 
 # Environments
-.venv/
+.venv
 venv/
 
 # Tooling caches
@@ -20,3 +20,6 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Claude Code per-user settings
+.claude/settings.local.json

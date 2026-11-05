@@ -113,6 +113,22 @@ class Table:
         table._next_oid = max(last + 1, next_oid or 1)
         return table
 
+    def snapshot(self) -> Table:
+        """An independent copy of the data (no history, filters or listeners).
+
+        Cheap: numeric arrays are copied, strings and molecule blobs are immutable and shared.
+        Use it to hand a consistent table to a background save or export while the user keeps
+        editing (and background parsing keeps filling structures) on the GUI thread.
+        """
+        everything = np.arange(len(self._oids))
+        copy = Table.from_columns(
+            {name: column.take(everything) for name, column in self._columns.items()},
+            oids=self._oids,
+            next_oid=self._next_oid,
+        )
+        copy._sort = self._sort
+        return copy
+
     @property
     def next_oid(self) -> int:
         """The oid the next new row will get (oids are never reused)."""
@@ -346,6 +362,28 @@ class Table:
         self._put_ops(name, oids, incoming, ops)
         self._execute(Command(label, ops))
 
+    def set_block(
+        self,
+        updates: Mapping[str, tuple[Sequence[int] | np.ndarray, Sequence[object] | Column]],
+        *,
+        label: str = "Edit cells",
+    ) -> None:
+        """Write cells in several columns as **one** undoable step (paste, find and replace).
+
+        *updates* maps a column name to ``(oids, values)``; each column follows the same rules as
+        :meth:`set_cells`.
+        """
+        ops: list[Op] = []
+        for name, (oids, values) in updates.items():
+            oids = as_slots(oids)
+            if len(oids) != len(values):
+                raise ValueError(f"{name!r}: oids and values differ in length")
+            if len(oids):
+                incoming = values if isinstance(values, Column) else column_from_values(values)
+                self._put_ops(name, oids, incoming, ops)
+        if ops:
+            self._execute(Command(label, ops))
+
     def fill_structures(self, name: str, oids: np.ndarray, blobs: Sequence[bytes]) -> None:
         """Store background parse results for a structure column.
 
@@ -363,7 +401,7 @@ class Table:
     def add_column(
         self,
         name: str,
-        values: Sequence[object] | None = None,
+        values: Sequence[object] | Column | None = None,
         *,
         kind: str | None = None,
         position: int | None = None,
@@ -379,7 +417,7 @@ class Table:
         else:
             if len(values) != len(self):
                 raise ValueError(f"expected {len(self)} values, got {len(values)}")
-            column = column_from_values(values)
+            column = values if isinstance(values, Column) else column_from_values(values)
             if kind is not None:
                 coerced = coerce(column, kind)
                 if coerced is None:
@@ -542,8 +580,10 @@ class Table:
                 for op in reversed(applied):  # leave the table as it was
                     op.inverse().apply(self)
                 raise
-        if record:
-            self.history.push(command)
+            # Record before `Changed` goes out, so listeners see the history (undo label,
+            # clean state) as of this change, not one step behind.
+            if record:
+                self.history.push(command)
 
     def _affects_view(self, name: str) -> bool:
         return any(name == key for key, _ in self._sort) or any(

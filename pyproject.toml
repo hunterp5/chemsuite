@@ -22,6 +22,9 @@ dependencies = [
     "openpyxl>=3.1",            # Excel (.xlsx) read/write; base install by decision
 ]
 
+[project.gui-scripts]
+chemsuite = "chemsuite.app.main:main"
+
 [project.optional-dependencies]
 confab = ["openbabel>=3.2.0"]
 conforge = ["cdpkit"]

@@ -270,3 +270,49 @@ def test_history_clean_state() -> None:
     t.add_rows({"B": ["x"]})  # the saved state is now unreachable
     t.undo()
     assert not t.history.is_clean
+
+
+def test_set_block_is_one_undo_step(table: Table) -> None:
+    table.set_block({"ID": ([1, 2], ["X", "Y"]), "pIC50": ([1], ["n/a"])}, label="Paste")
+    assert cells(table, "ID")[:2] == ["X", "Y"] and table.kind("pIC50") == TEXT
+    assert table.undo() == "Paste"
+    assert cells(table, "ID")[:2] == ["CPD-10", "CPD-2"] and table.kind("pIC50") == NUMBER
+
+
+def test_snapshot_is_independent(table: Table) -> None:
+    from chemsuite.core.table.columns import StructureColumn
+
+    table.add_column("S", StructureColumn.from_texts(["CCO", "", "", "C"]))
+    snap = table.snapshot()
+    table.set_cells("ID", [1], ["changed"])
+    table.fill_structures("S", [1], [b"x"])
+    table.remove_rows([2])
+    assert snap.cell("ID", 1) == "CPD-10" and len(snap) == 4
+    assert snap.column("S").pending_mask().tolist() == [True, False, False, True]
+    assert snap.next_oid == table.next_oid
+
+
+def test_mark_clean_at_checkpoint() -> None:
+    t = Table()
+    t.add_rows({"a": ["1"]})
+    saved = t.history.checkpoint()
+    t.set_cells("a", [1], ["2"])  # edited while the save was running
+    t.history.mark_clean(saved)
+    assert not t.history.is_clean
+    t.undo()
+    assert t.history.is_clean
+
+
+def test_listeners_see_history_updated() -> None:
+    t = Table()
+    t.add_rows({"a": ["1"]}, undoable=False)
+    seen: list[tuple[str | None, bool]] = []
+
+    def listener(event) -> None:
+        if isinstance(event, Changed):
+            seen.append((t.history.undo_label, t.history.is_clean))
+
+    t.subscribe(listener)
+    t.set_cells("a", [1], ["2"], label="Edit a")
+    t.undo()
+    assert seen == [("Edit a", False), (None, True)]

@@ -220,8 +220,13 @@ class History:
         return sum(c.nbytes for c in self._undo) + sum(c.nbytes for c in self._redo)
 
     # -- clean state (document saved) --------------------------------------------------------
-    def mark_clean(self) -> None:
-        self._clean = self._undo[-1] if self._undo else None
+    def checkpoint(self) -> object:
+        """A token for the current state; pass it to :meth:`mark_clean` once that state is saved."""
+        return self._undo[-1] if self._undo else None
+
+    def mark_clean(self, checkpoint: object = ...) -> None:
+        """Mark the current state (or an earlier *checkpoint*) as the saved one."""
+        self._clean = self.checkpoint() if checkpoint is ... else checkpoint  # type: ignore[assignment]
         self._clean_valid = True
 
     @property
