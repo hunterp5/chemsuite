@@ -100,6 +100,11 @@ class ToolContext:
         index = self._window.view.currentIndex()
         return self._window.workspace.model.column_name(index.column()) if index.isValid() else None
 
+    def current_oid(self) -> int | None:
+        """The row of the table's current cell, if any."""
+        index = self._window.view.currentIndex()
+        return self._window.workspace.model.oid_at(index.row()) if index.isValid() else None
+
     def default_structure_column(self) -> str | None:
         """The current cell's column when it holds structures, else the first structure column."""
         current = self.current_column()

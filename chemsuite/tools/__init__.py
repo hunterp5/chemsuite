@@ -28,4 +28,5 @@ TOOL_MODULES: tuple[str, ...] = (
     "chemsuite.tools.mpo.tool",
     "chemsuite.tools.selectivity.tool",
     "chemsuite.tools.binning.tool",
+    "chemsuite.tools.similarity.tool",
 )
