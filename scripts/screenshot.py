@@ -85,8 +85,10 @@ def main(argv: list[str]) -> int:
     from chemsuite.app.jobs import JobRunner
     from chemsuite.app.main_window import MainWindow, Workspace
     from chemsuite.app.table_view import StructureImages
+    from chemsuite.core import logbook
     from chemsuite.core.io.load import load_table, parse_pending_structures
 
+    logbook.setup_logging(to_file=False, to_stderr=False)  # the Log window shows the session
     app = QApplication([argv[0]])
     runner = JobRunner(app)
     if len(argv) > 2:
@@ -257,6 +259,15 @@ def main(argv: list[str]) -> int:
     release.set()
     while running.running or window._runner.queued_jobs:
         settle()
+    log_window = window.show_log()
+    log_window.level.setCurrentIndex(0)
+    log_window.view.selectRow(
+        next(i for i, e in enumerate(log_window.model.rows) if e.details) if any(
+            e.details for e in log_window.model.rows) else 0
+    )  # fmt: skip
+    settle()
+    log_window.grab().save(str(out / "log.png"))
+    log_window.close()
     settings = window.open_settings()
     for row in range(settings.pages.count()):
         settings.pages.setCurrentRow(row)

@@ -20,24 +20,45 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
+import platform
 import sys
+from importlib import metadata
 from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> int:
     multiprocessing.freeze_support()  # required for the process pool in frozen builds
     argv = list(sys.argv if argv is None else argv)
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    from chemsuite.core import logbook
 
+    logbook.setup_logging()  # at once, so start-up problems are logged too
+
+    from PySide6.QtCore import qVersion
     from PySide6.QtWidgets import QApplication
 
+    from .error_report import install_crash_handler
     from .jobs import JobRunner
     from .main_window import MainWindow
+    from .settings_hub import settings_hub
     from .table_view import StructureImages
 
     app = QApplication(argv)
     app.setApplicationName("chemsuite")
     app.setOrganizationName("chemsuite")
+    policy = settings_hub().store.policy
+    log_file = logbook.setup_logging(level=logbook.level_from(policy.get("log_level")))
+    audit_file = logbook.setup_audit(policy.get("audit_log"))
+    install_crash_handler()
+    log = logging.getLogger("chemsuite")
+    log.info(
+        "chemsuite %s starting: Python %s, Qt %s, %s",
+        _version(),
+        platform.python_version(),
+        qVersion(),
+        platform.platform(),
+    )
+    log.info("log file: %s%s", log_file, f"; audit log: {audit_file}" if audit_file else "")
+    logbook.audit("start", version=_version())
     runner = JobRunner(app, keep_awake=True)
     images = StructureImages()
     app.aboutToQuit.connect(runner.shutdown)
@@ -48,6 +69,13 @@ def main(argv: list[str] | None = None) -> int:
         if not arg.startswith("-"):
             window.open_path(Path(arg))
     return app.exec()
+
+
+def _version() -> str:
+    try:
+        return metadata.version("chemsuite")
+    except metadata.PackageNotFoundError:
+        return "(development)"
 
 
 if __name__ == "__main__":

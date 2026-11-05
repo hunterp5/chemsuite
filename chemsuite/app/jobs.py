@@ -124,7 +124,7 @@ class Job(QObject):
         if self.state == QUEUED:
             self.state = RUNNING
             self.started_at = time.monotonic()
-            log.info("job %d started: %s", self.id, self.title)
+            log.info("started: %s", self.name, extra={"job": self.id})
             self.changed.emit()
 
     @Slot(object)
@@ -141,18 +141,29 @@ class Job(QObject):
         self.state = outcome
         self.ended_at = time.monotonic()
         if outcome == FINISHED:
-            log.info("job %d finished in %.1f s: %s", self.id, self.elapsed, self.title)
+            log.info("finished in %.1f s: %s", self.elapsed, self.name, extra={"job": self.id})
             self.finished.emit(value)
         elif outcome == FAILED:
-            log.error("job %d failed: %s\n%s", self.id, self.title, self.error_text)
+            log.error(  # the traceback goes with the record (the Log window's details)
+                "failed: %s: %s",
+                self.name,
+                value,
+                exc_info=value if isinstance(value, BaseException) else None,
+                extra={"job": self.id},
+            )
             self.failed.emit(value)
         else:
-            log.info("job %d cancelled: %s", self.id, self.title)
+            log.info("cancelled: %s", self.name, extra={"job": self.id})
             self.cancelled.emit()
         self.done.emit()
         self.changed.emit()
 
     # called from the GUI thread -------------------------------------------------------------
+    @property
+    def name(self) -> str:
+        """The title without a trailing ellipsis, for messages."""
+        return self.title.rstrip("…").rstrip()
+
     @property
     def running(self) -> bool:
         """Not ended yet: queued or running."""
@@ -250,7 +261,7 @@ class JobRunner(QObject):
         self._jobs.append(job)
         job.changed.connect(self.changed)
         job.done.connect(lambda: self._ended(job))
-        log.info("job %d queued (%s): %s", job.id, lane, title)
+        log.info("queued (%s lane): %s", lane, job.name, extra={"job": job.id})
         if lane == QUICK:
             self._threads.start(_Runnable(job, fn))
         else:

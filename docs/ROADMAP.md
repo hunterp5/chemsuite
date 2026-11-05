@@ -72,6 +72,11 @@ one by one in the window, and a desktop notification beyond the dock/taskbar ale
 
 **Goal:** every job, warning and error is visible in the app. Support can ask for one log file.
 
+**Status (2026-11-05): built.** Logbook, Log window (View ▸ Log), rotating log file with
+Help ▸ Show Log Folder, policy `log_level`, crash handler with Copy Details, and the audit log
+(policy `audit_log`: `true` or a file path) for start-up, open, save and export. Network and
+external-tool runs will write audit records when those features arrive.
+
 **Design**
 - **`core/logbook.py`** (no Qt): a thread-safe ring buffer of 10,000 entries fed by a `logging`
   handler, plus structured job events (queued, started, finished with duration and row counts,

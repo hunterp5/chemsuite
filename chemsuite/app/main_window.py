@@ -55,6 +55,7 @@ from chemsuite.core.io.load import (
 )
 from chemsuite.core.lists import EXTRAS_KEY as LISTS_KEY
 from chemsuite.core.lists import RowLists
+from chemsuite.core.logbook import audit
 from chemsuite.core.selection import Selection
 from chemsuite.core.settings import Settings, add_recent
 from chemsuite.core.table import Changed, Table
@@ -63,12 +64,14 @@ from chemsuite.core.table.columns import STRUCTURE
 
 from .column_actions import ColumnActions
 from .commands import apply_shortcuts, register
+from .error_report import details_of, show_error, show_log_folder
 from .filters.cards import FilterCard
 from .filters.panel import FilterPanel
 from .find_replace import FindReplaceDialog
 from .jobs import QUEUE, QUICK, Job, JobRunner
 from .jobs_ui import JobsIndicator, JobsWindow
 from .list_actions import ListActions
+from .log_ui import LogWindow
 from .search_bar import SearchBar
 from .selection_browser import SelectionBrowser
 from .settings_hub import settings_hub
@@ -90,6 +93,28 @@ EXPORT_FILTER = "SD file (*.sdf);;CSV (*.csv);;TSV (*.tsv);;SMILES (*.smi);;Exce
 _windows: list[MainWindow] = []
 _jobs_windows: dict[int, JobsWindow] = {}
 NOTIFY_AFTER_S = 30  # a background job this long gets a "done" notice
+
+
+_log_windows: dict[int, LogWindow] = {}
+
+
+def _log_window(runner: JobRunner) -> LogWindow:
+    """One Log window per application; a job's entry opens it in the Jobs window."""
+    window = _log_windows.get(id(runner))
+    if window is None or getattr(window, "runner", None) is not runner:  # ids get reused
+
+        def show_job(job_id: int) -> None:
+            jobs = _jobs_window(runner)
+            jobs.show()
+            jobs.raise_()
+            job = next((j for j in runner.jobs if j.id == job_id), None)
+            if job is not None:
+                jobs.select(job)
+
+        window = _log_windows[id(runner)] = LogWindow(show_job=show_job)
+        window.runner = runner
+        runner.destroyed.connect(lambda *_: _log_windows.pop(id(runner), None))
+    return window
 
 
 def _jobs_window(runner: JobRunner) -> JobsWindow:
@@ -553,12 +578,17 @@ class MainWindow(QMainWindow):
         view.addAction(toggle)
         view.addAction(A("view.browser", "Selection &Browser", self.toggle_browser, "Ctrl+Shift+B"))
         view.addAction(A("view.jobs", "&Jobs", self.show_jobs))
+        view.addAction(A("view.log", "&Log", self.show_log))
         status = QAction("Status &Bar", self, checkable=True)
         status.toggled.connect(self._set_status_bar)
         register("view.status_bar", "Status Bar", "View")
         self._commands["view.status_bar"] = status
         self._status_bar_action = status
         view.addAction(status)
+
+        self._building = "Help"
+        help_menu = bar.addMenu("&Help")
+        help_menu.addAction(A("help.log_folder", "Show &Log Folder", show_log_folder))
 
     def _add_tool(self, tool: Tool, menus: dict[tuple[str, ...], Any]) -> None:
         """Put *tool* in its menu, creating the menu path as needed."""
@@ -933,6 +963,8 @@ class MainWindow(QMainWindow):
             window = target if usable else self.new_window()
             window._install(Workspace(table, doc_path, extras))
             window.statusBar().showMessage(f"Opened {path.name}", 4000)
+            log.info("opened %s (%d rows, %d columns)", path, len(table), len(table.column_names))
+            audit("open", path=path, rows=len(table))
             self._remember_path(path)
 
         self._run_with_progress(f"Opening {path.name}…", work, opened)
@@ -973,6 +1005,8 @@ class MainWindow(QMainWindow):
             workspace.path = path
             self._update_title()
             self.statusBar().showMessage(f"Saved {path.name}", 4000)
+            log.info("saved %s (%d rows)", path, len(snapshot))
+            audit("save", path=path, rows=len(snapshot))
             self._remember_path(path)
             saved.append(True)
 
@@ -993,11 +1027,13 @@ class MainWindow(QMainWindow):
         def work(job: Job) -> None:
             save_table(snapshot, path, oids=oids, progress=job.report, cancel=job.cancel_token)
 
-        self._run_with_progress(
-            f"Exporting {Path(path).name}…",
-            work,
-            lambda _r: self.statusBar().showMessage(f"Exported {Path(path).name}", 4000),
-        )
+        def done(_result: None) -> None:
+            rows = len(oids) if oids is not None else len(snapshot)
+            self.statusBar().showMessage(f"Exported {Path(path).name}", 4000)
+            log.info("exported %s (%d rows)", path, rows)
+            audit("export", path=path, rows=rows, selected_only=selected_only)
+
+        self._run_with_progress(f"Exporting {Path(path).name}…", work, done)
 
     # -- background work ---------------------------------------------------------------------
     def _run_with_progress(
@@ -1071,17 +1107,12 @@ class MainWindow(QMainWindow):
     def _report_failure(self, job: Job, error: BaseException) -> None:
         """A background job failed: say so without blocking; details are one click away."""
         self.statusBar().showMessage(f"{job.title.rstrip('…')} failed: {error}", 10000)
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("chemsuite")
-        box.setText(f"{job.title.rstrip('…')} failed.")
-        box.setInformativeText(str(error) or type(error).__name__)
-        box.setDetailedText(job.error_text)
-        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        box.open()  # not exec(): other work carries on
-        self._failure_box = box
-        if not self.isActiveWindow():
-            QApplication.alert(self)
+        self._failure_box = show_error(
+            self,
+            f"{job.title.rstrip('…')} failed.",
+            str(error) or type(error).__name__,
+            job.error_text,
+        )
 
     def show_jobs(self) -> JobsWindow:
         window = _jobs_window(self._runner)
@@ -1093,7 +1124,19 @@ class MainWindow(QMainWindow):
         return window
 
     def _show_error(self, label: str, error: BaseException) -> None:
-        QMessageBox.critical(self, "chemsuite", f"{label.rstrip('…')} failed:\n\n{error}")
+        self._failure_box = show_error(
+            self,
+            f"{label.rstrip('…')} failed.",
+            str(error) or type(error).__name__,
+            details_of(error),
+        )
+
+    def show_log(self) -> LogWindow:
+        window = _log_window(self._runner)
+        window.show()
+        window.raise_()
+        window.activateWindow()
+        return window
 
     def _start_parsing(self) -> None:
         """Parse text structures (CSV, SMILES, Excel) in the background after opening."""
