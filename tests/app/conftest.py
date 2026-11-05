@@ -67,6 +67,23 @@ def no_modal_dialogs(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def private_settings(tmp_path, monkeypatch):
+    """Each test gets empty settings and no machine policy; the user's own are never touched."""
+    monkeypatch.setenv("CHEMSUITE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("CHEMSUITE_POLICY", str(tmp_path / "no-policy.json"))
+    if NO_GUI:
+        yield
+        return
+    from chemsuite.app import theme
+    from chemsuite.app.settings_hub import reset_hub
+
+    reset_hub()
+    yield
+    reset_hub()
+    theme.reset()
+
+
+@pytest.fixture(autouse=True)
 def clear_clipboard():
     """Qt's offscreen platform crashes at exit if the clipboard still owns mime data."""
     yield

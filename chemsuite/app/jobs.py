@@ -133,7 +133,10 @@ class JobRunner(QObject):
 
     def process_pool(self) -> ProcessPoolExecutor:
         if self._pool is None:
-            self._pool = process_pool()
+            from .settings_hub import settings_hub
+
+            # Settings ▸ General ▸ Processor cores (0: automatic); read once, at first use.
+            self._pool = process_pool(settings_hub().settings.performance.max_workers or None)
         return self._pool
 
     def submit(self, title: str, fn: Callable[[Job], Any]) -> Job:

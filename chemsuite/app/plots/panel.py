@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -381,6 +381,12 @@ class PlotPanel(QWidget):
     def reset_view(self) -> None:
         self.plot.enableAutoRange()
         self.plot.autoRange()
+
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange and hasattr(self, "plot"):
+            self._apply_palette()
+            self._rebuild_timer.start()  # guide labels and marker outlines use the palette
 
     def _apply_palette(self) -> None:
         palette = self.palette()

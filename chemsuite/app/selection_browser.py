@@ -24,7 +24,7 @@ always point at the same compound. Its tick box adds or removes the row from the
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import QItemSelectionModel, QModelIndex, Qt, QTimer
+from PySide6.QtCore import QEvent, QItemSelectionModel, QModelIndex, Qt, QTimer
 from PySide6.QtGui import QKeyEvent, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -337,6 +337,11 @@ class SelectionBrowser(QWidget):
         if not len(self.table):
             return "The table is empty"
         return "No rows selected" if self.scope_key() == "selected" else "No rows shown"
+
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange and hasattr(self, "preview"):
+            self._draw()  # drawings are coloured for a light or dark background
 
     def _draw(self) -> None:
         self.preview.setPixmap(QPixmap())

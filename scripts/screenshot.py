@@ -29,6 +29,11 @@ import sys
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Never read or write the user's own settings while rendering.
+os.environ.setdefault(
+    "CHEMSUITE_CONFIG_DIR",
+    os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), ".screenshot-config"),
+)
 
 SAMPLE = {
     "aspirin": "CC(=O)Oc1ccccc1C(=O)O",
@@ -214,6 +219,26 @@ def main(argv: list[str]) -> int:
         settle()
         dialog.grab().save(str(out / f"{tool}.png"))
         dialog.reject()
+    settings = window.open_settings()
+    for row in range(settings.pages.count()):
+        settings.pages.setCurrentRow(row)
+        settle()
+        name = settings.pages.item(row).text().lower().replace(" ", "-")
+        settings.grab().save(str(out / f"settings-{name}.png"))
+    page = settings.appearance
+    page.theme.setCurrentIndex(page.theme.findData("dark"))
+    settings.pages.setCurrentRow(0)
+    settle()
+    settings.grab().save(str(out / "settings-dark.png"))
+    window.grab().save(str(out / "main-dark.png"))
+    settings.reject()
+    from chemsuite.app.custom_theme_dialog import CustomThemeDialog
+
+    editor = CustomThemeDialog({}, None, window)
+    editor.show()
+    settle()
+    editor.grab().save(str(out / "custom-theme.png"))
+    editor.reject()
     print("\n".join(str(p) for p in sorted(out.glob("*.png"))))
     runner.shutdown()
     workspace = window.workspace

@@ -62,7 +62,31 @@ class TableModel(QAbstractTableModel):
         self._slots: np.ndarray = table.view()
         self._oids: np.ndarray = table.oids[self._slots]
         self._row_of_slot: np.ndarray | None = None
+        self._text_align = _LEFT
+        self._number_align = _RIGHT
         self._unsubscribe = table.subscribe(self._on_table_event)
+
+    def set_alignment(self, horizontal: str, vertical: str) -> None:
+        """Text cells take *horizontal*; numbers stay right-aligned; both take *vertical*."""
+        h = {
+            "left": Qt.AlignmentFlag.AlignLeft,
+            "center": Qt.AlignmentFlag.AlignHCenter,
+            "right": Qt.AlignmentFlag.AlignRight,
+        }.get(horizontal, Qt.AlignmentFlag.AlignLeft)
+        v = {
+            "top": Qt.AlignmentFlag.AlignTop,
+            "center": Qt.AlignmentFlag.AlignVCenter,
+            "bottom": Qt.AlignmentFlag.AlignBottom,
+        }.get(vertical, Qt.AlignmentFlag.AlignVCenter)
+        text, number = h | v, Qt.AlignmentFlag.AlignRight | v
+        if (text, number) != (self._text_align, self._number_align):
+            self._text_align, self._number_align = text, number
+            if self.rowCount() and self.columnCount():
+                self.dataChanged.emit(
+                    self.index(0, 0),
+                    self.index(self.rowCount() - 1, self.columnCount() - 1),
+                    [Qt.ItemDataRole.TextAlignmentRole],
+                )
 
     @property
     def table(self) -> Table:
@@ -124,7 +148,7 @@ class TableModel(QAbstractTableModel):
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             return column.display(slot)
         if role == Qt.ItemDataRole.TextAlignmentRole:
-            return _RIGHT if column.kind == NUMBER else _LEFT
+            return self._number_align if column.kind == NUMBER else self._text_align
         if role == OID_ROLE:
             return int(self._oids[index.row()])
         if role == KIND_ROLE:

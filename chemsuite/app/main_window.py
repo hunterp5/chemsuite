@@ -22,6 +22,7 @@ menus. It holds no tool logic: tools will plug in through the registry (phase 4)
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import logging
 from collections.abc import Callable
@@ -55,11 +56,13 @@ from chemsuite.core.io.load import (
 from chemsuite.core.lists import EXTRAS_KEY as LISTS_KEY
 from chemsuite.core.lists import RowLists
 from chemsuite.core.selection import Selection
+from chemsuite.core.settings import Settings, add_recent
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import STRUCTURE
 
 from .column_actions import ColumnActions
+from .commands import apply_shortcuts, register
 from .filters.cards import FilterCard
 from .filters.panel import FilterPanel
 from .find_replace import FindReplaceDialog
@@ -67,6 +70,7 @@ from .jobs import Job, JobRunner
 from .list_actions import ListActions
 from .search_bar import SearchBar
 from .selection_browser import SelectionBrowser
+from .settings_hub import settings_hub
 from .split_join import JoinColumnsDialog, SplitColumnDialog
 from .structure_editor import StructureEditor, copy_structure
 from .table_model import TableModel
@@ -183,7 +187,10 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self._status)
         self.resize(1400, 860)
         self._build_menus()
+        hub = settings_hub()
+        hub.changed.connect(self._apply_settings)
         self._install(workspace or Workspace(Table()))
+        self._apply_settings(hub.settings)
         _windows.append(self)
 
     # -- workspace ---------------------------------------------------------------------------
@@ -227,6 +234,7 @@ class MainWindow(QMainWindow):
             lambda message: self.statusBar().showMessage(message, 4000),
         )
         workspace.lists.subscribe(self._update_title)
+        self._view.apply_appearance(settings_hub().settings.appearance)
         self._browser = SelectionBrowser(self._view, workspace.selection)
         self.browser_dock.setWidget(self._browser)
         self._view.headerMenuRequested.connect(self._show_header_menu)
@@ -350,87 +358,153 @@ class MainWindow(QMainWindow):
 
     # -- menus -------------------------------------------------------------------------------
     def _action(
-        self, title: str, slot: Callable[[], Any], shortcut: QKeySequence | str | None = None
+        self,
+        command_id: str,
+        title: str,
+        slot: Callable[[], Any],
+        shortcut: QKeySequence | QKeySequence.StandardKey | str | list | None = None,
     ) -> QAction:
+        """A menu action registered as a command, so Settings can change its shortcut."""
+        defaults = (
+            shortcut if isinstance(shortcut, list) else ([] if shortcut is None else [shortcut])
+        )
+        register(command_id, title, self._building, defaults)
         action = QAction(title, self)
-        if shortcut is not None:
-            action.setShortcut(QKeySequence(shortcut))
         action.triggered.connect(lambda _checked=False: slot())
+        self._commands[command_id] = action
         return action
 
     def _build_menus(self) -> None:
         bar = self.menuBar()
-        file_menu = bar.addMenu("&File")
-        file_menu.addAction(self._action("&New", self.new_window, QKeySequence.StandardKey.New))
-        file_menu.addAction(self._action("&Open…", self.open_dialog, QKeySequence.StandardKey.Open))
-        file_menu.addSeparator()
-        file_menu.addAction(self._action("&Save", self.save, QKeySequence.StandardKey.Save))
-        file_menu.addAction(
-            self._action("Save &As…", self.save_as, QKeySequence.StandardKey.SaveAs)
-        )
-        file_menu.addAction(self._action("&Export…", lambda: self.export_dialog(False)))
-        file_menu.addAction(self._action("Export Selected…", lambda: self.export_dialog(True)))
-        file_menu.addSeparator()
-        file_menu.addAction(self._action("&Close", self.close, QKeySequence.StandardKey.Close))
-        file_menu.addAction(self._action("&Quit", self._quit, QKeySequence.StandardKey.Quit))
+        self._commands: dict[str, QAction] = {}
+        A = self._action
 
+        self._building = "File"
+        file_menu = bar.addMenu("&File")
+        file_menu.addAction(A("file.new", "&New", self.new_window, QKeySequence.StandardKey.New))
+        file_menu.addAction(
+            A("file.open", "&Open…", self.open_dialog, QKeySequence.StandardKey.Open)
+        )
+        self._recent_menu = file_menu.addMenu("Open &Recent")
+        self._recent_menu.aboutToShow.connect(self._fill_recent_menu)
+        file_menu.addSeparator()
+        file_menu.addAction(A("file.save", "&Save", self.save, QKeySequence.StandardKey.Save))
+        file_menu.addAction(
+            A("file.save_as", "Save &As…", self.save_as, QKeySequence.StandardKey.SaveAs)
+        )
+        file_menu.addAction(A("file.export", "&Export…", lambda: self.export_dialog(False)))
+        file_menu.addAction(
+            A("file.export_selected", "Export Selected…", lambda: self.export_dialog(True))
+        )
+        file_menu.addSeparator()
+        file_menu.addAction(A("file.close", "&Close", self.close, QKeySequence.StandardKey.Close))
+        quit_action = A("file.quit", "&Quit", self._quit, QKeySequence.StandardKey.Quit)
+        quit_action.setMenuRole(QAction.MenuRole.QuitRole)
+        file_menu.addAction(quit_action)
+
+        self._building = "Edit"
         edit = bar.addMenu("&Edit")
-        self._undo = self._action("&Undo", self.undo, QKeySequence.StandardKey.Undo)
-        self._redo = self._action("&Redo", self.redo, QKeySequence.StandardKey.Redo)
+        self._undo = A("edit.undo", "&Undo", self.undo, QKeySequence.StandardKey.Undo)
+        self._redo = A("edit.redo", "&Redo", self.redo, QKeySequence.StandardKey.Redo)
         edit.addActions([self._undo, self._redo])
         edit.addSeparator()
         edit.addAction(
-            self._action("&Copy", lambda: self.view.copy_selection(), QKeySequence.StandardKey.Copy)
+            A(
+                "edit.copy",
+                "&Copy",
+                lambda: self.view.copy_selection(),
+                QKeySequence.StandardKey.Copy,
+            )
         )
-        edit.addAction(self._action("&Paste", self.paste, QKeySequence.StandardKey.Paste))
-        edit.addAction(self._action("Clear Cells", lambda: self.view.clear_selected_cells()))
-        edit.addAction(self._action("Copy Structure as Molfile", self.copy_structure))
-        edit.addSeparator()
-        edit.addAction(self._action("Edit &Structure…", self.edit_current_structure, "Ctrl+E"))
+        edit.addAction(A("edit.paste", "&Paste", self.paste, QKeySequence.StandardKey.Paste))
+        edit.addAction(
+            A("edit.clear_cells", "Clear Cells", lambda: self.view.clear_selected_cells())
+        )
+        edit.addAction(A("edit.copy_molfile", "Copy Structure as Molfile", self.copy_structure))
         edit.addSeparator()
         edit.addAction(
-            self._action("&Search Rows", lambda: self.search.focus(), QKeySequence.StandardKey.Find)
+            A("edit.structure", "Edit &Structure…", self.edit_current_structure, "Ctrl+E")
         )
-        find_replace = self._action("Find and &Replace…", self.show_find_replace)
-        shortcuts = [*QKeySequence.keyBindings(QKeySequence.StandardKey.Replace)]
-        shortcuts.append(QKeySequence("Ctrl+Alt+F"))
-        find_replace.setShortcuts(shortcuts)
-        edit.addAction(find_replace)
         edit.addSeparator()
         edit.addAction(
-            self._action(
-                "Select &All", lambda: self.view.selectAll(), QKeySequence.StandardKey.SelectAll
+            A(
+                "edit.search",
+                "&Search Rows",
+                lambda: self.search.focus(),
+                QKeySequence.StandardKey.Find,
             )
         )
         edit.addAction(
-            self._action(
-                "Invert Selection", lambda: self.workspace.selection.invert("menu"), "Ctrl+I"
-            )
-        )
-        edit.addAction(
-            self._action(
-                "Clear Selection", lambda: self.workspace.selection.clear("menu"), "Ctrl+Shift+A"
+            A(
+                "edit.find_replace",
+                "Find and &Replace…",
+                self.show_find_replace,
+                [QKeySequence.StandardKey.Replace, "Ctrl+Alt+F"],
             )
         )
         edit.addSeparator()
-        edit.addAction(self._action("&Delete Rows", self.delete_rows, "Ctrl+Backspace"))
+        edit.addAction(
+            A(
+                "edit.select_all",
+                "Select &All",
+                lambda: self.view.selectAll(),
+                QKeySequence.StandardKey.SelectAll,
+            )
+        )
+        edit.addAction(
+            A(
+                "edit.invert_selection",
+                "Invert Selection",
+                lambda: self.workspace.selection.invert("menu"),
+                "Ctrl+I",
+            )
+        )
+        edit.addAction(
+            A(
+                "edit.clear_selection",
+                "Clear Selection",
+                lambda: self.workspace.selection.clear("menu"),
+                "Ctrl+Shift+A",
+            )
+        )
+        edit.addSeparator()
+        edit.addAction(A("edit.delete_rows", "&Delete Rows", self.delete_rows, "Ctrl+Backspace"))
+        edit.addSeparator()
+        settings_action = A(
+            "app.settings",
+            "Settings…",
+            self.open_settings,
+            [QKeySequence.StandardKey.Preferences, "Ctrl+,"],
+        )
+        settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)  # the app menu on macOS
+        edit.addAction(settings_action)
 
+        self._building = "Data"
         data = bar.addMenu("&Data")
         table_menu = data.addMenu("&Table")
-        table_menu.addAction(self._action("Add Co&mpound…", self.add_compound))
-        table_menu.addAction(self._action("Add &Rows…", self.add_rows))
-        table_menu.addAction(self._action("Add &Column…", self.add_column))
+        self._building = "Data ▸ Table"
+        table_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
+        table_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
+        table_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
         table_menu.addSeparator()
-        table_menu.addAction(self._action("&Split Column…", lambda: self.split_column()))
-        table_menu.addAction(self._action("&Join Columns…", lambda: self.join_columns()))
+        table_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
+        table_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
         table_menu.addSeparator()
-        table_menu.addAction(self._action("Clear Sort", lambda: self.workspace.table.set_sort([])))
-        self._lists_menu = data.addMenu("&Lists")
-        self._add_to_list = self._action(
-            "&Add Selected to List…", lambda: self.lists.add_selected(), "Ctrl+L"
+        table_menu.addAction(
+            A("data.clear_sort", "Clear Sort", lambda: self.workspace.table.set_sort([]))
         )
-        self._remove_from_list = self._action(
-            "&Remove Selected from List…", lambda: self.lists.remove_selected()
+        self._building = "Data ▸ Lists"
+        self._lists_menu = data.addMenu("&Lists")
+        self._add_to_list = A(
+            "lists.add_selected",
+            "&Add Selected to List…",
+            lambda: self.lists.add_selected(),
+            "Ctrl+L",
+        )
+        self._remove_from_list = A(
+            "lists.remove_selected",
+            "&Remove Selected from List…",
+            lambda: self.lists.remove_selected(),
         )
         self._lists_menu.aboutToShow.connect(
             lambda: self.lists.fill_menu(
@@ -439,8 +513,9 @@ class MainWindow(QMainWindow):
         )
         self._lists_menu.addAction(self._add_to_list)  # so the shortcut works before first show
         self.addAction(self._add_to_list)
+        self._building = "Data"
         data.addSeparator()
-        data.addAction(self._action("Show All Rows", self.show_all_rows))
+        data.addAction(A("data.show_all_rows", "Show All Rows", self.show_all_rows))
 
         self._tool_actions: dict[str, QAction] = {}
         menus = {
@@ -452,13 +527,20 @@ class MainWindow(QMainWindow):
         for tool in registered_tools():
             self._add_tool(tool, menus)
 
+        self._building = "View"
         view = bar.addMenu("&View")
         toggle = self.filter_dock.toggleViewAction()
         toggle.setText("&Filters")
-        toggle.setShortcut(QKeySequence("Ctrl+Shift+F"))
+        register("view.filters", "Filters", "View", ["Ctrl+Shift+F"])
+        self._commands["view.filters"] = toggle
         view.addAction(toggle)
-        browse = self._action("Selection &Browser", self.toggle_browser, "Ctrl+Shift+B")
-        view.addAction(browse)
+        view.addAction(A("view.browser", "Selection &Browser", self.toggle_browser, "Ctrl+Shift+B"))
+        status = QAction("Status &Bar", self, checkable=True)
+        status.toggled.connect(self._set_status_bar)
+        register("view.status_bar", "Status Bar", "View")
+        self._commands["view.status_bar"] = status
+        self._status_bar_action = status
+        view.addAction(status)
 
     def _add_tool(self, tool: Tool, menus: dict[tuple[str, ...], Any]) -> None:
         """Put *tool* in its menu, creating the menu path as needed."""
@@ -469,8 +551,12 @@ class MainWindow(QMainWindow):
                 menus[path] = parent.addMenu(f"&{path[-1]}" if depth == 1 else path[-1])
                 menus[path].setToolTipsVisible(True)
         action = QAction(tool.title, self)
-        if tool.shortcut:
-            action.setShortcut(QKeySequence(tool.shortcut))
+        register(
+            f"tool.{tool.id}",
+            tool.title,
+            " ▸ ".join(tool.menu),
+            [tool.shortcut] if tool.shortcut else [],
+        )
         missing = tool.missing()
         action.setToolTip(
             f"Needs {', '.join(missing)}, which is not installed" if missing else tool.tip
@@ -479,6 +565,67 @@ class MainWindow(QMainWindow):
         action.triggered.connect(lambda _checked=False, t=tool: self.open_tool(t))
         menus[tool.menu].addAction(action)
         self._tool_actions[tool.id] = action
+        self._commands[f"tool.{tool.id}"] = action
+
+    # -- settings ----------------------------------------------------------------------------
+    def _apply_settings(self, settings: Settings) -> None:
+        apply_shortcuts(self._commands, settings)
+        visible = settings.appearance.status_bar
+        self.statusBar().setVisible(visible)
+        self._status_bar_action.blockSignals(True)
+        self._status_bar_action.setChecked(visible)
+        self._status_bar_action.setEnabled(not settings_hub().locked("appearance.status_bar"))
+        self._status_bar_action.blockSignals(False)
+        if self._view is not None:
+            self._view.apply_appearance(settings.appearance)
+
+    def _set_status_bar(self, visible: bool) -> None:
+        if settings_hub().user.appearance.status_bar != visible:
+            settings_hub().update(lambda s: setattr(s.appearance, "status_bar", visible))
+
+    def open_settings(self):
+        from .settings_dialog import SettingsDialog
+
+        dialog = SettingsDialog(self)
+        dialog.open()
+        return dialog
+
+    def command_action(self, command_id: str) -> QAction:
+        return self._commands[command_id]
+
+    def _remember_path(self, path: Path) -> None:
+        def change(settings: Settings) -> None:
+            add_recent(settings, str(path))
+            settings.files.last_directory = str(path.parent)
+
+        settings_hub().update(change)
+
+    def _start_folder(self) -> str:
+        folder = settings_hub().settings.files.last_directory
+        return folder if folder and Path(folder).is_dir() else ""
+
+    def _fill_recent_menu(self) -> None:
+        menu = self._recent_menu
+        menu.clear()
+        recent = settings_hub().settings.files.recent
+        for text in recent:
+            path = Path(text)
+            action = menu.addAction(path.name)
+            action.setToolTip(text)
+            action.setStatusTip(text)
+            if path.exists():
+                action.triggered.connect(lambda _c=False, p=path: self.open_path(p))
+            else:
+                action.setEnabled(False)
+                action.setText(f"{path.name} (missing)")
+        if not recent:
+            menu.addAction("No Recent Files").setEnabled(False)
+        menu.addSeparator()
+        clear = menu.addAction("Clear Recent")
+        clear.setEnabled(bool(recent))
+        clear.triggered.connect(
+            lambda: settings_hub().update(lambda s: setattr(s.files, "recent", []))
+        )
 
     def tool_action(self, tool_id: str) -> QAction:
         return self._tool_actions[tool_id]
@@ -732,7 +879,7 @@ class MainWindow(QMainWindow):
         return window
 
     def open_dialog(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "Open", "", OPEN_FILTER)
+        paths, _ = QFileDialog.getOpenFileNames(self, "Open", self._start_folder(), OPEN_FILTER)
         for path in paths:
             self.open_path(Path(path))
 
@@ -758,6 +905,7 @@ class MainWindow(QMainWindow):
             window = target if target is not None and target in _windows else self.new_window()
             window._install(Workspace(table, doc_path, extras))
             window.statusBar().showMessage(f"Opened {path.name}", 4000)
+            self._remember_path(path)
 
         self._run_with_progress(f"Opening {path.name}…", work, opened)
 
@@ -768,7 +916,7 @@ class MainWindow(QMainWindow):
 
     def save_as(self) -> bool:
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save As", "", f"chemsuite document (*{DOCUMENT_SUFFIX})"
+            self, "Save As", self._start_folder(), f"chemsuite document (*{DOCUMENT_SUFFIX})"
         )
         if not path:
             return False
@@ -797,6 +945,7 @@ class MainWindow(QMainWindow):
             workspace.path = path
             self._update_title()
             self.statusBar().showMessage(f"Saved {path.name}", 4000)
+            self._remember_path(path)
             saved.append(True)
 
         self._run_with_progress(f"Saving {path.name}…", work, done, wait=True)
@@ -808,7 +957,7 @@ class MainWindow(QMainWindow):
         if selected_only and not len(oids):
             QMessageBox.information(self, "Export Selected", "No rows are selected.")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Export", "", EXPORT_FILTER)
+        path, _ = QFileDialog.getSaveFileName(self, "Export", self._start_folder(), EXPORT_FILTER)
         if not path:
             return
         snapshot = workspace.table.snapshot()
@@ -923,6 +1072,8 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         self._teardown()
+        with contextlib.suppress(RuntimeError, TypeError):
+            settings_hub().changed.disconnect(self._apply_settings)
         if self in _windows:
             _windows.remove(self)
         event.accept()

@@ -34,7 +34,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPalette
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QImage, QPainter, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -168,6 +168,7 @@ class TableView(QTableView):
         self._anchor_oid: int | None = None
         self._widths: dict[str, int] = {}
         self._kinds: dict[str, str] = {}
+        self._structure_row_height = STRUCTURE_ROW_HEIGHT
         self.setModel(model)
         self.setItemDelegate(CellDelegate(images, self))
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -204,6 +205,21 @@ class TableView(QTableView):
         self._unsubscribe = selection.subscribe(self._on_store_selection)
         self._fit_layout()
 
+    def apply_appearance(self, appearance) -> None:
+        """Table font, text alignment and structure row height from Settings."""
+        font = QFont(QApplication.font())
+        if appearance.table_font_pt:
+            font.setPointSize(appearance.table_font_pt)
+        changed = (
+            font != self.font() or appearance.structure_row_height != self._structure_row_height
+        )
+        self.setFont(font)
+        self._structure_row_height = appearance.structure_row_height
+        self.table_model.set_alignment(appearance.table_align_h, appearance.table_align_v)
+        if changed:
+            self._capture_widths()
+            self._fit_layout()
+
     @property
     def table_model(self) -> TableModel:
         return self.model()  # type: ignore[return-value]
@@ -224,7 +240,7 @@ class TableView(QTableView):
         table = model.table
         has_structures = any(table.kind(name) == STRUCTURE for name in table.column_names)
         self.verticalHeader().setDefaultSectionSize(
-            STRUCTURE_ROW_HEIGHT if has_structures else self.fontMetrics().height() + 8
+            self._structure_row_height if has_structures else self.fontMetrics().height() + 8
         )
         for col in range(model.columnCount()):
             name = model.column_name(col)
