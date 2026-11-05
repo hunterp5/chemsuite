@@ -369,3 +369,21 @@ def test_empty_structure_column_keeps_its_kind() -> None:
     t.set_cells("Structure", [1], ["CCO"])
     assert t.kind("Structure") == "structure"
     assert t.column("Structure").pending_mask().tolist() == [True, False]
+
+
+def test_every_filter_can_be_negated() -> None:
+    from chemsuite.core.table.filters import number_values, value_counts
+
+    t = Table()
+    t.add_rows({"x": ["1", "5", "", "9"], "c": ["a", "b", "a", ""]}, undoable=False)
+    t.set_filter("r", RangeFilter("x", low=2, high=8, negate=True))
+    assert t.visible_oids().tolist() == [1, 4]  # outside the range; blanks stay out
+    t.set_filter("r", None)
+    t.set_filter("c", CategoryFilter("c", frozenset({"a"}), negate=True))
+    assert t.visible_oids().tolist() == [2, 4]
+    t.set_filter("c", OidFilter(frozenset({2}), negate=True))
+    assert t.visible_oids().tolist() == [1, 3, 4]
+    assert value_counts(t.column("c")) == [("a", 2), ("", 1), ("b", 1)]
+    assert value_counts(t.column("x"))[0] == ("", 1)
+    values = number_values(t.column("x"))
+    assert values[:2].tolist() == [1.0, 5.0] and np.isnan(values[2])

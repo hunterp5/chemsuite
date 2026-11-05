@@ -27,16 +27,18 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEventLoop, QPoint, QTimer
+from PySide6.QtCore import QEventLoop, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
+    QDockWidget,
     QFileDialog,
     QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -55,7 +57,11 @@ from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import STRUCTURE
 
 from .column_actions import ColumnActions
+from .filters.cards import FilterCard
+from .filters.panel import FilterPanel
+from .find_replace import FindReplaceDialog
 from .jobs import Job, JobRunner
+from .search_bar import SearchBar
 from .table_model import TableModel
 from .table_view import StructureImages, TableView
 
@@ -105,6 +111,16 @@ class MainWindow(QMainWindow):
         self._parse_job: Job | None = None
         self._parse_again = False
         self._columns: ColumnActions | None = None
+        self._filters: FilterPanel | None = None
+        self._search: SearchBar | None = None
+        self._find: FindReplaceDialog | None = None
+        self.filter_dock = QDockWidget("Filters", self)
+        self.filter_dock.setObjectName("FilterDock")
+        self.filter_dock.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.filter_dock)
+        self.filter_dock.hide()
         self._unsubscribe: Callable[[], None] | None = None
         self._status = QLabel()
         self.statusBar().addPermanentWidget(self._status)
@@ -127,10 +143,22 @@ class MainWindow(QMainWindow):
     def _install(self, workspace: Workspace) -> None:
         self._teardown()
         self._workspace = workspace
-        self._view = TableView(workspace.model, workspace.selection, self._images, self)
-        self.setCentralWidget(self._view)
+        self._view = TableView(workspace.model, workspace.selection, self._images)
+        self._search = SearchBar(workspace.table)
+        central = QWidget()
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._search)
+        layout.addWidget(self._view, 1)
+        self.setCentralWidget(central)
+        self._filters = FilterPanel(workspace.table)
+        self.filter_dock.setWidget(self._filters)
         self._columns = ColumnActions(
-            self, workspace.table, lambda message: self.statusBar().showMessage(message, 4000)
+            self,
+            workspace.table,
+            lambda message: self.statusBar().showMessage(message, 4000),
+            add_filter=self.filter_column,
         )
         self._view.headerMenuRequested.connect(self._show_header_menu)
         self._unsubscribe = workspace.table.subscribe(self._on_table_event)
@@ -141,6 +169,13 @@ class MainWindow(QMainWindow):
         self._start_parsing()
 
     def _teardown(self) -> None:
+        if self._find is not None:
+            self._find.close_dialog()
+            self._find = None
+        if self._filters is not None:
+            self._filters.close()
+            self._filters.deleteLater()
+            self._filters = None
         if self._parse_job is not None:
             self._parse_job.cancel()
             self._parse_job = None
@@ -175,6 +210,32 @@ class MainWindow(QMainWindow):
             ):
                 return True
         return False
+
+    @property
+    def search(self) -> SearchBar:
+        assert self._search is not None
+        return self._search
+
+    def show_find_replace(self) -> FindReplaceDialog:
+        if self._find is None:
+            self._find = FindReplaceDialog(self.view, self)
+        self._find.show()
+        self._find.raise_()
+        self._find.activateWindow()
+        self._find.find_edit.setFocus()
+        self._find.find_edit.selectAll()
+        return self._find
+
+    @property
+    def filters(self) -> FilterPanel:
+        assert self._filters is not None
+        return self._filters
+
+    def filter_column(self, name: str, kind: str | None = None) -> FilterCard:
+        """Show the filter panel with a new card for column *name*."""
+        self.filter_dock.show()
+        self.filter_dock.raise_()
+        return self.filters.add_filter(name, kind)
 
     @property
     def columns(self) -> ColumnActions:
@@ -225,6 +286,15 @@ class MainWindow(QMainWindow):
         edit.addAction(self._action("Clear Cells", lambda: self.view.clear_selected_cells()))
         edit.addSeparator()
         edit.addAction(
+            self._action("&Search Rows", lambda: self.search.focus(), QKeySequence.StandardKey.Find)
+        )
+        find_replace = self._action("Find and &Replace…", self.show_find_replace)
+        shortcuts = [*QKeySequence.keyBindings(QKeySequence.StandardKey.Replace)]
+        shortcuts.append(QKeySequence("Ctrl+Alt+F"))
+        find_replace.setShortcuts(shortcuts)
+        edit.addAction(find_replace)
+        edit.addSeparator()
+        edit.addAction(
             self._action(
                 "Select &All", lambda: self.view.selectAll(), QKeySequence.StandardKey.SelectAll
             )
@@ -248,6 +318,14 @@ class MainWindow(QMainWindow):
         table_menu.addAction(self._action("Add &Column…", self.add_column))
         table_menu.addSeparator()
         table_menu.addAction(self._action("Clear Sort", lambda: self.workspace.table.set_sort([])))
+        data.addSeparator()
+        data.addAction(self._action("Show All Rows", lambda: self.filters.remove_all()))
+
+        view = bar.addMenu("&View")
+        toggle = self.filter_dock.toggleViewAction()
+        toggle.setText("&Filters")
+        toggle.setShortcut(QKeySequence("Ctrl+Shift+F"))
+        view.addAction(toggle)
 
     def _update_actions(self) -> None:
         if self._workspace is None:

@@ -228,7 +228,7 @@ class Table:
         if self._view is None:
             mask: np.ndarray | None = None
             for flt in self._filters.values():
-                keep = flt.mask(self)
+                keep = flt.matches(self)
                 mask = keep if mask is None else (mask & keep)
             if mask is None:
                 slots = np.arange(len(self._oids), dtype=np.int64)

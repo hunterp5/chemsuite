@@ -169,9 +169,22 @@ class NumberColumn(Column):
         return self._values
 
     def match_text(self, predicate: Callable[[str], bool]) -> np.ndarray:
+        # The text depends only on (value, decimals): test each distinct pair once.
         out = np.zeros(len(self), dtype=np.bool_)
         valid_slots = np.flatnonzero(self._valid)
-        out[valid_slots] = [predicate(self.display(int(s))) for s in valid_slots]
+        if len(valid_slots):
+            values, value_index = np.unique(self._values[valid_slots], return_inverse=True)
+            decimals = self._decimals[valid_slots].astype(np.int64) + 128  # 0..255
+            pairs, pair_index = np.unique(value_index * 256 + decimals, return_inverse=True)
+            hits = np.fromiter(
+                (
+                    predicate(format_number(float(values[p >> 8]), int((p & 255) - 128)))
+                    for p in pairs.tolist()
+                ),
+                dtype=np.bool_,
+                count=len(pairs),
+            )
+            out[valid_slots] = hits[pair_index.ravel()]
         if predicate(""):
             out[~self._valid] = True
         return out
@@ -306,6 +319,12 @@ class TextColumn(Column):
 
     def sort_key(self) -> np.ndarray:
         return self._dict.ranks()[self._codes]
+
+    def value_counts(self) -> list[tuple[str, int]]:
+        """``(text, rows)`` for each text in use (one bincount over the codes)."""
+        counts = np.bincount(self._codes, minlength=len(self._dict.strings))
+        strings = self._dict.strings
+        return [(strings[i], int(counts[i])) for i in np.flatnonzero(counts).tolist()]
 
     def match_text(self, predicate: Callable[[str], bool]) -> np.ndarray:
         strings = self._dict.strings

@@ -40,10 +40,12 @@ class ColumnActions:
         parent: QWidget,
         table: Table,
         show_message: Callable[[str], None] = lambda _m: None,
+        add_filter: Callable[[str], object] | None = None,
     ) -> None:
         self._parent = parent
         self._table = table
         self._show = show_message
+        self._add_filter = add_filter
 
     # -- sorting ------------------------------------------------------------------------------
     def sort(self, name: str, ascending: bool) -> None:
@@ -142,6 +144,9 @@ class ColumnActions:
             add("Then Sort Ascending", lambda: self.add_to_sort(name, True), sortable)
             add("Then Sort Descending", lambda: self.add_to_sort(name, False), sortable)
         add("Clear Sort", self.clear_sort, bool(table.sort_keys))
+        if self._add_filter is not None:
+            add_filter = self._add_filter
+            add("Filter This Column", lambda: add_filter(name))
         menu.addSeparator()
 
         add("Rename…", lambda: self.rename(name))
