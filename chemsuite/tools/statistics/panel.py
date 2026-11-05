@@ -56,6 +56,7 @@ from chemsuite.analysis.statistics import (
     run_test,
     summarize,
 )
+from chemsuite.app.jobs import QUICK
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table import Changed
 from chemsuite.core.table.columns import TEXT
@@ -334,7 +335,7 @@ class CorrelationTab(QWidget):
                 names, columns, method, progress=job.report, cancel=job.cancel_token
             )
 
-        self.job = panel.ctx.run("Calculating correlations…", work, self.display)
+        self.job = panel.ctx.run("Calculating correlations…", work, self.display, lane=QUICK)
         return self.job
 
     def cancel(self) -> None:

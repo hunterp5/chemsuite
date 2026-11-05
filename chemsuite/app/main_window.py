@@ -66,7 +66,8 @@ from .commands import apply_shortcuts, register
 from .filters.cards import FilterCard
 from .filters.panel import FilterPanel
 from .find_replace import FindReplaceDialog
-from .jobs import Job, JobRunner
+from .jobs import QUEUE, QUICK, Job, JobRunner
+from .jobs_ui import JobsIndicator, JobsWindow
 from .list_actions import ListActions
 from .search_bar import SearchBar
 from .selection_browser import SelectionBrowser
@@ -87,6 +88,19 @@ OPEN_FILTER = (
 EXPORT_FILTER = "SD file (*.sdf);;CSV (*.csv);;TSV (*.tsv);;SMILES (*.smi);;Excel (*.xlsx)"
 
 _windows: list[MainWindow] = []
+_jobs_windows: dict[int, JobsWindow] = {}
+NOTIFY_AFTER_S = 30  # a background job this long gets a "done" notice
+
+
+def _jobs_window(runner: JobRunner) -> JobsWindow:
+    """One Jobs window per runner (the application's), created on first use."""
+    window = _jobs_windows.get(id(runner))
+    if window is None or window.runner is not runner:
+        window = _jobs_windows[id(runner)] = JobsWindow(runner)
+        runner.destroyed.connect(lambda *_: _jobs_windows.pop(id(runner), None))
+    return window
+
+
 PANELS_KEY = "panels"
 
 
@@ -184,6 +198,9 @@ class MainWindow(QMainWindow):
         self.browser_dock.hide()
         self._unsubscribe: Callable[[], None] | None = None
         self._status = QLabel()
+        self.jobs_indicator = JobsIndicator(runner)
+        self.jobs_indicator.clicked.connect(self.show_jobs)
+        self.statusBar().addPermanentWidget(self.jobs_indicator)
         self.statusBar().addPermanentWidget(self._status)
         self.resize(1400, 860)
         self._build_menus()
@@ -535,6 +552,7 @@ class MainWindow(QMainWindow):
         self._commands["view.filters"] = toggle
         view.addAction(toggle)
         view.addAction(A("view.browser", "Selection &Browser", self.toggle_browser, "Ctrl+Shift+B"))
+        view.addAction(A("view.jobs", "&Jobs", self.show_jobs))
         status = QAction("Status &Bar", self, checkable=True)
         status.toggled.connect(self._set_status_bar)
         register("view.status_bar", "Status Bar", "View")
@@ -700,11 +718,15 @@ class MainWindow(QMainWindow):
         self._undo.setText(f"&Undo {history.undo_label}" if history.can_undo else "&Undo")
         self._redo.setText(f"&Redo {history.redo_label}" if history.can_redo else "&Redo")
 
+    @property
+    def document_name(self) -> str:
+        path = self._workspace.path if self._workspace is not None else None
+        return path.name if path else "Untitled"
+
     def _update_title(self) -> None:
         if self._workspace is None:
             return
-        path = self.workspace.path
-        self.setWindowTitle(f"{path.name if path else 'Untitled'}[*] — chemsuite")
+        self.setWindowTitle(f"{self.document_name}[*] — chemsuite")
         self.setWindowModified(self.workspace.is_modified)
 
     def _update_status(self) -> None:
@@ -902,7 +924,13 @@ class MainWindow(QMainWindow):
 
         def opened(result: tuple[Table, Path | None, dict[str, Any]]) -> None:
             table, doc_path, extras = result
-            window = target if target is not None and target in _windows else self.new_window()
+            usable = (
+                target is not None
+                and target in _windows
+                and target.workspace.is_empty
+                and not target.workspace.is_modified
+            )  # it may have been edited while the file was read
+            window = target if usable else self.new_window()
             window._install(Workspace(table, doc_path, extras))
             window.statusBar().showMessage(f"Opened {path.name}", 4000)
             self._remember_path(path)
@@ -979,13 +1007,48 @@ class MainWindow(QMainWindow):
         on_done: Callable[[Any], None],
         *,
         wait: bool = False,
+        lane: str = QUICK,
+        guard: bool = False,
     ) -> Job:
-        dialog = QProgressDialog(label, "Cancel", 0, 0, self)
+        """Run *work* in the background; its progress shows in the status bar and Jobs window.
+
+        *wait* blocks (with a progress dialog) until the job ends, for callers that need the
+        outcome now, such as Save from the close prompt. With *guard*, the result is dropped
+        if this window has moved on to another document meanwhile.
+        """
+        workspace = self._workspace
+        job = self._runner.submit(label, work, lane=lane, owner=self, document=self.document_name)
+
+        def finished(result: Any) -> None:
+            if guard and self._workspace is not workspace:
+                log.info("dropping the result of %r: its document is gone", label)
+                job.set_summary("Not applied: the document was closed")
+                return
+            on_done(result)
+            if job.lane == QUEUE and job.elapsed > NOTIFY_AFTER_S:
+                self.statusBar().showMessage(f"{label.rstrip('…')}: done", 8000)
+                if not self.isActiveWindow():
+                    QApplication.alert(self)
+
+        job.finished.connect(finished)
+        if lane == QUEUE:
+            job.failed.connect(lambda err: self._report_failure(job, err))
+        else:
+            job.failed.connect(lambda err: self._show_error(label, err))
+        job.cancelled.connect(
+            lambda: self.statusBar().showMessage(f"Cancelled: {label.rstrip('…')}", 3000)
+        )
+        if wait:
+            self._wait_for(job)
+        return job
+
+    def _wait_for(self, job: Job) -> None:
+        dialog = QProgressDialog(job.title, "Cancel", 0, 0, self)
         dialog.setWindowTitle("chemsuite")
         dialog.setMinimumDuration(400)
         dialog.setAutoClose(False)
         dialog.setAutoReset(False)
-        job = self._runner.submit(label, work)
+        dialog.setModal(True)
         timer = QTimer(dialog)
 
         def poll() -> None:
@@ -997,19 +1060,37 @@ class MainWindow(QMainWindow):
         timer.timeout.connect(poll)
         timer.start(100)
         dialog.canceled.connect(job.cancel)
-        job.finished.connect(on_done)
-        job.failed.connect(lambda err: self._show_error(label, err))
-        job.cancelled.connect(lambda: self.statusBar().showMessage("Cancelled", 3000))
+        loop = QEventLoop()
         job.done.connect(timer.stop)
         job.done.connect(dialog.close)
-        if wait:  # e.g. Save from the close prompt: the caller needs the outcome
-            dialog.setModal(True)
-            ended: list[bool] = []
-            loop = QEventLoop()
-            job.done.connect(lambda: (ended.append(True), loop.quit()))
-            if not ended:  # `done` is delivered on this thread, so it cannot be missed
-                loop.exec()
-        return job
+        job.done.connect(loop.quit)
+        if job.running:  # `done` is delivered on this thread, so it cannot be missed
+            loop.exec()
+        dialog.deleteLater()
+
+    def _report_failure(self, job: Job, error: BaseException) -> None:
+        """A background job failed: say so without blocking; details are one click away."""
+        self.statusBar().showMessage(f"{job.title.rstrip('…')} failed: {error}", 10000)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("chemsuite")
+        box.setText(f"{job.title.rstrip('…')} failed.")
+        box.setInformativeText(str(error) or type(error).__name__)
+        box.setDetailedText(job.error_text)
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        box.open()  # not exec(): other work carries on
+        self._failure_box = box
+        if not self.isActiveWindow():
+            QApplication.alert(self)
+
+    def show_jobs(self) -> JobsWindow:
+        window = _jobs_window(self._runner)
+        window.show()
+        window.raise_()
+        window.activateWindow()
+        for w in _windows:
+            w.jobs_indicator.acknowledge()
+        return window
 
     def _show_error(self, label: str, error: BaseException) -> None:
         QMessageBox.critical(self, "chemsuite", f"{label.rstrip('…')} failed:\n\n{error}")
@@ -1057,6 +1138,18 @@ class MainWindow(QMainWindow):
 
     # -- closing -----------------------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:
+        jobs = self._runner.jobs_of(self)
+        if jobs:
+            answer = QMessageBox.question(
+                self,
+                "chemsuite",
+                f"{len(jobs)} job(s) for this document are still running or queued.\n\n"
+                "Cancel them and close?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
         if self.workspace.is_modified and len(self.workspace.table):
             answer = QMessageBox.question(
                 self,
@@ -1071,11 +1164,12 @@ class MainWindow(QMainWindow):
             ):
                 event.ignore()
                 return
+        self._runner.cancel_all(owner=self)
         self._teardown()
-        with contextlib.suppress(RuntimeError, TypeError):
-            settings_hub().changed.disconnect(self._apply_settings)
-        if self in _windows:
+        if self in _windows:  # closing twice must not disconnect twice
             _windows.remove(self)
+            with contextlib.suppress(RuntimeError, TypeError):
+                settings_hub().changed.disconnect(self._apply_settings)
         event.accept()
 
     def _quit(self) -> None:

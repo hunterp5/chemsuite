@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv)
     app.setApplicationName("chemsuite")
     app.setOrganizationName("chemsuite")
-    runner = JobRunner(app)
+    runner = JobRunner(app, keep_awake=True)
     images = StructureImages()
     app.aboutToQuit.connect(runner.shutdown)
 

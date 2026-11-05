@@ -39,7 +39,7 @@ from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import STRUCTURE, Column
 
-from .jobs import Job
+from .jobs import QUEUE, Job
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -76,6 +76,7 @@ class ToolContext:
 
     def __init__(self, window: MainWindow) -> None:
         self._window = window
+        self._finishing: Job | None = None  # the job whose results are being applied
 
     # -- reading ------------------------------------------------------------------------------
     @property
@@ -116,9 +117,32 @@ class ToolContext:
         return self.selection.as_array() if selected_only else self.table.oids.copy()
 
     # -- work ---------------------------------------------------------------------------------
-    def run(self, label: str, work: Callable[[Job], Any], on_done: Callable[[Any], None]) -> Job:
-        """Run *work* in the background with a progress dialog; *on_done* runs on the GUI thread."""
-        return self._window._run_with_progress(label, work, on_done)
+    def run(
+        self,
+        label: str,
+        work: Callable[[Job], Any],
+        on_done: Callable[[Any], None],
+        *,
+        lane: str = QUEUE,
+    ) -> Job:
+        """Run *work* in the background; *on_done* runs on the GUI thread when it finishes.
+
+        Heavy work goes in the job queue (one job at a time, in order); pass ``lane=QUICK``
+        for short interactive work that should never wait behind it. The window stays usable
+        throughout. A message shown from *on_done* becomes the job's result line.
+        """
+        holder: list[Job] = []
+
+        def finish(result: Any) -> None:
+            self._finishing = holder[0]
+            try:
+                on_done(result)
+            finally:
+                self._finishing = None
+
+        job = self._window._run_with_progress(label, work, finish, lane=lane, guard=True)
+        holder.append(job)
+        return job
 
     def process_pool(self) -> Executor:
         """The shared worker processes, for CPU-heavy work inside a job."""
@@ -179,6 +203,8 @@ class ToolContext:
 
     def show_message(self, text: str, ms: int = 5000) -> None:
         self._window.statusBar().showMessage(text, ms)
+        if self._finishing is not None:
+            self._finishing.set_summary(text)
 
 
 def load_tools(modules: Sequence[str]) -> list[Tool]:

@@ -219,6 +219,44 @@ def main(argv: list[str]) -> int:
         settle()
         dialog.grab().save(str(out / f"{tool}.png"))
         dialog.reject()
+    import threading
+
+    from chemsuite.app.tools import ToolContext
+    from chemsuite.core.jobs import check
+
+    release = threading.Event()
+
+    def slow(job):
+        for i in range(10**6):
+            if release.wait(0.01):
+                return None
+            job.report(min(i, 60), 100)
+            check(job.cancel_token)
+        return None
+
+    def broken(job):
+        raise ValueError("column 'pIC50' has no numbers")
+
+    ctx = ToolContext(window)
+    ctx.run("Calculating 12 descriptor(s)…", lambda job: None, lambda r: ctx.show_message(
+        "Added 12 descriptor column(s) for 7 row(s)"))  # fmt: skip
+    failed = ctx.run("Hansch analysis…", broken, lambda r: None)
+    while failed.running:
+        settle()
+    window._failure_box.close()
+    running = ctx.run("Generating conformers for 7 row(s)…", slow, lambda r: None)
+    ctx.run("Finding matched pairs…", lambda job: None, lambda r: None)
+    ctx.run("Making a UMAP map…", lambda job: None, lambda r: None)
+    for _ in range(10):
+        settle()
+    window.grab().save(str(out / "jobs-status.png"))
+    jobs = window.show_jobs()
+    settle()
+    jobs.grab().save(str(out / "jobs.png"))
+    jobs.close()
+    release.set()
+    while running.running or window._runner.queued_jobs:
+        settle()
     settings = window.open_settings()
     for row in range(settings.pages.count()):
         settings.pages.setCurrentRow(row)

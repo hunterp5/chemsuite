@@ -31,6 +31,12 @@ is needed (§6, tier 2).
 **Goal:** long jobs no longer block the window. You can queue several, keep working, watch
 progress, and cancel or clear them.
 
+**Status (2026-11-05): built.** Two lanes, job records, the status-bar indicator, the Jobs
+window (View ▸ Jobs), non-blocking failure reports, dropped results for replaced documents,
+the close prompt and keeping the computer awake. Saving still shows a short modal progress
+dialog, because the close prompt needs to know whether it worked. Not yet: removing ended jobs
+one by one in the window, and a desktop notification beyond the dock/taskbar alert.
+
 **Design**
 - **Two lanes in `JobRunner`.**
   - The **queue** runs one heavy job at a time, in order. Heavy jobs are those that use the
