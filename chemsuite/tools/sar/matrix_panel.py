@@ -26,8 +26,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
-    QGridLayout,
-    QHBoxLayout,
     QLabel,
     QPushButton,
     QTableWidget,
@@ -36,6 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from chemsuite.app.flow_layout import FlowLayout, compact, field
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table import Changed
 from chemsuite.plotting.data import number_columns, numbers, shown_oids
@@ -103,23 +102,20 @@ class SarMatrixPanel(QWidget):
         copy.setToolTip("Copy the matrix as tab-separated text, for Excel.")
         copy.clicked.connect(self.copy_text)
 
-        controls = QGridLayout()
-        controls.addWidget(QLabel("Rows:"), 0, 0)
-        controls.addWidget(self.rows_axis, 0, 1)
-        controls.addWidget(QLabel("Columns:"), 0, 2)
-        controls.addWidget(self.columns_axis, 0, 3)
-        controls.addWidget(QLabel("Pages:"), 0, 4)
-        controls.addWidget(self.pages_axis, 0, 5)
-        controls.addWidget(QLabel("Activity:"), 1, 0)
-        controls.addWidget(self.activity, 1, 1)
-        controls.addWidget(QLabel("Cell value:"), 1, 2)
-        controls.addWidget(self.aggregate, 1, 3)
-        controls.addWidget(QLabel("Page:"), 1, 4)
-        controls.addWidget(self.page, 1, 5)
-        options = QHBoxLayout()
+        compact(self.rows_axis, self.columns_axis, self.pages_axis, self.activity, self.page)
+        controls = FlowLayout()
+        for title, widget in (
+            ("Rows:", self.rows_axis),
+            ("Columns:", self.columns_axis),
+            ("Pages:", self.pages_axis),
+            ("Activity:", self.activity),
+            ("Cell value:", self.aggregate),
+            ("Page:", self.page),
+        ):
+            controls.addWidget(field(title, widget))
+        options = FlowLayout()
         options.addWidget(self.predict)
         options.addWidget(self.higher_is_better)
-        options.addStretch(1)
         options.addWidget(copy)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)

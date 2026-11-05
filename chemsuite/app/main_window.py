@@ -255,7 +255,9 @@ class MainWindow(QMainWindow):
         self._teardown()
         self._workspace = workspace
         self._view = TableView(workspace.model, workspace.selection, self._images)
-        self._search = SearchBar(workspace.table)
+        self._search = SearchBar(workspace.table)  # hidden until Search Rows opens it
+        self._search.openChanged.connect(self._sync_search_action)
+        self._sync_search_action(False)
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -349,6 +351,13 @@ class MainWindow(QMainWindow):
             ):
                 return True
         return False
+
+    def _sync_search_action(self, is_open: bool) -> None:
+        self._search_action.blockSignals(True)
+        self._search_action.setChecked(is_open)
+        self._search_action.blockSignals(False)
+        if not is_open and self._view is not None:
+            self.view.setFocus()  # back to the table after Esc or ✕
 
     @property
     def search(self) -> SearchBar:
@@ -643,6 +652,13 @@ class MainWindow(QMainWindow):
         register("view.filters", "Filters", "View", ["Ctrl+Shift+F"])
         self._commands["view.filters"] = toggle
         view.addAction(toggle)
+        self._search_action = QAction("&Search Bar", self, checkable=True)
+        self._search_action.toggled.connect(
+            lambda on: self.search.focus() if on else self.search.dismiss()
+        )
+        register("view.search_bar", "Search Bar", "View")
+        self._commands["view.search_bar"] = self._search_action
+        view.addAction(self._search_action)
         view.addAction(A("view.browser", "Selection &Browser", self.toggle_browser, "Ctrl+Shift+B"))
         view.addAction(A("view.jobs", "&Jobs", self.show_jobs))
         view.addAction(A("view.log", "&Log", self.show_log))

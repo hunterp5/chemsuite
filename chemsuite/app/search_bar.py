@@ -14,13 +14,18 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The quick search box above the table: shows only rows with a matching cell."""
+"""The quick search box above the table: shows only rows with a matching cell.
+
+The bar starts hidden. Edit ▸ Search Rows (or View ▸ Search Bar) opens it. Escape clears the
+search, and a second Escape (or the close button) hides the bar. Hiding the bar always clears its
+search, so it never leaves rows hidden by a search you cannot see.
+"""
 
 from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QKeyEvent
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QMenu, QToolButton, QWidget
 
@@ -33,17 +38,26 @@ DELAY_MS = 200
 
 
 class _SearchEdit(QLineEdit):
+    escapeWhenEmpty = Signal()
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key.Key_Escape and self.text():
-            self.clear()
+        if event.key() == Qt.Key.Key_Escape:
+            if self.text():
+                self.clear()
+            else:
+                self.escapeWhenEmpty.emit()
             return
         super().keyPressEvent(event)
 
 
 class SearchBar(QWidget):
+    #: the bar was opened (True) or dismissed (False)
+    openChanged = Signal(bool)
+
     def __init__(self, table: Table, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.table = table
+        self.setVisible(False)
         self.edit = _SearchEdit()
         self.edit.setPlaceholderText("Search all columns")
         self.edit.setClearButtonEnabled(True)
@@ -61,10 +75,18 @@ class SearchBar(QWidget):
         button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         button.setMenu(options)
 
+        close = QToolButton()
+        close.setText("✕")
+        close.setAutoRaise(True)
+        close.setToolTip("Close the search bar and clear the search (Esc)")
+        close.clicked.connect(self.dismiss)
+        self.edit.escapeWhenEmpty.connect(self.dismiss)
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(self.edit, 1)
         layout.addWidget(button)
+        layout.addWidget(close)
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -94,6 +116,26 @@ class SearchBar(QWidget):
         if flt is not None or FILTER_KEY in self.table.filters:
             self.table.set_filter(FILTER_KEY, flt)
 
+    @property
+    def is_open(self) -> bool:
+        return not self.isHidden()
+
     def focus(self) -> None:
+        """Open the bar and put the cursor in it."""
+        self.open()
         self.edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
         self.edit.selectAll()
+
+    def open(self) -> None:
+        if not self.is_open:
+            self.setVisible(True)
+            self.openChanged.emit(True)
+
+    def dismiss(self) -> None:
+        """Clear the search and hide the bar."""
+        if self.edit.text():
+            self.edit.clear()
+        self.apply_now()
+        if self.is_open:
+            self.setVisible(False)
+            self.openChanged.emit(False)

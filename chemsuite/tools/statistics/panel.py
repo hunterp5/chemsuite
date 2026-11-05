@@ -56,6 +56,7 @@ from chemsuite.analysis.statistics import (
     run_test,
     summarize,
 )
+from chemsuite.app.flow_layout import FlowLayout, compact, field
 from chemsuite.app.jobs import QUICK
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table import Changed
@@ -299,14 +300,14 @@ class CorrelationTab(QWidget):
         self.grid.cellDoubleClicked.connect(self._scatter)
         copy = QPushButton("Copy Table")
         copy.clicked.connect(lambda: copy_table(self.grid))
-        top = QHBoxLayout()
-        top.addWidget(QLabel("Method:"))
-        top.addWidget(self.method)
+        top = FlowLayout()
+        top.addWidget(field("Method:", self.method))
         top.addWidget(self.calculate_button)
-        top.addWidget(self.note, 1)
         top.addWidget(copy)
+        self.note.setWordWrap(True)
         layout = QVBoxLayout(self)
         layout.addLayout(top)
+        layout.addWidget(self.note)
         layout.addWidget(self.grid, 1)
         self.method.currentIndexChanged.connect(lambda _i: self.refresh())
         self.calculate_button.clicked.connect(lambda: self.calculate())
@@ -374,8 +375,7 @@ class CorrelationTab(QWidget):
 
 def _column_combo() -> QComboBox:
     combo = QComboBox()
-    combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-    combo.setMinimumContentsLength(12)
+    compact(combo, chars=10)
     return combo
 
 
@@ -401,6 +401,7 @@ class OutlierTab(QWidget):
         self.method = QComboBox()
         for key, (title, _label, _default) in OUTLIER_METHODS.items():
             self.method.addItem(title, key)
+        compact(self.method, chars=12)
         self.threshold = QDoubleSpinBox()
         self.threshold.setRange(0.1, 100.0)
         self.threshold.setSingleStep(0.5)
@@ -501,6 +502,7 @@ class FitTab(QWidget):
         self.model = QComboBox()
         for key, title in CURVE_MODELS.items():
             self.model.addItem(title, key)
+        compact(self.model, chars=12)
         self.degree = QSpinBox()
         self.degree.setRange(1, 6)
         self.report = QPlainTextEdit()
@@ -553,6 +555,7 @@ class TestTab(QWidget):
         self.test = QComboBox()
         for key, (title, _columns) in TESTS.items():
             self.test.addItem(title, key)
+        compact(self.test, chars=12)
         self.a = _column_combo()
         self.b = _column_combo()
         self.mean = QDoubleSpinBox()

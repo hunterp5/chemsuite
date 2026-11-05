@@ -35,7 +35,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
-    QHBoxLayout,
     QLabel,
     QSpinBox,
     QToolButton,
@@ -50,6 +49,7 @@ from chemsuite.core.table.columns import NUMBER, TEXT
 from chemsuite.plotting.data import colorable_columns, number_columns, shown_oids
 from chemsuite.plotting.stats import CURVES
 
+from ..flow_layout import FlowLayout, compact, field
 from .renderers import RENDERERS, Hover, PlotSpec
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
 
@@ -132,13 +132,10 @@ class PlotPanel(QWidget):
                 Qt.ItemDataRole.ToolTipRole,
             )
         self.guide.setToolTip("Reference regions or lines drawn behind the points")
-        for combo in (self.x, self.y, self.color, self.size):
-            combo.setMinimumContentsLength(10)
-            combo.setSizeAdjustPolicy(
-                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
-            )
+        compact(self.x, self.y, self.color, self.size, self.curve, self.guide)
         self._labels: dict[QWidget, QLabel] = {}
-        controls = QHBoxLayout()
+        self._fields: dict[QWidget, QWidget] = {}
+        controls = FlowLayout()
         controls.addWidget(self.kind)
         for title, widget in (
             ("X", self.x),
@@ -151,13 +148,13 @@ class PlotPanel(QWidget):
         ):
             label = QLabel(title + ":")
             self._labels[widget] = label
-            controls.addWidget(label)
-            controls.addWidget(widget, 1 if isinstance(widget, QComboBox) else 0)
+            self._fields[widget] = field(label, widget)
+            controls.addWidget(self._fields[widget])
         controls.addWidget(self.fit)
 
         self.mode_buttons: dict[str, QToolButton] = {}
         modes = QButtonGroup(self)
-        tools = QHBoxLayout()
+        tools = FlowLayout()
         for mode, text, tip in (
             (ZOOM, "Zoom", "Drag to pan, scroll or right-drag to zoom; click a point to select"),
             (BOX, "Box", "Drag a rectangle to select (Shift adds, ⌘/Ctrl toggles)"),
@@ -178,7 +175,6 @@ class PlotPanel(QWidget):
         export.setText("Export…")
         export.clicked.connect(self.export_dialog)
         tools.addWidget(reset)
-        tools.addStretch(1)
         tools.addWidget(export)
 
         self.view_box = SelectViewBox()
@@ -336,8 +332,8 @@ class PlotPanel(QWidget):
         }[kind]
         for widget in (self.y, self.color, self.size, self.fit, self.bins, self.curve, self.guide):
             widget.setVisible(widget in shown)
-            if widget in self._labels:
-                self._labels[widget].setVisible(widget in shown)
+            if widget in self._fields:
+                self._fields[widget].setVisible(widget in shown)
         self._labels[self.x].setText("Group by:" if kind == "box" else "X:")
         self._labels[self.y].setText("Values:" if kind == "box" else "Y:")
 
