@@ -104,3 +104,56 @@ def box_stats(values: np.ndarray) -> BoxStats | None:
     return BoxStats(
         len(finite), q1, median, q3, float(inside.min()), float(inside.max()), float(finite.mean())
     )
+
+
+CURVES = {"normal": "Normal", "lognormal": "Log-normal"}
+
+
+@dataclass(frozen=True)
+class DistributionFit:
+    """A fitted density, drawn over a histogram scaled to its counts."""
+
+    kind: str
+    mu: float  # mean (normal) or mean of log values (log-normal)
+    sigma: float  # standard deviation, of the values or of their logs
+    n: int
+
+    def pdf(self, x: np.ndarray) -> np.ndarray:
+        if self.kind == "normal":
+            z = (x - self.mu) / self.sigma
+            return np.exp(-0.5 * z * z) / (self.sigma * np.sqrt(2 * np.pi))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            z = (np.log(x) - self.mu) / self.sigma
+            density = np.exp(-0.5 * z * z) / (x * self.sigma * np.sqrt(2 * np.pi))
+        return np.where(x > 0, density, 0.0)
+
+    def curve(self, edges: np.ndarray, points: int = 200) -> tuple[np.ndarray, np.ndarray]:
+        """``(x, expected count per bin)`` across the histogram (equal-width bins)."""
+        lo, hi = float(edges[0]), float(edges[-1])
+        if self.kind == "lognormal":
+            lo = max(lo, np.finfo(float).tiny)
+        xs = np.linspace(lo, hi, points)
+        width = float(np.mean(np.diff(edges)))
+        return xs, self.pdf(xs) * self.n * width
+
+    def describe(self) -> str:
+        if self.kind == "normal":
+            return f"Normal fit: μ = {self.mu:.4g}, σ = {self.sigma:.4g}"
+        return f"Log-normal fit: median = {np.exp(self.mu):.4g}, σ(ln) = {self.sigma:.4g}"
+
+
+def fit_distribution(values: np.ndarray, kind: str) -> DistributionFit | None:
+    """Maximum-likelihood fit (log-normal uses the positive values only); None if degenerate."""
+    finite = values[np.isfinite(values)]
+    if kind == "lognormal":
+        finite = finite[finite > 0]
+        sample = np.log(finite)
+        sigma = float(sample.std()) if len(sample) > 1 else 0.0
+    elif kind == "normal":
+        sample = finite
+        sigma = float(sample.std(ddof=1)) if len(sample) > 1 else 0.0
+    else:
+        raise ValueError(f"unknown curve {kind!r}")
+    if len(sample) < 3 or sigma <= 1e-12:
+        return None
+    return DistributionFit(kind, float(sample.mean()), sigma, len(finite))

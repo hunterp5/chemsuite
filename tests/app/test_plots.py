@@ -227,6 +227,7 @@ def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -
         "size": None,
         "bins": None,
         "fit": True,
+        "curve": None,
     }
     assert histogram.spec().x == "Series" and histogram.spec().kind == "histogram"
 
@@ -235,3 +236,27 @@ def test_damaged_saved_panels_are_skipped(data) -> None:
     data._restore_panels([{"tool": "nope"}, "junk", {"tool": "scatter", "state": {"kind": 3}}])
     assert len(data.panels) == 1  # the scatter entry, with its bad kind ignored
     assert data.panels[0].spec().kind == "scatter"
+
+
+def test_histogram_curve_and_series_fits(data) -> None:
+    panel = data.open_tool("histogram")
+    panel.set_spec(x="pIC50", curve="normal")
+    assert not panel.curve.isHidden() and panel.fit.isHidden()
+    assert "Normal fit: μ = 7, σ = 1.581" in panel.status.text()
+    assert panel.renderer._curve is not None
+    panel.set_spec(curve="lognormal")
+    assert "Log-normal fit" in panel.status.text()
+    assert panel.state()["curve"] == "lognormal"
+    panel.set_spec(x="Series")  # a bar chart: no curve
+    assert panel.renderer._curve is None
+    scatter = data.open_tool("scatter")
+    scatter.set_spec(x="MW", y="pIC50", fit=True)
+    assert len(scatter.renderer._fit_lines) == 1 and "R² = 1.000" in scatter.status.text()
+    table = data.workspace.table
+    table.add_rows(
+        {"MW": ["150", "250", "350"], "pIC50": ["9", "8", "7"], "Series": ["y", "y", "y"]}
+    )
+    scatter.set_spec(color="Series")
+    # x has two plotted points (no fit); y has four, so it gets its own line.
+    assert len(scatter.renderer._fit_lines) == 1
+    assert "y: R² =" in scatter.status.text()

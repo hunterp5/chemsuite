@@ -127,3 +127,23 @@ def test_box_stats_and_jitter() -> None:
     assert offsets.min() >= -0.25 and offsets.max() <= 0.25
     assert np.array_equal(offsets, jitter(np.arange(1000), 0.5))
     assert abs(offsets.mean()) < 0.03
+
+
+def test_distribution_fits() -> None:
+    from chemsuite.plotting.stats import fit_distribution
+
+    rng = np.random.default_rng(7)
+    normal = fit_distribution(rng.normal(5, 2, 20_000), "normal")
+    assert normal.mu == pytest.approx(5, abs=0.05) and normal.sigma == pytest.approx(2, abs=0.05)
+    edges = np.linspace(-5, 15, 41)
+    xs, counts = normal.curve(edges)
+    # The curve's area matches the number of values (counts per bin of width 0.5).
+    assert np.trapezoid(counts, xs) / 0.5 == pytest.approx(20_000, rel=0.01)
+    lognormal = fit_distribution(rng.lognormal(1.0, 0.5, 20_000), "lognormal")
+    assert lognormal.mu == pytest.approx(1.0, abs=0.02)
+    assert "median = 2.7" in lognormal.describe()
+    assert lognormal.pdf(np.array([-1.0, 0.0])).tolist() == [0.0, 0.0]
+    assert fit_distribution(np.array([1.0, 1.0, 1.0]), "normal") is None
+    assert fit_distribution(np.array([-1.0, -2.0, 3.0]), "lognormal") is None
+    with pytest.raises(ValueError):
+        fit_distribution(np.ones(5), "gamma")

@@ -33,7 +33,13 @@ from chemsuite.core.table import Table
 from chemsuite.core.table.columns import NUMBER
 from chemsuite.plotting.data import BLANK_LABEL, OTHER_LABEL, categories, numbers, xy
 from chemsuite.plotting.geometry import box_mask, jitter, lasso_mask, nearest
-from chemsuite.plotting.stats import bin_of, box_stats, histogram_edges, linear_fit
+from chemsuite.plotting.stats import (
+    bin_of,
+    box_stats,
+    fit_distribution,
+    histogram_edges,
+    linear_fit,
+)
 from chemsuite.plotting.style import (
     DEFAULT_COLOR,
     GREY,
@@ -48,6 +54,7 @@ POINT_SIZE = 7.0
 HIGHLIGHT = (230, 70, 20)
 DIMMED = 0.3  # opacity of unselected points while something is selected
 HOVER_RADIUS = 10.0
+SPECIAL = (OTHER_LABEL, BLANK_LABEL)  # categories drawn grey
 
 
 @dataclass(frozen=True)
@@ -58,7 +65,8 @@ class PlotSpec:
     color: str | None = None
     size: str | None = None
     bins: int | None = None  # None: automatic
-    fit: bool = False
+    fit: bool = False  # scatter: least-squares line(s)
+    curve: str | None = None  # histogram: "normal" or "lognormal" density overlay
 
 
 @dataclass(frozen=True)
@@ -87,7 +95,8 @@ class ScatterRenderer:
             pen=pg.mkPen(HIGHLIGHT, width=1.6), brush=_brush(HIGHLIGHT, 160), pxMode=True
         )
         self._overlay.setZValue(10)
-        self._fit_line: pg.PlotDataItem | None = None
+        self._fit_lines: list[pg.PlotDataItem] = []
+        self._color_codes: np.ndarray | None = None
         self.spec = PlotSpec()
         self._color_values: np.ndarray | None = None
         self._color_labels: list[str] | None = None
@@ -98,9 +107,9 @@ class ScatterRenderer:
         self._layers = []
         if self._overlay.scene() is not None:
             self.plot.removeItem(self._overlay)
-        if self._fit_line is not None:
-            self.plot.removeItem(self._fit_line)
-            self._fit_line = None
+        for line in self._fit_lines:
+            self.plot.removeItem(line)
+        self._fit_lines = []
         if self._legend is not None:
             self._legend.clear()
             if self._legend.scene() is not None:
@@ -125,6 +134,7 @@ class ScatterRenderer:
         )
         self._color_values = None
         self._color_labels = None
+        self._color_codes = None
         groups = self._groups(table, spec)
         for mask, rgb, label in groups:
             if not mask.any():
@@ -148,14 +158,31 @@ class ScatterRenderer:
         if data.missing:
             parts.append(f"{data.missing:,} rows without both values")
         if spec.fit:
-            fit = linear_fit(self.x, self.y)
-            if fit is not None:
-                xs = np.array([self.x.min(), self.x.max()])
-                self._fit_line = self.plot.plot(
-                    xs, fit.slope * xs + fit.intercept, pen=pg.mkPen((120, 120, 120), width=2)
-                )
-                parts.append(fit.describe())
+            parts.extend(self._draw_fits())
         return " · ".join(parts)
+
+    def _draw_fits(self) -> list[str]:
+        """One line overall, or one per category when colouring by a text column."""
+        if self._color_labels is None or self._color_codes is None:
+            groups = [(np.ones(len(self.x), dtype=np.bool_), (120, 120, 120), None)]
+        else:
+            groups = [
+                (self._color_codes == code, category_color(code, label, special=SPECIAL), label)
+                for code, label in enumerate(self._color_labels)
+            ]
+        notes = []
+        for mask, rgb, label in groups:
+            fit = linear_fit(self.x[mask], self.y[mask])
+            if fit is None:
+                continue
+            xs = np.array([self.x[mask].min(), self.x[mask].max()])
+            line = self.plot.plot(xs, fit.slope * xs + fit.intercept, pen=pg.mkPen(rgb, width=2))
+            line.setZValue(8)
+            self._fit_lines.append(line)
+            notes.append(
+                fit.describe() if label is None else f"{label}: R² = {fit.r2:.2f} (n = {fit.n:,})"
+            )
+        return notes
 
     def _groups(self, table: Table, spec: PlotSpec):
         n = len(self.oids)
@@ -175,10 +202,11 @@ class ScatterRenderer:
             return groups  # the legend names only the low, middle and high steps
         cats = categories(table, spec.color, self.oids)
         self._color_labels = cats.labels
+        self._color_codes = cats.codes
         return [
             (
                 cats.codes == code,
-                category_color(code, label, special=(OTHER_LABEL, BLANK_LABEL)),
+                category_color(code, label, special=SPECIAL),
                 f"{label} ({cats.counts[code]:,})",
             )
             for code, label in enumerate(cats.labels)
@@ -240,12 +268,13 @@ class HistogramRenderer:
         self.spec = PlotSpec(kind="histogram")
         self._bars: pg.BarGraphItem | None = None
         self._overlay: pg.BarGraphItem | None = None
+        self._curve: pg.PlotDataItem | None = None
 
     def clear(self) -> None:
-        for item in (self._bars, self._overlay):
+        for item in (self._bars, self._overlay, self._curve):
             if item is not None:
                 self.plot.removeItem(item)
-        self._bars = self._overlay = None
+        self._bars = self._overlay = self._curve = None
         self.plot.getAxis("bottom").setTicks(None)
 
     def build(self, table: Table, spec: PlotSpec, oids: np.ndarray) -> str:
@@ -261,6 +290,7 @@ class HistogramRenderer:
             self.left, self.right = edges[:-1], edges[1:]
             self.labels = None
             missing = int((self.bins < 0).sum())
+            fit = fit_distribution(values, spec.curve) if spec.curve else None
         else:
             cats = categories(table, spec.x, oids, limit=40)
             self.bins = cats.codes
@@ -271,6 +301,7 @@ class HistogramRenderer:
                 [[(i, label[:18]) for i, label in enumerate(cats.labels)]]
             )
             missing = 0
+            fit = None
         nbins = len(self.left)
         self.counts = np.bincount(self.bins[self.bins >= 0], minlength=nbins).astype(float)
         self._bars = pg.BarGraphItem(
@@ -285,7 +316,16 @@ class HistogramRenderer:
         self.plot.setLabel("left", "Rows")
         unit = "bins" if self.labels is None else "groups"
         status = f"{int(self.counts.sum()):,} rows in {nbins} {unit}"
-        return status + (f" · {missing:,} blank or not a number" if missing else "")
+        if missing:
+            status += f" · {missing:,} blank or not a number"
+        if fit is not None:
+            xs, ys = fit.curve(edges)
+            self._curve = self.plot.plot(xs, ys, pen=pg.mkPen((40, 40, 40), width=2))
+            self._curve.setZValue(12)
+            status += " · " + fit.describe()
+        elif spec.curve and self.labels is None:
+            status += " · too few distinct values to fit"
+        return status
 
     def show_selection(self, selected: frozenset[int] | np.ndarray) -> None:
         chosen = (
