@@ -57,11 +57,13 @@ def render_png(
     scale: float = 1.0,
     dark: bool = False,
     highlight_atoms: list[int] | None = None,
+    highlight_bonds: list[int] | None = None,
 ) -> bytes:
     """PNG bytes of *mol* centred in a transparent ``width x height`` pixel box.
 
     *scale* is the device pixel ratio (2 on Retina/HiDPI screens), so lines and labels stay the
-    same physical size on every display.
+    same physical size on every display. Highlight indices refer to :func:`depiction_mol`'s
+    atoms and bonds (the same as *mol*'s unless *mol* is 3D).
     """
     drawer = rdMolDraw2D.MolDraw2DCairo(max(int(width), 1), max(int(height), 1))
     options = drawer.drawOptions()
@@ -77,7 +79,10 @@ def render_png(
     with rdBase.BlockLogs():
         try:
             rdMolDraw2D.PrepareAndDrawMolecule(
-                drawer, depiction_mol(mol), highlightAtoms=highlight_atoms or []
+                drawer,
+                depiction_mol(mol),
+                highlightAtoms=highlight_atoms or [],
+                highlightBonds=highlight_bonds or [],
             )
         except (RuntimeError, ValueError):  # e.g. a structure that cannot be kekulized
             drawer = rdMolDraw2D.MolDraw2DCairo(max(int(width), 1), max(int(height), 1))

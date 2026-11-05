@@ -48,9 +48,10 @@ _keys = itertools.count(1)
 
 
 class FilterPanel(QWidget):
-    def __init__(self, table: Table, parent: QWidget | None = None) -> None:
+    def __init__(self, table: Table, parent: QWidget | None = None, *, searcher=None) -> None:
         super().__init__(parent)
         self.table = table
+        self.searcher = searcher  # runs structure cards' searches (None: no structure cards)
         self._cards: dict[FilterCard, str] = {}  # card -> filter key
         self._dirty: set[FilterCard] = set()
         self._stale: set[FilterCard] = set()
@@ -109,7 +110,7 @@ class FilterPanel(QWidget):
         return list(self._cards)
 
     def add_filter(self, column: str, kind: str | None = None) -> FilterCard:
-        card = card_for(self.table, column, kind)
+        card = card_for(self.table, column, kind, self.searcher)
         self._cards[card] = f"panel:{next(_keys)}"
         self._cards_box.insertWidget(self._cards_box.count() - 1, card)
         card.changed.connect(lambda: self._mark_dirty(card))
@@ -123,6 +124,7 @@ class FilterPanel(QWidget):
             return
         self._dirty.discard(card)
         self._stale.discard(card)
+        card.dispose()
         if key in self.table.filters:
             self.table.set_filter(key, None)
         card.setParent(None)
@@ -141,6 +143,8 @@ class FilterPanel(QWidget):
 
     def close(self) -> bool:
         self._unsubscribe()
+        for card in self._cards:
+            card.dispose()
         return super().close()
 
     # -- applying -----------------------------------------------------------------------------
@@ -197,6 +201,7 @@ class FilterPanel(QWidget):
             self._cards.pop(card)  # the table already dropped this card's filter
             self._dirty.discard(card)
             self._stale.discard(card)
+            card.dispose()
             card.setParent(None)
             card.deleteLater()
 

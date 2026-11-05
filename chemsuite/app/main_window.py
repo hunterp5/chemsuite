@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from chemsuite.analysis.structure_search import StructureQuery
 from chemsuite.core.document import SUFFIX as DOCUMENT_SUFFIX
 from chemsuite.core.document import load_document, save_document
 from chemsuite.core.io.load import (
@@ -56,6 +57,7 @@ from chemsuite.core.io.load import (
 from chemsuite.core.lists import EXTRAS_KEY as LISTS_KEY
 from chemsuite.core.lists import RowLists
 from chemsuite.core.logbook import audit
+from chemsuite.core.mols import smiles_of
 from chemsuite.core.selection import Selection
 from chemsuite.core.settings import Settings, add_recent
 from chemsuite.core.table import Changed, Table
@@ -77,6 +79,7 @@ from .selection_browser import SelectionBrowser
 from .settings_hub import settings_hub
 from .split_join import JoinColumnsDialog, SplitColumnDialog
 from .structure_editor import StructureEditor, copy_structure
+from .structure_search import StructureSearchDialog, StructureSearcher
 from .table_model import TableModel
 from .table_view import StructureImages, TableView
 from .tools import Tool, ToolContext, load_tools
@@ -207,6 +210,8 @@ class MainWindow(QMainWindow):
         self._filters: FilterPanel | None = None
         self._search: SearchBar | None = None
         self._find: FindReplaceDialog | None = None
+        self._searcher: StructureSearcher | None = None
+        self._last_structure_query: StructureQuery | None = None
         self._lists: ListActions | None = None
         self._browser: SelectionBrowser | None = None
         self._panels: list[PanelDock] = []
@@ -258,7 +263,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._search)
         layout.addWidget(self._view, 1)
         self.setCentralWidget(central)
-        self._filters = FilterPanel(workspace.table)
+        self._searcher = StructureSearcher(
+            workspace.table,
+            self._run_with_progress,
+            self._runner.process_pool,
+            lambda column, highlight: self.view.set_highlight(column, highlight),
+        )
+        self._filters = FilterPanel(workspace.table, searcher=self._searcher)
         self.filter_dock.setWidget(self._filters)
         self._columns = ColumnActions(
             self,
@@ -353,6 +364,52 @@ class MainWindow(QMainWindow):
         self._find.find_edit.setFocus()
         self._find.find_edit.selectAll()
         return self._find
+
+    @property
+    def structure_searcher(self) -> StructureSearcher:
+        assert self._searcher is not None
+        return self._searcher
+
+    def structure_search(self) -> StructureSearchDialog | None:
+        """Edit ▸ Structure Search…"""
+        table = self.workspace.table
+        if not any(table.kind(n) == STRUCTURE for n in table.column_names):
+            self.show_message("The table has no structure column")
+            return None
+        dialog = StructureSearchDialog(self, self._last_structure_query)
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
+
+    def remember_structure_query(self, query: StructureQuery) -> None:
+        """The query the next Structure Search dialog starts with."""
+        self._last_structure_query = query
+
+    def clear_structure_highlights(self) -> None:
+        for column in self.view.highlights():
+            self.view.set_highlight(column, None)
+
+    def current_column_name(self) -> str | None:
+        return self._current_column()
+
+    def current_structure_text(self, column: str | None = None) -> str:
+        """SMILES of the current row's structure in *column* (default: the current cell's
+        column if it holds structures, else the first structure column); "" if none."""
+        table = self.workspace.table
+        current = self.view.currentIndex()
+        if not current.isValid():
+            return ""
+        if column is None or column not in table or table.kind(column) != STRUCTURE:
+            cell = self._structure_cell()
+            if cell is None:
+                return ""
+            column = cell[1]
+        oid = self.workspace.model.oid_at(current.row())
+        mol = table.column(column).mol(int(table.slots_of([oid])[0]))
+        return smiles_of(mol) if mol is not None else ""
+
+    def show_message(self, text: str, ms: int = 5000) -> None:
+        self.statusBar().showMessage(text, ms)
 
     @property
     def filters(self) -> FilterPanel:
@@ -482,6 +539,16 @@ class MainWindow(QMainWindow):
                 "Find and &Replace…",
                 self.show_find_replace,
                 [QKeySequence.StandardKey.Replace, "Ctrl+Alt+F"],
+            )
+        )
+        edit.addAction(
+            A("edit.structure_search", "Structure Searc&h…", self.structure_search, "Ctrl+Shift+M")
+        )
+        edit.addAction(
+            A(
+                "edit.clear_highlight",
+                "Clear Structure Highlighting",
+                self.clear_structure_highlights,
             )
         )
         edit.addSeparator()

@@ -53,6 +53,7 @@ class FingerprintKind:
     title: str
     bits: int
     help: str = ""
+    listed: bool = True  # offered in the similarity tools' fingerprint menus
 
 
 KINDS: dict[str, FingerprintKind] = {
@@ -71,6 +72,13 @@ KINDS: dict[str, FingerprintKind] = {
         FingerprintKind("torsion", "Topological torsions, 2048 bits", 2048),
         FingerprintKind(
             "maccs", "MACCS keys (166)", 167, "Small, interpretable substructure keys."
+        ),
+        FingerprintKind(
+            "pattern",
+            "Substructure screen (RDKit pattern), 2048 bits",
+            2048,
+            "Screens out rows that cannot contain a query; not meant for similarity.",
+            listed=False,
         ),
     )
 }
@@ -109,6 +117,11 @@ def mol_bits(mol: Chem.Mol, key: str, generator=None) -> np.ndarray:
         out = np.zeros(vector.GetNumBits(), dtype=np.uint8)
         DataStructs.ConvertToNumpyArray(vector, out)
         return out.astype(np.bool_)
+    if key == "pattern":
+        vector = Chem.PatternFingerprint(mol, fpSize=KINDS[key].bits)
+        out = np.zeros(vector.GetNumBits(), dtype=np.uint8)
+        DataStructs.ConvertToNumpyArray(vector, out)
+        return out.astype(np.bool_)
     generator = generator or _generator(key)
     return generator.GetFingerprintAsNumPy(mol).astype(np.bool_)
 
@@ -119,6 +132,15 @@ def _mol(cell: Cell) -> Chem.Mol | None:
     if isinstance(cell, str):
         return mol_from_text(cell)
     return None
+
+
+def cell_mol(cell: Cell) -> Chem.Mol | None:
+    """The molecule fingerprints and searches see: a 3D cell without its explicit hydrogens,
+    so it matches its 2D source. None for a blank or invalid cell."""
+    mol = _mol(cell)
+    if mol is not None and mol.GetNumConformers() and mol.GetConformer().Is3D():
+        mol = Chem.RemoveHs(mol)
+    return mol
 
 
 def pack(bits: np.ndarray, kind: FingerprintKind) -> np.ndarray:
@@ -139,12 +161,10 @@ def fingerprint_chunk(args: tuple[str, Sequence[Cell]]) -> tuple[np.ndarray, np.
     valid = np.zeros(len(cells), dtype=np.bool_)
     with rdBase.BlockLogs():
         for i, cell in enumerate(cells):
-            mol = _mol(cell)
-            if mol is None:
-                continue
             try:
-                if mol.GetNumConformers() and mol.GetConformer().Is3D():
-                    mol = Chem.RemoveHs(mol)  # a 3D cell matches its 2D source
+                mol = cell_mol(cell)
+                if mol is None:
+                    continue
                 bits[i] = mol_bits(mol, key, generator)
                 valid[i] = True
             except (ValueError, RuntimeError):
@@ -478,3 +498,50 @@ def cache_for(table: Table) -> FingerprintCache:
     if cache is None:
         cache = _CACHES[table] = FingerprintCache(table)
     return cache
+
+
+POOL_MIN_ROWS = 5000  # fingerprints for fewer rows are quicker in the job's own thread
+
+
+def fingerprint_task(
+    table: Table,
+    column: str,
+    key: str,
+    oids: np.ndarray,
+    pool: Callable[[], Executor],
+) -> tuple[Callable[[object], Fingerprints], Callable[[Fingerprints], None]]:
+    """``(compute, remember)`` for fingerprints of *oids* (in that order) through the cache.
+
+    Call this on the GUI thread: it reads the cells now. *compute(job)* runs in the job (a
+    cache hit is instant; big tables use *pool()*); *remember(fps)* stores the result once the
+    job is done, unless the column changed meanwhile.
+    """
+    cache = cache_for(table)
+    cached = cache.get(column, key, oids)
+    generation = cache.generation(column)
+    cells = None
+    if cached is None:
+        structures = table.column(column)
+        slots = table.slots_of(oids)
+        cells = [
+            blob if blob is not None else (text or None)
+            for blob, text in zip(structures.blobs(slots), structures.displays(slots), strict=True)
+        ]
+    use_pool = cells is not None and len(cells) >= POOL_MIN_ROWS
+
+    def compute(job) -> Fingerprints:
+        if cached is not None:
+            return cached
+        return compute_fingerprints(
+            cells,
+            key,
+            executor=pool() if use_pool else None,
+            progress=getattr(job, "report", None),
+            cancel=getattr(job, "cancel_token", None),
+        )
+
+    def remember(fps: Fingerprints) -> None:
+        if cached is None:
+            cache.put(column, key, oids, fps, generation)
+
+    return compute, remember

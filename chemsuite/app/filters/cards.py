@@ -141,6 +141,9 @@ class FilterCard(QFrame):
     def refresh(self) -> None:
         """The column's data changed: update summaries, keeping the user's choices."""
 
+    def dispose(self) -> None:
+        """The card is being removed: stop background work and undo side effects."""
+
     def rename(self, new: str) -> None:
         self.column = new
         self._update_title()
@@ -427,15 +430,25 @@ class CategoryCard(FilterCard):
             item.setHidden(bool(needle) and needle not in value.casefold())
 
 
-def card_for(table: Table, column: str, kind: str | None = None) -> FilterCard:
-    """A card for *column*: *kind* ("range", "category", "text") or the best fit for the data."""
+def card_for(table: Table, column: str, kind: str | None = None, searcher=None) -> FilterCard:
+    """A card for *column*: *kind* ("range", "category", "text", "structure") or the best fit.
+
+    Structure cards need a :class:`~chemsuite.app.structure_search.StructureSearcher`; without
+    one, a structure column gets a text card.
+    """
     if kind is None:
         if table.kind(column) == NUMBER:
             kind = "range"
         elif table.kind(column) == "structure":
-            kind = "text"
+            kind = "structure" if searcher is not None else "text"
         else:
             distinct = len(value_counts(table.column(column)))
             kind = "category" if distinct <= CATEGORY_LIMIT else "text"
+    if kind == "structure":
+        if searcher is None:
+            raise ValueError("a structure card needs a searcher")
+        from .structure_card import StructureCard
+
+        return StructureCard(table, column, searcher)
     cls = {"range": RangeCard, "category": CategoryCard, "text": TextCard}[kind]
     return cls(table, column)

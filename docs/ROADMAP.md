@@ -96,6 +96,16 @@ external-tool runs will write audit records when those features arrive.
 
 **Goal:** find compounds by structure, and by more than one condition, in one place.
 
+**Status (2026-11-05): structure search (item 1) built.** Edit ▸ Structure Search… (Ctrl+Shift+M)
+and a structure card in the Filters panel (the default card for a structure column). It covers
+substructure from SMILES, SMARTS or a drawing, exact match with or without stereo, and similarity
+above a threshold. The dialog closes on Search and the job runs in the background. Matches can be shown
+alone (as a filter card), selected, or added to a list. Substructure matches are highlighted in the
+table (Edit ▸ Clear Structure Highlighting). Speed: pattern fingerprints are cached per column, and
+the bench (`tests/analysis/test_bench_structure_search.py`) measures 0.5–0.9 s over 200k rows
+once they are cached. The first search of a column computes them (about 8 s at 200k rows). Not
+yet: saving structure filters with the document (with the rest of item 4).
+
 1. **Structure search** (Edit ▸ Structure Search…, and a card in the Filters panel):
    - **Modes:**
      - *substructure*, from SMILES or SMARTS, drawn or pasted;

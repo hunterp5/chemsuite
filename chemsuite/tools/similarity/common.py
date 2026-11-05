@@ -36,13 +36,11 @@ from chemsuite.analysis.fingerprints import (
     KINDS,
     METRICS,
     Fingerprints,
-    cache_for,
-    compute_fingerprints,
 )
+from chemsuite.analysis.fingerprints import fingerprint_task as cached_fingerprint_task
 from chemsuite.app.tools import ToolContext
 from chemsuite.plotting.data import number_columns, numbers, shown_oids
 
-POOL_MIN_ROWS = 5000  # fingerprints for fewer rows are quicker in the job's own thread
 SCOPES = {"all": "All rows", "shown": "Shown rows", "selected": "Selected rows"}
 LABEL_COLUMNS = ("ID", "Name", "Title", "Compound", "Compound ID")
 
@@ -87,36 +85,7 @@ def fingerprint_task(
 ) -> tuple[Callable[[object], Fingerprints], Callable[[Fingerprints], None]]:
     """``(compute, remember)``: *compute(job)* runs in the job (cache hit: instant);
     *remember(fps)* stores the result on the GUI thread once the job is done."""
-    table = ctx.table
-    cache = cache_for(table)
-    cached = cache.get(column, key, oids)
-    generation = cache.generation(column)
-    cells = None
-    if cached is None:
-        structures = table.column(column)
-        slots = table.slots_of(oids)
-        cells = [
-            blob if blob is not None else (text or None)
-            for blob, text in zip(structures.blobs(slots), structures.displays(slots), strict=True)
-        ]
-    use_pool = cells is not None and len(cells) >= POOL_MIN_ROWS
-
-    def compute(job) -> Fingerprints:
-        if cached is not None:
-            return cached
-        return compute_fingerprints(
-            cells,
-            key,
-            executor=ctx.process_pool() if use_pool else None,
-            progress=job.report,
-            cancel=job.cancel_token,
-        )
-
-    def remember(fps: Fingerprints) -> None:
-        if cached is None:
-            cache.put(column, key, oids, fps, generation)
-
-    return compute, remember
+    return cached_fingerprint_task(ctx.table, column, key, oids, ctx.process_pool)
 
 
 class FeatureChooser(QWidget):
@@ -139,7 +108,7 @@ class FeatureChooser(QWidget):
         if default:
             self.structure.setCurrentText(default)
         self.kind = QComboBox()
-        for kind in KINDS.values():
+        for kind in (k for k in KINDS.values() if k.listed):
             self.kind.addItem(kind.title, kind.key)
             if kind.help:
                 self.kind.setItemData(self.kind.count() - 1, kind.help, Qt.ItemDataRole.ToolTipRole)

@@ -21,6 +21,7 @@ from __future__ import annotations
 import csv
 import io
 from collections import OrderedDict
+from dataclasses import dataclass
 
 import numpy as np
 from PySide6.QtCore import (
@@ -45,8 +46,10 @@ from PySide6.QtWidgets import (
     QTableView,
     QWidget,
 )
+from rdkit import Chem
 
-from chemsuite.core.depict import render_png
+from chemsuite.analysis.structure_search import match_atoms
+from chemsuite.core.depict import depiction_mol, render_png
 from chemsuite.core.mols import looks_like_molblock
 from chemsuite.core.selection import Selection
 from chemsuite.core.structure_input import read_structure
@@ -60,26 +63,61 @@ STRUCTURE_COLUMN_WIDTH = 200
 MAX_AUTO_COLUMN_WIDTH = 320
 
 
+@dataclass(frozen=True)
+class Highlight:
+    """Atoms to highlight in a structure column: those matching *query* (a substructure)."""
+
+    key: str  # identifies the query in the image cache
+    query: Chem.Mol
+    stereo: bool = False
+
+
 class StructureImages:
-    """Rendered structure pictures, keyed by molecule and size, within a byte budget."""
+    """Rendered structure pictures, keyed by molecule, size and highlight, within a byte budget."""
 
     def __init__(self, max_bytes: int = 192 * 1024**2) -> None:
         self._cache: OrderedDict[tuple, QImage] = OrderedDict()
         self._bytes = 0
         self.max_bytes = max_bytes
 
-    def image(self, column: StructureColumn, slot: int, size: QSize, dpr: float, dark: bool):
+    def image(
+        self,
+        column: StructureColumn,
+        slot: int,
+        size: QSize,
+        dpr: float,
+        dark: bool,
+        highlight: Highlight | None = None,
+    ):
         mol = column.mol(slot)  # parses a pending cell on first use
         if mol is None:
             return None
         blob = column.blobs(np.array([slot]))[0]
-        key = (blob, size.width(), size.height(), round(dpr, 2), dark)
+        key = (
+            blob,
+            size.width(),
+            size.height(),
+            round(dpr, 2),
+            dark,
+            highlight.key if highlight else None,
+        )
         image = self._cache.get(key)
         if image is not None:
             self._cache.move_to_end(key)
             return image
+        atoms: list[int] = []
+        bonds: list[int] = []
+        if highlight is not None:
+            mol = depiction_mol(mol)
+            atoms, bonds = match_atoms(mol, highlight.query, highlight.stereo)
         png = render_png(
-            mol, int(size.width() * dpr), int(size.height() * dpr), scale=dpr, dark=dark
+            mol,
+            int(size.width() * dpr),
+            int(size.height() * dpr),
+            scale=dpr,
+            dark=dark,
+            highlight_atoms=atoms,
+            highlight_bonds=bonds,
         )
         image = QImage.fromData(png, "PNG")
         image.setDevicePixelRatio(dpr)
@@ -101,6 +139,8 @@ class CellDelegate(QStyledItemDelegate):
     def __init__(self, images: StructureImages, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._images = images
+        #: column name -> atoms to highlight in that column's drawings
+        self.highlights: dict[str, Highlight] = {}
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         if index.data(KIND_ROLE) != STRUCTURE:
@@ -121,7 +161,10 @@ class CellDelegate(QStyledItemDelegate):
         if status != "invalid":
             dark = option.palette.color(QPalette.ColorRole.Base).lightness() < 128
             dpr = painter.device().devicePixelRatioF() if painter.device() else 1.0
-            image = self._images.image(column, slot, rect.size(), dpr, dark)
+            highlight = None
+            if self.highlights:
+                highlight = self.highlights.get(index.model().column_name(index.column()))
+            image = self._images.image(column, slot, rect.size(), dpr, dark, highlight)
             if image is not None:
                 painter.drawImage(rect.topLeft(), image)
                 return
@@ -219,6 +262,19 @@ class TableView(QTableView):
         if changed:
             self._capture_widths()
             self._fit_layout()
+
+    def set_highlight(self, column: str, highlight: Highlight | None) -> None:
+        """Highlight atoms matching a query in *column*'s drawings (None: stop)."""
+        highlights = self.itemDelegate().highlights
+        if highlight is None:
+            if highlights.pop(column, None) is None:
+                return
+        else:
+            highlights[column] = highlight
+        self.viewport().update()
+
+    def highlights(self) -> dict[str, Highlight]:
+        return dict(self.itemDelegate().highlights)
 
     @property
     def table_model(self) -> TableModel:
