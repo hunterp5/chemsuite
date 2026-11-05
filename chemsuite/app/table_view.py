@@ -47,9 +47,12 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.core.depict import render_png
+from chemsuite.core.mols import looks_like_molblock
 from chemsuite.core.selection import Selection
+from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table.columns import STRUCTURE, StructureColumn
 
+from .structure_editor import structure_text_from_mime
 from .table_model import KIND_ROLE, STATUS_ROLE, STRUCTURE_ROLE, TableModel
 
 STRUCTURE_ROW_HEIGHT = 110
@@ -148,6 +151,8 @@ class TableView(QTableView):
 
     #: (column index, global position) for a right-click on the horizontal header
     headerMenuRequested = Signal(int, QPoint)
+    #: (cell, starting text or "" to keep the cell's) when a structure cell is to be edited
+    structureEditRequested = Signal(QModelIndex, str)
 
     def __init__(
         self,
@@ -348,6 +353,27 @@ class TableView(QTableView):
                     QAbstractItemView.ScrollHint.PositionAtTop,
                 )
 
+    # -- editing ------------------------------------------------------------------------------
+    def edit(self, index, trigger=None, event=None):  # type: ignore[override]
+        """Structure cells open the structure editor instead of an inline text editor."""
+        if trigger is None:
+            return super().edit(index)
+        if (
+            index.isValid()
+            and index.data(KIND_ROLE) == STRUCTURE
+            and trigger
+            in (
+                QAbstractItemView.EditTrigger.DoubleClicked,
+                QAbstractItemView.EditTrigger.EditKeyPressed,
+                QAbstractItemView.EditTrigger.AnyKeyPressed,
+            )
+            and self.state() != QAbstractItemView.State.EditingState
+        ):
+            typed = event.text() if trigger == QAbstractItemView.EditTrigger.AnyKeyPressed else ""
+            self.structureEditRequested.emit(index, typed)
+            return False
+        return super().edit(index, trigger, event)
+
     # -- clipboard ----------------------------------------------------------------------------
     def copy_selection(self) -> None:
         """Copy selected cells as tab-separated text (with a header row), Excel-compatible."""
@@ -375,8 +401,13 @@ class TableView(QTableView):
         names is treated as a header and skipped. Returns a status message.
         """
         model = self.table_model
+        if not model.rowCount() or not model.columnCount():
+            return "Nothing to paste"
+        structure = structure_text_from_mime(QGuiApplication.clipboard().mimeData())
+        if looks_like_molblock(structure):
+            return self._paste_molfile(structure)
         text = QGuiApplication.clipboard().text()
-        if not text or not model.rowCount() or not model.columnCount():
+        if not text:
             return "Nothing to paste"
         grid = [row for row in csv.reader(io.StringIO(text), delimiter="\t")]
         if not grid:
@@ -401,6 +432,33 @@ class TableView(QTableView):
         return f"Pasted {height} row(s)" + (
             f"; {skipped} row(s) past the end skipped" if skipped else ""
         )
+
+    def _paste_molfile(self, block: str) -> str:
+        """A molfile goes whole into the selected structure cells (or the current one)."""
+        table = self.table_model.table
+        cells = {
+            name: oids
+            for name, oids in self.selected_cells_by_column().items()
+            if table.kind(name) == STRUCTURE
+        }
+        current = self.currentIndex()
+        if not cells and current.isValid() and current.data(KIND_ROLE) == STRUCTURE:
+            name = self.table_model.column_name(current.column())
+            cells = {name: np.array([self.table_model.oid_at(current.row())])}
+        if not cells:
+            return "Select a structure cell to paste the molfile into"
+        parsed = read_structure(block)
+        if parsed.mol is None:
+            return f"The pasted molfile is not valid: {parsed.error}"
+        one = parsed.as_column()
+        table.set_block(
+            {
+                name: (oids, one.take(np.zeros(len(oids), dtype=np.int64)))
+                for name, oids in cells.items()
+            },
+            label="Paste structure",
+        )
+        return f"Pasted structure into {sum(len(o) for o in cells.values())} cell(s)"
 
     def selected_cells_by_column(self) -> dict[str, np.ndarray]:
         """``{column name: oids}`` for every selected cell."""

@@ -138,9 +138,32 @@ def main(argv: list[str]) -> int:
     settle()
     window.grab().save(str(out / "search.png"))
     dialog.grab().save(str(out / "find-replace.png"))
+    dialog.close_dialog()
+    window.search.edit.clear()
+    window.search.apply_now()
+    window.workspace.lists.add("Actives", table.oids[:4])
+    window.workspace.selection.set(table.oids[1:5].tolist(), "script")
+    browser = window.show_browser()
+    browser.go(1)
+    settle()
+    window.grab().save(str(out / "browser.png"))
+    lists_menu = window._lists_menu
+    lists_menu.popup(window.mapToGlobal(window.rect().topLeft()))
+    settle()
+    lists_menu.grab().save(str(out / "menu-lists.png"))
+    lists_menu.hide()
+    window.view.setCurrentIndex(window.workspace.model.index(1, 0))
+    editor = window.edit_current_structure()
+    settle()
+    editor.grab().save(str(out / "structure-editor.png"))
+    editor.set_text("c1cccc1C(=O)N")
+    settle()
+    editor.grab().save(str(out / "structure-editor-error.png"))
+    editor.reject()
     print("\n".join(str(p) for p in sorted(out.glob("*.png"))))
     runner.shutdown()
-    window.workspace.table.history.mark_clean()  # skip the save prompt
+    workspace = window.workspace
+    workspace.mark_saved(workspace.table.history.checkpoint(), workspace.lists.revision)
     window.close()
     return 0
 

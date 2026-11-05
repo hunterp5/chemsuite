@@ -1,0 +1,389 @@
+# This file is part of chemsuite.
+# Copyright (C) 2026 Hunter Picard
+#
+# chemsuite is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# chemsuite is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
+
+"""The selection browser: step through rows one at a time with a large drawing.
+
+It browses either the selected rows or every shown row, in the table's display order, and
+keeps the table's current row in step (without changing the selection) so the two views
+always point at the same compound. Its tick box adds or removes the row from the selection.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+from PySide6.QtCore import QItemSelectionModel, QModelIndex, Qt, QTimer
+from PySide6.QtGui import QKeyEvent, QPixmap
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QCheckBox,
+    QComboBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QSizePolicy,
+    QSpinBox,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from chemsuite.core.depict import render_png
+from chemsuite.core.selection import Selection
+from chemsuite.core.table import Changed
+from chemsuite.core.table.columns import STRUCTURE
+
+from .table_view import TableView
+
+ORIGIN = "browser"
+SCOPES = {"selected": "Selected rows", "shown": "All shown rows"}
+PREVIEW_SCALE = 1.6  # bonds drawn larger than in table cells (shrunk to fit if needed)
+
+
+class _Preview(QLabel):
+    """A drawing that re-renders at its own size after resizes settle."""
+
+    def __init__(self, owner: SelectionBrowser) -> None:
+        super().__init__()
+        self._owner = owner
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumSize(160, 140)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(60)
+        self._timer.timeout.connect(owner._draw)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._timer.start()
+
+
+class SelectionBrowser(QWidget):
+    def __init__(self, view: TableView, selection: Selection, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.view = view
+        self.model = view.table_model
+        self.table = self.model.table
+        self.selection = selection
+        self._oids = np.empty(0, dtype=np.int64)  # rows in scope, display order
+        self._index = -1
+        self._oid: int | None = None
+        self._following = False  # moving the table cursor ourselves
+        self._stale = False
+
+        self.scope = QComboBox()
+        for key, title in SCOPES.items():
+            self.scope.addItem(title, key)
+        self.structure = QComboBox()
+        self.preview = _Preview(self)
+        self.first_button = self._button("⏮", "First (Home)", self.first)
+        self.prev_button = self._button("◀", "Previous (Left)", self.previous)
+        self.next_button = self._button("▶", "Next (Right)", self.next)
+        self.last_button = self._button("⏭", "Last (End)", self.last)
+        self.position = QSpinBox()
+        self.position.setKeyboardTracking(False)
+        self.position.setMinimum(1)
+        self.position.setToolTip("Row number in this list; type one to jump to it")
+        self.count_label = QLabel("of 0")
+        self.select_box = QCheckBox("Selected")
+        self.select_box.setToolTip("Add or remove this row from the selection (Space)")
+        self.properties = QTableWidget(0, 2)
+        self.properties.setHorizontalHeaderLabels(["Property", "Value"])
+        self.properties.verticalHeader().hide()
+        self.properties.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.properties.horizontalHeader().setStretchLastSection(True)
+        self.properties.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.properties.setWordWrap(False)
+
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Browse:"))
+        top.addWidget(self.scope, 1)
+        self.structure_label = QLabel("Structure:")
+        top.addWidget(self.structure_label)
+        top.addWidget(self.structure, 1)
+        nav = QHBoxLayout()
+        for widget in (self.first_button, self.prev_button, self.position, self.count_label):
+            nav.addWidget(widget)
+        nav.addWidget(self.next_button)
+        nav.addWidget(self.last_button)
+        nav.addStretch(1)
+        nav.addWidget(self.select_box)
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(self.preview)
+        splitter.addWidget(self.properties)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        layout = QVBoxLayout(self)
+        layout.addLayout(top)
+        layout.addLayout(nav)
+        layout.addWidget(splitter, 1)
+        self.setMinimumWidth(280)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(40)
+        self._refresh_timer.timeout.connect(self.refresh)
+        self.scope.currentIndexChanged.connect(lambda _i: self.refresh(restart=True))
+        self.structure.currentIndexChanged.connect(lambda _i: self._draw())
+        self.position.valueChanged.connect(lambda value: self.go(value - 1))
+        self.select_box.clicked.connect(self.set_selected)
+        self.view.selectionModel().currentChanged.connect(self._on_table_current)
+        self._unsubscribe_table = self.table.subscribe(self._on_table_event)
+        self._unsubscribe_selection = selection.subscribe(lambda *_: self._schedule())
+        self.refresh(restart=True)
+
+    def _button(self, text: str, tip: str, slot) -> QToolButton:
+        button = QToolButton()
+        button.setText(text)
+        button.setToolTip(tip)
+        button.clicked.connect(lambda _c=False: slot())
+        return button
+
+    def close_browser(self) -> None:
+        self._unsubscribe_table()
+        self._unsubscribe_selection()
+        self._refresh_timer.stop()
+
+    # -- state ----------------------------------------------------------------------------------
+    @property
+    def oids(self) -> np.ndarray:
+        """The browsed rows, in display order."""
+        return self._oids
+
+    @property
+    def index(self) -> int:
+        return self._index
+
+    @property
+    def current_oid(self) -> int | None:
+        return self._oid
+
+    def scope_key(self) -> str:
+        return self.scope.currentData()
+
+    def set_scope(self, key: str) -> None:
+        self.scope.setCurrentIndex(self.scope.findData(key))
+
+    def _scope_oids(self) -> np.ndarray:
+        shown = self.model.visible_oids
+        if self.scope_key() == "shown":
+            return shown
+        return shown[np.isin(shown, self.selection.as_array())]
+
+    def _schedule(self) -> None:
+        if self.isVisible():
+            self._refresh_timer.start()
+        else:
+            self._stale = True  # catch up when shown
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._stale:
+            self.refresh()
+
+    def _on_table_event(self, event: object) -> None:
+        if isinstance(event, Changed):
+            self._schedule()
+
+    def refresh(self, *, restart: bool = False) -> None:
+        """Recompute the browsed rows, staying on the same row when it is still there."""
+        self._refresh_timer.stop()
+        self._stale = False
+        self._fill_structure_columns()
+        self._oids = self._scope_oids()
+        n = len(self._oids)
+        if restart:
+            index = self._start_index()
+        elif self._oid is not None and n:
+            hit = np.flatnonzero(self._oids == self._oid)
+            # A row that left (e.g. deselected while browsing selected rows): stay at its place.
+            index = int(hit[0]) if len(hit) else min(max(self._index, 0), n - 1)
+        else:
+            index = 0 if n else -1
+        self._set_index(index if n else -1, move_table=restart)
+
+    def _start_index(self) -> int:
+        """Begin at the table's current row when it is in scope, else at the first row."""
+        if not len(self._oids):
+            return -1
+        current = self.view.currentIndex()
+        if current.isValid():
+            hit = np.flatnonzero(self._oids == self.model.oid_at(current.row()))
+            if len(hit):
+                return int(hit[0])
+        return 0
+
+    def _fill_structure_columns(self) -> None:
+        names = [n for n in self.table.column_names if self.table.kind(n) == STRUCTURE]
+        current = self.structure.currentText()
+        if names != [self.structure.itemText(i) for i in range(self.structure.count())]:
+            self.structure.blockSignals(True)
+            self.structure.clear()
+            self.structure.addItems(names)
+            if current in names:
+                self.structure.setCurrentText(current)
+            self.structure.blockSignals(False)
+        many = len(names) > 1
+        self.structure.setVisible(many)
+        self.structure_label.setVisible(many)
+
+    # -- moving ---------------------------------------------------------------------------------
+    def go(self, index: int) -> None:
+        if len(self._oids):
+            self._set_index(min(max(index, 0), len(self._oids) - 1), move_table=True)
+
+    def first(self) -> None:
+        self.go(0)
+
+    def last(self) -> None:
+        self.go(len(self._oids) - 1)
+
+    def next(self) -> None:
+        self.go(self._index + 1)
+
+    def previous(self) -> None:
+        self.go(self._index - 1)
+
+    def _set_index(self, index: int, *, move_table: bool) -> None:
+        self._index = index
+        self._oid = int(self._oids[index]) if index >= 0 else None
+        n = len(self._oids)
+        self.position.blockSignals(True)
+        self.position.setMaximum(max(n, 1))
+        self.position.setValue(index + 1 if index >= 0 else 1)
+        self.position.blockSignals(False)
+        self.position.setEnabled(n > 0)
+        self.count_label.setText(f"of {n:,}")
+        self.first_button.setEnabled(index > 0)
+        self.prev_button.setEnabled(index > 0)
+        self.next_button.setEnabled(0 <= index < n - 1)
+        self.last_button.setEnabled(0 <= index < n - 1)
+        self.select_box.setEnabled(self._oid is not None)
+        self.select_box.setChecked(self._oid is not None and self._oid in self.selection)
+        if move_table and self._oid is not None:
+            self._move_table_cursor(self._oid)
+        self._draw()
+        self._fill_properties()
+
+    def _move_table_cursor(self, oid: int) -> None:
+        row = int(self.model.rows_of_oids([oid])[0])
+        if row < 0:
+            return
+        current = self.view.currentIndex()
+        column = current.column() if current.isValid() else 0
+        target = self.model.index(row, column)
+        self._following = True
+        try:
+            self.view.selectionModel().setCurrentIndex(
+                target, QItemSelectionModel.SelectionFlag.NoUpdate
+            )
+        finally:
+            self._following = False
+        self.view.scrollTo(target, QAbstractItemView.ScrollHint.EnsureVisible)
+
+    def _on_table_current(self, current: QModelIndex, _previous: QModelIndex) -> None:
+        if self._following or not current.isValid() or not len(self._oids):
+            return
+        hit = np.flatnonzero(self._oids == self.model.oid_at(current.row()))
+        if len(hit) and int(hit[0]) != self._index:
+            self._set_index(int(hit[0]), move_table=False)
+
+    def set_selected(self, on: bool) -> None:
+        if self._oid is None:
+            return
+        if on:
+            self.selection.add([self._oid], ORIGIN)
+        else:
+            self.selection.remove([self._oid], ORIGIN)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        key = event.key()
+        moves = {
+            Qt.Key.Key_Home: self.first,
+            Qt.Key.Key_End: self.last,
+            Qt.Key.Key_Left: self.previous,
+            Qt.Key.Key_Up: self.previous,
+            Qt.Key.Key_Right: self.next,
+            Qt.Key.Key_Down: self.next,
+        }
+        if key in moves:
+            moves[key]()
+        elif key == Qt.Key.Key_Space and self._oid is not None:
+            self.set_selected(self._oid not in self.selection)
+        else:
+            super().keyPressEvent(event)
+
+    # -- showing ----------------------------------------------------------------------------------
+    def _empty_text(self) -> str:
+        if not len(self.table):
+            return "The table is empty"
+        return "No rows selected" if self.scope_key() == "selected" else "No rows shown"
+
+    def _draw(self) -> None:
+        self.preview.setPixmap(QPixmap())
+        if self._oid is None:
+            self.preview.setText(self._empty_text())
+            return
+        name = self.structure.currentText()
+        if not name or name not in self.table:
+            self.preview.setText("No structure column")
+            return
+        column = self.table.column(name)
+        mol = column.mol(int(self.table.slots_of([self._oid])[0]))
+        if mol is None:
+            self.preview.setText("No structure")
+            return
+        dpr = self.devicePixelRatioF()
+        size = self.preview.size()
+        dark = self.palette().window().color().lightness() < 128
+        png = render_png(
+            mol,
+            int(size.width() * dpr),
+            int(size.height() * dpr),
+            scale=dpr * PREVIEW_SCALE,
+            dark=dark,
+        )
+        pixmap = QPixmap()
+        pixmap.loadFromData(png, "PNG")
+        pixmap.setDevicePixelRatio(dpr)
+        self.preview.setText("")
+        self.preview.setPixmap(pixmap)
+
+    def _fill_properties(self) -> None:
+        if self._oid is None:
+            self.properties.setRowCount(0)
+            return
+        names = [n for n in self.table.column_names if self.table.kind(n) != STRUCTURE]
+        self.properties.setRowCount(len(names))
+        for row, name in enumerate(names):
+            value = self.table.cell(name, self._oid)
+            for col, text in enumerate((name, value)):
+                item = QTableWidgetItem(text)
+                item.setToolTip(text)
+                self.properties.setItem(row, col, item)
+
+    def property_values(self) -> dict[str, str]:
+        """What the property table shows (for tests and copying)."""
+        return {
+            self.properties.item(r, 0).text(): self.properties.item(r, 1).text()
+            for r in range(self.properties.rowCount())
+        }

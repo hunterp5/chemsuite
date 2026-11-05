@@ -1,0 +1,181 @@
+# This file is part of chemsuite.
+# Copyright (C) 2026 Hunter Picard
+#
+# chemsuite is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# chemsuite is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
+
+from __future__ import annotations
+
+import pytest
+from PySide6.QtCore import QMimeData
+from PySide6.QtGui import QGuiApplication
+from rdkit import Chem
+
+from chemsuite.app.structure_editor import StructureEditor
+from chemsuite.core.structure_input import molblock_of
+
+from .conftest import gui
+
+pytestmark = gui
+
+ASPIRIN_SMILES = "CC(=O)Oc1ccccc1C(=O)O"
+
+
+@pytest.fixture
+def structures(window):
+    from chemsuite.app.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    table = Table()
+    table.add_rows({"ID": ["A", "B"], "SMILES": ["CCO", "c1ccccc1"]}, undoable=False)
+    table.convert_column("SMILES", "structure")
+    table.history.mark_clean()
+    window._install(Workspace(table))
+    return window
+
+
+def set_clipboard_molfile(smiles: str) -> str:
+    block = molblock_of(Chem.MolFromSmiles(smiles))
+    mime = QMimeData()
+    mime.setData("chemical/x-mdl-molfile", block.encode())
+    mime.setText("ignored plain text")
+    QGuiApplication.clipboard().setMimeData(mime)
+    return block
+
+
+def test_editor_preview_and_ok_state(qapp) -> None:
+    dialog = StructureEditor("CCO")
+    assert "C2H6O" in dialog.info.text()
+    assert not dialog.preview.pixmap().isNull()
+    dialog.set_text("C1CC")
+    ok = dialog.buttons.button(dialog.buttons.StandardButton.Ok)
+    assert not ok.isEnabled() and "syntax" in dialog.info.text()
+    dialog.accept()  # refused while invalid
+    assert dialog.result_input is None
+    dialog.set_text("OCC")
+    dialog.canonicalize()
+    assert dialog.text == "CCO"
+    dialog.set_text("")
+    assert ok.isEnabled()  # blank clears the cell
+    dialog.deleteLater()
+
+
+def test_editor_paste_reads_molfile_from_clipboard(qapp) -> None:
+    set_clipboard_molfile(ASPIRIN_SMILES)
+    dialog = StructureEditor()
+    dialog.paste()
+    assert "M  END" in dialog.text
+    assert dialog.current.formula == "C9H8O4"
+    dialog.deleteLater()
+
+
+def test_mdlct_clipboard_format() -> None:
+    from chemsuite.app.structure_editor import _mdlct_to_text
+
+    lines = ["", "  ChemDraw", "", "  0  0  0  0  0  0  0  0  0  0999 V2000", "M  END"]
+    data = b"".join(bytes([len(line)]) + line.encode() for line in lines)
+    assert _mdlct_to_text(data) == "\n".join(lines)
+
+
+def test_double_click_opens_editor_and_ok_writes_undoable_edit(structures) -> None:
+    window = structures
+    table = window.workspace.table
+    model = window.workspace.model
+    index = model.index(0, model.column_index("SMILES"))
+    opened = []
+    window.view.structureEditRequested.connect(lambda i, t: opened.append((i.row(), t)))
+    assert window.view.edit(index, window.view.EditTrigger.DoubleClicked, None) is False
+    assert opened == [(0, "")]
+    editor = window.findChild(StructureEditor)
+    assert editor.text == "CCO" and editor.isVisible()
+    editor.set_text(ASPIRIN_SMILES)
+    editor.accept()
+    assert table.cell("SMILES", model.oid_at(0)) == ASPIRIN_SMILES
+    assert table.history.undo_label == "Edit SMILES"
+    assert table.column("SMILES").mol(0) is not None  # stored parsed, no background job
+    table.undo()
+    assert table.cell("SMILES", model.oid_at(0)) == "CCO"
+
+
+def test_typing_in_a_structure_cell_starts_with_the_key(structures, qtbot) -> None:
+    window = structures
+    model = window.workspace.model
+    window.show()
+    qtbot.waitExposed(window)
+    window.view.setFocus()
+    window.view.setCurrentIndex(model.index(1, model.column_index("SMILES")))
+    qtbot.keyClicks(window.view, "N")
+    editor = window.findChild(StructureEditor)
+    assert editor is not None and editor.text == "N"
+    editor.reject()
+
+
+def test_cancel_changes_nothing(structures) -> None:
+    window = structures
+    editor = window.edit_current_structure()
+    assert editor is None  # no current cell yet
+    model = window.workspace.model
+    window.view.setCurrentIndex(model.index(0, 0))  # the ID column: uses the row's structure
+    editor = window.edit_current_structure()
+    assert editor.text == "CCO"
+    editor.set_text("CCN")
+    editor.reject()
+    assert window.workspace.table.cell("SMILES", model.oid_at(0)) == "CCO"
+    assert not window.isWindowModified()
+
+
+def test_add_compound_appends_a_row(structures) -> None:
+    window = structures
+    table = window.workspace.table
+    editor = window.add_compound()
+    editor.set_text("CCN")
+    editor.accept()
+    assert len(table) == 3
+    new = table.oids[-1]
+    assert table.cell("SMILES", int(new)) == "CCN"
+    assert window.workspace.selection.oids == {int(new)}
+
+
+def test_add_compound_to_a_table_without_structures(window) -> None:
+    table = window.workspace.table
+    editor = window.add_compound()
+    editor.set_text("CCN")
+    editor.accept()
+    assert table.kind("Structure") == "structure"
+    assert len(table) == 4
+
+
+def test_paste_molfile_into_structure_cell(structures) -> None:
+    window = structures
+    table = window.workspace.table
+    model = window.workspace.model
+    set_clipboard_molfile(ASPIRIN_SMILES)
+    window.view.setCurrentIndex(model.index(1, model.column_index("SMILES")))
+    message = window.view.paste()
+    assert "1 cell" in message
+    assert table.cell("SMILES", model.oid_at(1)) == Chem.MolToSmiles(
+        Chem.MolFromSmiles(ASPIRIN_SMILES)
+    )
+    window.view.setCurrentIndex(model.index(0, model.column_index("ID")))
+    window.view.clearSelection()
+    assert "Select a structure cell" in window.view.paste()
+
+
+def test_copy_structure_as_molfile(structures) -> None:
+    window = structures
+    model = window.workspace.model
+    window.view.setCurrentIndex(model.index(1, model.column_index("SMILES")))
+    window.copy_structure()
+    mime = QGuiApplication.clipboard().mimeData()
+    assert b"M  END" in bytes(mime.data("chemical/x-mdl-molfile").data())
+    assert mime.text() == "c1ccccc1"

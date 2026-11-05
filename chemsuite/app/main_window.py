@@ -27,7 +27,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEventLoop, QPoint, Qt, QTimer
+from PySide6.QtCore import QEventLoop, QModelIndex, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -51,6 +51,8 @@ from chemsuite.core.io.load import (
     pending_structure_chunks,
     save_table,
 )
+from chemsuite.core.lists import EXTRAS_KEY as LISTS_KEY
+from chemsuite.core.lists import RowLists
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
@@ -61,7 +63,10 @@ from .filters.cards import FilterCard
 from .filters.panel import FilterPanel
 from .find_replace import FindReplaceDialog
 from .jobs import Job, JobRunner
+from .list_actions import ListActions
 from .search_bar import SearchBar
+from .selection_browser import SelectionBrowser
+from .structure_editor import StructureEditor, copy_structure
 from .table_model import TableModel
 from .table_view import StructureImages, TableView
 
@@ -80,19 +85,39 @@ _windows: list[MainWindow] = []
 class Workspace:
     """Everything that belongs to one open table."""
 
-    def __init__(self, table: Table, path: Path | None = None) -> None:
+    def __init__(
+        self, table: Table, path: Path | None = None, extras: dict[str, Any] | None = None
+    ) -> None:
         self.table = table
         self.path = path
         self.selection = Selection(table)
         self.model = TableModel(table)
+        self.lists = RowLists(table)
+        if extras and LISTS_KEY in extras:
+            self.lists.load_json(extras[LISTS_KEY])
+        self._saved_lists = self.lists.revision
 
     @property
     def is_empty(self) -> bool:
         return len(self.table) == 0 and not self.table.column_names
 
+    @property
+    def is_modified(self) -> bool:
+        """Unsaved table edits or list changes."""
+        return not self.table.history.is_clean or self.lists.revision != self._saved_lists
+
+    def extras(self) -> dict[str, Any]:
+        """Document state saved beside the table."""
+        return {LISTS_KEY: self.lists.to_json()} if len(self.lists) else {}
+
+    def mark_saved(self, checkpoint: Any, lists_revision: int) -> None:
+        self.table.history.mark_clean(checkpoint)
+        self._saved_lists = lists_revision
+
     def close(self) -> None:
         self.model.close()
         self.selection.close()
+        self.lists.close()
 
 
 class MainWindow(QMainWindow):
@@ -114,6 +139,8 @@ class MainWindow(QMainWindow):
         self._filters: FilterPanel | None = None
         self._search: SearchBar | None = None
         self._find: FindReplaceDialog | None = None
+        self._lists: ListActions | None = None
+        self._browser: SelectionBrowser | None = None
         self.filter_dock = QDockWidget("Filters", self)
         self.filter_dock.setObjectName("FilterDock")
         self.filter_dock.setAllowedAreas(
@@ -121,6 +148,10 @@ class MainWindow(QMainWindow):
         )
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.filter_dock)
         self.filter_dock.hide()
+        self.browser_dock = QDockWidget("Selection Browser", self)
+        self.browser_dock.setObjectName("BrowserDock")
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.browser_dock)
+        self.browser_dock.hide()
         self._unsubscribe: Callable[[], None] | None = None
         self._status = QLabel()
         self.statusBar().addPermanentWidget(self._status)
@@ -160,7 +191,18 @@ class MainWindow(QMainWindow):
             lambda message: self.statusBar().showMessage(message, 4000),
             add_filter=self.filter_column,
         )
+        self._lists = ListActions(
+            self,
+            workspace.table,
+            workspace.selection,
+            workspace.lists,
+            lambda message: self.statusBar().showMessage(message, 4000),
+        )
+        workspace.lists.subscribe(self._update_title)
+        self._browser = SelectionBrowser(self._view, workspace.selection)
+        self.browser_dock.setWidget(self._browser)
         self._view.headerMenuRequested.connect(self._show_header_menu)
+        self._view.structureEditRequested.connect(self._on_structure_edit_requested)
         self._unsubscribe = workspace.table.subscribe(self._on_table_event)
         workspace.selection.subscribe(lambda *_: self._update_status())
         self._update_title()
@@ -172,6 +214,10 @@ class MainWindow(QMainWindow):
         if self._find is not None:
             self._find.close_dialog()
             self._find = None
+        if self._browser is not None:
+            self._browser.close_browser()
+            self._browser.deleteLater()
+            self._browser = None
         if self._filters is not None:
             self._filters.close()
             self._filters.deleteLater()
@@ -238,6 +284,28 @@ class MainWindow(QMainWindow):
         return self.filters.add_filter(name, kind)
 
     @property
+    def lists(self) -> ListActions:
+        assert self._lists is not None
+        return self._lists
+
+    @property
+    def browser(self) -> SelectionBrowser:
+        assert self._browser is not None
+        return self._browser
+
+    def show_browser(self) -> SelectionBrowser:
+        self.browser_dock.show()
+        self.browser_dock.raise_()
+        self.browser.refresh(restart=True)
+        self.browser.setFocus()
+        return self.browser
+
+    def show_all_rows(self) -> None:
+        with self.workspace.table.batch():
+            self.filters.remove_all()
+            self.lists.show_all()
+
+    @property
     def columns(self) -> ColumnActions:
         assert self._columns is not None
         return self._columns
@@ -284,6 +352,9 @@ class MainWindow(QMainWindow):
         )
         edit.addAction(self._action("&Paste", self.paste, QKeySequence.StandardKey.Paste))
         edit.addAction(self._action("Clear Cells", lambda: self.view.clear_selected_cells()))
+        edit.addAction(self._action("Copy Structure as Molfile", self.copy_structure))
+        edit.addSeparator()
+        edit.addAction(self._action("Edit &Structure…", self.edit_current_structure, "Ctrl+E"))
         edit.addSeparator()
         edit.addAction(
             self._action("&Search Rows", lambda: self.search.focus(), QKeySequence.StandardKey.Find)
@@ -314,18 +385,41 @@ class MainWindow(QMainWindow):
 
         data = bar.addMenu("&Data")
         table_menu = data.addMenu("&Table")
+        table_menu.addAction(self._action("Add Co&mpound…", self.add_compound))
         table_menu.addAction(self._action("Add &Rows…", self.add_rows))
         table_menu.addAction(self._action("Add &Column…", self.add_column))
         table_menu.addSeparator()
         table_menu.addAction(self._action("Clear Sort", lambda: self.workspace.table.set_sort([])))
+        self._lists_menu = data.addMenu("&Lists")
+        self._add_to_list = self._action(
+            "&Add Selected to List…", lambda: self.lists.add_selected(), "Ctrl+L"
+        )
+        self._remove_from_list = self._action(
+            "&Remove Selected from List…", lambda: self.lists.remove_selected()
+        )
+        self._lists_menu.aboutToShow.connect(
+            lambda: self.lists.fill_menu(
+                self._lists_menu, self._add_to_list, self._remove_from_list
+            )
+        )
+        self._lists_menu.addAction(self._add_to_list)  # so the shortcut works before first show
+        self.addAction(self._add_to_list)
         data.addSeparator()
-        data.addAction(self._action("Show All Rows", lambda: self.filters.remove_all()))
+        data.addAction(self._action("Show All Rows", self.show_all_rows))
 
         view = bar.addMenu("&View")
         toggle = self.filter_dock.toggleViewAction()
         toggle.setText("&Filters")
         toggle.setShortcut(QKeySequence("Ctrl+Shift+F"))
         view.addAction(toggle)
+        browse = self._action("Selection &Browser", self.toggle_browser, "Ctrl+Shift+B")
+        view.addAction(browse)
+
+    def toggle_browser(self) -> None:
+        if self.browser_dock.isVisible():
+            self.browser_dock.hide()
+        else:
+            self.show_browser()
 
     def _update_actions(self) -> None:
         if self._workspace is None:
@@ -341,7 +435,7 @@ class MainWindow(QMainWindow):
             return
         path = self.workspace.path
         self.setWindowTitle(f"{path.name if path else 'Untitled'}[*] — chemsuite")
-        self.setWindowModified(not self.workspace.table.history.is_clean)
+        self.setWindowModified(self.workspace.is_modified)
 
     def _update_status(self) -> None:
         if self._workspace is None:
@@ -390,6 +484,87 @@ class MainWindow(QMainWindow):
                 return
             table.add_column(name)
 
+    # -- structures --------------------------------------------------------------------------
+    def _structure_cell(self) -> tuple[int, str] | None:
+        """(oid, column) of the current cell, or of the first structure cell in its row."""
+        table = self.workspace.table
+        model = self.workspace.model
+        current = self.view.currentIndex()
+        if not current.isValid():
+            return None
+        name = model.column_name(current.column())
+        if table.kind(name) != STRUCTURE:
+            name = next((n for n in table.column_names if table.kind(n) == STRUCTURE), "")
+        return (model.oid_at(current.row()), name) if name else None
+
+    def _on_structure_edit_requested(self, index: QModelIndex, typed: str) -> None:
+        model = self.workspace.model
+        self.edit_structure(model.oid_at(index.row()), model.column_name(index.column()), typed)
+
+    def edit_current_structure(self) -> StructureEditor | None:
+        cell = self._structure_cell()
+        if cell is None:
+            self.statusBar().showMessage("Pick a row in a table with a structure column", 4000)
+            return None
+        return self.edit_structure(*cell)
+
+    def edit_structure(self, oid: int, name: str, typed: str = "") -> StructureEditor:
+        """Open the structure editor on one cell; OK writes it back as one undoable edit."""
+        table = self.workspace.table
+        row = int(self.workspace.model.rows_of_oids([oid])[0])
+        title = f"Edit Structure — {name}" + (f", row {row + 1}" if row >= 0 else "")
+        dialog = StructureEditor(typed or table.cell(name, oid), title, self)
+        if typed:  # typing into the cell starts a new structure; keep the cursor at the end
+            cursor = dialog.edit.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            dialog.edit.setTextCursor(cursor)
+
+        def accepted() -> None:
+            parsed = dialog.result_input
+            if parsed is None or name not in table or oid not in table.oids:
+                return
+            if parsed.display != table.cell(name, oid) or parsed.kind == "molfile":
+                table.set_cells(name, [oid], parsed.as_column(), label=f"Edit {name}")
+
+        dialog.accepted.connect(accepted)
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
+
+    def add_compound(self) -> StructureEditor:
+        """Enter a structure and append it as a new row."""
+        table = self.workspace.table
+        dialog = StructureEditor("", "Add Compound", self)
+
+        def accepted() -> None:
+            parsed = dialog.result_input
+            if parsed is None or parsed.is_blank:
+                return
+            name = next((n for n in table.column_names if table.kind(n) == STRUCTURE), None)
+            name = name or table.unique_name("Structure")
+            oids = table.add_rows({name: parsed.as_column()}, label="Add compound")
+            self.workspace.selection.set(oids.tolist(), "menu")
+            row = int(self.workspace.model.rows_of_oids(oids)[0])
+            if row >= 0:
+                self.view.scrollTo(self.workspace.model.index(row, 0))
+
+        dialog.accepted.connect(accepted)
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
+
+    def copy_structure(self) -> None:
+        cell = self._structure_cell()
+        table = self.workspace.table
+        mol = None
+        if cell is not None:
+            oid, name = cell
+            mol = table.column(name).mol(int(table.slots_of([oid])[0]))
+        if copy_structure(mol):
+            self.statusBar().showMessage("Copied structure as molfile", 3000)
+        else:
+            self.statusBar().showMessage("Pick a cell with a valid structure to copy", 4000)
+
     # -- files -------------------------------------------------------------------------------
     def new_window(self) -> MainWindow:
         window = MainWindow(self._runner, self._images)
@@ -403,25 +578,25 @@ class MainWindow(QMainWindow):
 
     def open_path(self, path: Path) -> None:
         """Open *path* here if this window is empty and unmodified, else in a new window."""
-        target = self if self.workspace.is_empty and self.workspace.table.history.is_clean else None
+        target = self if self.workspace.is_empty and not self.workspace.is_modified else None
         is_document = path.suffix.lower() == DOCUMENT_SUFFIX
 
-        def work(job: Job) -> tuple[Table, Path | None]:
+        def work(job: Job) -> tuple[Table, Path | None, dict[str, Any]]:
             if is_document:
-                table, _extras = load_document(path, progress=job.report, cancel=job.cancel_token)
-                return table, path
+                table, extras = load_document(path, progress=job.report, cancel=job.cancel_token)
+                return table, path, extras
             table = load_table(
                 path,
                 executor=self._runner.process_pool(),
                 progress=job.report,
                 cancel=job.cancel_token,
             )
-            return table, None  # an imported file is saved as a new document
+            return table, None, {}  # an imported file is saved as a new document
 
-        def opened(result: tuple[Table, Path | None]) -> None:
-            table, doc_path = result
+        def opened(result: tuple[Table, Path | None, dict[str, Any]]) -> None:
+            table, doc_path, extras = result
             window = target if target is not None and target in _windows else self.new_window()
-            window._install(Workspace(table, doc_path))
+            window._install(Workspace(table, doc_path, extras))
             window.statusBar().showMessage(f"Opened {path.name}", 4000)
 
         self._run_with_progress(f"Opening {path.name}…", work, opened)
@@ -446,14 +621,17 @@ class MainWindow(QMainWindow):
         workspace = self.workspace
         snapshot = workspace.table.snapshot()
         checkpoint = workspace.table.history.checkpoint()
+        extras, lists_revision = workspace.extras(), workspace.lists.revision
         saved: list[bool] = []
 
         def work(job: Job) -> None:
-            save_document(snapshot, path, progress=job.report, cancel=job.cancel_token)
+            save_document(
+                snapshot, path, extras=extras, progress=job.report, cancel=job.cancel_token
+            )
 
         def done(_result: None) -> None:
             # The saved state is the snapshot's; edits made while saving stay unsaved.
-            workspace.table.history.mark_clean(checkpoint)
+            workspace.mark_saved(checkpoint, lists_revision)
             workspace.path = path
             self._update_title()
             self.statusBar().showMessage(f"Saved {path.name}", 4000)
@@ -568,7 +746,7 @@ class MainWindow(QMainWindow):
 
     # -- closing -----------------------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:
-        if not self.workspace.table.history.is_clean and len(self.workspace.table):
+        if self.workspace.is_modified and len(self.workspace.table):
             answer = QMessageBox.question(
                 self,
                 "chemsuite",

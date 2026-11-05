@@ -66,6 +66,18 @@ def no_modal_dialogs(monkeypatch):
         monkeypatch.setattr(QFileDialog, name, refuse("QFileDialog", name))
 
 
+@pytest.fixture(autouse=True)
+def clear_clipboard():
+    """Qt's offscreen platform crashes at exit if the clipboard still owns mime data."""
+    yield
+    if NO_GUI:
+        return
+    from PySide6.QtGui import QGuiApplication
+
+    if QGuiApplication.instance() is not None:
+        QGuiApplication.clipboard().clear()
+
+
 @pytest.fixture
 def window(qtbot):
     """A main window on a small table (ID, pIC50), closed without a save prompt."""
@@ -81,6 +93,6 @@ def window(qtbot):
     w = MainWindow(runner, StructureImages(), Workspace(table))
     # Not qtbot.addWidget: pytest-qt would close it before this fixture can mark it clean.
     yield w
-    w.workspace.table.history.mark_clean()
+    w.workspace.mark_saved(w.workspace.table.history.checkpoint(), w.workspace.lists.revision)
     w.close()
     runner.shutdown()
