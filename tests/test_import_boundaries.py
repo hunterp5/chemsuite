@@ -31,7 +31,7 @@ from pathlib import Path
 PACKAGE = Path(__file__).resolve().parents[1] / "chemsuite"
 
 # Packages that must stay free of Qt and of the GUI shell.
-QT_FREE = ("core", "descriptors", "plotting", "conformers")
+QT_FREE = ("core", "descriptors", "plotting", "conformers", "analysis")
 FORBIDDEN_FOR_QT_FREE = ("PySide6", "shiboken6", "pyqtgraph", "chemsuite.app", "chemsuite.tools")
 
 

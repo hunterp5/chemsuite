@@ -443,7 +443,12 @@ class MainWindow(QMainWindow):
         data.addAction(self._action("Show All Rows", self.show_all_rows))
 
         self._tool_actions: dict[str, QAction] = {}
-        menus = {("File",): file_menu, ("Edit",): edit, ("Data",): data}
+        menus = {
+            ("File",): file_menu,
+            ("Edit",): edit,
+            ("Data",): data,
+            ("Data", "Table"): table_menu,
+        }
         for tool in registered_tools():
             self._add_tool(tool, menus)
 

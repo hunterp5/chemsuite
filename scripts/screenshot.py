@@ -194,6 +194,22 @@ def main(argv: list[str]) -> int:
     scatter.set_spec(x="pIC50", y="pIC50")
     settle()
     window.grab().save(str(out / "plot.png"))
+    stats = window.open_tool("statistics")
+    stats.scope.setCurrentIndex(stats.scope.findData("all"))
+    for tab in (stats.summary, stats.correlation, stats.outliers):
+        stats.tabs.setCurrentWidget(tab)
+        stats.refresh()
+        settle()
+        name = stats.tabs.tabText(stats.tabs.currentIndex()).lower()
+        window.grab().save(str(out / f"statistics-{name}.png"))
+    for tool in ("mpo", "binning", "selectivity"):
+        dialog = window.open_tool(tool)
+        if tool == "mpo":
+            dialog.add_property()
+            dialog.add_property()
+        settle()
+        dialog.grab().save(str(out / f"{tool}.png"))
+        dialog.reject()
     print("\n".join(str(p) for p in sorted(out.glob("*.png"))))
     runner.shutdown()
     workspace = window.workspace

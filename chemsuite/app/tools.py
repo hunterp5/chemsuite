@@ -168,6 +168,10 @@ class ToolContext:
             table.column(column), slot, size, window.devicePixelRatioF(), dark
         )
 
+    def open_tool(self, tool_id: str) -> Any:
+        """Open another tool (e.g. a scatter plot from a correlation) and return what it opened."""
+        return self._window.open_tool(tool_id)
+
     def show_message(self, text: str, ms: int = 5000) -> None:
         self._window.statusBar().showMessage(text, ms)
 
