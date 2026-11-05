@@ -228,6 +228,7 @@ def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -
         "bins": None,
         "fit": True,
         "curve": None,
+        "guide": None,
     }
     assert histogram.spec().x == "Series" and histogram.spec().kind == "histogram"
 

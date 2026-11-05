@@ -28,7 +28,11 @@ from dataclasses import dataclass
 
 import numpy as np
 import pyqtgraph as pg
+from PySide6.QtCore import QPointF
+from PySide6.QtGui import QColor, QPolygonF
+from PySide6.QtWidgets import QGraphicsPolygonItem
 
+from chemsuite.analysis.medchem_space import GUIDES
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import NUMBER
 from chemsuite.plotting.data import BLANK_LABEL, OTHER_LABEL, categories, numbers, xy
@@ -67,6 +71,7 @@ class PlotSpec:
     bins: int | None = None  # None: automatic
     fit: bool = False  # scatter: least-squares line(s)
     curve: str | None = None  # histogram: "normal" or "lognormal" density overlay
+    guide: str | None = None  # scatter: a key of GUIDES (BOILED-Egg, Golden Triangle, LipE)
 
 
 @dataclass(frozen=True)
@@ -96,6 +101,7 @@ class ScatterRenderer:
         )
         self._overlay.setZValue(10)
         self._fit_lines: list[pg.PlotDataItem] = []
+        self._guide_items: list = []
         self._color_codes: np.ndarray | None = None
         self.spec = PlotSpec()
         self._color_values: np.ndarray | None = None
@@ -110,6 +116,9 @@ class ScatterRenderer:
         for line in self._fit_lines:
             self.plot.removeItem(line)
         self._fit_lines = []
+        for item in self._guide_items:
+            self.plot.removeItem(item)
+        self._guide_items = []
         if self._legend is not None:
             self._legend.clear()
             if self._legend.scene() is not None:
@@ -135,6 +144,7 @@ class ScatterRenderer:
         self._color_values = None
         self._color_labels = None
         self._color_codes = None
+        self._draw_guide(spec.guide)
         groups = self._groups(table, spec)
         for mask, rgb, label in groups:
             if not mask.any():
@@ -160,6 +170,41 @@ class ScatterRenderer:
         if spec.fit:
             parts.extend(self._draw_fits())
         return " · ".join(parts)
+
+    def _draw_guide(self, key: str | None) -> None:
+        """Regions and reference lines behind the points, in data coordinates."""
+        guide = GUIDES.get(key or "")
+        if guide is None:
+            return
+        for region in guide.regions:
+            polygon = QPolygonF([QPointF(x, y) for x, y in region.polygon])
+            item = QGraphicsPolygonItem(polygon)
+            fill = QColor(*region.rgb, 70)
+            item.setBrush(fill)
+            pen = pg.mkPen(QColor(*region.rgb, 230), width=1.5)
+            pen.setCosmetic(True)
+            item.setPen(pen)
+            item.setZValue(-10)
+            item.setToolTip(region.label)
+            self.plot.addItem(item)
+            self._guide_items.append(item)
+        for slope, intercept, label in guide.lines:
+            x = np.array([-50.0, 50.0])
+            line = pg.PlotDataItem(
+                x,
+                slope * x + intercept,
+                pen=pg.mkPen((150, 150, 150), width=1, style=pg.QtCore.Qt.PenStyle.DashLine),
+            )
+            line.setZValue(-10)
+            self.plot.addItem(line, ignoreBounds=True)
+            self._guide_items.append(line)
+            # Label each line where it leaves the top of the data, clear of the points.
+            finite = self.y[np.isfinite(self.y)]
+            top = float(finite.max()) if len(finite) else intercept
+            text = pg.TextItem(label, color=(130, 130, 130), anchor=(1, 0))
+            text.setPos((top - intercept) / slope, top)
+            self.plot.addItem(text, ignoreBounds=True)
+            self._guide_items.append(text)
 
     def _draw_fits(self) -> list[str]:
         """One line overall, or one per category when colouring by a text column."""

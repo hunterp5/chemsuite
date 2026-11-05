@@ -121,6 +121,10 @@ _SHAPES = (
 )
 
 
+def _tpsa_sp(mol: Chem.Mol) -> float:
+    return rdMolDescriptors.CalcTPSA(mol, includeSandP=True)
+
+
 def _generic_murcko(mol: Chem.Mol) -> str:
     core = MurckoScaffold.GetScaffoldForMol(mol)
     return Chem.MolToSmiles(MurckoScaffold.MakeScaffoldGeneric(core)) if core.GetNumAtoms() else ""
@@ -161,6 +165,14 @@ _ITEMS: tuple[Descriptor, ...] = (
         rdMolDescriptors.CalcTPSA,
         1,
         "Topological polar surface area (N, O).",
+    ),
+    Descriptor(
+        "TPSA_SP",
+        "TPSA (N,O,S,P)",
+        "Physicochemical",
+        _tpsa_sp,
+        1,
+        "Polar surface area counting polar S and P too, as SwissADME and the BOILED-Egg do.",
     ),
     Descriptor("MolMR", "Molar Refractivity", "Physicochemical", Crippen.MolMR, 2),
     Descriptor(

@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from chemsuite.analysis.medchem_space import GUIDES
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table.columns import NUMBER, TEXT
@@ -121,6 +122,16 @@ class PlotPanel(QWidget):
         self.curve.addItem("None", None)
         for key, title in CURVES.items():
             self.curve.addItem(title, key)
+        self.guide = QComboBox()
+        self.guide.addItem("None", None)
+        for key, guide in GUIDES.items():
+            self.guide.addItem(guide.title, key)
+            self.guide.setItemData(
+                self.guide.count() - 1,
+                f"Expects X: {guide.x_hint}, Y: {guide.y_hint}",
+                Qt.ItemDataRole.ToolTipRole,
+            )
+        self.guide.setToolTip("Reference regions or lines drawn behind the points")
         for combo in (self.x, self.y, self.color, self.size):
             combo.setMinimumContentsLength(10)
             combo.setSizeAdjustPolicy(
@@ -136,6 +147,7 @@ class PlotPanel(QWidget):
             ("Size", self.size),
             ("Bins", self.bins),
             ("Curve", self.curve),
+            ("Guide", self.guide),
         ):
             label = QLabel(title + ":")
             self._labels[widget] = label
@@ -196,6 +208,7 @@ class PlotPanel(QWidget):
             combo.currentIndexChanged.connect(self._controls_changed)
         self.bins.valueChanged.connect(self._controls_changed)
         self.curve.currentIndexChanged.connect(self._controls_changed)
+        self.guide.currentIndexChanged.connect(self._controls_changed)
         self.fit.toggled.connect(self._controls_changed)
         self.view_box.clicked.connect(self._on_click)
         self.view_box.boxSelected.connect(
@@ -228,10 +241,11 @@ class PlotPanel(QWidget):
             bins=self.bins.value() or None,
             fit=self.fit.isChecked() and kind == "scatter",
             curve=self.curve.currentData() if kind == "histogram" else None,
+            guide=self.guide.currentData() if kind == "scatter" else None,
         )
 
     def set_spec(self, **values) -> None:
-        """Set controls by name (x, y, color, size, kind, bins, fit) and redraw now."""
+        """Set controls by name (x, y, color, size, kind, bins, fit, curve, guide); redraw now."""
         widgets = {"x": self.x, "y": self.y, "color": self.color, "size": self.size}
         controls = (
             self.kind,
@@ -242,6 +256,7 @@ class PlotPanel(QWidget):
             self.bins,
             self.fit,
             self.curve,
+            self.guide,
         )
         for control in controls:  # one redraw at the end, not one per control
             control.blockSignals(True)
@@ -258,6 +273,8 @@ class PlotPanel(QWidget):
                     self.fit.setChecked(bool(value))
                 elif key == "curve":
                     self.curve.setCurrentIndex(max(0, self.curve.findData(value)))
+                elif key == "guide":
+                    self.guide.setCurrentIndex(max(0, self.guide.findData(value)))
         finally:
             for control in controls:
                 control.blockSignals(False)
@@ -275,11 +292,12 @@ class PlotPanel(QWidget):
             "bins": spec.bins,
             "fit": spec.fit,
             "curve": spec.curve,
+            "guide": spec.guide,
         }
 
     def set_state(self, state: dict) -> None:
         """Apply saved settings; names of columns that no longer exist are ignored."""
-        known = ("kind", "x", "y", "color", "size", "bins", "fit", "curve")
+        known = ("kind", "x", "y", "color", "size", "bins", "fit", "curve", "guide")
         values = {key: state[key] for key in known if key in state}
         if values.get("kind") not in KINDS:
             values.pop("kind", None)
@@ -312,11 +330,11 @@ class PlotPanel(QWidget):
                 combo.setCurrentIndex(1)
             combo.blockSignals(False)
         shown = {
-            "scatter": (self.y, self.color, self.size, self.fit),
+            "scatter": (self.y, self.color, self.size, self.fit, self.guide),
             "histogram": (self.bins, self.curve),
             "box": (self.y,),
         }[kind]
-        for widget in (self.y, self.color, self.size, self.fit, self.bins, self.curve):
+        for widget in (self.y, self.color, self.size, self.fit, self.bins, self.curve, self.guide):
             widget.setVisible(widget in shown)
             if widget in self._labels:
                 self._labels[widget].setVisible(widget in shown)

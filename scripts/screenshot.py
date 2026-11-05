@@ -205,6 +205,7 @@ def main(argv: list[str]) -> int:
     for tool in (
         *("mpo", "binning", "selectivity", "similarity", "diverse_subset", "cluster"),
         *("rgroups", "free_wilson", "hansch", "mmp", "sali"),
+        *("boiled_egg", "space_map", "som"),
     ):
         dialog = window.open_tool(tool)
         if tool == "mpo":
