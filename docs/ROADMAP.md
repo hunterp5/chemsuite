@@ -106,6 +106,15 @@ the bench (`tests/analysis/test_bench_structure_search.py`) measures 0.5–0.9 s
 once they are cached. The first search of a column computes them (about 8 s at 200k rows). Not
 yet: saving structure filters with the document (with the rest of item 4).
 
+**Status (2026-11-05): advanced search (item 2) built.** Edit ▸ Advanced Search… opens a panel
+docked with Filters. Each condition picks a column or "any column", an operator that fits the column
+(text, number or structure), and a value. Each row has Not and match-case options, and the rows
+combine with all or any. Results can be shown alone (one table filter, ANDed with the Filters
+panel), selected, or added to a list. Text and number conditions follow edits as you make them.
+Structure conditions (substructure or exact) run as background searches and run again when the
+structure column changes. The search, whether it is showing, and the last 10 searches are
+saved with the document. Show All Rows clears it. Core: `chemsuite/core/table/criteria.py`.
+
 1. **Structure search** (Edit ▸ Structure Search…, and a card in the Filters panel):
    - **Modes:**
      - *substructure*, from SMILES or SMARTS, drawn or pasted;

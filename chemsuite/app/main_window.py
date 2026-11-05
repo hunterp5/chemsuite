@@ -64,6 +64,8 @@ from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import STRUCTURE
 
+from .advanced_search import EXTRAS_KEY as ADVANCED_KEY
+from .advanced_search import AdvancedSearchPanel
 from .column_actions import ColumnActions
 from .commands import apply_shortcuts, register
 from .error_report import details_of, show_error, show_log_folder
@@ -152,6 +154,9 @@ class Workspace:
         self.lists = RowLists(table)
         if extras and LISTS_KEY in extras:
             self.lists.load_json(extras[LISTS_KEY])
+        search = (extras or {}).get(ADVANCED_KEY)
+        #: the advanced search saved with the document
+        self.saved_search: dict[str, Any] = search if isinstance(search, dict) else {}
         panels = (extras or {}).get(PANELS_KEY)
         #: panels saved with the document, reopened when the window installs this workspace
         self.saved_panels: list[dict] = panels if isinstance(panels, list) else []
@@ -208,6 +213,7 @@ class MainWindow(QMainWindow):
         self._parse_again = False
         self._columns: ColumnActions | None = None
         self._filters: FilterPanel | None = None
+        self._advanced: AdvancedSearchPanel | None = None
         self._search: SearchBar | None = None
         self._find: FindReplaceDialog | None = None
         self._searcher: StructureSearcher | None = None
@@ -222,6 +228,14 @@ class MainWindow(QMainWindow):
         )
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.filter_dock)
         self.filter_dock.hide()
+        self.search_dock = QDockWidget("Advanced Search", self)
+        self.search_dock.setObjectName("AdvancedSearchDock")
+        self.search_dock.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.search_dock)
+        self.tabifyDockWidget(self.filter_dock, self.search_dock)
+        self.search_dock.hide()
         self.browser_dock = QDockWidget("Selection Browser", self)
         self.browser_dock.setObjectName("BrowserDock")
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.browser_dock)
@@ -273,6 +287,17 @@ class MainWindow(QMainWindow):
         )
         self._filters = FilterPanel(workspace.table, searcher=self._searcher)
         self.filter_dock.setWidget(self._filters)
+        self._advanced = AdvancedSearchPanel(
+            workspace.table,
+            workspace.selection,
+            workspace.lists,
+            self._searcher,
+            lambda message: self.statusBar().showMessage(message, 6000),
+            saved=workspace.saved_search,
+        )
+        self.search_dock.setWidget(self._advanced)
+        if workspace.saved_search.get("showing"):
+            self.search_dock.show()  # say why rows are hidden
         self._columns = ColumnActions(
             self,
             workspace.table,
@@ -313,6 +338,10 @@ class MainWindow(QMainWindow):
             self._browser.close_browser()
             self._browser.deleteLater()
             self._browser = None
+        if self._advanced is not None:
+            self._advanced.close_panel()
+            self._advanced.deleteLater()
+            self._advanced = None
         if self._filters is not None:
             self._filters.close()
             self._filters.deleteLater()
@@ -421,6 +450,17 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(text, ms)
 
     @property
+    def advanced_search(self) -> AdvancedSearchPanel:
+        assert self._advanced is not None
+        return self._advanced
+
+    def show_advanced_search(self) -> AdvancedSearchPanel:
+        """Edit ▸ Advanced Search…"""
+        self.search_dock.show()
+        self.search_dock.raise_()
+        return self.advanced_search
+
+    @property
     def filters(self) -> FilterPanel:
         assert self._filters is not None
         return self._filters
@@ -452,6 +492,7 @@ class MainWindow(QMainWindow):
         with self.workspace.table.batch():
             self.filters.remove_all()
             self.lists.show_all()
+            self.advanced_search.show_all()
 
     @property
     def columns(self) -> ColumnActions:
@@ -550,6 +591,7 @@ class MainWindow(QMainWindow):
                 [QKeySequence.StandardKey.Replace, "Ctrl+Alt+F"],
             )
         )
+        edit.addAction(A("edit.advanced_search", "Ad&vanced Search…", self.show_advanced_search))
         edit.addAction(
             A("edit.structure_search", "Structure Searc&h…", self.structure_search, "Ctrl+Shift+M")
         )
@@ -1075,6 +1117,8 @@ class MainWindow(QMainWindow):
         extras, lists_revision = workspace.extras(), workspace.lists.revision
         if self.panel_states():
             extras[PANELS_KEY] = self.panel_states()
+        if self.advanced_search.state():
+            extras[ADVANCED_KEY] = self.advanced_search.state()
         saved: list[bool] = []
 
         def work(job: Job) -> None:
