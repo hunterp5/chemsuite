@@ -31,7 +31,15 @@ Progress = Callable[[int, int], None]
 
 
 class Cancelled(Exception):
-    """Raised inside a job when its :class:`CancelToken` has been cancelled."""
+    """Raised inside a job when its :class:`CancelToken` has been cancelled.
+
+    A row-by-row computation may carry what it finished before stopping as *partial* (results
+    for the first rows, in order), so the app can keep that work instead of discarding it.
+    """
+
+    def __init__(self, partial: object = None) -> None:
+        super().__init__()
+        self.partial = partial
 
 
 class CancelToken:

@@ -183,7 +183,7 @@ class SpaceMapDialog(QDialog):
             remember()
             self.finish(oids, result, prefix, None if color == NONE else color)
 
-        return ctx.run(f"Making a {em.METHODS[method]} map…", work, done)
+        return ctx.run(f"Calculating {em.METHODS[method]}…", work, done)
 
     def finish(self, oids: np.ndarray, result: em.Embedding, prefix: str, color: str | None):
         ctx = self.ctx

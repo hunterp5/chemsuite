@@ -233,7 +233,10 @@ def search(
     found: list[np.ndarray] = []
     done = 0
     for part in ordered_map(
-        match_chunk, _chunks(query, chosen, chunk_rows), executor if use_pool else None
+        match_chunk,
+        _chunks(query, chosen, chunk_rows),
+        executor if use_pool else None,
+        cancel=cancel,
     ):
         check(cancel)
         found.append(part)

@@ -181,7 +181,9 @@ def find_pairs(
     activity = np.asarray(activity, dtype=np.float64)
     groups: dict[str, list[tuple[int, str]]] = defaultdict(list)
     done = 0
-    for records in ordered_map(fragment_chunk, _chunks(cells, max_variable, CHUNK_ROWS), executor):
+    for records in ordered_map(
+        fragment_chunk, _chunks(cells, max_variable, CHUNK_ROWS), executor, cancel=cancel
+    ):
         check(cancel)
         for row, constant, change in records:
             groups[constant].append((row, change))

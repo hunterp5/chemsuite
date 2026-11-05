@@ -41,7 +41,7 @@ from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, QThread, QThreadPool, Signal, Slot
 
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.awake import KeepAwake
@@ -103,6 +103,8 @@ class Job(QObject):
         self.ended_at: float | None = None
         self.summary = ""  # one line about the result ("Added 3 columns")
         self.error_text = ""  # the traceback of a failure
+        #: what a cancelled job finished before stopping (see ``Cancelled.partial``), or None
+        self.partial_result: Any = None
         self.cancel_token = CancelToken()
         self._lock = threading.Lock()
         self._progress = (0, 0)
@@ -153,7 +155,13 @@ class Job(QObject):
             )
             self.failed.emit(value)
         else:
-            log.info("cancelled: %s", self.name, extra={"job": self.id})
+            self.partial_result = value
+            log.info(
+                "cancelled%s: %s",
+                " with partial results" if value is not None else "",
+                self.name,
+                extra={"job": self.id},
+            )
             self.cancelled.emit()
         self.done.emit()
         self.changed.emit()
@@ -168,6 +176,11 @@ class Job(QObject):
     def running(self) -> bool:
         """Not ended yet: queued or running."""
         return self.state not in ENDED
+
+    @property
+    def cancelling(self) -> bool:
+        """Cancel was asked for but the work has not stopped yet."""
+        return self.state == RUNNING and self.cancel_token.cancelled
 
     @property
     def progress(self) -> tuple[int, int]:
@@ -190,6 +203,8 @@ class Job(QObject):
         runner = self.parent()
         if self.state == QUEUED and isinstance(runner, JobRunner):
             runner._drop_queued(self)
+        else:
+            self.changed.emit()  # show "Cancelling…" at once
 
 
 class _Runnable(QRunnable):
@@ -212,8 +227,8 @@ class _Runnable(QRunnable):
             try:
                 value = carried[0](job)
                 outcome = FINISHED
-            except Cancelled:
-                value = None
+            except Cancelled as stopped:
+                value = stopped.partial  # what was finished before the cancel, if anything
             except BaseException as err:  # noqa: BLE001 - top-level job handler; logged on end
                 job.error_text = "".join(traceback.format_exception(err))
                 outcome, value = FAILED, err
@@ -234,18 +249,34 @@ class JobRunner(QObject):
         self._heavy = QThreadPool(self)  # the queue's one worker
         self._heavy.setMaxThreadCount(1)
         self._pool: ProcessPoolExecutor | None = None
+        self._pool_lock = threading.Lock()  # jobs on two threads may both want the pool first
+        #: Settings ▸ General ▸ Processor cores, read on the GUI thread (see process_pool)
+        self._pool_workers: int | None = None
         self._jobs: list[Job] = []  # every job not cleared, in the order submitted
         self._waiting: list[tuple[Job, Callable[[Job], Any]]] = []
         self._current: Job | None = None
         self._awake = KeepAwake() if keep_awake else None
 
     def process_pool(self) -> ProcessPoolExecutor:
-        if self._pool is None:
-            from .settings_hub import settings_hub
+        """The shared worker processes, started on first use (usually from a job's thread).
 
-            # Settings ▸ General ▸ Processor cores (0: automatic); read once, at first use.
-            self._pool = process_pool(settings_hub().settings.performance.max_workers or None)
-        return self._pool
+        The worker count comes from Settings, read on the GUI thread when a job is submitted:
+        reading it here could create the settings hub on a worker thread, and the hub applies
+        the theme to Qt widgets, which must only happen on the GUI thread.
+        """
+        with self._pool_lock:
+            if self._pool is None:
+                workers = self._pool_workers
+                if workers is None and QThread.currentThread() is self.thread():
+                    workers = self._configured_workers()
+                self._pool = process_pool(workers or None)  # 0 or unknown: automatic
+            return self._pool
+
+    @staticmethod
+    def _configured_workers() -> int:
+        from .settings_hub import settings_hub
+
+        return settings_hub().settings.performance.max_workers
 
     # -- submitting ------------------------------------------------------------------------------
     def submit(
@@ -257,6 +288,8 @@ class JobRunner(QObject):
         owner: object = None,
         document: str = "",
     ) -> Job:
+        if self._pool is None and self._pool_workers is None:
+            self._pool_workers = self._configured_workers()  # on the GUI thread, see process_pool
         job = Job(title, self, lane=lane, owner=owner, document=document)
         self._jobs.append(job)
         job.changed.connect(self.changed)

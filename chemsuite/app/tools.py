@@ -124,12 +124,17 @@ class ToolContext:
         on_done: Callable[[Any], None],
         *,
         lane: str = QUEUE,
+        keep_partial: bool = False,
     ) -> Job:
         """Run *work* in the background; *on_done* runs on the GUI thread when it finishes.
 
         Heavy work goes in the job queue (one job at a time, in order); pass ``lane=QUICK``
         for short interactive work that should never wait behind it. The window stays usable
         throughout. A message shown from *on_done* becomes the job's result line.
+
+        With *keep_partial*, a cancelled job whose work raised ``Cancelled(partial=…)`` still
+        calls *on_done* with that partial result, so finished rows are written, not thrown away.
+        *on_done* must then accept a result covering only the first rows.
         """
         holder: list[Job] = []
 
@@ -140,7 +145,9 @@ class ToolContext:
             finally:
                 self._finishing = None
 
-        job = self._window._run_with_progress(label, work, finish, lane=lane, guard=True)
+        job = self._window._run_with_progress(
+            label, work, finish, lane=lane, guard=True, keep_partial=keep_partial
+        )
         holder.append(job)
         return job
 

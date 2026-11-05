@@ -23,7 +23,7 @@ from concurrent.futures import Executor
 import numpy as np
 from rdkit import Chem, rdBase
 
-from chemsuite.core.jobs import CancelToken, check
+from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text
 from chemsuite.core.table.columns import Column, NumberColumn, TextColumn
@@ -32,7 +32,10 @@ from .catalog import CATALOG, SHAPE_GROUP
 
 #: A structure cell for a worker: its RDKit blob, or its text when not parsed yet (None: blank).
 Cell = bytes | str | None
-CHUNK_ROWS = 1000
+#: rows per task in a worker process; in the job's own thread chunks are smaller, so a cancel
+#: is noticed within a fraction of a second
+CHUNK_ROWS = 500
+INLINE_CHUNK_ROWS = 50
 
 # Expected per-molecule failures (odd valences, InChI errors…); the cell is left blank.
 _FAILURES = (ValueError, RuntimeError, ArithmeticError, KeyError, IndexError)
@@ -98,23 +101,35 @@ def compute_descriptors(
     executor: Executor | None = None,
     progress: Callable[[int, int], None] | None = None,
     cancel: CancelToken | None = None,
-    chunk_rows: int = CHUNK_ROWS,
+    chunk_rows: int | None = None,
 ) -> dict[str, Column]:
-    """One result column per key, cell for cell. Unknown keys raise ``KeyError``."""
+    """One result column per key, cell for cell. Unknown keys raise ``KeyError``.
+
+    If *cancel* is set, raises :class:`Cancelled` whose ``partial`` holds the columns for the
+    rows finished so far (the first rows, in order), or None if none were.
+    """
     keys = tuple(keys)
     unknown = [key for key in keys if key not in CATALOG]
     if unknown:  # fail before starting any work
         raise KeyError(f"unknown descriptor(s): {', '.join(unknown)}")
     total = len(cells)
+    size = chunk_rows or (CHUNK_ROWS if executor is not None else INLINE_CHUNK_ROWS)
     collected: dict[str, list] = {key: [] for key in keys}
     done = 0
-    for part in ordered_map(compute_chunk, _chunks(keys, cells, chunk_rows), executor):
-        check(cancel)
-        for key in keys:
-            collected[key].extend(part[key])
-        done = min(total, done + chunk_rows)
-        if progress is not None:
-            progress(done, total)
+    try:
+        chunks = _chunks(keys, cells, size)
+        for part in ordered_map(compute_chunk, chunks, executor, cancel=cancel):
+            for key in keys:
+                collected[key].extend(part[key])
+            done = min(total, done + size)
+            if progress is not None:
+                progress(done, total)
+    except Cancelled:
+        raise Cancelled(_columns(keys, collected) if done else None) from None
+    return _columns(keys, collected)
+
+
+def _columns(keys: tuple[str, ...], collected: dict[str, list]) -> dict[str, Column]:
     columns: dict[str, Column] = {}
     for key in keys:
         spec = CATALOG[key]

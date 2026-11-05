@@ -30,13 +30,15 @@ import numpy as np
 from rdkit import Chem, rdBase
 from rdkit.Chem import AllChem, rdDistGeom, rdMolAlign
 
-from chemsuite.core.jobs import CancelToken, check
+from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text, mol_to_blob, smiles_of
 
 #: A structure cell: its RDKit blob, or its text when not parsed yet (None: blank).
 Cell = bytes | str | None
-CHUNK_ROWS = 16  # molecules per worker task: each takes tens to hundreds of milliseconds
+#: molecules per worker task. Each takes tens to hundreds of milliseconds, so small tasks keep
+#: cancelling quick (a busy worker finishes its task first); in the job's own thread, one.
+CHUNK_ROWS = 4
 FORCE_FIELDS = ("mmff", "uff")
 _FAILURES = (ValueError, RuntimeError, ArithmeticError)
 
@@ -212,16 +214,29 @@ def generate_conformers(
     executor: Executor | None = None,
     progress: Callable[[int, int], None] | None = None,
     cancel: CancelToken | None = None,
-    chunk_rows: int = CHUNK_ROWS,
+    chunk_rows: int | None = None,
 ) -> ConformerBatch:
+    """Conformers for every cell, in order.
+
+    If *cancel* is set, raises :class:`Cancelled` whose ``partial`` is the batch for the cells
+    finished so far (the first ``len(batch.blobs)`` cells), or None if none were.
+    """
     settings = settings or ConformerSettings()
     total = len(cells)
+    size = chunk_rows or (CHUNK_ROWS if executor is not None else 1)
     rows: list[tuple] = []
-    for part in ordered_map(generate_chunk, _chunks(settings, cells, chunk_rows), executor):
-        check(cancel)
-        rows.extend(part)
-        if progress is not None:
-            progress(len(rows), total)
+    try:
+        chunks = _chunks(settings, cells, size)
+        for part in ordered_map(generate_chunk, chunks, executor, cancel=cancel):
+            rows.extend(part)
+            if progress is not None:
+                progress(len(rows), total)
+    except Cancelled:
+        raise Cancelled(_batch(rows) if rows else None) from None
+    return _batch(rows)
+
+
+def _batch(rows: list[tuple]) -> ConformerBatch:
     if not rows:
         return ConformerBatch([], [], np.empty(0), np.empty(0))
     blobs, displays, counts, spans = zip(*rows, strict=True)

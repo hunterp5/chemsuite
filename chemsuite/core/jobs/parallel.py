@@ -22,11 +22,15 @@ import multiprocessing
 import os
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
-from concurrent.futures import Executor, Future, ProcessPoolExecutor
+from concurrent.futures import Executor, Future, ProcessPoolExecutor, wait
 from typing import TypeVar
+
+from . import CancelToken, check
 
 T = TypeVar("T")
 R = TypeVar("R")
+#: how often a wait for a worker's result looks at the cancel token (seconds)
+CANCEL_POLL_S = 0.05
 
 
 def default_workers() -> int:
@@ -52,26 +56,42 @@ def ordered_map(
     executor: Executor | None = None,
     *,
     window: int | None = None,
+    cancel: CancelToken | None = None,
 ) -> Iterator[R]:
     """Like ``map(fn, items)``, run on *executor*, yielding results in input order.
 
     At most *window* items are in flight, so a large input (a 1 GB SDF split into blocks) is
-    never all in memory at once. Without an executor, runs inline. If the consumer stops early
-    (for example on cancel), queued work is cancelled.
+    never all in memory at once. Without an executor, runs inline.
+
+    With *cancel*, raises :class:`~chemsuite.core.jobs.Cancelled` soon after it is set: before
+    each inline item, and every few milliseconds while waiting for a worker, rather than only
+    when a slow chunk comes back. Work not started is cancelled; a worker already busy with a
+    chunk finishes that chunk on its own (a process cannot be interrupted safely).
     """
     if executor is None:
         for item in items:
+            check(cancel)
             yield fn(item)
         return
     window = window or 2 * (getattr(executor, "_max_workers", None) or default_workers())
     pending: deque[Future[R]] = deque()
+
+    def next_result() -> R:
+        head = pending.popleft()
+        if cancel is not None:
+            while not head.done():
+                check(cancel)
+                wait([head], timeout=CANCEL_POLL_S)
+        return head.result()
+
     try:
         for item in items:
+            check(cancel)
             pending.append(executor.submit(fn, item))
             if len(pending) >= window:
-                yield pending.popleft().result()
+                yield next_result()
         while pending:
-            yield pending.popleft().result()
+            yield next_result()
     finally:
         for future in pending:
             future.cancel()

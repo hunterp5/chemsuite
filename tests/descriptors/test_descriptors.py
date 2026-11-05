@@ -106,6 +106,25 @@ def test_chunks_progress_and_cancel() -> None:
         compute_descriptors(cells, ["MolWt"], chunk_rows=10, cancel=token)
 
 
+def test_cancel_keeps_the_rows_already_done() -> None:
+    token = CancelToken()
+
+    def progress(done: int, total: int) -> None:
+        if done >= 20:
+            token.cancel()
+
+    with pytest.raises(Cancelled) as stopped:
+        compute_descriptors(["CCO"] * 50, ["MolWt", "SMILES"], chunk_rows=10,
+                            progress=progress, cancel=token)  # fmt: skip
+    partial = stopped.value.partial
+    assert len(partial["MolWt"]) == len(partial["SMILES"]) == 20
+    token = CancelToken()
+    token.cancel()
+    with pytest.raises(Cancelled) as stopped:
+        compute_descriptors(["CCO"] * 5, ["MolWt"], cancel=token)
+    assert stopped.value.partial is None  # nothing finished
+
+
 def test_unknown_key() -> None:
     with pytest.raises(KeyError, match="nope"):
         compute_descriptors(["C"], ["nope"])

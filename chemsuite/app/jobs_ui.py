@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -62,8 +61,19 @@ def fraction(job: Job) -> float | None:
     return min(done, total) / total if total else None
 
 
+def progress_text(job: Job) -> str:
+    """What a job is doing, e.g. ``Generating conformers… (120/500)``."""
+    name = job.name
+    if job.cancelling:
+        return f"Cancelling {name[:1].lower() + name[1:]}…"
+    done, total = job.progress
+    text = f"{name}…"
+    return f"{text} ({min(done, total):,}/{total:,})" if total else text
+
+
 class JobsIndicator(QWidget):
-    """``2 running · 3 queued`` with the current job's progress; click to open the Jobs window.
+    """The running job's progress as a sentence, plus what else is running, queued or failed:
+    ``Generating conformers… (120/500) · 3 queued``. Click to open the Jobs window.
 
     Failures stay flagged until the Jobs window has been seen.
     """
@@ -78,14 +88,8 @@ class JobsIndicator(QWidget):
         self.button.setAutoRaise(True)
         self.button.setToolTip("Show the Jobs window")
         self.button.clicked.connect(self.clicked)
-        self.bar = QProgressBar()
-        self.bar.setFixedWidth(110)
-        self.bar.setMaximumHeight(14)
-        self.bar.setTextVisible(False)
-        self.bar.setRange(0, 1000)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.bar)
         layout.addWidget(self.button)
         self._timer = QTimer(self)
         self._timer.setInterval(TICK_MS)
@@ -98,31 +102,34 @@ class JobsIndicator(QWidget):
         self._seen_failures |= {j.id for j in self.runner.jobs if j.state == FAILED}
         self.refresh()
 
+    def current_job(self) -> Job | None:
+        """The job the status bar describes: the running queue job, else any running job."""
+        running = [j for j in self.runner.jobs if j.state == RUNNING]
+        return next((j for j in running if j.lane == QUEUE), running[0] if running else None)
+
     def refresh(self) -> None:
         jobs = self.runner.jobs
         running = [j for j in jobs if j.state == RUNNING]
         queued = sum(j.state == QUEUED for j in jobs)
         failed = sum(j.state == FAILED and j.id not in self._seen_failures for j in jobs)
+        current = self.current_job()
         parts = []
-        if running:
-            parts.append(f"{len(running)} running")
+        if current is not None:
+            parts.append(progress_text(current))
+            if len(running) > 1:
+                parts.append(f"{len(running) - 1} more running")
         if queued:
             parts.append(f"{queued} queued")
         if failed:
             parts.append(f"{failed} failed")
         self.button.setText(" · ".join(parts))
-        colour = FAILED_COLOUR.name() if failed else ""
+        self.button.setToolTip(
+            f"{current.title} for {duration(current.elapsed)}. Click for the Jobs window."
+            if current is not None
+            else "Show the Jobs window"
+        )
+        colour = FAILED_COLOUR.name() if failed and current is None else ""
         self.button.setStyleSheet(f"color: {colour};" if colour else "")
-        current = next((j for j in running if j.lane == QUEUE), running[0] if running else None)
-        if current is not None:
-            share = fraction(current)
-            if share is None:
-                self.bar.setRange(0, 0)  # busy
-            else:
-                self.bar.setRange(0, 1000)
-                self.bar.setValue(int(share * 1000))
-            self.bar.setToolTip(f"{current.title} ({duration(current.elapsed)})")
-        self.bar.setVisible(current is not None)
         self.setVisible(bool(parts))
         if running or queued:
             self._timer.start()

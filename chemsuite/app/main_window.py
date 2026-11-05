@@ -29,14 +29,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEventLoop, QModelIndex, QPoint, Qt, QTimer
+from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
     QFileDialog,
     QInputDialog,
-    QLabel,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
@@ -81,6 +80,7 @@ from .search_bar import SearchBar
 from .selection_browser import SelectionBrowser
 from .settings_hub import settings_hub
 from .split_join import JoinColumnsDialog, SplitColumnDialog
+from .status_bar import StatusBar
 from .structure_editor import StructureEditor, copy_structure
 from .structure_search import StructureSearchDialog, StructureSearcher
 from .table_model import TableModel
@@ -257,11 +257,10 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.browser_dock)
         self.browser_dock.hide()
         self._unsubscribe: Callable[[], None] | None = None
-        self._status = QLabel()
         self.jobs_indicator = JobsIndicator(runner)
         self.jobs_indicator.clicked.connect(self.show_jobs)
-        self.statusBar().addPermanentWidget(self.jobs_indicator)
-        self.statusBar().addPermanentWidget(self._status)
+        self.setStatusBar(StatusBar(self.jobs_indicator))
+        self._status = self.statusBar().document
         self.resize(1400, 860)
         self._build_menus()
         hub = settings_hub()
@@ -464,6 +463,17 @@ class MainWindow(QMainWindow):
         oid = self.workspace.model.oid_at(current.row())
         mol = table.column(column).mol(int(table.slots_of([oid])[0]))
         return smiles_of(mol) if mol is not None else ""
+
+    def statusBar(self) -> StatusBar:
+        return super().statusBar()  # type: ignore[return-value]
+
+    def event(self, event: QEvent) -> bool:
+        # Menu items' status tips: Qt would call the C++ QStatusBar.showMessage, which hides
+        # the status bar's widgets; show them in our message label instead.
+        if event.type() == QEvent.Type.StatusTip:
+            self.statusBar().showMessage(event.tip())
+            return True
+        return super().event(event)
 
     def show_message(self, text: str, ms: int = 5000) -> None:
         self.statusBar().showMessage(text, ms)
@@ -1213,6 +1223,7 @@ class MainWindow(QMainWindow):
         wait: bool = False,
         lane: str = QUICK,
         guard: bool = False,
+        keep_partial: bool = False,
     ) -> Job:
         """Run *work* in the background; its progress shows in the status bar and Jobs window.
 
@@ -1239,9 +1250,21 @@ class MainWindow(QMainWindow):
             job.failed.connect(lambda err: self._report_failure(job, err))
         else:
             job.failed.connect(lambda err: self._show_error(label, err))
-        job.cancelled.connect(
-            lambda: self.statusBar().showMessage(f"Cancelled: {label.rstrip('…')}", 3000)
-        )
+
+        def cancelled() -> None:
+            name = label.rstrip("…")
+            if keep_partial and job.partial_result is not None:
+                if guard and self._workspace is not workspace:
+                    job.set_summary("Cancelled; partial results not applied: document closed")
+                    return
+                on_done(job.partial_result)  # writes what was finished before the cancel
+                kept = job.summary or "kept the finished rows"
+                job.set_summary(f"Cancelled, partial results kept: {kept}")
+                self.show_message(f"Cancelled: {name}; partial results kept", 6000)
+            else:
+                self.show_message(f"Cancelled: {name}", 3000)
+
+        job.cancelled.connect(cancelled)
         if wait:
             self._wait_for(job)
         return job

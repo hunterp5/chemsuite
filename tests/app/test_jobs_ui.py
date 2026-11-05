@@ -55,7 +55,17 @@ def test_tool_job_runs_in_background_and_records_its_result(window, qtbot) -> No
     assert job.lane == QUEUE and job.document == "Untitled"
     qtbot.waitUntil(lambda: job.state == RUNNING, timeout=5000)
     assert not window.jobs_indicator.isHidden()
-    assert "1 running" in window.jobs_indicator.button.text()
+    assert window.jobs_indicator.button.text() == "Calculating…"
+    job.report(120, 500)
+    window.jobs_indicator.refresh()
+    assert window.jobs_indicator.button.text() == "Calculating… (120/500)"
+    # Left-aligned with the other status text; no progress bar.
+    status = window.statusBar()
+    row = status.document.parentWidget().layout()
+    order = [row.itemAt(i).widget() for i in range(row.count())]
+    assert order == [status.document, window.jobs_indicator, status.message]
+    window.show_message("Hello")
+    assert status.currentMessage() == "Hello" and not window.jobs_indicator.isHidden()
     assert window.isEnabled()  # nothing modal: the window keeps working
     release.set()
     qtbot.waitUntil(lambda: not job.running, timeout=5000)
@@ -143,3 +153,53 @@ def test_close_asks_about_running_jobs(window, qtbot, monkeypatch) -> None:
     qtbot.waitUntil(lambda: not job.running, timeout=5000)
     assert job.state == "cancelled"
     release.set()
+
+
+def test_cancel_shows_cancelling_then_keeps_partial_results(window, qtbot) -> None:
+    from chemsuite.core.jobs import Cancelled
+
+    ctx = ToolContext(window)
+    started = threading.Event()
+
+    def work(job):
+        started.set()
+        rows = []
+        for i in range(1000):
+            if job.cancel_token.cancelled:
+                raise Cancelled(partial=rows)
+            rows.append(i)
+            threading.Event().wait(0.01)
+        return rows
+
+    applied: list[list[int]] = []
+
+    def done(rows):
+        applied.append(rows)
+        ctx.show_message(f"Wrote {len(rows)} rows")
+
+    job = ctx.run("Generating conformers…", work, done, keep_partial=True)
+    qtbot.waitUntil(lambda: job.state == RUNNING and started.is_set(), timeout=5000)
+    job.cancel()
+    assert window.jobs_indicator.button.text().startswith("Cancelling generating conformers")
+    qtbot.waitUntil(lambda: not job.running, timeout=5000)
+    assert len(applied) == 1 and 0 < len(applied[0]) < 1000
+    assert job.summary.startswith("Cancelled, partial results kept: Wrote")
+    assert "partial results kept" in window.statusBar().currentMessage()
+
+
+def test_cancel_without_keep_partial_discards(window, qtbot) -> None:
+    from chemsuite.core.jobs import Cancelled
+
+    ctx = ToolContext(window)
+
+    def work(job):
+        while not job.cancel_token.cancelled:
+            threading.Event().wait(0.01)
+        raise Cancelled(partial=[1, 2])
+
+    applied: list = []
+    job = ctx.run("Clustering…", work, applied.append)
+    qtbot.waitUntil(lambda: job.state == RUNNING, timeout=5000)
+    job.cancel()
+    qtbot.waitUntil(lambda: not job.running, timeout=5000)
+    assert applied == [] and window.statusBar().currentMessage() == "Cancelled: Clustering"

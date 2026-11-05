@@ -160,7 +160,7 @@ def read_sdf(
     """Yield table batches from an SD file (optionally gzipped)."""
     total = file_size(path)
     with open_binary(path) as (stream, raw):
-        for block in ordered_map(parse_block, iter_blocks(stream), executor):
+        for block in ordered_map(parse_block, iter_blocks(stream), executor, cancel=cancel):
             check(cancel)
             if len(block):
                 yield _batch(block)

@@ -51,13 +51,19 @@ one by one in the window, and a desktop notification beyond the dock/taskbar ale
   - progress, and the queued, start and finish times;
   - a one-line result ("3,374 pairs") or the error with its traceback.
 - **No more modal progress.** A tool's dialog closes when you press OK, and the job shows in:
-  - the **status bar** ("2 running · 3 queued", with a progress bar for the current job). Click
-    it to open the panel.
+  - the **status bar**: one left-aligned line with the row counts, the current job as text
+    ("Generating conformers… (120/500) · 3 queued", or "Calculating UMAP…" when it has no
+    count), then the latest message. There is no progress bar. Click the job text to open the
+    panel.
   - a **Jobs panel** (View ▸ Jobs). It lists running, queued and finished jobs with elapsed
     time. You can cancel a job, remove a queued one, move a queued job up or down, clear
     finished jobs, and copy an error.
   - Results apply when the job finishes. `apply_results` already skips rows deleted in the
     meantime. Each tool's existing checks still run before a job is queued.
+- **Cancelling.** Jobs stop within about a tenth of a second: work handed to worker processes
+  is polled for a cancel instead of waited on, and in-thread work runs in small chunks. While
+  it stops, the status bar says "Cancelling …". Conformer and descriptor jobs keep the rows
+  they finished: a cancel writes those and says "partial results kept".
 - **Document safety.** Closing a document cancels its queued jobs and asks about running ones.
   Quitting with jobs running asks first. Saving waits for a running job that writes to the same
   table.

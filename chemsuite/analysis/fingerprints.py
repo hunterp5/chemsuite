@@ -225,7 +225,9 @@ def compute_fingerprints(
     parts: list[np.ndarray] = []
     flags: list[np.ndarray] = []
     done = 0
-    for packed, valid in ordered_map(fingerprint_chunk, _chunks(key, cells, chunk_rows), executor):
+    for packed, valid in ordered_map(
+        fingerprint_chunk, _chunks(key, cells, chunk_rows), executor, cancel=cancel
+    ):
         check(cancel)
         parts.append(packed)
         flags.append(valid)

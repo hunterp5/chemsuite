@@ -208,21 +208,22 @@ class ConformerDialog(QDialog):
             )
 
         def done(batch) -> None:
+            done_oids = oids[: len(batch.blobs)]  # after a cancel: only the first rows
             results = {
-                target: (oids, StructureColumn.from_parsed(batch.blobs, batch.displays)),
-                COUNT_COLUMN: (oids, NumberColumn.from_floats(batch.counts, 0)),
+                target: (done_oids, StructureColumn.from_parsed(batch.blobs, batch.displays)),
+                COUNT_COLUMN: (done_oids, NumberColumn.from_floats(batch.counts, 0)),
             }
             if settings.optimize:
                 span = SPAN_COLUMN + " (kcal/mol)"
-                results[span] = (oids, NumberColumn.from_floats(batch.spans, 2))
+                results[span] = (done_oids, NumberColumn.from_floats(batch.spans, 2))
             names = ctx.apply_results(results, label="Generate conformers", overwrite=overwrite)
             made = int(batch.counts[batch.counts > 0].sum())
-            message = f"{made:,} conformers for {len(oids):,} row(s) in “{names[target]}”"
+            message = f"{made:,} conformers for {len(done_oids):,} row(s) in “{names[target]}”"
             if batch.failed:
                 message += f"; {batch.failed:,} structure(s) could not be embedded"
             ctx.show_message(message, 8000)
 
-        return ctx.run(f"Generating conformers for {len(cells):,} row(s)…", work, done)
+        return ctx.run("Generating conformers…", work, done, keep_partial=True)
 
 
 class ExportConformersDialog(QDialog):

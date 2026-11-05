@@ -98,6 +98,20 @@ def test_batch_progress_and_cancel() -> None:
         generate_conformers(["CCO"], cancel=token)
 
 
+def test_cancel_keeps_the_conformers_already_made() -> None:
+    token = CancelToken()
+
+    def progress(done: int, total: int) -> None:
+        if done == 2:
+            token.cancel()
+
+    with pytest.raises(Cancelled) as stopped:
+        generate_conformers(["CCO", "CCN", "CCC", "CCCl"], ConformerSettings(count=2),
+                            progress=progress, cancel=token)  # fmt: skip
+    batch = stopped.value.partial
+    assert len(batch.blobs) == len(batch.displays) == len(batch.counts) == 2
+
+
 def test_conformers_survive_the_structure_column() -> None:
     result = generate(Chem.MolFromSmiles(FLEXIBLE), ConformerSettings(count=5))
     column = StructureColumn.from_parsed([mol_to_blob(result.mol)], [FLEXIBLE])

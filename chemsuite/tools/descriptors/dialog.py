@@ -212,11 +212,15 @@ class DescriptorDialog(QDialog):
             )
 
         def done(columns) -> None:
+            # After a cancel, the columns cover only the first rows.
+            done_oids = oids[: len(next(iter(columns.values())))]
             names = ctx.apply_results(
-                {CATALOG[key].title: (oids, columns[key]) for key in keys},
+                {CATALOG[key].title: (done_oids, columns[key]) for key in keys},
                 label=f"Calculate {len(keys)} descriptor(s)",
                 overwrite=overwrite,
             )
-            ctx.show_message(f"Added {len(names)} descriptor column(s) for {len(oids):,} row(s)")
+            ctx.show_message(
+                f"Added {len(names)} descriptor column(s) for {len(done_oids):,} row(s)"
+            )
 
-        return ctx.run(f"Calculating {len(keys)} descriptor(s)…", work, done)
+        return ctx.run(f"Calculating {len(keys)} descriptor(s)…", work, done, keep_partial=True)

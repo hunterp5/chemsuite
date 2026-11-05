@@ -168,7 +168,9 @@ def parse_chunks(
     """Parse snapshotted chunks (safe on any thread; in worker processes with *executor*)."""
     chunks = list(chunks)
     texts = (c.texts for c in chunks)
-    for parsed, blobs in zip(chunks, ordered_map(parse_structures, texts, executor), strict=True):
+    for parsed, blobs in zip(
+        chunks, ordered_map(parse_structures, texts, executor, cancel=cancel), strict=True
+    ):
         check(cancel)
         yield ParseChunk(parsed.column, parsed.oids, parsed.texts, blobs)
 
