@@ -31,7 +31,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QDockWidget, QWidget
 
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
@@ -50,7 +52,8 @@ class Tool:
     ``menu`` is the menu path, e.g. ``("Chemistry",)`` or ``("Chemistry", "Calculate")``.
     ``requires`` names importable modules; a tool whose module is missing is shown disabled
     with the reason. ``needs_structures`` disables the tool while the table has no structure
-    column.
+    column. ``restore`` reopens a panel saved with the document: a panel that should be saved
+    has ``state() -> dict`` and a ``tool_id`` naming the tool whose ``restore`` takes that dict.
     """
 
     id: str
@@ -61,6 +64,7 @@ class Tool:
     needs_structures: bool = False
     shortcut: str | None = None
     tip: str = ""
+    restore: Callable[[ToolContext, dict], Any] | None = None
 
     def missing(self) -> list[str]:
         """Required modules that cannot be imported."""
@@ -142,6 +146,27 @@ class ToolContext:
                 oids = oids[present]
             kept[name] = (oids, values)
         return table.apply_results(kept, label=label, overwrite=overwrite)
+
+    # -- showing ------------------------------------------------------------------------------
+    def add_panel(self, widget: QWidget, title: str) -> QDockWidget:
+        """Show *widget* in a dock beside the table; it closes with the document.
+
+        If the widget has ``close_panel()``, it is called when the dock is closed. A widget
+        with a ``titleChanged(str)`` signal keeps the dock's title up to date.
+        """
+        return self._window.add_panel(widget, title)
+
+    def structure_image(self, column: str, oid: int, size: QSize) -> QImage | None:
+        """A drawing of one structure cell (cached; None for a blank or invalid cell)."""
+        table = self.table
+        if column not in table or table.kind(column) != STRUCTURE or oid not in table.oids:
+            return None
+        window = self._window
+        dark = window.palette().base().color().lightness() < 128
+        slot = int(table.slots_of([oid])[0])
+        return window._images.image(
+            table.column(column), slot, size, window.devicePixelRatioF(), dark
+        )
 
     def show_message(self, text: str, ms: int = 5000) -> None:
         self._window.statusBar().showMessage(text, ms)

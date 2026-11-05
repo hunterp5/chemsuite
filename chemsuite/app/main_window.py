@@ -83,6 +83,7 @@ OPEN_FILTER = (
 EXPORT_FILTER = "SD file (*.sdf);;CSV (*.csv);;TSV (*.tsv);;SMILES (*.smi);;Excel (*.xlsx)"
 
 _windows: list[MainWindow] = []
+PANELS_KEY = "panels"
 
 
 @functools.cache
@@ -105,6 +106,9 @@ class Workspace:
         self.lists = RowLists(table)
         if extras and LISTS_KEY in extras:
             self.lists.load_json(extras[LISTS_KEY])
+        panels = (extras or {}).get(PANELS_KEY)
+        #: panels saved with the document, reopened when the window installs this workspace
+        self.saved_panels: list[dict] = panels if isinstance(panels, list) else []
         self._saved_lists = self.lists.revision
 
     @property
@@ -130,6 +134,17 @@ class Workspace:
         self.lists.close()
 
 
+class PanelDock(QDockWidget):
+    """A dock holding a tool's panel; closing it closes the panel for good."""
+
+    def closeEvent(self, event) -> None:
+        widget = self.widget()
+        if widget is not None and hasattr(widget, "close_panel"):
+            widget.close_panel()
+        super().closeEvent(event)
+        self.deleteLater()
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -151,6 +166,7 @@ class MainWindow(QMainWindow):
         self._find: FindReplaceDialog | None = None
         self._lists: ListActions | None = None
         self._browser: SelectionBrowser | None = None
+        self._panels: list[PanelDock] = []
         self.filter_dock = QDockWidget("Filters", self)
         self.filter_dock.setObjectName("FilterDock")
         self.filter_dock.setAllowedAreas(
@@ -221,8 +237,12 @@ class MainWindow(QMainWindow):
         self._update_actions()
         self._update_status()
         self._start_parsing()
+        self._restore_panels(workspace.saved_panels)
 
     def _teardown(self) -> None:
+        for dock in list(self._panels):
+            dock.close()
+        self._panels.clear()
         if self._find is not None:
             self._find.close_dialog()
             self._find = None
@@ -463,6 +483,50 @@ class MainWindow(QMainWindow):
         if isinstance(tool, str):
             tool = next(t for t in registered_tools() if t.id == tool)
         return tool.open(ToolContext(self))
+
+    def add_panel(self, widget: QWidget, title: str) -> PanelDock:
+        dock = PanelDock(title, self)
+        dock.setObjectName(f"Panel{id(dock)}")
+        dock.setWidget(widget)
+        if hasattr(widget, "titleChanged"):
+            widget.titleChanged.connect(dock.setWindowTitle)
+        previous = [d for d in self._panels if d.isVisible()]
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+        if previous:
+            self.tabifyDockWidget(previous[-1], dock)
+        self._panels.append(dock)
+        dock.destroyed.connect(lambda _o=None, d=dock: self._forget_panel(d))
+        dock.show()
+        dock.raise_()
+        return dock
+
+    def panel_states(self) -> list[dict]:
+        """Saved form of the open panels that can be restored (see ``Tool.restore``)."""
+        states = []
+        for widget in self.panels:
+            if hasattr(widget, "state") and getattr(widget, "tool_id", None):
+                states.append({"tool": widget.tool_id, "state": widget.state()})
+        return states
+
+    def _restore_panels(self, saved: list[dict]) -> None:
+        tools = {tool.id: tool for tool in registered_tools()}
+        for entry in saved:
+            tool = tools.get(entry.get("tool")) if isinstance(entry, dict) else None
+            if tool is None or tool.restore is None or tool.missing():
+                log.warning("cannot restore saved panel %r", entry)
+                continue
+            try:
+                tool.restore(ToolContext(self), dict(entry.get("state") or {}))
+            except (KeyError, ValueError, TypeError):  # a damaged or outdated entry
+                log.exception("failed to restore panel %r", entry)
+
+    def _forget_panel(self, dock: PanelDock) -> None:
+        if dock in self._panels:
+            self._panels.remove(dock)
+
+    @property
+    def panels(self) -> list[QWidget]:
+        return [dock.widget() for dock in self._panels]
 
     def toggle_browser(self) -> None:
         if self.browser_dock.isVisible():
@@ -713,6 +777,8 @@ class MainWindow(QMainWindow):
         snapshot = workspace.table.snapshot()
         checkpoint = workspace.table.history.checkpoint()
         extras, lists_revision = workspace.extras(), workspace.lists.revision
+        if self.panel_states():
+            extras[PANELS_KEY] = self.panel_states()
         saved: list[bool] = []
 
         def work(job: Job) -> None:

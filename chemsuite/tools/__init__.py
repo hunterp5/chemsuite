@@ -20,4 +20,7 @@ Tools are listed here explicitly rather than discovered at run time, so a frozen
 Keep these modules light: heavy imports belong inside the function that opens the tool.
 """
 
-TOOL_MODULES: tuple[str, ...] = ("chemsuite.tools.descriptors.tool",)
+TOOL_MODULES: tuple[str, ...] = (
+    "chemsuite.tools.descriptors.tool",
+    "chemsuite.tools.plot.tool",
+)

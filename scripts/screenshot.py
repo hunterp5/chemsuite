@@ -179,6 +179,10 @@ def main(argv: list[str]) -> int:
     settle()
     menu.grab().save(str(out / "menu-chemistry.png"))
     menu.hide()
+    scatter = window.open_tool("scatter")
+    scatter.set_spec(x="pIC50", y="pIC50")
+    settle()
+    window.grab().save(str(out / "plot.png"))
     print("\n".join(str(p) for p in sorted(out.glob("*.png"))))
     runner.shutdown()
     workspace = window.workspace

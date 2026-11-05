@@ -312,6 +312,13 @@ class TextColumn(Column):
     def blank_mask(self) -> np.ndarray:
         return self._codes == 0
 
+    def coded(self, slots: np.ndarray) -> tuple[np.ndarray, list[str]]:
+        """``(code per slot, strings)``: the dictionary encoding, code 0 being blank.
+
+        Lets callers group or count by value without building a string per row.
+        """
+        return self._codes[slots].astype(np.int64), list(self._dict.strings)
+
     def values(self, slots: np.ndarray | None = None) -> np.ndarray:
         lookup = np.array(self._dict.strings, dtype=object)
         lookup[0] = None
