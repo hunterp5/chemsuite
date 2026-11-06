@@ -37,6 +37,8 @@ CSV = "csv"
 TSV = "tsv"
 SMILES = "smiles"
 XLSX = "xlsx"
+RDF = "rdf"
+RXN = "rxn"
 
 _SUFFIXES = {
     ".sdf": SDF,
@@ -49,6 +51,9 @@ _SUFFIXES = {
     ".smi": SMILES,
     ".smiles": SMILES,
     ".xlsx": XLSX,
+    ".rdf": RDF,
+    ".rd": RDF,
+    ".rxn": RXN,
 }
 
 #: Header names (case-insensitive) that mark a column of structures in tabular files.
@@ -82,6 +87,30 @@ def guess_structure_column(headers: Sequence[str]) -> str | None:
         if name in STRUCTURE_HEADERS or name.endswith("smiles"):
             return header
     return None
+
+
+#: How many filled cells of a column are checked when deciding whether it holds reactions.
+REACTION_SAMPLE = 20
+
+
+def reaction_columns(headers: Sequence[str], rows: Sequence[Sequence[object]]) -> set[str]:
+    """Headers whose first filled cells (up to :data:`REACTION_SAMPLE`) are all reaction SMILES
+    or RXN text, such as USPTO's ``rxn_smiles``. Decided from the file's first rows, so every
+    batch of the file gets the same kinds."""
+    from chemsuite.core.reactions import looks_like_reaction
+
+    out: set[str] = set()
+    for i, header in enumerate(headers):
+        sample: list[object] = []
+        for row in rows:
+            value = row[i] if i < len(row) else None
+            if value is not None and str(value).strip():
+                sample.append(value)
+                if len(sample) >= REACTION_SAMPLE:
+                    break
+        if sample and all(isinstance(v, str) and looks_like_reaction(v) for v in sample):
+            out.add(header)
+    return out
 
 
 def unique_headers(headers: Sequence[str]) -> list[str]:

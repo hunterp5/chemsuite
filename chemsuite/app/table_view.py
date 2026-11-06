@@ -61,17 +61,21 @@ from PySide6.QtWidgets import (
 from rdkit import Chem
 
 from chemsuite.analysis.structure_search import match_atoms
-from chemsuite.core.depict import depiction_mol, render_png
+from chemsuite.core.depict import depiction_mol, render_png, render_reaction_png
 from chemsuite.core.mols import looks_like_molblock
+from chemsuite.core.reactions import looks_like_rxn_block, parse_reaction
 from chemsuite.core.selection import Selection
 from chemsuite.core.structure_input import read_structure
-from chemsuite.core.table.columns import STRUCTURE, StructureColumn
+from chemsuite.core.table.columns import REACTION, STRUCTURE, ParsedColumn, ReactionColumn
 
 from .structure_editor import structure_text_from_mime
 from .table_model import KIND_ROLE, STATUS_ROLE, STRUCTURE_ROLE, TableModel
 
 STRUCTURE_ROW_HEIGHT = 110
 STRUCTURE_COLUMN_WIDTH = 200
+REACTION_COLUMN_WIDTH = 440
+#: Column kinds whose cells are drawn as pictures.
+DRAWN = (STRUCTURE, REACTION)
 MAX_AUTO_COLUMN_WIDTH = 320
 #: keys that leave a column selection made on the header in place
 _KEEP_COLUMN_MODE = frozenset(
@@ -105,14 +109,14 @@ class StructureImages:
 
     def image(
         self,
-        column: StructureColumn,
+        column: ParsedColumn,
         slot: int,
         size: QSize,
         dpr: float,
         dark: bool,
         highlight: Highlight | None = None,
     ):
-        mol = column.mol(slot)  # parses a pending cell on first use
+        mol = column.obj(slot)  # parses a pending cell on first use
         if mol is None:
             return None
         blob = column.blobs(np.array([slot]))[0]
@@ -128,20 +132,26 @@ class StructureImages:
         if image is not None:
             self._cache.move_to_end(key)
             return image
-        atoms: list[int] = []
-        bonds: list[int] = []
-        if highlight is not None:
-            mol = depiction_mol(mol)
-            atoms, bonds = match_atoms(mol, highlight.query, highlight.stereo)
-        png = render_png(
-            mol,
-            int(size.width() * dpr),
-            int(size.height() * dpr),
-            scale=dpr,
-            dark=dark,
-            highlight_atoms=atoms,
-            highlight_bonds=bonds,
-        )
+        width, height = int(size.width() * dpr), int(size.height() * dpr)
+        if column.kind == REACTION:
+            png = render_reaction_png(mol, width, height, scale=dpr, dark=dark)
+            if png is None:
+                return None
+        else:
+            atoms: list[int] = []
+            bonds: list[int] = []
+            if highlight is not None:
+                mol = depiction_mol(mol)
+                atoms, bonds = match_atoms(mol, highlight.query, highlight.stereo)
+            png = render_png(
+                mol,
+                width,
+                height,
+                scale=dpr,
+                dark=dark,
+                highlight_atoms=atoms,
+                highlight_bonds=bonds,
+            )
         image = QImage.fromData(png, "PNG")
         image.setDevicePixelRatio(dpr)
         self._cache[key] = image
@@ -166,7 +176,7 @@ class CellDelegate(QStyledItemDelegate):
         self.highlights: dict[str, Highlight] = {}
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
-        if index.data(KIND_ROLE) != STRUCTURE:
+        if index.data(KIND_ROLE) not in DRAWN:
             super().paint(painter, option, index)
             return
         opt = QStyleOptionViewItem(option)
@@ -386,7 +396,7 @@ class TableView(QTableView):
     def _fit_layout(self) -> None:
         model = self.table_model
         table = model.table
-        has_structures = any(table.kind(name) == STRUCTURE for name in table.column_names)
+        has_structures = any(table.kind(name) in DRAWN for name in table.column_names)
         self.verticalHeader().setDefaultSectionSize(
             self._structure_row_height if has_structures else self.fontMetrics().height() + 8
         )
@@ -398,6 +408,8 @@ class TableView(QTableView):
                 self.setColumnWidth(col, known)
             elif kind == STRUCTURE:
                 self.setColumnWidth(col, STRUCTURE_COLUMN_WIDTH)
+            elif kind == REACTION:
+                self.setColumnWidth(col, REACTION_COLUMN_WIDTH)
             else:
                 self.resizeColumnToContents(col)
                 self.setColumnWidth(col, min(self.columnWidth(col), MAX_AUTO_COLUMN_WIDTH))
@@ -646,29 +658,22 @@ class TableView(QTableView):
 
     # -- editing ------------------------------------------------------------------------------
     def edit(self, index, trigger=None, event=None):  # type: ignore[override]
-        """Structure cells open the sketcher (double-click) or the structure editor (typing,
-        F2) instead of an inline text editor."""
+        """Structure and reaction cells open the sketcher on double-click and F2. Typing in a
+        structure cell opens the structure editor; typing in a reaction cell edits its text in
+        place."""
         if trigger is None:
             return super().edit(index)
-        if (
-            index.isValid()
-            and index.data(KIND_ROLE) == STRUCTURE
-            and trigger == QAbstractItemView.EditTrigger.DoubleClicked
-            and self.state() != QAbstractItemView.State.EditingState
-        ):
+        kind = index.data(KIND_ROLE) if index.isValid() else None
+        if kind not in DRAWN or self.state() == QAbstractItemView.State.EditingState:
+            return super().edit(index, trigger, event)
+        Trigger = QAbstractItemView.EditTrigger
+        if trigger == Trigger.DoubleClicked:
             self.structureDrawRequested.emit(index)
             return False
-        if (
-            index.isValid()
-            and index.data(KIND_ROLE) == STRUCTURE
-            and trigger
-            in (
-                QAbstractItemView.EditTrigger.EditKeyPressed,
-                QAbstractItemView.EditTrigger.AnyKeyPressed,
-            )
-            and self.state() != QAbstractItemView.State.EditingState
+        if trigger == Trigger.EditKeyPressed or (
+            kind == STRUCTURE and trigger == Trigger.AnyKeyPressed
         ):
-            typed = event.text() if trigger == QAbstractItemView.EditTrigger.AnyKeyPressed else ""
+            typed = event.text() if trigger == Trigger.AnyKeyPressed else ""
             self.structureEditRequested.emit(index, typed)
             return False
         return super().edit(index, trigger, event)
@@ -702,7 +707,11 @@ class TableView(QTableView):
         model = self.table_model
         if not model.rowCount() or not model.columnCount():
             return "Nothing to paste"
-        structure = structure_text_from_mime(QGuiApplication.clipboard().mimeData())
+        mime = QGuiApplication.clipboard().mimeData()
+        rxn = _rxn_text_from_mime(mime)
+        if rxn:
+            return self._paste_rxn(rxn)
+        structure = structure_text_from_mime(mime)
         if looks_like_molblock(structure):
             return self._paste_molfile(structure)
         text = QGuiApplication.clipboard().text()
@@ -732,18 +741,41 @@ class TableView(QTableView):
             f"; {skipped} row(s) past the end skipped" if skipped else ""
         )
 
-    def _paste_molfile(self, block: str) -> str:
-        """A molfile goes whole into the selected structure cells (or the current one)."""
+    def _target_cells(self, kind: str) -> dict[str, np.ndarray]:
+        """Selected cells in columns of *kind*, else the current cell if it is one."""
         table = self.table_model.table
         cells = {
             name: oids
             for name, oids in self.selected_cells_by_column().items()
-            if table.kind(name) == STRUCTURE
+            if table.kind(name) == kind
         }
         current = self.currentIndex()
-        if not cells and current.isValid() and current.data(KIND_ROLE) == STRUCTURE:
+        if not cells and current.isValid() and current.data(KIND_ROLE) == kind:
             name = self.table_model.column_name(current.column())
             cells = {name: np.array([self.table_model.oid_at(current.row())])}
+        return cells
+
+    def _paste_rxn(self, block: str) -> str:
+        """An RXN file goes whole into the selected reaction cells (or the current one)."""
+        cells = self._target_cells(REACTION)
+        if not cells:
+            return "Select a reaction cell to paste the RXN file into"
+        blob, shown = parse_reaction(block)
+        if not blob:
+            return "The pasted RXN file is not a valid reaction"
+        self.table_model.table.set_block(
+            {
+                name: (oids, ReactionColumn.from_parsed([blob] * len(oids), [shown] * len(oids)))
+                for name, oids in cells.items()
+            },
+            label="Paste reaction",
+        )
+        return f"Pasted reaction into {sum(len(o) for o in cells.values())} cell(s)"
+
+    def _paste_molfile(self, block: str) -> str:
+        """A molfile goes whole into the selected structure cells (or the current one)."""
+        table = self.table_model.table
+        cells = self._target_cells(STRUCTURE)
         if not cells:
             return "Select a structure cell to paste the molfile into"
         parsed = read_structure(block)
@@ -799,3 +831,15 @@ class TableView(QTableView):
                 self.clear_selected_cells()
             return
         super().keyPressEvent(event)
+
+
+def _rxn_text_from_mime(mime) -> str:
+    """An RXN file on the clipboard (as ``chemical/x-mdl-rxnfile`` or as text), else ""."""
+    if mime is None:
+        return ""
+    if mime.hasFormat("chemical/x-mdl-rxnfile"):
+        text = bytes(mime.data("chemical/x-mdl-rxnfile").data()).decode("utf-8", "replace")
+        if looks_like_rxn_block(text):
+            return text
+    text = mime.text() if mime.hasText() else ""
+    return text if looks_like_rxn_block(text) else ""

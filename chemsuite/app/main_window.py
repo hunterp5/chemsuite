@@ -66,7 +66,7 @@ from chemsuite.core.settings import Settings, add_recent
 from chemsuite.core.structure_input import molblock_of, read_structure
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
-from chemsuite.core.table.columns import STRUCTURE
+from chemsuite.core.table.columns import REACTION, STRUCTURE
 
 from . import dock_layout
 from .advanced_search import EXTRAS_KEY as ADVANCED_KEY
@@ -90,7 +90,7 @@ from .settings_hub import settings_hub
 from .split_join import JoinColumnsDialog, SplitColumnDialog
 from .status_bar import StatusBar
 from .structure_copy import FORMATS as COPY_FORMATS
-from .structure_copy import copy_structures
+from .structure_copy import REACTION_FORMATS, copy_reactions, copy_structures
 from .structure_editor import StructureEditor, copy_structure
 from .structure_search import StructureSearchDialog, StructureSearcher
 from .table_model import TableModel
@@ -100,11 +100,16 @@ from .tools import Tool, ToolContext, load_tools
 log = logging.getLogger(__name__)
 
 OPEN_FILTER = (
-    "All supported (*.csd *.sdf *.sd *.mol *.csv *.tsv *.txt *.smi *.smiles *.xlsx *.gz);;"
+    "All supported (*.csd *.sdf *.sd *.mol *.csv *.tsv *.txt *.smi *.smiles *.xlsx *.rdf *.rd"
+    " *.rxn *.gz);;"
     "chemsuite documents (*.csd);;SD files (*.sdf *.sd *.mol *.sdf.gz);;"
-    "CSV/TSV (*.csv *.tsv *.txt *.csv.gz *.tsv.gz);;SMILES (*.smi *.smiles);;Excel (*.xlsx)"
+    "CSV/TSV (*.csv *.tsv *.txt *.csv.gz *.tsv.gz);;SMILES (*.smi *.smiles);;Excel (*.xlsx);;"
+    "Reactions: RD and RXN files (*.rdf *.rd *.rxn *.rdf.gz)"
 )
-EXPORT_FILTER = "SD file (*.sdf);;CSV (*.csv);;TSV (*.tsv);;SMILES (*.smi);;Excel (*.xlsx)"
+EXPORT_FILTER = (
+    "SD file (*.sdf);;CSV (*.csv);;TSV (*.tsv);;SMILES (*.smi);;Excel (*.xlsx);;"
+    "RD file, reactions (*.rdf);;RXN file, one reaction (*.rxn)"
+)
 
 _windows: list[MainWindow] = []
 _jobs_windows: dict[int, JobsWindow] = {}
@@ -459,14 +464,14 @@ class MainWindow(QMainWindow):
         """Could this change have left structure cells waiting to be parsed?"""
         table = self.workspace.table
         for change in event.changes:
-            if isinstance(change, ev.ColumnKindChanged) and change.kind == STRUCTURE:
+            if isinstance(change, ev.ColumnKindChanged) and change.kind in (STRUCTURE, REACTION):
                 return True
             if isinstance(change, ev.RowsInserted | ev.ColumnInserted):
                 return True
             if (
                 isinstance(change, ev.CellsChanged)
                 and change.column in table
-                and table.kind(change.column) == STRUCTURE
+                and table.kind(change.column) in (STRUCTURE, REACTION)
             ):
                 return True
         return False
@@ -1147,14 +1152,20 @@ class MainWindow(QMainWindow):
         """F2 opens the sketcher; typing a character starts the text editor with it."""
         model = self.workspace.model
         oid, name = model.oid_at(index.row()), model.column_name(index.column())
-        if typed:
+        if self.workspace.table.kind(name) == REACTION:
+            self.draw_reaction(oid, name)
+        elif typed:
             self.edit_structure(oid, name, typed)
         else:
             self.draw_structure(oid, name)
 
     def _on_structure_draw_requested(self, index: QModelIndex) -> None:
         model = self.workspace.model
-        self.draw_structure(model.oid_at(index.row()), model.column_name(index.column()))
+        oid, name = model.oid_at(index.row()), model.column_name(index.column())
+        if self.workspace.table.kind(name) == REACTION:
+            self.draw_reaction(oid, name)
+        else:
+            self.draw_structure(oid, name)
 
     def _show_cell_menu(self, index: QModelIndex, pos: QPoint) -> None:
         menu = self.cell_menu(index)
@@ -1168,33 +1179,51 @@ class MainWindow(QMainWindow):
         name = model.column_name(index.column())
         oid = model.oid_at(index.row())
         menu = QMenu(self)
-        if table.kind(name) == STRUCTURE:
+        kind = table.kind(name)
+        if kind == STRUCTURE:
             menu.addAction("Edit in Sketcher…", lambda: self.draw_structure(oid, name))
             menu.addAction("Edit as Text…", lambda: self.edit_structure(oid, name))
             menu.addSeparator()
+        elif kind == REACTION:
+            menu.addAction("Edit in Sketcher…", lambda: self.draw_reaction(oid, name))
+            menu.addSeparator()
         menu.addAction("Copy", self.view.copy_selection)
-        if table.kind(name) == STRUCTURE:
+        if kind == STRUCTURE:
             copy_as = menu.addMenu("Copy As")
             for fmt, title in COPY_FORMATS:
                 copy_as.addAction(title, lambda f=fmt: self.copy_structures_as(index, f))
+        elif kind == REACTION:
+            copy_as = menu.addMenu("Copy As")
+            for fmt, title in REACTION_FORMATS:
+                copy_as.addAction(title, lambda f=fmt: self.copy_reactions_as(index, f))
         menu.addAction("Paste", self.paste)
         menu.addSeparator()
         menu.addAction("Clear Cells", self.view.clear_selected_cells)
         return menu
 
-    def copy_structures_as(self, index: QModelIndex, fmt: str) -> str:
-        """Copy the structures selected in *index*'s column (or just that cell) as *fmt*."""
+    def _cell_oids(self, index: QModelIndex) -> np.ndarray:
+        """The rows selected in *index*'s column, in view order, or just *index*'s row."""
         model = self.workspace.model
-        table = self.workspace.table
         name = model.column_name(index.column())
         oids = self.view.selected_cells_by_column().get(name)
         if oids is None or model.oid_at(index.row()) not in oids:
-            oids = np.array([model.oid_at(index.row())])
-        else:  # keep the order rows are shown in
-            rows = model.rows_of_oids(oids)
-            oids = oids[np.argsort(rows)]
-        column = table.column(name)
-        mols = [column.mol(int(slot)) for slot in table.slots_of(oids)]
+            return np.array([model.oid_at(index.row())])
+        return oids[np.argsort(model.rows_of_oids(oids))]
+
+    def copy_reactions_as(self, index: QModelIndex, fmt: str) -> str:
+        """Copy the reactions selected in *index*'s column (or just that cell) as *fmt*."""
+        table = self.workspace.table
+        column = table.column(self.workspace.model.column_name(index.column()))
+        slots = table.slots_of(self._cell_oids(index))
+        message = copy_reactions([column.reaction(int(s)) for s in slots], fmt)
+        self.statusBar().showMessage(message, 4000)
+        return message
+
+    def copy_structures_as(self, index: QModelIndex, fmt: str) -> str:
+        """Copy the structures selected in *index*'s column (or just that cell) as *fmt*."""
+        table = self.workspace.table
+        column = table.column(self.workspace.model.column_name(index.column()))
+        mols = [column.mol(int(slot)) for slot in table.slots_of(self._cell_oids(index))]
         message = copy_structures(mols, fmt)
         self.statusBar().showMessage(message, 4000)
         return message
@@ -1228,6 +1257,47 @@ class MainWindow(QMainWindow):
             if parsed.is_blank and not table.cell(name, oid):
                 return
             table.set_cells(name, [oid], parsed.as_column(), label=f"Draw {name}")
+
+        dialog.accepted.connect(accepted)
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
+
+    def draw_reaction(self, oid: int, name: str):
+        """Open the sketcher on one reaction cell; OK writes it back (one undo step). A cell
+        whose text is not a valid reaction opens with that text in an inline editor instead."""
+        from chemsuite.app.sketcher import SketcherDialog
+        from chemsuite.core.io.rdf import rxn_blocks
+        from chemsuite.core.reactions import parse_reaction
+        from chemsuite.core.table.columns import ReactionColumn
+
+        table = self.workspace.table
+        column = table.column(name)
+        slot = int(table.slots_of([oid])[0])
+        if column.reaction(slot) is None and table.cell(name, oid).strip():
+            row = int(self.workspace.model.rows_of_oids([oid])[0])
+            if row >= 0:
+                self.view.edit(
+                    self.workspace.model.index(row, self.workspace.model.column_index(name))
+                )
+            return None
+        row = int(self.workspace.model.rows_of_oids([oid])[0])
+        title = f"Draw Reaction — {name}" + (f", row {row + 1}" if row >= 0 else "")
+        cells = (column.blobs(np.array([slot])), column.displays(np.array([slot])))
+        start = rxn_blocks(cells)[0] if table.cell(name, oid) else ""
+        dialog = SketcherDialog(start, title, self, reaction_only=True)
+
+        def accepted() -> None:
+            if name not in table or oid not in table.oids:
+                return
+            if not dialog.canvas.history.can_undo:
+                return  # nothing was drawn or changed
+            if not dialog.rxn and not table.cell(name, oid):
+                return
+            # parsed now: the cell shows reaction SMILES and keeps the drawing's coordinates
+            blob, shown = parse_reaction(dialog.rxn) if dialog.rxn else (b"", "")
+            cell = ReactionColumn.from_parsed([blob], [shown])
+            table.set_cells(name, [oid], cell, label=f"Draw {name}")
 
         dialog.accepted.connect(accepted)
         dialog.finished.connect(lambda _r: dialog.deleteLater())
@@ -1444,7 +1514,14 @@ class MainWindow(QMainWindow):
         snapshot = workspace.table.snapshot()
 
         def work(job: Job) -> None:
-            save_table(snapshot, path, oids=oids, progress=job.report, cancel=job.cancel_token)
+            save_table(
+                snapshot,
+                path,
+                oids=oids,
+                executor=self._runner.process_pool(),
+                progress=job.report,
+                cancel=job.cancel_token,
+            )
 
         def done(_result: None) -> None:
             rows = len(oids) if oids is not None else len(snapshot)

@@ -60,10 +60,13 @@ class SketcherDialog(QDialog):
         *,
         ok_text: str = "",
         reactions: bool = False,
+        reaction_only: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.reactions = reactions
+        self.reactions = reactions or reaction_only
+        #: a reaction cell: OK needs a reaction (or an empty drawing), not a lone structure
+        self.reaction_only = reaction_only
         self.rxn = ""
         start = None
         if text.strip() and reaction.looks_like_reaction(text):
@@ -157,6 +160,11 @@ class SketcherDialog(QDialog):
                 return
             self.molblock = ""
             super().accept()
+            return
+        if self.reaction_only and not sketch.is_empty():
+            self._show_message(
+                "This holds a reaction: draw an arrow from the reactants to the products."
+            )
             return
         self.molblock = "" if sketch.is_empty() else convert.to_molblock(sketch)
         super().accept()

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from chemsuite.core.table import Table
-from chemsuite.core.table.columns import NUMBER, STRUCTURE, TEXT, TextColumn
+from chemsuite.core.table.columns import NUMBER, REACTION, STRUCTURE, TEXT, TextColumn
 from chemsuite.core.table.filters import number_values
 
 BLANK_LABEL = "(blank)"
@@ -122,4 +122,4 @@ def shown_oids(table: Table) -> np.ndarray:
 
 
 def is_plottable_axis(table: Table, name: str | None) -> bool:
-    return bool(name) and name in table and table.kind(name) not in (STRUCTURE,)
+    return bool(name) and name in table and table.kind(name) not in (STRUCTURE, REACTION)

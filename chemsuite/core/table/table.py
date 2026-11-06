@@ -44,16 +44,18 @@ import numpy as np
 from . import events as ev
 from .columns import (
     NUMBER,
+    REACTION,
     STRUCTURE,
     TEXT,
     Column,
     NumberColumn,
-    StructureColumn,
+    ParsedColumn,
     as_slots,
     blank_column,
     coerce,
     column_from_values,
     to_number,
+    to_reaction,
     to_structure,
     to_text,
 )
@@ -76,6 +78,9 @@ from .style import ColumnStyle
 
 Listener = Callable[[ev.TableEvent], None]
 SortKey = tuple[str, bool]  # (column, ascending)
+
+#: Kinds a column is given on purpose, which incoming values of another kind do not replace.
+_CHOSEN = (STRUCTURE, REACTION)
 
 
 class Table:
@@ -402,14 +407,14 @@ class Table:
             self._execute(Command(label, ops))
 
     def fill_structures(self, name: str, oids: np.ndarray, blobs: Sequence[bytes]) -> None:
-        """Store background parse results for a structure column.
+        """Store background parse results for a structure or reaction column.
 
         Not an edit (no visible text changes, nothing to undo), but listeners are told the
         cells changed so a view can redraw the molecules and flag invalid ones.
         """
         column = self.column(name)
-        if not isinstance(column, StructureColumn):
-            raise TypeError(f"column {name!r} is not a structure column")
+        if not isinstance(column, ParsedColumn):
+            raise TypeError(f"column {name!r} is not a structure or reaction column")
         oids = as_slots(oids)
         with self._changing(structural=False):
             column.fill(self.slots_of(oids), blobs)
@@ -505,6 +510,8 @@ class Table:
             new, blanked = converted
         elif kind == STRUCTURE:
             new, blanked = to_structure(column), 0
+        elif kind == REACTION:
+            new, blanked = to_reaction(column), 0
         else:
             raise ValueError(f"unknown column kind {kind!r}")
         new.style = column.style.for_kind(kind)
@@ -589,7 +596,7 @@ class Table:
             existing = self._columns.get(requested)
             reusable = existing is not None and (
                 existing.is_all_blank()
-                or (overwrite and (existing.kind != STRUCTURE or incoming.kind == STRUCTURE))
+                or (overwrite and (existing.kind not in _CHOSEN or incoming.kind == existing.kind))
             )
             if reusable and requested not in taken:
                 self._put_ops(requested, oids, incoming, ops)
@@ -707,6 +714,8 @@ class Table:
             return incoming, target
         if target.kind == STRUCTURE:  # a structure column is chosen on purpose: keep its kind
             return to_structure(incoming), target
+        if target.kind == REACTION:  # so is a reaction column
+            return to_reaction(incoming), target
         if target.is_all_blank() and not incoming.is_all_blank():
             replacement = blank_column(incoming.kind, len(target))
             replacement.style = target.style.for_kind(incoming.kind)

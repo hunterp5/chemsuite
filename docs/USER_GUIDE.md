@@ -124,9 +124,11 @@ Use File ▸ Open (Ctrl+O) or File ▸ Open Recent.
 | Format | Extensions | Notes |
 |---|---|---|
 | SD file | `.sdf`, `.sd`, `.mol` | Data fields become columns. A record whose structure does not parse is **kept**: its other fields still load, and the structure cell is marked invalid. Nothing in your file disappears silently. |
-| CSV / TSV | `.csv`, `.tsv`, `.tab`, `.txt` | A column headed SMILES, Structure, Mol, Molecule, Canonical_SMILES or Isomeric_SMILES becomes a structure column. |
+| CSV / TSV | `.csv`, `.tsv`, `.tab`, `.txt` | A column headed SMILES, Structure, Mol, Molecule, Canonical_SMILES or Isomeric_SMILES becomes a structure column. A column whose first 20 filled cells are all reaction SMILES (such as USPTO's `rxn_smiles`) becomes a [reaction column](#reactions-in-the-table), even if its name ends in "smiles". |
 | SMILES list | `.smi`, `.smiles` | One SMILES per line, with an optional name. |
-| Excel | `.xlsx` | The first sheet. |
+| Excel | `.xlsx` | The first sheet. Structure and reaction columns are found as for CSV. |
+| RD file | `.rdf`, `.rd` | Reactions with their data: a **Reaction** column, and one column per data field (`$DTYPE`). Registry numbers go in an **ID** column. As with SD files, a record whose reaction does not parse is kept and marked invalid. Molecule records (`$MFMT`) go in a **Structure** column. |
+| RXN file | `.rxn` | One reaction, as a one-row table. |
 | chemsuite document | `.csd` | Everything exactly as it was saved (see below). |
 
 Any of these can also be gzip-compressed (`compounds.sdf.gz`). The text encoding is detected
@@ -152,8 +154,13 @@ in the background, using every processor core. You can scroll and work while tha
     active advanced search always reopen visible, since they explain why rows are hidden.
 - Saving is safe. The new file is written next to the old one and swapped in only once it is
   complete, so a crash or a full disk never damages your previous version.
-- **File ▸ Export…** writes SDF, CSV/TSV, SMILES or Excel. **Export Selected…** writes only the
-  selected rows.
+- **File ▸ Export…** writes SDF, CSV/TSV, SMILES, Excel, an RD file or an RXN file.
+  **Export Selected…** writes only the selected rows.
+  - An **RD file** holds the first reaction column as RXN blocks and every other column as
+    data. Reactions read from SMILES have no drawing, so they are laid out as the sketcher lays
+    them out (using every processor core). Blank values are left out.
+  - An **RXN file** holds one reaction: export a single selected row.
+  - CSV, TSV and Excel write reactions as reaction SMILES.
 
 ### New and close
 
@@ -173,10 +180,13 @@ in the background, using every processor core. You can scroll and work while tha
   Sketcher…**, **Edit as Text…** and **Copy As ▸ Molfile / SMILES / InChI / InChIKey / Image**.
   Copy As takes every selected structure in that column, in the order shown: text formats one
   per line, molfiles as an SD file. A single molfile also pastes into ChemDraw as a drawing.
+  Reaction cells offer **Edit in Sketcher…** and **Copy As ▸ RXN File / Reaction SMILES /
+  Image** (see [Reactions in the table](#reactions-in-the-table)).
 - **Copy (Ctrl+C)** copies the selected cells as tab-separated text, which pastes cleanly into
   Excel.
 - **Paste (Ctrl+V)** pastes tab-separated text starting at the current cell, as one step you can
-  undo. A molfile on the clipboard (from ChemDraw and similar) pastes into a structure cell.
+  undo. A molfile on the clipboard (from ChemDraw and similar) pastes into a structure cell, and
+  an RXN file into a reaction cell.
 - **Clear Cells** blanks the selected cells.
 - **Undo (Ctrl+Z)** and **Redo (Ctrl+Y)** cover every edit to the table: cells, rows, columns,
   types, and results written by tools.
@@ -222,8 +232,9 @@ Right-click a column header for:
   the same colour). Range ends left empty follow the data. Choose **None** to remove the
   colours.
 - Precision, Logarithmic and colours are saved in the document and can be undone.
-- **Column Type ▸ Text / Number / Structure.** Converting to Number warns you if some values
-  are not numbers; those cells would be cleared.
+- **Column Type ▸ Text / Number / Structure / Reaction.** Converting to Number warns you if
+  some values are not numbers; those cells would be cleared. Converting to Structure or
+  Reaction reads each cell's text; cells that do not read are kept and marked invalid.
 
 From the Data ▸ Table menu:
 
@@ -261,6 +272,27 @@ From the Data ▸ Table menu:
   can fix it.
 - Rows are taller when the table has a structure column. Change the height under Settings ▸
   Appearance.
+
+### Reactions in the table
+
+A reaction column holds one reaction per cell: reactants, agents (solvents, catalysts,
+reagents) and products, with any atom maps. It is drawn in the cell with the arrow and plus
+signs, agents above the arrow; map numbers are not shown in cells. Reaction columns come from
+RD and RXN files, from reaction SMILES in CSV and Excel files, or from **Column Type ▸
+Reaction** on a column of reaction SMILES.
+
+- **Double-click** a reaction cell, or press **F2**, to draw it in the sketcher, with the map
+  numbers. OK writes it back as one step you can undo, keeping your drawing for RD and RXN
+  export. A reaction cell needs a reaction: OK asks for an arrow if the drawing has none.
+- **Typing** in a reaction cell edits its reaction SMILES in place. A cell whose text is not a
+  valid reaction opens that way too, so you can fix it.
+- **Copy As ▸ RXN File** copies one reaction as an RXN file, which pastes into ChemDraw,
+  Marvin and Ketcher as a drawing (several copy as an RD file). **Reaction SMILES** copies
+  one per line; **Image** copies a picture of the first.
+- Pasting an RXN file fills the selected reaction cells.
+- The cell shows the reaction SMILES as typed or read. A reaction read from an RXN or RD file,
+  or drawn in the sketcher, shows RDKit's reaction SMILES and keeps its drawing.
+- Quick search and plots leave reaction columns out, as they do structure columns.
 
 ### The sketcher
 
@@ -451,7 +483,7 @@ Copy puts a reaction on the clipboard as an RXN file and as reaction SMILES, so 
 Marvin and Ketcher can paste it. Paste takes either back, and reaction SMILES typed or pasted
 in (`CC(=O)O.OCC>[H+]>CC(=O)OCC`) is laid out left to right, agents above the arrow. A
 reaction cannot be OK'd into a structure cell; the sketcher asks you to delete the arrow and
-plus signs.
+plus signs. Reactions belong in a [reaction column](#reactions-in-the-table).
 
 **Valence.** An atom with an impossible valence is shown in red inside a dotted ring; point
 at it to see why. Hydrogens are worked out by the same rules as the table, so a drawing the

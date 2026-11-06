@@ -30,10 +30,10 @@ from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox, QWidget
 
 from chemsuite.core.table import NUMBER, TEXT, Table
-from chemsuite.core.table.columns import STRUCTURE, to_number
+from chemsuite.core.table.columns import REACTION, STRUCTURE, to_number
 from chemsuite.core.table.style import MAX_PRECISION
 
-KIND_TITLES = {TEXT: "Text", NUMBER: "Number", STRUCTURE: "Structure"}
+KIND_TITLES = {TEXT: "Text", NUMBER: "Number", STRUCTURE: "Structure", REACTION: "Reaction"}
 AS_TYPED = "As typed"
 
 
@@ -260,11 +260,12 @@ class ColumnActions:
             if number
             else "Only Number columns have a precision."
         )
-        colour = add("Colour Column…", lambda: self.colour(name), table.kind(name) != STRUCTURE)
+        drawn = table.kind(name) in (STRUCTURE, REACTION)
+        colour = add("Colour Column…", lambda: self.colour(name), not drawn)
         colour.setToolTip(
             "Colour the cells by value (gradient) or by category."
-            if table.kind(name) != STRUCTURE
-            else "Structure columns cannot be coloured."
+            if not drawn
+            else f"{KIND_TITLES[table.kind(name)]} columns cannot be coloured."
         )
         menu.addSeparator()
 

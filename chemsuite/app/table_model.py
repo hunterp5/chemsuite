@@ -39,11 +39,11 @@ from PySide6.QtGui import QColor
 
 from chemsuite.core.table import NUMBER, Changed, Table
 from chemsuite.core.table import events as ev
-from chemsuite.core.table.columns import STRUCTURE, NumberColumn, StructureColumn
+from chemsuite.core.table.columns import REACTION, STRUCTURE, NumberColumn, ParsedColumn
 
 OID_ROLE = Qt.ItemDataRole.UserRole + 1
 KIND_ROLE = Qt.ItemDataRole.UserRole + 2
-#: ``(StructureColumn, slot)`` for the structure delegate.
+#: ``(StructureColumn or ReactionColumn, slot)`` for the delegate that draws them.
 STRUCTURE_ROLE = Qt.ItemDataRole.UserRole + 3
 #: ``"blank" | "pending" | "ok" | "invalid"`` for structure cells.
 STATUS_ROLE = Qt.ItemDataRole.UserRole + 4
@@ -158,7 +158,7 @@ class TableModel(QAbstractTableModel):
             return column.kind
         if role == Qt.ItemDataRole.BackgroundRole:
             return self._background(name, column, slot) if column.style.colour else None
-        if isinstance(column, StructureColumn):
+        if isinstance(column, ParsedColumn):
             if role == STRUCTURE_ROLE:
                 return column, slot
             if role == STATUS_ROLE:
@@ -167,7 +167,8 @@ class TableModel(QAbstractTableModel):
                 text = column.display(slot)
                 if not text:
                     return None
-                prefix = "Invalid structure:\n" if _status(column, slot) == "invalid" else ""
+                what = "reaction" if column.kind == REACTION else "structure"
+                prefix = f"Invalid {what}:\n" if _status(column, slot) == "invalid" else ""
                 return prefix + text[:_TOOLTIP_CHARS]
         elif role == Qt.ItemDataRole.ToolTipRole:
             text = column.display(slot)
@@ -298,7 +299,7 @@ class TableModel(QAbstractTableModel):
         self._row_of_slot = None
 
 
-def _status(column: StructureColumn, slot: int) -> str:
+def _status(column: ParsedColumn, slot: int) -> str:
     if not column.display(slot):
         return "blank"
     blob = column.blobs(np.array([slot]))[0]

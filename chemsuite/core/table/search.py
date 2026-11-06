@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from .columns import STRUCTURE
+from .columns import REACTION, STRUCTURE
 
 if TYPE_CHECKING:
     from .table import Table
@@ -72,7 +72,7 @@ class Query:
 
 def searchable_columns(table: Table, columns: Sequence[str] | None = None) -> list[str]:
     names = table.column_names if columns is None else [c for c in columns if c in table]
-    return [name for name in names if table.kind(name) != STRUCTURE]
+    return [name for name in names if table.kind(name) not in (STRUCTURE, REACTION)]
 
 
 def match_mask(table: Table, query: Query, columns: Sequence[str] | None = None) -> np.ndarray:

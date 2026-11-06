@@ -45,9 +45,12 @@ import chemsuite
 from chemsuite.core.jobs import CancelToken, Progress, check
 from chemsuite.core.table import NUMBER, TEXT, ColumnStyle, Table
 from chemsuite.core.table.columns import (
+    REACTION,
     STRUCTURE,
     Column,
     NumberColumn,
+    ParsedColumn,
+    ReactionColumn,
     StructureColumn,
     TextColumn,
     blank_column,
@@ -176,7 +179,7 @@ def _encode(column: Column) -> bytes:
     if isinstance(column, TextColumn):
         compact = column.compacted()
         return _pack([compact._codes.astype("<u4").tobytes(), _json(compact._dict.strings)])
-    if isinstance(column, StructureColumn):
+    if isinstance(column, ParsedColumn):
         blobs = column._blobs.tolist()
         lengths = np.array([-1 if b is None else len(b) for b in blobs], dtype="<i4")
         return _pack(
@@ -263,7 +266,7 @@ def _decode(kind: str, sections: list[bytes]) -> Column:
         lookup = column._codes  # strings were stored unique and in code order
         codes = np.frombuffer(codes_raw, dtype="<u4").astype(np.uint32)
         return TextColumn(lookup[codes], column._dict)
-    if kind == STRUCTURE:
+    if kind in (STRUCTURE, REACTION):
         lengths_raw, blob_data, texts_raw = sections
         lengths = np.frombuffer(lengths_raw, dtype="<i4")
         blobs: list[bytes | None] = []
@@ -274,5 +277,6 @@ def _decode(kind: str, sections: list[bytes]) -> Column:
             else:
                 blobs.append(blob_data[offset : offset + length])
                 offset += length
-        return StructureColumn(object_array(blobs), object_array(json.loads(texts_raw)))
+        cls = StructureColumn if kind == STRUCTURE else ReactionColumn
+        return cls(object_array(blobs), object_array(json.loads(texts_raw)))
     raise DocumentError(f"unknown column kind {kind!r}")

@@ -31,7 +31,7 @@ import numpy as np
 
 from chemsuite.core.jobs import CancelToken, Progress, check
 from chemsuite.core.table import Table
-from chemsuite.core.table.columns import StructureColumn
+from chemsuite.core.table.columns import ReactionColumn, StructureColumn
 
 from .formats import (
     TSV,
@@ -40,6 +40,7 @@ from .formats import (
     file_size,
     guess_structure_column,
     open_text,
+    reaction_columns,
     split_suffix,
     unique_headers,
 )
@@ -75,6 +76,8 @@ def read_delimited(
 
     *structure_column* names the column holding SMILES/InChI; ``"auto"`` picks it from the
     header (``SMILES``, ``Structure``, ``canonical_smiles``…); None loads every column as data.
+    Columns whose first cells are all reaction SMILES become reaction columns (with ``"auto"``,
+    a ``rxn_smiles`` column is a reaction column, not the structure column).
     Short rows are padded with blanks; extra fields get ``Column N`` headers.
     """
     fmt, _ = split_suffix(path)
@@ -86,10 +89,24 @@ def read_delimited(
         delimiter = delimiter or sniff_delimiter(first.rstrip("\r\n"), "\t" if fmt == TSV else ",")
         header_row = next(csv.reader([first], delimiter=delimiter), [])
         headers = unique_headers(header_row)
-        if structure_column == AUTO:
+        auto = structure_column == AUTO
+        if auto:
             structure_column = guess_structure_column(headers)
         elif structure_column is not None and structure_column not in headers:
             raise ValueError(f"no column named {structure_column!r} in {Path(path).name}")
+        reactions: set[str] | None = None
+
+        def batch(rows: list[list[str]]) -> Batch:
+            nonlocal reactions, structure_column
+            if reactions is None:  # decided once, from the first rows
+                reactions = reaction_columns(headers, rows)
+                if not auto:
+                    reactions.discard(structure_column)  # named as structures on purpose
+                if auto and structure_column in reactions:
+                    structure_column = guess_structure_column(
+                        [h for h in headers if h not in reactions]
+                    )
+            return _batch(headers, rows, structure_column, reactions)
 
         rows: list[list[str]] = []
         for row in csv.reader(text, delimiter=delimiter):
@@ -100,17 +117,19 @@ def read_delimited(
             rows.append(row)
             if len(rows) >= chunk_rows:
                 check(cancel)
-                yield _batch(headers, rows, structure_column)
+                yield batch(rows)
                 rows = []
                 if progress is not None:
                     progress(raw.tell(), total)
         if rows:
-            yield _batch(headers, rows, structure_column)
+            yield batch(rows)
         if progress is not None:
             progress(total, total)
 
 
-def _batch(headers: list[str], rows: list[list[str]], structure: str | None) -> Batch:
+def _batch(
+    headers: list[str], rows: list[list[str]], structure: str | None, reactions: set[str]
+) -> Batch:
     width = len(headers)
     columns: list[list[str]] = [[] for _ in range(width)]
     for row in rows:
@@ -118,7 +137,12 @@ def _batch(headers: list[str], rows: list[list[str]], structure: str | None) -> 
             columns[i].append(row[i] if i < len(row) else "")
     batch: dict[str, object] = {}
     for name, values in zip(headers, columns, strict=True):
-        batch[name] = StructureColumn.from_texts(values) if name == structure else values
+        if name == structure:
+            batch[name] = StructureColumn.from_texts(values)
+        elif name in reactions:
+            batch[name] = ReactionColumn.from_texts(values)
+        else:
+            batch[name] = values
     return batch  # type: ignore[return-value]
 
 

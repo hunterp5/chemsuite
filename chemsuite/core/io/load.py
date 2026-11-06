@@ -28,17 +28,19 @@ import numpy as np
 from chemsuite.core.jobs import CancelToken, Progress, check
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import parse_structures
+from chemsuite.core.reactions import parse_reactions
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import (
     Column,
-    StructureColumn,
+    ParsedColumn,
+    ReactionColumn,
     blank_column,
     column_from_values,
     concat_columns,
 )
 
-from . import delimited, sdf, xlsx
-from .formats import CSV, SDF, SMILES, TSV, XLSX, Batch, split_suffix
+from . import delimited, rdf, sdf, xlsx
+from .formats import CSV, RDF, RXN, SDF, SMILES, TSV, XLSX, Batch, split_suffix
 
 PARSE_CHUNK = 2_000
 
@@ -101,6 +103,8 @@ def read_batches(
         return delimited.read_smiles(path, progress=progress, cancel=cancel)
     if fmt == XLSX:
         return xlsx.read_xlsx(path, structure_column=structure_column, cancel=cancel)
+    if fmt in (RDF, RXN):
+        return rdf.read_rdf(path, executor=executor, progress=progress, cancel=cancel)
     raise AssertionError(fmt)  # split_suffix only returns known formats
 
 
@@ -132,30 +136,34 @@ def load_table(
 
 @dataclass(frozen=True, eq=False)
 class ParseChunk:
-    """Structure texts snapshotted from the table, with their parse results once computed."""
+    """Structure or reaction texts snapshotted from the table, with their parse results once
+    computed."""
 
     column: str
     oids: np.ndarray
     texts: list[str]
     blobs: list[bytes] | None = None
+    reactions: bool = False
 
 
 def pending_structure_chunks(
     table: Table, columns: Sequence[str] | None = None, *, chunk: int = PARSE_CHUNK
 ) -> list[ParseChunk]:
-    """Snapshot every not-yet-parsed structure cell (call on the thread that owns the table)."""
-    names = columns or [
-        n for n in table.column_names if isinstance(table.column(n), StructureColumn)
-    ]
+    """Snapshot every not-yet-parsed structure and reaction cell (call on the thread that owns
+    the table)."""
+    names = columns or [n for n in table.column_names if isinstance(table.column(n), ParsedColumn)]
     out: list[ParseChunk] = []
     for name in names:
         column = table.column(name)
-        if not isinstance(column, StructureColumn):
-            raise TypeError(f"column {name!r} is not a structure column")
+        if not isinstance(column, ParsedColumn):
+            raise TypeError(f"column {name!r} is not a structure or reaction column")
+        reactions = isinstance(column, ReactionColumn)
         pending = np.flatnonzero(column.pending_mask())
         for i in range(0, len(pending), chunk):
             slots = pending[i : i + chunk]
-            out.append(ParseChunk(name, table.oids[slots].copy(), column.displays(slots)))
+            out.append(
+                ParseChunk(name, table.oids[slots].copy(), column.displays(slots), None, reactions)
+            )
     return out
 
 
@@ -167,12 +175,17 @@ def parse_chunks(
 ) -> Iterable[ParseChunk]:
     """Parse snapshotted chunks (safe on any thread; in worker processes with *executor*)."""
     chunks = list(chunks)
-    texts = (c.texts for c in chunks)
+    jobs = ((c.reactions, c.texts) for c in chunks)
     for parsed, blobs in zip(
-        chunks, ordered_map(parse_structures, texts, executor, cancel=cancel), strict=True
+        chunks, ordered_map(_parse_job, jobs, executor, cancel=cancel), strict=True
     ):
         check(cancel)
-        yield ParseChunk(parsed.column, parsed.oids, parsed.texts, blobs)
+        yield ParseChunk(parsed.column, parsed.oids, parsed.texts, blobs, parsed.reactions)
+
+
+def _parse_job(job: tuple[bool, list[str]]) -> list[bytes]:
+    reactions, texts = job
+    return parse_reactions(texts) if reactions else parse_structures(texts)
 
 
 def apply_parsed(table: Table, chunk: ParseChunk) -> int:
@@ -183,8 +196,11 @@ def apply_parsed(table: Table, chunk: ParseChunk) -> int:
     """
     if chunk.blobs is None:
         raise ValueError("chunk has not been parsed")
-    if chunk.column not in table or not isinstance(table.column(chunk.column), StructureColumn):
+    column = table.column(chunk.column) if chunk.column in table else None
+    if not isinstance(column, ParsedColumn):
         return 0
+    if isinstance(column, ReactionColumn) != chunk.reactions:
+        return 0  # converted to another kind since the snapshot
     keep = [
         i
         for i, oid in enumerate(chunk.oids.tolist())
@@ -227,10 +243,12 @@ def save_table(
     oids: Sequence[int] | np.ndarray | None = None,
     columns: Sequence[str] | None = None,
     structure: str | None = None,
+    executor: Executor | None = None,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> None:
-    """Export to the format given by *path*'s suffix (written atomically)."""
+    """Export to the format given by *path*'s suffix (written atomically). *executor* lays out
+    reactions for RD files in worker processes."""
     fmt, gzipped = split_suffix(path)
     if gzipped:
         raise ValueError("saving compressed files is not supported")
@@ -261,3 +279,18 @@ def save_table(
         delimited.write_smiles(table, path, structure=structure, name_column=name_column, oids=oids)
     elif fmt == XLSX:
         xlsx.write_xlsx(table, path, oids=oids, columns=columns, cancel=cancel)
+    elif fmt == RDF:
+        rdf.write_rdf(
+            table,
+            path,
+            oids=oids,
+            columns=columns,
+            executor=executor,
+            progress=progress,
+            cancel=cancel,
+        )
+    elif fmt == RXN:
+        rows = table.oids if oids is None else np.asarray(oids)
+        if len(rows) != 1:
+            raise ValueError("an RXN file holds one reaction: save several as an RD file")
+        rdf.write_rxn(table, path, int(rows[0]))

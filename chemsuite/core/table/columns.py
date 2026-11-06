@@ -28,6 +28,8 @@ need to know which kind of column they are handling.
 * :class:`StructureColumn`: one molecule per cell, as RDKit binary plus the text the user sees.
   Structures live in the table like any other cell, so undo, copy and saving need no special
   case, and a table may hold several structure columns (e.g. compound, core, R-group).
+* :class:`ReactionColumn`: one reaction per cell, stored the same way (both are
+  :class:`ParsedColumn`).
 
 Blank is a first-class state in both kinds: a missing number is ``valid == False``, and a missing
 text is code ``0`` (the empty string).
@@ -51,7 +53,8 @@ from .style import DEFAULT_STYLE, ColumnStyle, format_fixed
 NUMBER = "number"
 TEXT = "text"
 STRUCTURE = "structure"
-KINDS = (NUMBER, TEXT, STRUCTURE)
+REACTION = "reaction"
+KINDS = (NUMBER, TEXT, STRUCTURE, REACTION)
 
 
 def as_slots(slots: Sequence[int] | np.ndarray) -> np.ndarray:
@@ -419,25 +422,26 @@ class TextColumn(Column):
 # --------------------------------------------------------------------------------------------
 
 
-class StructureColumn(Column):
-    """Molecules, one per cell.
+class ParsedColumn(Column):
+    """Cells holding text that parses to a chemical object (a molecule or a reaction).
 
-    Each cell has a display *text* (SMILES as typed or read, or canonical SMILES for molecules
-    read from a molfile) and a *blob* (RDKit binary). The blob's state tells the cell's status:
+    Each cell has a display *text* and a *blob* (RDKit binary). The blob's state tells the
+    cell's status:
 
     * text ``""``                     blank
     * blob ``None`` (text present)    not parsed yet; files open text-first and parse later
-    * blob ``b""``                    the text is not a valid structure (kept, flagged)
-    * blob non-empty                  parsed molecule
+    * blob ``b""``                    the text does not parse (kept, flagged)
+    * blob non-empty                  parsed
 
     Parsing fills blobs in place (:meth:`fill`) because it changes no visible value.
+    Subclasses say how to parse a text and load a blob.
     """
 
-    kind = STRUCTURE
     sortable = False
     __slots__ = ("_blobs", "_texts")
 
-    _cache: ClassVar[OrderedDict[bytes, object]] = OrderedDict()
+    #: Loaded objects by blob, shared by the columns of one subclass.
+    _cache: ClassVar[OrderedDict[bytes, object]]
     _CACHE_SIZE: ClassVar[int] = 1024
 
     def __init__(self, blobs: np.ndarray, texts: np.ndarray) -> None:
@@ -446,19 +450,29 @@ class StructureColumn(Column):
         self._blobs = object_array(blobs)
         self._texts = object_array(texts)
 
+    @staticmethod
+    @abstractmethod
+    def parse(text: str) -> bytes:
+        """The blob for one cell text (``b""`` when it does not parse)."""
+
+    @staticmethod
+    @abstractmethod
+    def load(blob: bytes) -> object:
+        """The object a non-empty blob holds."""
+
     @classmethod
-    def blanks(cls, n: int) -> StructureColumn:
+    def blanks(cls, n: int):
         return cls(np.full(n, None, dtype=object), np.full(n, "", dtype=object))
 
     @classmethod
-    def from_texts(cls, texts: Sequence[str]) -> StructureColumn:
-        """Unparsed structures (parse later with :func:`chemsuite.core.mols.parse_structures`)."""
+    def from_texts(cls, texts: Sequence[str]):
+        """Unparsed cells (parse later, see :mod:`chemsuite.core.io.load`)."""
         clean = [text_of(t) for t in texts]
         return cls(np.full(len(clean), None, dtype=object), object_array(clean))
 
     @classmethod
-    def from_parsed(cls, blobs: Sequence[bytes], texts: Sequence[str]) -> StructureColumn:
-        """Already-parsed cells: ``b""`` blobs mark invalid structures."""
+    def from_parsed(cls, blobs: Sequence[bytes], texts: Sequence[str]):
+        """Already-parsed cells: ``b""`` blobs mark invalid ones."""
         blob_list = [b if t else None for b, t in zip(blobs, texts, strict=True)]
         return cls(object_array(blob_list), object_array(list(texts)))
 
@@ -486,41 +500,39 @@ class StructureColumn(Column):
         return np.where(texts == "", None, texts)
 
     def sort_key(self) -> np.ndarray:
-        raise TypeError("structure columns cannot be sorted")
+        raise TypeError(f"{self.kind} columns cannot be sorted")
 
     def match_text(self, predicate: Callable[[str], bool]) -> np.ndarray:
         return np.fromiter((predicate(t) for t in self._texts), dtype=np.bool_, count=len(self))
 
     def blobs(self, slots: np.ndarray) -> list[bytes | None]:
-        """Raw blobs, e.g. to send to a worker process without building molecules."""
+        """Raw blobs, e.g. to send to a worker process without building objects."""
         return self._blobs[slots].tolist()
 
-    def mol(self, slot: int):
-        """The RDKit molecule (a cached, shared object: copy it before modifying), or None.
+    def obj(self, slot: int):
+        """The parsed object (a cached, shared object: copy it before modifying), or None.
 
         A cell that was not parsed yet is parsed now and its blob kept.
         """
-        from chemsuite.core.mols import mol_from_blob, parse_structure
-
         blob = self._blobs[slot]
         if blob is None:
             text = self._texts[slot]
             if not text:
                 return None
-            blob = parse_structure(text)[0]
+            blob = self.parse(text)
             self._blobs[slot] = blob
         if not blob:
             return None
-        cache = StructureColumn._cache
-        mol = cache.get(blob)
-        if mol is None:
-            mol = mol_from_blob(blob)
-            cache[blob] = mol
-            if len(cache) > StructureColumn._CACHE_SIZE:
+        cache = type(self)._cache
+        value = cache.get(blob)
+        if value is None:
+            value = self.load(blob)
+            cache[blob] = value
+            if len(cache) > self._CACHE_SIZE:
                 cache.popitem(last=False)
         else:
             cache.move_to_end(blob)
-        return mol
+        return value
 
     def fill(self, slots: np.ndarray, blobs: Sequence[bytes]) -> None:
         """Store parse results for *slots* (``b""`` = invalid). Leaves the texts unchanged."""
@@ -528,16 +540,16 @@ class StructureColumn(Column):
         values[self._texts[slots] == ""] = None
         self._blobs[slots] = values
 
-    def take(self, slots: np.ndarray) -> StructureColumn:
-        return StructureColumn(self._blobs[slots], self._texts[slots])
+    def take(self, slots: np.ndarray):
+        return type(self)(self._blobs[slots], self._texts[slots])
 
     def put(self, slots: np.ndarray, source: Column) -> None:
-        src = _require(source, StructureColumn)
+        src = _require(source, type(self))
         self._blobs[slots] = src._blobs
         self._texts[slots] = src._texts
 
     def insert(self, positions: np.ndarray, source: Column) -> None:
-        src = _require(source, StructureColumn)
+        src = _require(source, type(self))
         self._blobs = np.insert(self._blobs, positions, src._blobs)
         self._texts = np.insert(self._texts, positions, src._texts)
 
@@ -550,6 +562,56 @@ class StructureColumn(Column):
         blob_bytes = sum(len(b) + 33 for b in self._blobs.tolist() if b is not None)
         text_bytes = sum(len(t) + 49 for t in self._texts.tolist())
         return self._blobs.nbytes + self._texts.nbytes + blob_bytes + text_bytes
+
+
+class StructureColumn(ParsedColumn):
+    """Molecules, one per cell: the display text is SMILES as typed or read (canonical SMILES
+    for molecules read from a molfile) and the blob is RDKit's molecule binary."""
+
+    kind = STRUCTURE
+    __slots__ = ()
+    _cache: ClassVar[OrderedDict[bytes, object]] = OrderedDict()
+
+    @staticmethod
+    def parse(text: str) -> bytes:
+        from chemsuite.core.mols import parse_structure
+
+        return parse_structure(text)[0]
+
+    @staticmethod
+    def load(blob: bytes) -> object:
+        from chemsuite.core.mols import mol_from_blob
+
+        return mol_from_blob(blob)
+
+    def mol(self, slot: int):
+        """The RDKit molecule (cached and shared: copy it before modifying), or None."""
+        return self.obj(slot)
+
+
+class ReactionColumn(ParsedColumn):
+    """Reactions, one per cell: the display text is reaction SMILES (as typed or read, or
+    written from an RXN file) and the blob is RDKit's reaction binary."""
+
+    kind = REACTION
+    __slots__ = ()
+    _cache: ClassVar[OrderedDict[bytes, object]] = OrderedDict()
+
+    @staticmethod
+    def parse(text: str) -> bytes:
+        from chemsuite.core.reactions import parse_reaction
+
+        return parse_reaction(text)[0]
+
+    @staticmethod
+    def load(blob: bytes) -> object:
+        from chemsuite.core.reactions import reaction_from_blob
+
+        return reaction_from_blob(blob)
+
+    def reaction(self, slot: int):
+        """The RDKit ``ChemicalReaction`` (cached and shared: do not modify), or None."""
+        return self.obj(slot)
 
 
 def object_array(values: Sequence[object] | np.ndarray) -> np.ndarray:
@@ -657,12 +719,21 @@ def to_structure(column: Column) -> StructureColumn:
     return StructureColumn.from_texts(column.displays(np.arange(len(column))))
 
 
+def to_reaction(column: Column) -> ReactionColumn:
+    """Interpret each cell's text as a reaction (unparsed until first use)."""
+    if isinstance(column, ReactionColumn):
+        return column
+    return ReactionColumn.from_texts(column.displays(np.arange(len(column))))
+
+
 def coerce(column: Column, kind: str) -> Column | None:
     """*column* as *kind* when that is lossless, else None."""
     if kind == TEXT:
         return to_text(column)
     if kind == STRUCTURE:
         return to_structure(column)
+    if kind == REACTION:
+        return to_reaction(column)
     if kind == NUMBER:
         if column.is_all_blank():
             return NumberColumn.blanks(len(column))
@@ -678,20 +749,25 @@ def blank_column(kind: str, n: int) -> Column:
         return TextColumn.blanks(n)
     if kind == STRUCTURE:
         return StructureColumn.blanks(n)
+    if kind == REACTION:
+        return ReactionColumn.blanks(n)
     raise ValueError(f"unknown column kind {kind!r}")
 
 
 def concat_columns(parts: Sequence[Column]) -> Column:
     """Join columns end to end (used to assemble a file read in chunks).
 
-    All-blank parts take the kind of the others. If the non-blank parts disagree, structures win
-    over everything else and text wins over numbers, so no cell is lost.
+    All-blank parts take the kind of the others. If the non-blank parts disagree, structures (or
+    reactions) win over text and numbers, and text wins over numbers, so no cell is lost; a mix
+    of structures and reactions becomes text.
     """
     if not parts:
         return TextColumn.blanks(0)
     kinds = {p.kind for p in parts if not p.is_all_blank()} or {parts[0].kind}
-    if STRUCTURE in kinds:
+    if STRUCTURE in kinds and REACTION not in kinds:
         kind = STRUCTURE
+    elif REACTION in kinds and STRUCTURE not in kinds:
+        kind = REACTION
     elif kinds == {NUMBER}:
         kind = NUMBER
     else:
@@ -703,8 +779,9 @@ def concat_columns(parts: Sequence[Column]) -> Column:
             np.concatenate([p._valid for p in fitted]),  # type: ignore[union-attr]
             np.concatenate([p._decimals for p in fitted]),  # type: ignore[union-attr]
         )
-    if kind == STRUCTURE:
-        return StructureColumn(
+    if kind in (STRUCTURE, REACTION):
+        cls = StructureColumn if kind == STRUCTURE else ReactionColumn
+        return cls(
             np.concatenate([p._blobs for p in fitted]),  # type: ignore[union-attr]
             np.concatenate([p._texts for p in fitted]),  # type: ignore[union-attr]
         )

@@ -86,3 +86,50 @@ def copy_structures(mols: Sequence[Chem.Mol | None], fmt: str) -> str:
     what = "structure" if len(texts) == 1 else f"{len(texts)} structures"
     skipped = f"; {missing} could not be written" if missing else ""
     return f"Copied {what} as {title}{skipped}"
+
+
+#: Copy As formats for reaction cells: (key, menu title) in menu order
+REACTION_FORMATS = (
+    ("rxn", "RXN File"),
+    ("reaction-smiles", "Reaction SMILES"),
+    ("image", "Image"),
+)
+REACTION_IMAGE_SIZE = (900, 300)
+
+
+def copy_reactions(reactions: Sequence[object | None], fmt: str) -> str:
+    """Put reactions on the clipboard as *fmt*; returns a status message.
+
+    Reaction SMILES copy one per line. An RXN file copies the first reaction as text and as the
+    ``chemical/x-mdl-rxnfile`` clipboard format (ChemDraw, Marvin and Ketcher paste it as a
+    drawing); several reactions copy as an RD file's text. An image copies the first.
+    """
+    from chemsuite.core.depict import render_reaction_png
+    from chemsuite.core.io.rdf import rxn_blocks
+    from chemsuite.core.reactions import reaction_smiles, reaction_to_blob
+
+    rxns = [r for r in reactions if r is not None]
+    title = dict(REACTION_FORMATS)[fmt]
+    if not rxns:
+        return "No valid reaction to copy"
+    what = "reaction" if len(rxns) == 1 else f"{len(rxns)} reactions"
+    if fmt == "image":
+        png = render_reaction_png(rxns[0], *REACTION_IMAGE_SIZE)
+        if png is None:
+            return "RDKit could not draw this reaction"
+        QGuiApplication.clipboard().setImage(QImage.fromData(png, "PNG"))
+        return "Copied reaction as an image"
+    mime = QMimeData()
+    if fmt == "rxn":
+        blobs = [reaction_to_blob(r) for r in rxns]  # type: ignore[arg-type]
+        blocks = rxn_blocks((blobs, [""] * len(blobs)))
+        if len(blocks) == 1:
+            mime.setText(blocks[0] + "\n")
+            mime.setData("chemical/x-mdl-rxnfile", (blocks[0] + "\n").encode())
+        else:
+            mime.setText("$RDFILE 1\n" + "".join(f"$RFMT\n{b}\n" for b in blocks))
+    else:
+        texts = [reaction_smiles(r) for r in rxns]  # type: ignore[arg-type]
+        mime.setText("\n".join(t for t in texts if t))
+    QGuiApplication.clipboard().setMimeData(mime)
+    return f"Copied {what} as {title}"

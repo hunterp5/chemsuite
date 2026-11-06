@@ -26,10 +26,16 @@ import numpy as np
 
 from chemsuite.core.jobs import CancelToken, check
 from chemsuite.core.table import NUMBER, Table
-from chemsuite.core.table.columns import StructureColumn
+from chemsuite.core.table.columns import ReactionColumn, StructureColumn
 
 from .delimited import AUTO, CHUNK_ROWS
-from .formats import Batch, atomic_write, guess_structure_column, unique_headers
+from .formats import (
+    Batch,
+    atomic_write,
+    guess_structure_column,
+    reaction_columns,
+    unique_headers,
+)
 
 
 def _cell(value: object) -> object:
@@ -59,28 +65,47 @@ def read_xlsx(
         if header is None:
             return
         headers = unique_headers(["" if h is None else str(h) for h in header])
-        if structure_column == AUTO:
+        auto = structure_column == AUTO
+        if auto:
             structure_column = guess_structure_column(headers)
+        reactions: set[str] | None = None
+
+        def batch(rows: list[tuple]) -> Batch:
+            nonlocal reactions, structure_column
+            if reactions is None:  # decided once, from the first rows
+                reactions = reaction_columns(headers, rows)
+                if not auto:
+                    reactions.discard(structure_column)  # named as structures on purpose
+                if auto and structure_column in reactions:
+                    structure_column = guess_structure_column(
+                        [h for h in headers if h not in reactions]
+                    )
+            return _batch(headers, rows, structure_column, reactions)
+
         chunk: list[tuple] = []
         for row in rows:
             if row and any(v is not None and v != "" for v in row):
                 chunk.append(row)
             if len(chunk) >= chunk_rows:
                 check(cancel)
-                yield _batch(headers, chunk, structure_column)
+                yield batch(chunk)
                 chunk = []
         if chunk:
-            yield _batch(headers, chunk, structure_column)
+            yield batch(chunk)
     finally:
         workbook.close()
 
 
-def _batch(headers: list[str], rows: list[tuple], structure: str | None) -> Batch:
+def _batch(
+    headers: list[str], rows: list[tuple], structure: str | None, reactions: set[str]
+) -> Batch:
     batch: dict[str, object] = {}
     for i, name in enumerate(headers):
         values = [_cell(row[i]) if i < len(row) else None for row in rows]
         if name == structure:
             batch[name] = StructureColumn.from_texts(["" if v is None else str(v) for v in values])
+        elif name in reactions:
+            batch[name] = ReactionColumn.from_texts(["" if v is None else str(v) for v in values])
         else:
             batch[name] = values
     return batch  # type: ignore[return-value]

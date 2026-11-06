@@ -24,7 +24,7 @@ see their own orientation. Molecules with no coordinates, or with 3D coordinates
 from __future__ import annotations
 
 from rdkit import Chem, rdBase
-from rdkit.Chem import rdDepictor
+from rdkit.Chem import rdChemReactions, rdDepictor
 from rdkit.Chem.Draw import rdMolDraw2D
 
 rdDepictor.SetPreferCoordGen(True)
@@ -89,5 +89,41 @@ def render_png(
             drawer.drawOptions().clearBackground = False
             drawer.drawOptions().prepareMolsBeforeDrawing = False
             drawer.DrawMolecule(depiction_mol(mol))
+    drawer.FinishDrawing()
+    return drawer.GetDrawingText()
+
+
+def render_reaction_png(
+    rxn: rdChemReactions.ChemicalReaction,
+    width: int,
+    height: int,
+    *,
+    scale: float = 1.0,
+    dark: bool = False,
+) -> bytes | None:
+    """PNG bytes of *rxn* (reactants, arrow with agents above it, products) in a transparent
+    ``width x height`` box, drawn as :func:`render_png` draws molecules; None if RDKit cannot
+    draw it. Atom map numbers are left out: in a cell they are clutter, and the sketcher shows
+    them."""
+    copy = rdChemReactions.ChemicalReaction(rxn)
+    for template in [*copy.GetReactants(), *copy.GetAgents(), *copy.GetProducts()]:
+        for atom in template.GetAtoms():
+            atom.SetAtomMapNum(0)
+    drawer = rdMolDraw2D.MolDraw2DCairo(max(int(width), 1), max(int(height), 1))
+    options = drawer.drawOptions()
+    if dark:
+        rdMolDraw2D.SetDarkMode(options)
+    options.clearBackground = False
+    options.padding = 0.04
+    options.fixedBondLength = _BOND_PX * scale
+    options.bondLineWidth = max(1.0, 1.4 * scale)
+    options.minFontSize = int(9 * scale)
+    options.maxFontSize = int(15 * scale)
+    options.addStereoAnnotation = False
+    with rdBase.BlockLogs():
+        try:
+            drawer.DrawReaction(copy)
+        except (RuntimeError, ValueError):
+            return None
     drawer.FinishDrawing()
     return drawer.GetDrawingText()
