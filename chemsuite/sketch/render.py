@@ -29,7 +29,7 @@ import math
 from dataclasses import dataclass, field
 
 from chemsuite.sketch import geometry
-from chemsuite.sketch.model import Group, Order, Sketch, Stereo
+from chemsuite.sketch.model import Arrow, ArrowKind, Group, Order, Sketch, Stereo
 from chemsuite.sketch.valence import Report
 
 Point = tuple[float, float]
@@ -94,6 +94,10 @@ class Scene:
     tags: list[tuple[Point, str]] = field(default_factory=list)
     #: attachment-point stubs: wavy lines from the atom
     stubs: list[Wavy] = field(default_factory=list)
+    #: reaction arrows and plus signs as plain strokes: (object id, from, to)
+    strokes: list[tuple[int, Point, Point]] = field(default_factory=list)
+    #: atom-atom map numbers: (atom, position, text)
+    maps: list[tuple[int, Point, str]] = field(default_factory=list)
 
 
 #: Tags on query bonds (Ketcher and ChemDraw label these bonds in the same spirit).
@@ -252,7 +256,103 @@ def build(sketch: Sketch, report: Report) -> Scene:
     for aid, atom in sketch.atoms.items():
         if atom.attach and aid not in hidden:
             _attachment(sketch, aid, scene)
+        if atom.mapping and aid not in hidden:
+            spots = [sketch.atoms[n].pos for n in sketch.neighbours(aid)]
+            spots += _label_spots(scene.labels.get(aid))
+            scene.maps.append((aid, _beside(atom.pos, spots, MAP_OFFSET), str(atom.mapping)))
+    for rid, arrow in sketch.arrows.items():
+        scene.strokes.extend((rid, a, b) for a, b in arrow_strokes(arrow))
+    for pid, plus in sketch.pluses.items():
+        h = PLUS_HALF
+        scene.strokes.append((pid, (plus.x - h, plus.y), (plus.x + h, plus.y)))
+        scene.strokes.append((pid, (plus.x, plus.y - h), (plus.x, plus.y + h)))
     return scene
+
+
+#: Reaction drawing sizes, in bond lengths (Ketcher ``rxnArrow`` / ``rxnPlus`` proportions).
+HEAD_LENGTH = 0.3
+HEAD_ANGLE = math.radians(25)
+SHAFT_GAP = 0.09  # half the gap between the two shafts of equilibrium and retro arrows
+PLUS_HALF = 0.25
+MAP_OFFSET = 0.42
+
+
+def arrow_strokes(arrow: Arrow) -> list[tuple[Point, Point]]:
+    """The straight strokes that draw *arrow*.
+
+    Plain: a shaft and an open head. Failed: the same, crossed at the middle. Equilibrium: two
+    shafts, each with a half head (one each way). Retrosynthetic: an open double shaft with a
+    wide open head.
+    """
+    (x0, y0), (x1, y1) = arrow.tail, arrow.head
+    length = math.hypot(x1 - x0, y1 - y0)
+    if length < 1e-6:
+        return []
+    ux, uy = (x1 - x0) / length, (y1 - y0) / length
+    nx, ny = -uy, ux
+
+    def at(t: float, side: float = 0.0) -> Point:
+        return (x0 + ux * t + nx * side, y0 + uy * t + ny * side)
+
+    def barb(tip: Point, back: Point, sign: float, scale: float = 1.0) -> tuple[Point, Point]:
+        dx, dy = back[0] - tip[0], back[1] - tip[1]
+        d = math.hypot(dx, dy) or 1.0
+        c, s = math.cos(HEAD_ANGLE * sign), math.sin(HEAD_ANGLE * sign)
+        rx, ry = (dx * c - dy * s) / d, (dx * s + dy * c) / d
+        return tip, (tip[0] + rx * HEAD_LENGTH * scale, tip[1] + ry * HEAD_LENGTH * scale)
+
+    tail, head = at(0.0), at(length)
+    if arrow.kind is ArrowKind.EQUILIBRIUM:
+        g = SHAFT_GAP
+        top_tail, top_head = at(0.0, g), at(length, g)
+        low_tail, low_head = at(0.0, -g), at(length, -g)
+        return [
+            (top_tail, top_head),
+            barb(top_head, top_tail, -1.0),  # half head on the outer side
+            (low_head, low_tail),
+            barb(low_tail, low_head, -1.0),
+        ]
+    if arrow.kind is ArrowKind.RETROSYNTHETIC:
+        g = SHAFT_GAP * 1.4
+        stop = max(0.0, length - HEAD_LENGTH * 0.9)
+        return [
+            (at(0.0, g), at(stop, g)),
+            (at(0.0, -g), at(stop, -g)),
+            barb(head, tail, 1.0, 1.6),
+            barb(head, tail, -1.0, 1.6),
+        ]
+    out = [(tail, head), barb(head, tail, 1.0), barb(head, tail, -1.0)]
+    if arrow.kind is ArrowKind.FAILED:
+        mid, k = length / 2, 0.16
+        out += [(at(mid - k, -k), at(mid + k, k)), (at(mid - k, k), at(mid + k, -k))]
+    return out
+
+
+def _label_spots(label: Label | None) -> list[Point]:
+    """Directions (as points round the atom) that a label's hydrogens or charge run into, so a
+    map number is not drawn over them: level and just below, on the side the runs extend."""
+    if label is None:
+        return []
+    x, y = label.pos
+    out: list[Point] = []
+    for side, present in ((1, label.centre < len(label.runs) - 1), (-1, label.centre > 0)):
+        if present:
+            out += [(x + side, y), (x + side * math.cos(0.4), y - math.sin(0.4))]
+    return out
+
+
+def _beside(here: Point, spots: list[Point], distance: float) -> Point:
+    """A point *distance* from *here*, up and to the right unless bonds are there."""
+    if not spots:
+        return (here[0] + distance * 0.7, here[1] + distance * 0.7)
+    taken = [math.atan2(p[1] - here[1], p[0] - here[0]) for p in spots]
+    best, best_gap = math.pi / 4, -1.0
+    for k in range(24):
+        a = k * math.pi / 12
+        gap = min(abs(math.remainder(a - t, 2 * math.pi)) for t in taken)
+        if gap > best_gap + 1e-9:
+            best, best_gap = a, gap
+    return (here[0] + distance * math.cos(best), here[1] + distance * math.sin(best))
 
 
 def _attachment(sketch: Sketch, aid: int, scene: Scene) -> None:

@@ -39,13 +39,18 @@ from PySide6.QtWidgets import (
 
 from chemsuite.app.sketcher.canvas import SketchCanvas
 from chemsuite.app.sketcher.toolbar import SketchToolBar
-from chemsuite.sketch import convert
+from chemsuite.sketch import convert, reaction
 from chemsuite.sketch.edits import History
 from chemsuite.sketch.model import Sketch
 
 
 class SketcherDialog(QDialog):
-    """Draw a structure. :attr:`molblock` holds the accepted drawing ("" when empty)."""
+    """Draw a structure. :attr:`molblock` holds the accepted drawing ("" when empty).
+
+    With ``reactions=True`` a drawing with an arrow is accepted as a reaction: :attr:`rxn`
+    holds it as an RXN file and :attr:`molblock` stays "". Otherwise OK on a reaction says
+    that only a structure can go there.
+    """
 
     def __init__(
         self,
@@ -54,10 +59,16 @@ class SketcherDialog(QDialog):
         parent: QWidget | None = None,
         *,
         ok_text: str = "",
+        reactions: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
-        start = convert.from_text(text) if text.strip() else None
+        self.reactions = reactions
+        self.rxn = ""
+        start = None
+        if text.strip() and reaction.looks_like_reaction(text):
+            start = reaction.from_text(text)
+        start = start or (convert.from_text(text) if text.strip() else None)
         self.canvas = SketchCanvas(History(start) if start is not None else None)
         self.toolbar = SketchToolBar(self)  # holds the strips laid out below; not shown itself
         self.toolbar.hide()
@@ -133,5 +144,19 @@ class SketcherDialog(QDialog):
         if not self.canvas.report.valid:
             return
         sketch = self.canvas.sketch
+        if sketch.is_reaction or sketch.pluses:
+            if not self.reactions:
+                self._show_message(
+                    "This holds one structure, not a reaction: delete the arrow and plus signs."
+                )
+                return
+            try:
+                self.rxn = reaction.to_rxn_block(sketch)
+            except (reaction.ReactionError, convert.SketchError) as err:
+                self._show_message(str(err))
+                return
+            self.molblock = ""
+            super().accept()
+            return
         self.molblock = "" if sketch.is_empty() else convert.to_molblock(sketch)
         super().accept()

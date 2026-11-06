@@ -569,6 +569,8 @@ def placed(sketch: Sketch, at: tuple[float, float]) -> Sketch:
     dx, dy = at[0] - (x0 + x1) / 2, at[1] - (y0 + y1) / 2
     out = sketch.copy()
     out.atoms = {aid: a.moved(a.x + dx, a.y + dy) for aid, a in sketch.atoms.items()}
+    out.arrows = {rid: r.moved(dx, dy) for rid, r in sketch.arrows.items()}
+    out.pluses = {pid: p.moved(dx, dy) for pid, p in sketch.pluses.items()}
     return out
 
 

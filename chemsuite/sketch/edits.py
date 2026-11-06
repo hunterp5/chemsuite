@@ -377,12 +377,22 @@ def chain(change: Change, start: int | Point, angle: float, bonds: int) -> list[
     return atoms
 
 
-def erase(change: Change, atoms: Iterable[int] = (), bonds: Iterable[int] = ()) -> None:
-    """Delete atoms (with their bonds) and bonds.
+def erase(
+    change: Change,
+    atoms: Iterable[int] = (),
+    bonds: Iterable[int] = (),
+    objects: Iterable[int] = (),
+) -> None:
+    """Delete atoms (with their bonds), bonds, and reaction arrows and plus signs (*objects*).
 
     Deleting a bond also deletes an end atom left with no bonds (Ketcher ``fromBondDeletion``);
     deleting an atom leaves its neighbours in place.
     """
+    for oid in list(objects):
+        if oid in change.sketch.arrows:
+            change.set_arrow(oid, None)
+        elif oid in change.sketch.pluses:
+            change.set_plus(oid, None)
     for aid in list(atoms):
         if aid in change.sketch.atoms:
             change.remove_atom(aid)
@@ -419,13 +429,17 @@ def insert(change: Change, other: Sketch) -> list[int]:
     return list(mapping.values())
 
 
-def subset(sketch: Sketch, atoms: Iterable[int]) -> Sketch:
-    """The atoms given and the bonds between them, as a new sketch (a copy)."""
+def subset(sketch: Sketch, atoms: Iterable[int], objects: Iterable[int] = ()) -> Sketch:
+    """The atoms given, the bonds between them, and the reaction arrows and plus signs among
+    *objects*, as a new sketch (a copy)."""
     keep = set(atoms)
+    chosen = set(objects)
     out = Sketch(next_id=sketch.next_id)
     out.atoms = {aid: a for aid, a in sketch.atoms.items() if aid in keep}
     out.bonds = {bid: b for bid, b in sketch.bonds.items() if b.begin in keep and b.end in keep}
     out.groups = {gid: g for gid, g in sketch.groups.items() if g.atoms <= keep}
+    out.arrows = {rid: a for rid, a in sketch.arrows.items() if rid in chosen}
+    out.pluses = {pid: p for pid, p in sketch.pluses.items() if pid in chosen}
     return out
 
 
@@ -482,12 +496,34 @@ def move(
     return merged
 
 
-def rotate(change: Change, atoms: Iterable[int], centre: Point, angle: float) -> None:
+def move_objects(change: Change, objects: Iterable[int], dx: float, dy: float) -> None:
+    """Move reaction arrows and plus signs."""
+    for oid in objects:
+        if oid in change.sketch.arrows:
+            change.set_arrow(oid, change.sketch.arrows[oid].moved(dx, dy))
+        elif oid in change.sketch.pluses:
+            change.set_plus(oid, change.sketch.pluses[oid].moved(dx, dy))
+
+
+def rotate(
+    change: Change, atoms: Iterable[int], centre: Point, angle: float, objects: Iterable[int] = ()
+) -> None:
     c, s = math.cos(angle), math.sin(angle)
+
+    def turn(x: float, y: float) -> Point:
+        x, y = x - centre[0], y - centre[1]
+        return centre[0] + x * c - y * s, centre[1] + x * s + y * c
+
     for aid in atoms:
         atom = change.sketch.atoms[aid]
-        x, y = atom.x - centre[0], atom.y - centre[1]
-        change.move_atom(aid, centre[0] + x * c - y * s, centre[1] + x * s + y * c)
+        change.move_atom(aid, *turn(atom.x, atom.y))
+    for oid in objects:
+        if oid in change.sketch.arrows:
+            arrow = change.sketch.arrows[oid]
+            (x0, y0), (x1, y1) = turn(arrow.x0, arrow.y0), turn(arrow.x1, arrow.y1)
+            change.set_arrow(oid, replace(arrow, x0=x0, y0=y0, x1=x1, y1=y1))
+        elif oid in change.sketch.pluses:
+            change.set_plus(oid, Plus(*turn(*change.sketch.pluses[oid].pos)))
 
 
 def flip(change: Change, atoms: Iterable[int], horizontal: bool) -> None:

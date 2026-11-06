@@ -115,6 +115,27 @@ def _erase(p: QPainter) -> None:
     p.drawLine(QPointF(9, 6), QPointF(9, 14))
 
 
+def _arrow(p: QPainter) -> None:
+    p.drawLine(QPointF(2.5, 10), QPointF(17, 10))
+    p.drawLine(QPointF(17, 10), QPointF(13, 7))
+    p.drawLine(QPointF(17, 10), QPointF(13, 13))
+
+
+def _rxn_plus(p: QPainter) -> None:
+    p.drawLine(QPointF(10, 4.5), QPointF(10, 15.5))
+    p.drawLine(QPointF(4.5, 10), QPointF(15.5, 10))
+
+
+def _map(p: QPainter) -> None:
+    p.drawEllipse(QPointF(5, 13), 2.2, 2.2)
+    p.drawEllipse(QPointF(15, 7), 2.2, 2.2)
+    pen = QPen(p.pen())
+    pen.setStyle(Qt.PenStyle.DashLine)
+    pen.setDashPattern([1.5, 1.5])
+    p.setPen(pen)
+    p.drawLine(QPointF(7, 12), QPointF(13, 8))
+
+
 def label_font() -> QFont:
     font = QFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont))
     font.setPixelSize(LABEL_PX)
@@ -181,6 +202,11 @@ TOOLS: list[tuple[str, str, Callable[[QPainter], None], Callable[[], tools.Tool]
     ("chain", "Chain: drag to draw a zig-zag chain", _chain, tools.ChainTool),
     ("plus", "Charge + (=)", _charge(+1), lambda: tools.ChargeTool(+1)),
     ("minus", "Charge − (-)", _charge(-1), lambda: tools.ChargeTool(-1)),
+    ("arrow", "Reaction arrow: drag from tail to head; right-click it for other arrows",
+     _arrow, tools.ArrowTool),
+    ("rxn-plus", "Reaction plus sign", _rxn_plus, tools.PlusTool),
+    ("map", "Map atoms: drag from an atom to the same atom on the other side", _map,
+     tools.MapTool),
 ]  # fmt: skip
 
 
@@ -234,6 +260,9 @@ def tool_key(tool: tools.Tool) -> str:
     return {
         tools.EraseTool: "erase",
         tools.ChainTool: "chain",
+        tools.ArrowTool: "arrow",
+        tools.PlusTool: "rxn-plus",
+        tools.MapTool: "map",
     }.get(type(tool), "")
 
 
@@ -259,7 +288,7 @@ class SketchToolBar(QWidget):
         top, bottom, side = strips
         for i, (key, tip, draw, factory) in enumerate(TOOLS):
             self._add(top, key, tip, draw, factory)
-            if i in (2, 5, 8, 9):
+            if i in (2, 5, 8, 9, 11):
                 top.addSpacing(10)
         top.addStretch(1)
         for template in RING_BAR:

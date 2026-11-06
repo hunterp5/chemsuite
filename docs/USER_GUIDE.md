@@ -287,6 +287,9 @@ C, V, A) and on the drawing's right-click menu.
 | Rings (benzene, 3- to 8-membered) | On empty canvas: place the ring. On an atom: the ring shares that atom, facing the free direction. On a bond: fuse the ring onto it, away from the rest of the molecule. Fusing benzene re-draws the alternating bonds of the whole aromatic system, so naphthalene or phenanthrene come out valid whichever bond you click. | On empty canvas: turn the ring (15° steps). From an atom: aim it; drag more than a bond length to attach it through a new bond. On a bond: choose the side. |
 | Charge + / − | Change the atom's charge by one | — |
 | Element (C, N, O …), R, A | On an atom: change its element (or make it an R-group or "any atom"). On empty canvas: a lone atom. Double-click an atom to type its label. | From an atom: a bond to a new atom of that element |
+| Reaction arrow | A plain arrow, 2.5 bond lengths long, starting where you click | Draw the arrow from tail to head (15° steps; hold Ctrl (⌘) for any angle) |
+| Reaction plus | Place a plus sign between two components | — |
+| Atom map | On a mapped atom: clear its map number | From an atom to the same atom on the other side of the arrow: both get the next free map number |
 
 **Keys over an atom or bond.** Point at an atom or bond and press a key:
 
@@ -425,6 +428,30 @@ which makes plain drawn hydrogens implicit again. The background menu has **Show
 Hydrogens** and **Hide All Hydrogens**. Stereocentres keep their R/S either way, and a
 hydrogen on a wedge stays, since it defines its stereocentre. The molecule itself does not
 change.
+
+**Reactions.** Draw the reactants, an arrow and the products, with plus signs between the
+molecules on each side. The sketcher sorts the drawing as Ketcher does:
+
+- molecules between two plus signs (or a plus sign and the arrow) are one component, so a salt
+  drawn without a plus stays together;
+- a component left of the arrow's centre is a reactant, one to the right a product;
+- a component above or below the arrow, within its length, is an agent (solvent, catalyst or
+  reagent).
+
+Right-click an arrow to change its kind (**Plain**, **Equilibrium**, **Retrosynthetic**,
+**Failed**), **Reverse Arrow** or **Delete Arrow**. A retrosynthetic arrow points from the
+product to the reactants, and is read that way round. Select, move, rotate and erase work on
+arrows and plus signs as on atoms. A drawing has at most one arrow.
+
+**Atom maps** pair each atom with the atom it becomes. Use the Atom map tool, or the atom
+right-click menu: **Clear Map Number**, and **Clear All Mapping** on the background menu. Map
+numbers are drawn in small blue type beside the atom.
+
+Copy puts a reaction on the clipboard as an RXN file and as reaction SMILES, so ChemDraw,
+Marvin and Ketcher can paste it. Paste takes either back, and reaction SMILES typed or pasted
+in (`CC(=O)O.OCC>[H+]>CC(=O)OCC`) is laid out left to right, agents above the arrow. A
+reaction cannot be OK'd into a structure cell; the sketcher asks you to delete the arrow and
+plus signs.
 
 **Valence.** An atom with an impossible valence is shown in red inside a dotted ring; point
 at it to see why. Hydrogens are worked out by the same rules as the table, so a drawing the

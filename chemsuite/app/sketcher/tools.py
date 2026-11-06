@@ -29,7 +29,16 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 
 from chemsuite.sketch import edits, geometry
-from chemsuite.sketch.model import MAX_RGROUP, RGROUP, Order, Stereo, next_rgroup
+from chemsuite.sketch.model import (
+    MAX_RGROUP,
+    RGROUP,
+    Arrow,
+    ArrowKind,
+    Order,
+    Plus,
+    Stereo,
+    next_rgroup,
+)
 
 Point = tuple[float, float]
 
@@ -125,6 +134,7 @@ class SelectTool(Tool):
         self.lasso = lasso
         self.name = "lasso" if lasso else "select"
         self.moving: set[int] = set()
+        self.moving_objects: set[int] = set()
         self.box_end: Point | None = None
         self.path: list[Point] = []
         self.rotating: tuple[set[int], Point] | None = None
@@ -152,18 +162,20 @@ class SelectTool(Tool):
             gap = event.position() - at
             if math.hypot(gap.x(), gap.y()) <= HANDLE_RADIUS + 4:
                 self.rotating = (set(canvas.selected_atoms), centre)
-                self.moving = set()
+                self.moving, self.moving_objects = set(), set()
                 return
         add = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-        self.moving = set()
-        already = (hit.kind == "atom" and hit.id in canvas.selected_atoms) or (
-            hit.kind == "bond" and hit.id in canvas.selected_bonds
+        self.moving, self.moving_objects = set(), set()
+        already = (
+            (hit.kind == "atom" and hit.id in canvas.selected_atoms)
+            or (hit.kind == "bond" and hit.id in canvas.selected_bonds)
+            or (hit.kind in ("arrow", "plus") and hit.id in canvas.selected_objects)
         )
-        if already:
-            self.moving = set(canvas.selected_atoms)
-        elif hit:
+        if not already and hit:
             canvas.select_hit(hit, add)
+        if already or hit:
             self.moving = set(canvas.selected_atoms)
+            self.moving_objects = set(canvas.selected_objects)
         elif not add:
             canvas.clear_selection()
 
@@ -179,22 +191,28 @@ class SelectTool(Tool):
             angle = self.angle = self._rotation(pos, event)
             self.box_end = None
             self.tip = pos
-            canvas.preview("Rotate", lambda ch: edits.rotate(ch, atoms, centre, angle))
-        elif self.moving:
+            objects = set(canvas.selected_objects)
+            canvas.preview("Rotate", lambda ch: edits.rotate(ch, atoms, centre, angle, objects))
+        elif self.moving or self.moving_objects:
             dx, dy = pos[0] - self.start[0], pos[1] - self.start[1]
-            atoms = set(self.moving)
-            canvas.preview("Move", lambda ch: edits.move(ch, atoms, dx, dy, merge=False))
+            atoms, objects = set(self.moving), set(self.moving_objects)
+
+            def shift(ch):
+                edits.move(ch, atoms, dx, dy, merge=False)
+                edits.move_objects(ch, objects, dx, dy)
+
+            canvas.preview("Move", shift)
         else:
             add = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             if self.lasso:
                 if not self.path:
                     self.path = [self.start]
                 self.path.append(pos)
+                path = list(self.path)
                 inside = [
-                    aid
-                    for aid, a in canvas.sketch.atoms.items()
-                    if inside_polygon(a.pos, self.path)
+                    aid for aid, a in canvas.sketch.atoms.items() if inside_polygon(a.pos, path)
                 ]
+                objects = canvas.objects_in(lambda p: inside_polygon(p, path))
             else:
                 self.box_end = pos
                 x0, x1 = sorted((self.start[0], pos[0]))
@@ -204,22 +222,32 @@ class SelectTool(Tool):
                     for aid, a in canvas.sketch.atoms.items()
                     if x0 <= a.x <= x1 and y0 <= a.y <= y1
                 ]
+                objects = canvas.objects_in(lambda p: x0 <= p[0] <= x1 and y0 <= p[1] <= y1)
             canvas.select_atoms(inside, add)
+            canvas.select_objects(objects)
 
     def finish_drag(self, canvas, pos, event) -> None:
         if self.rotating is not None:
             atoms, centre = self.rotating
             angle = self._rotation(pos, event)
+            objects = set(canvas.selected_objects)
             canvas.cancel_preview()
-            canvas.edit("Rotate", lambda ch: edits.rotate(ch, atoms, centre, angle))
+            canvas.edit("Rotate", lambda ch: edits.rotate(ch, atoms, centre, angle, objects))
             canvas.select_atoms(atoms & set(canvas.sketch.atoms))
+            canvas.select_objects(objects)
             self.rotating, self.tip = None, None
-        elif self.moving:
+        elif self.moving or self.moving_objects:
             dx, dy = pos[0] - self.start[0], pos[1] - self.start[1]
-            atoms = set(self.moving)
+            atoms, objects = set(self.moving), set(self.moving_objects)
             canvas.cancel_preview()
-            canvas.edit("Move", lambda ch: edits.move(ch, atoms, dx, dy, merge=True))
+
+            def shift(ch):
+                edits.move(ch, atoms, dx, dy, merge=True)
+                edits.move_objects(ch, objects, dx, dy)
+
+            canvas.edit("Move", shift)
             canvas.select_atoms(atoms & set(canvas.sketch.atoms))
+            canvas.select_objects(objects)
         self.box_end = None
         self.path = []
         canvas.update()
@@ -411,10 +439,11 @@ class EraseTool(Tool):
         super().__init__()
         self.atoms: set[int] = set()
         self.bonds: set[int] = set()
+        self.objects: set[int] = set()
 
     def press(self, canvas, pos, hit, event) -> None:
         super().press(canvas, pos, hit, event)
-        self.atoms, self.bonds = set(), set()
+        self.atoms, self.bonds, self.objects = set(), set(), set()
         self._collect(canvas, hit)
 
     def drag(self, canvas, pos, event) -> None:
@@ -426,10 +455,14 @@ class EraseTool(Tool):
             self.atoms |= canvas.with_groups([hit.id])
         elif hit.kind == "bond":
             self.bonds.add(hit.id)
+        elif hit.kind in ("arrow", "plus"):
+            self.objects.add(hit.id)
         else:
             return
-        atoms, bonds = set(self.atoms), set(self.bonds)
-        canvas.preview("Erase", lambda ch: edits.erase(ch, atoms=atoms, bonds=bonds))
+        atoms, bonds, objects = set(self.atoms), set(self.bonds), set(self.objects)
+        canvas.preview(
+            "Erase", lambda ch: edits.erase(ch, atoms=atoms, bonds=bonds, objects=objects)
+        )
 
     def release(self, canvas, pos, event) -> None:
         canvas.commit_preview()
@@ -484,3 +517,86 @@ class TemplateTool(Tool):
         else:
             start = self.start
             canvas.preview(f"Add {t.name}", lambda ch: templates.on_canvas(ch, t, start, angle))
+
+
+# -- reactions (docs/REACTIONS_PLAN.md R2) -------------------------------------------------------
+#: A clicked (not dragged) arrow is this long, in bond lengths (Ketcher's default arrow).
+DEFAULT_ARROW = 2.5
+
+
+class ArrowTool(Tool):
+    """Drag from tail to head to draw a reaction arrow (15 degree steps; Ctrl (⌘) frees the
+    angle); a click draws a default left-to-right arrow centred there. Its kind is changed from
+    the arrow's right-click menu."""
+
+    name = "arrow"
+
+    def __init__(self, kind: ArrowKind = ArrowKind.PLAIN):
+        super().__init__()
+        self.kind = kind
+
+    def _arrow(self, pos: Point, event) -> Arrow:
+        angle = geometry.angle_of(self.start, pos)
+        if not _free_angle(event):
+            angle = geometry.snap_angle(angle)
+        length = max(0.5, math.dist(self.start, pos))
+        x0, y0 = self.start
+        return Arrow(x0, y0, x0 + length * math.cos(angle), y0 + length * math.sin(angle),
+                     self.kind)  # fmt: skip
+
+    def click(self, canvas, pos, hit, event) -> None:
+        x, y = pos
+        half = DEFAULT_ARROW / 2
+        arrow = Arrow(x - half, y, x + half, y, self.kind)
+        canvas.edit("Add arrow", lambda ch: ch.add_arrow(arrow))
+
+    def dragged(self, canvas, pos, event) -> None:
+        arrow = self._arrow(pos, event)
+        canvas.preview("Add arrow", lambda ch: ch.add_arrow(arrow))
+
+
+class PlusTool(Tool):
+    """Click to place a reaction plus sign."""
+
+    name = "rxn-plus"
+
+    def click(self, canvas, pos, hit, event) -> None:
+        if hit.kind == "plus":
+            return
+        canvas.edit("Add plus", lambda ch: ch.add_plus(Plus(*pos)))
+
+
+class MapTool(Tool):
+    """Atom-atom mapping: drag from an atom to its counterpart on the other side of the arrow;
+    both get the same map number (the first atom's, or the next free one). Click a mapped atom
+    to clear its number."""
+
+    name = "map"
+
+    def __init__(self):
+        super().__init__()
+        self.tip: Point | None = None
+
+    def click(self, canvas, pos, hit, event) -> None:
+        if hit.kind == "atom" and canvas.sketch.atoms[hit.id].mapping:
+            canvas.edit("Clear map", lambda ch: edits.set_mapping(ch, [hit.id], 0))
+
+    def dragged(self, canvas, pos, event) -> None:
+        self.tip = pos
+        canvas.update()
+
+    def finish_drag(self, canvas, pos, event) -> None:
+        self.tip = None
+        first = self.start_hit
+        last = canvas.hit_at(pos, frozenset({first.id}) if first.kind == "atom" else frozenset())
+        if first.kind == "atom" and last.kind == "atom" and first.id != last.id:
+            canvas.edit("Map atoms", lambda ch: edits.map_pair(ch, first.id, last.id))
+        canvas.update()
+
+    def paint(self, canvas, painter) -> None:
+        if self.tip is None or self.start_hit is None or self.start_hit.kind != "atom":
+            return
+        colour = QColor(canvas.palette().link().color())
+        painter.setPen(QPen(colour, 1.4, Qt.PenStyle.DashLine))
+        start = canvas.sketch.atoms[self.start_hit.id].pos
+        painter.drawLine(canvas.to_screen(start), canvas.to_screen(self.tip))

@@ -733,3 +733,103 @@ def test_drawn_query_reaches_structure_search_as_smarts(qapp, monkeypatch):
     assert field.text() == "[#17,#35]-[#6]1:[#6]:[#6]:[#6]:[#6]:[#6]:1"
     field.draw()  # drawing again starts from the molfile, not the SMARTS
     assert Chem.MolFromMolBlock(seen[1]) is not None and "M  END" in seen[1]
+
+
+# -- reactions (REACTIONS_PLAN R2) ----------------------------------------------------------------
+
+
+def _paste_text(canvas, text):
+    from PySide6.QtCore import QMimeData
+
+    mime = QMimeData()
+    mime.setText(text)
+    QGuiApplication.clipboard().setMimeData(mime)
+    assert canvas.paste()
+
+
+def test_draw_a_reaction_with_the_arrow_plus_and_map_tools(dialog):
+    from chemsuite.sketch import reaction
+
+    canvas = dialog.canvas
+    canvas.set_sketch(convert.placed(from_text("CO"), (0, 0)), "Start")
+    dialog.toolbar.buttons["atom:C"].click()  # a second reactant, then a plus between them
+    click(canvas, (3.0, 0.0))
+    dialog.toolbar.buttons["rxn-plus"].click()
+    click(canvas, (1.8, 0.0))
+    assert len(canvas.sketch.pluses) == 1
+    dialog.toolbar.buttons["arrow"].click()
+    drag(canvas, (4.5, 0.0), (7.5, 0.2))  # snaps to horizontal
+    (arrow,) = canvas.sketch.arrows.values()
+    assert arrow.y1 == pytest.approx(arrow.y0) and arrow.x1 > arrow.x0
+    dialog.toolbar.buttons["atom:O"].click()
+    click(canvas, (9.0, 0.0))
+    found = reaction.components(canvas.sketch)
+    assert len(found.reactants) == 2 and len(found.products) == 1
+    oxygen = next(a for a, at in canvas.sketch.atoms.items() if at.symbol == "O" and at.x < 3)
+    product = next(a for a, at in canvas.sketch.atoms.items() if at.x > 8)
+    dialog.toolbar.buttons["map"].click()
+    drag(canvas, canvas.sketch.atoms[oxygen].pos, canvas.sketch.atoms[product].pos)
+    assert canvas.sketch.atoms[oxygen].mapping == canvas.sketch.atoms[product].mapping == 1
+    assert len(canvas.scene.maps) == 2 and canvas.scene.strokes
+    assert canvas.history.undo_name == "Map atoms"
+
+
+def test_arrows_select_move_and_erase(dialog):
+    canvas = dialog.canvas
+    dialog.toolbar.buttons["arrow"].click()
+    click(canvas, (0.0, 0.0))
+    (rid,) = canvas.sketch.arrows
+    before = canvas.sketch.arrows[rid]
+    dialog.toolbar.buttons["select"].click()
+    drag(canvas, (0.0, 0.0), (0.0, 2.0))  # grab the arrow's middle and move it up
+    moved = canvas.sketch.arrows[rid]
+    assert moved.y0 == pytest.approx(before.y0 + 2.0) and rid in canvas.selected_objects
+    key(canvas, "", Qt.Key.Key_Delete)
+    assert not canvas.sketch.arrows
+
+
+def test_arrow_menu_changes_its_kind(dialog):
+    from chemsuite.sketch.model import ArrowKind
+
+    canvas = dialog.canvas
+    dialog.toolbar.buttons["arrow"].click()
+    click(canvas, (0.0, 0.0))
+    (rid,) = canvas.sketch.arrows
+    menu = canvas.context_menu(sk_canvas.Hit("arrow", rid))
+    arrows = next(a.menu() for a in menu.actions() if a.text() == "Arrow")
+    next(a for a in arrows.actions() if a.text() == "Equilibrium Arrow").trigger()
+    assert canvas.sketch.arrows[rid].kind is ArrowKind.EQUILIBRIUM
+    menu = canvas.context_menu(sk_canvas.Hit("arrow", rid))
+    next(a for a in menu.actions() if a.text() == "Reverse Arrow").trigger()
+    arrow = canvas.sketch.arrows[rid]
+    assert arrow.x0 > arrow.x1
+
+
+def test_reaction_copy_and_paste(dialog):
+    canvas = dialog.canvas
+    text = "[CH3:1][OH:2].[CH3:3][Cl:4]>CN(C)C=O>[CH3:1][O:2][CH3:3]"
+    _paste_text(canvas, text)
+    assert len(canvas.sketch.arrows) == 1 and len(canvas.sketch.pluses) == 1
+    assert canvas.selected_objects  # the pasted arrow and plus come selected
+    canvas.clear_selection()
+    assert canvas.copy()
+    mime = QGuiApplication.clipboard().mimeData()
+    assert bytes(mime.data("chemical/x-mdl-rxnfile").data()).startswith(b"$RXN")
+    from rdkit.Chem import rdChemReactions
+
+    want = rdChemReactions.ReactionToSmiles(
+        rdChemReactions.ReactionFromSmarts(text, useSmiles=True)
+    )
+    assert mime.text() == want
+
+
+def test_dialog_accepts_reactions_only_when_asked(qapp):
+    text = "CCO>>CC=O"
+    plain = SketcherDialog(text)
+    plain.accept()
+    assert plain.result() == 0 and "not a reaction" in plain.info.text()
+    allowed = SketcherDialog(text, reactions=True)
+    allowed.accept()
+    assert allowed.rxn.startswith("$RXN") and allowed.molblock == ""
+    for dlg in (plain, allowed):
+        dlg.deleteLater()

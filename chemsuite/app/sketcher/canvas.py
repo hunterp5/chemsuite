@@ -46,9 +46,10 @@ from rdkit import Chem
 from rdkit.Chem.Draw import rdMolDraw2D
 
 from chemsuite.app.theme import is_dark
-from chemsuite.sketch import convert, edits, render, stereo, valence
+from chemsuite.sketch import convert, edits, reaction, render, stereo, valence
 from chemsuite.sketch.edits import Change, History
 from chemsuite.sketch.model import (
+    ARROW_TITLES,
     ATOM_LIST,
     ATTACH_POINTS,
     BOND_QUERIES,
@@ -71,6 +72,7 @@ BOND_PX = 40.0
 #: How close (in bond lengths) the pointer must be to pick an atom or a bond.
 ATOM_PICK = 0.3
 BOND_PICK = 0.22
+OBJECT_PICK = 0.3  # reaction arrows and plus signs
 #: A press that moves less than this many pixels is a click.
 CLICK_SLOP = 4.0
 
@@ -102,7 +104,7 @@ BOND_KEYS = {
 
 @dataclass(frozen=True)
 class Hit:
-    kind: str  # "atom", "bond" or "" for empty canvas
+    kind: str  # "atom", "bond", "arrow", "plus" or "" for empty canvas
     id: int = 0
 
     def __bool__(self) -> bool:
@@ -165,6 +167,8 @@ class SketchCanvas(QWidget):
         self.mouse: QPointF | None = None
         self.selected_atoms: set[int] = set()
         self.selected_bonds: set[int] = set()
+        #: selected reaction arrows and plus signs
+        self.selected_objects: set[int] = set()
         self._preview: Change | None = None
         self._label_editor = None
         self.tool = SelectTool()
@@ -233,6 +237,7 @@ class SketchCanvas(QWidget):
     def _history_changed(self) -> None:
         self.selected_atoms &= set(self.sketch.atoms)
         self.selected_bonds &= set(self.sketch.bonds)
+        self.selected_objects &= set(self.sketch.arrows) | set(self.sketch.pluses)
         self._recompute()
 
     def _recompute(self) -> None:
@@ -275,6 +280,12 @@ class SketchCanvas(QWidget):
             {self.sketch.bonds[bond].begin, self.sketch.bonds[bond].end} & exclude
         ):
             return Hit("bond", bond)
+        plus = self.sketch.plus_at(*p, within=OBJECT_PICK)
+        if plus is not None:
+            return Hit("plus", plus)
+        arrow = self.sketch.arrow_at(*p, within=OBJECT_PICK)
+        if arrow is not None:
+            return Hit("arrow", arrow)
         return NOTHING
 
     def with_groups(self, atoms) -> set[int]:
@@ -319,12 +330,30 @@ class SketchCanvas(QWidget):
     def clear_selection(self) -> None:
         self.selected_atoms.clear()
         self.selected_bonds.clear()
+        self.selected_objects.clear()
         self.update()
+
+    def select_objects(self, objects, add: bool = True) -> None:
+        """Select reaction arrows and plus signs (added to the selection by default)."""
+        if not add:
+            self.clear_selection()
+        self.selected_objects |= set(objects)
+        self.update()
+
+    def objects_in(self, inside) -> set[int]:
+        """Arrows (both ends) and plus signs for which ``inside(point)`` holds."""
+        found = {pid for pid, plus in self.sketch.pluses.items() if inside(plus.pos)}
+        found |= {
+            rid for rid, arrow in self.sketch.arrows.items()
+            if inside(arrow.tail) and inside(arrow.head)
+        }  # fmt: skip
+        return found
 
     def select_atoms(self, atoms, add: bool = False) -> None:
         if not add:
             self.selected_atoms.clear()
             self.selected_bonds.clear()
+            self.selected_objects.clear()
         self.selected_atoms |= self.with_groups(atoms)
         self.selected_bonds |= {
             bid
@@ -340,6 +369,8 @@ class SketchCanvas(QWidget):
             bond = self.sketch.bonds[hit.id]
             self.select_atoms([bond.begin, bond.end], add)
             self.selected_bonds.add(hit.id)
+        elif hit.kind in ("arrow", "plus"):
+            self.select_objects([hit.id], add)
 
     def selection_atoms(self) -> set[int]:
         return set(self.selected_atoms)
@@ -347,12 +378,28 @@ class SketchCanvas(QWidget):
     # -- clipboard ---------------------------------------------------------------------------
 
     def copy(self) -> bool:
+        """Copy the selection (or the whole drawing): a molfile and SMILES, or for a
+        reaction an RXN file and reaction SMILES."""
+        selected = self.selected_atoms or self.selected_objects
         part = (
-            edits.subset(self.sketch, self.selected_atoms) if self.selected_atoms else self.sketch
+            edits.subset(self.sketch, self.selected_atoms, self.selected_objects)
+            if selected
+            else self.sketch
         )
         if part.is_empty():
             return False
         mime = QMimeData()
+        if part.is_reaction:
+            try:
+                block = reaction.to_rxn_block(part)
+                mime.setData("chemical/x-mdl-rxnfile", block.encode())
+                mime.setText(reaction.to_smiles(part))
+                QGuiApplication.clipboard().setMimeData(mime)
+                return True
+            except (reaction.ReactionError, convert.SketchError):
+                pass  # not one reaction (two arrows): copy the molecules alone
+        if not part.atoms:
+            return False
         block = convert.to_molblock(part)
         mime.setData("chemical/x-mdl-molfile", block.encode())
         try:
@@ -363,13 +410,15 @@ class SketchCanvas(QWidget):
         return True
 
     def cut(self) -> None:
-        if self.selected_atoms and self.copy():
+        if (self.selected_atoms or self.selected_objects) and self.copy():
             self.erase_selection("Cut")
 
     def paste(self) -> bool:
         from chemsuite.app.structure_editor import clipboard_structure_text
 
-        incoming = convert.from_text(clipboard_structure_text())
+        text = clipboard_structure_text()
+        incoming = reaction.from_text(text) if reaction.looks_like_reaction(text) else None
+        incoming = incoming or convert.from_text(text)
         if incoming is None or incoming.is_empty():
             return False
         if self.mouse is not None and self.rect().contains(self.mouse.toPoint()):
@@ -382,14 +431,17 @@ class SketchCanvas(QWidget):
             at = (x1 + 1.5 + (px1 - px0) / 2, (y0 + y1) / 2)
         placed = convert.placed(incoming, at)
         added: list[int] = []
+        before = set(self.sketch.arrows) | set(self.sketch.pluses)
         self.edit("Paste", lambda ch: added.extend(edits.insert(ch, placed)))
         self.select_atoms(added)
+        self.select_objects((set(self.sketch.arrows) | set(self.sketch.pluses)) - before)
         return True
 
     def erase_selection(self, name: str = "Erase") -> None:
         atoms, bonds = set(self.selected_atoms), set(self.selected_bonds)
-        if atoms or bonds:
-            self.edit(name, lambda ch: edits.erase(ch, atoms=atoms, bonds=bonds))
+        objects = set(self.selected_objects)
+        if atoms or bonds or objects:
+            self.edit(name, lambda ch: edits.erase(ch, atoms=atoms, bonds=bonds, objects=objects))
             self.clear_selection()
 
     # -- painting ----------------------------------------------------------------------------
@@ -430,12 +482,15 @@ class SketchCanvas(QWidget):
         for wedge in self.scene.wedges:
             p.drawPolygon(QPolygonF([self.to_screen(wedge.tip), *map(self.to_screen, wedge.base)]))
         p.setBrush(Qt.BrushStyle.NoBrush)
+        for _oid, a, b in self.scene.strokes:
+            p.drawLine(self.to_screen(a), self.to_screen(b))
         for wavy in [*self.scene.wavy, *self.scene.stubs]:
             path = QPainterPath(self.to_screen(wavy.points[0]))
             for point in wavy.points[1:]:
                 path.lineTo(self.to_screen(point))
             p.drawPath(path)
         self._paint_tags(p, pal.link().color(), pal.base().color())
+        self._paint_maps(p, pal.link().color())
 
         font = QFont(self.font())
         font.setPixelSize(max(6, round(0.42 * s)))
@@ -480,6 +535,20 @@ class SketchCanvas(QWidget):
             p.fillRect(QRectF(centre.x() - width / 2 - 1, centre.y() - metrics.ascent() / 2 - 1,
                               width + 2, metrics.height()), base)  # fmt: skip
             p.setPen(colour)
+            p.drawText(QPointF(centre.x() - width / 2, centre.y() + metrics.capHeight() / 2), text)
+
+    def _paint_maps(self, p: QPainter, colour: QColor) -> None:
+        """Atom-atom map numbers, small, beside their atoms."""
+        if not self.scene.maps:
+            return
+        font = QFont(self.font())
+        font.setPixelSize(max(5, round(0.28 * self.scale)))
+        metrics = QFontMetricsF(font)
+        p.setFont(font)
+        p.setPen(colour)
+        for _aid, at, text in self.scene.maps:
+            centre = self.to_screen(at)
+            width = metrics.horizontalAdvance(text)
             p.drawText(QPointF(centre.x() - width / 2, centre.y() + metrics.capHeight() / 2), text)
 
     def stereo_label_positions(self) -> list[tuple[str, QPointF]]:
@@ -542,12 +611,14 @@ class SketchCanvas(QWidget):
         selected.setAlpha(110)
         hovered = QColor(highlight)
         hovered.setAlpha(70)
-        for colour, atoms, bonds in (
-            (selected, self.selected_atoms, self.selected_bonds),
+        hover_object = {self.hover.id} if self.hover.kind in ("arrow", "plus") else set()
+        for colour, atoms, bonds, objects in (
+            (selected, self.selected_atoms, self.selected_bonds, self.selected_objects),
             (
                 hovered,
                 {self.hover.id} if self.hover.kind == "atom" else set(),
                 {self.hover.id} if self.hover.kind == "bond" else set(),
+                hover_object,
             ),
         ):
             pen = QPen(colour, 0.3 * s)
@@ -560,6 +631,9 @@ class SketchCanvas(QWidget):
                         self.to_screen(self.sketch.atoms[bond.begin].pos),
                         self.to_screen(self.sketch.atoms[bond.end].pos),
                     )
+            for _oid, a, b in self.scene.strokes:
+                if _oid in objects:
+                    p.drawLine(self.to_screen(a), self.to_screen(b))
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(colour)
             for aid in atoms:
@@ -731,7 +805,9 @@ class SketchCanvas(QWidget):
         if mods & ~Qt.KeyboardModifier.KeypadModifier:
             return False
         text, key, hit = event.text(), event.key(), self.hover
-        if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+        if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) and hit.kind in ("arrow", "plus"):
+            self.edit("Erase", lambda ch: edits.erase(ch, objects=[hit.id]))
+        elif key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             if hit.kind == "atom":
                 atoms = self.with_groups([hit.id])
                 self.edit("Erase", lambda ch: edits.erase(ch, atoms=atoms))
@@ -827,6 +903,33 @@ class SketchCanvas(QWidget):
             editor.hide()
             editor.deleteLater()
 
+    def _arrow_menu(self, menu, rid: int) -> None:
+        from dataclasses import replace
+
+        arrow = self.sketch.arrows[rid]
+        kinds = menu.addMenu("Arrow")
+        for kind, title in ARROW_TITLES.items():
+            action = kinds.addAction(
+                title,
+                lambda k=kind: self.edit(
+                    "Arrow style", lambda ch: ch.set_arrow(rid, replace(arrow, kind=k))
+                ),
+            )
+            action.setCheckable(True)
+            action.setChecked(kind is arrow.kind)
+        menu.addAction(
+            "Reverse Arrow",
+            lambda: self.edit(
+                "Reverse arrow",
+                lambda ch: ch.set_arrow(
+                    rid, replace(arrow, x0=arrow.x1, y0=arrow.y1, x1=arrow.x0, y1=arrow.y0)
+                ),
+            ),
+        )
+        menu.addAction(
+            "Delete Arrow", lambda: self.edit("Erase", lambda ch: edits.erase(ch, objects=[rid]))
+        )
+
     def contextMenuEvent(self, event) -> None:
         hit = self.hit_at(self.to_model(QPointF(event.pos())))
         self.context_menu(hit).exec(event.globalPos())
@@ -849,6 +952,19 @@ class SketchCanvas(QWidget):
         if hit.kind == "bond":
             self._double_bond_menu(menu, hit.id)
             self._bond_query_menu(menu, hit.id)
+        if hit.kind == "arrow":
+            self._arrow_menu(menu, hit.id)
+        if hit.kind == "atom" and self.sketch.atoms[hit.id].mapping:
+            menu.addAction(
+                "Clear Map Number",
+                lambda: self.edit("Clear map", lambda ch: edits.set_mapping(ch, [hit.id], 0)),
+            )
+        if any(a.mapping for a in self.sketch.atoms.values()):
+            mapped = [aid for aid, a in self.sketch.atoms.items() if a.mapping]
+            menu.addAction(
+                "Clear All Mapping",
+                lambda: self.edit("Clear mapping", lambda ch: edits.set_mapping(ch, mapped, 0)),
+            )
         if found is not None:
             gid, group = found
             if group.expanded:

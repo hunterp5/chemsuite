@@ -159,3 +159,19 @@ def test_paste_keeps_arrows_and_query_topology():
     history.commit(change)
     assert len(history.sketch.arrows) == 1 and len(history.sketch.pluses) == 1
     assert reaction.to_smiles(history.sketch) == rdkit_smiles(ESTER)
+
+
+def test_map_numbers_keep_clear_of_hydrogen_labels():
+    """The map number of an NH2 at a chain end sits off its hydrogens (left of or above/below
+    the N), not over the H2 to its right."""
+    from chemsuite.sketch import render, valence
+
+    sketch = convert.from_text("[CH3:1][NH2:2]")
+    n = next(a for a, atom in sketch.atoms.items() if atom.symbol == "N")
+    c = next(a for a in sketch.atoms if a != n)
+    # put the NH2 on the left so its hydrogens run to the right
+    sketch.atoms[n] = sketch.atoms[n].moved(0.0, 0.0)
+    sketch.atoms[c] = sketch.atoms[c].moved(-1.0, 0.0)
+    scene = render.build(sketch, valence.check(sketch))
+    (x, y) = next(pos for aid, pos, _ in scene.maps if aid == n)
+    assert not (x > 0.2 and abs(y) < 0.3)

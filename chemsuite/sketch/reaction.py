@@ -255,8 +255,23 @@ def _template_sketch(mol: Chem.Mol) -> Sketch:
     return convert.from_mol(mol)
 
 
-def _width(sketch: Sketch) -> tuple[float, float]:
+#: How far a heteroatom label (such as NH2 or OH) reaches past its atom, in bond lengths.
+LABEL_REACH = 0.45
+
+
+def _extent(sketch: Sketch) -> tuple[float, float, float, float]:
+    """Bounds of *sketch* widened by the labels of heteroatoms, so a plus sign or the arrow is
+    not drawn against an NH2 at a component's edge."""
     x0, y0, x1, y1 = sketch.bounds()
+    for atom in sketch.atoms.values():
+        if atom.symbol != "C":
+            x0 = min(x0, atom.x - LABEL_REACH)
+            x1 = max(x1, atom.x + LABEL_REACH)
+    return x0, y0, x1, y1
+
+
+def _width(sketch: Sketch) -> tuple[float, float]:
+    x0, y0, x1, y1 = _extent(sketch)
     return x1 - x0, y1 - y0
 
 
@@ -288,7 +303,7 @@ def from_reaction(rxn: rdChemReactions.ChemicalReaction) -> Sketch:
 
     def place(part: Sketch) -> None:
         nonlocal x
-        x0, y0, x1, y1 = part.bounds()
+        x0, y0, x1, y1 = _extent(part)
         _add(out, part, x - x0, -(y0 + y1) / 2)
         x += x1 - x0
 
