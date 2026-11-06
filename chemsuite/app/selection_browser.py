@@ -112,14 +112,21 @@ class SelectionBrowser(QWidget):
         self.properties.horizontalHeader().setStretchLastSection(True)
         self.properties.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.properties.setWordWrap(False)
+        self.properties.setAlternatingRowColors(True)
+        self.properties.setShowGrid(False)
+        self.properties.horizontalHeader().setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
 
         top = QHBoxLayout()
+        top.setSpacing(6)
         top.addWidget(QLabel("Browse:"))
         top.addWidget(self.scope, 1)
         self.structure_label = QLabel("Structure:")
         top.addWidget(self.structure_label)
         top.addWidget(self.structure, 1)
         nav = QHBoxLayout()
+        nav.setSpacing(2)
         for widget in (self.first_button, self.prev_button, self.position, self.count_label):
             nav.addWidget(widget)
         nav.addWidget(self.next_button)
@@ -127,11 +134,15 @@ class SelectionBrowser(QWidget):
         nav.addStretch(1)
         nav.addWidget(self.select_box)
         splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setHandleWidth(6)
+        splitter.setChildrenCollapsible(False)
         splitter.addWidget(self.preview)
         splitter.addWidget(self.properties)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setSpacing(8)
         layout.addLayout(top)
         layout.addLayout(nav)
         layout.addWidget(splitter, 1)
@@ -153,6 +164,8 @@ class SelectionBrowser(QWidget):
 
     def _button(self, text: str, tip: str, slot) -> QToolButton:
         button = QToolButton()
+        button.setAutoRaise(True)
+        button.setFixedSize(26, 24)
         button.setText(text)
         button.setToolTip(tip)
         button.clicked.connect(lambda _c=False: slot())

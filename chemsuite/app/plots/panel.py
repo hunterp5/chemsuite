@@ -238,7 +238,7 @@ class PlotPanel(QWidget):
         self._style_toolbar()
 
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(4, 4, 4, 4)
+        self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.addWidget(frame, 1)
 
         self.renderer = None
@@ -420,7 +420,7 @@ class PlotPanel(QWidget):
     def attach_header(self, attached: bool) -> None:
         """The dock's header now holds the toolbar and meets the top of the plot (one card)."""
         self._header_attached = attached
-        self._layout.setContentsMargins(4, 0 if attached else 4, 4, 4)
+        self._layout.setContentsMargins(0, 0, 0, 0)
         self._style_toolbar()
 
     def title(self) -> str:
@@ -461,17 +461,13 @@ class PlotPanel(QWidget):
         hover = QColor(ink)
         hover.setAlphaF(0.08)
         rgba = "rgba({}, {}, {}, {:.2f})".format
-        if self._header_attached:  # the header above is the card's top; its line divides them
-            corners = "border-top-left-radius: 0px; border-top-right-radius: 0px;"
+        if self._header_attached:  # the toolbar sits in the pane's title bar
             bar = "background: transparent; border: none; padding: 0px; spacing: 2px;"
         else:
-            corners = ""
             bar = f"background: {base}; border: none; border-bottom: 1px solid {line};"
             bar += " padding: 2px 4px; spacing: 2px;"
-        self._frame.setStyleSheet(
-            f"QFrame#PlotFrame {{ border: 1px solid {line}; border-radius: 5px; {corners}"
-            f" background: {base}; }}"
-        )
+        # Flush with the window: no box of its own, the dock divider and title bar frame it.
+        self._frame.setStyleSheet(f"QFrame#PlotFrame {{ border: none; background: {base}; }}")
         self.toolbar.setStyleSheet(
             f"QToolBar {{ {bar} }}"
             " QToolButton { border: none; border-radius: 4px; padding: 3px; }"

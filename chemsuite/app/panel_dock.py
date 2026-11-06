@@ -46,9 +46,8 @@ from PySide6.QtWidgets import (
 
 from .glyphs import glyph
 
-#: the header lines up with the panel's own 4 px margin, so the two read as one card
-INSET = 4
-RADIUS = 5
+#: panes sit flush against each other, as in native macOS split views
+INSET = 0
 
 
 class TitleEdit(QLineEdit):
@@ -168,7 +167,7 @@ class TitleEdit(QLineEdit):
 
 
 class PanelHeader(QWidget):
-    """The dock's title bar: a rounded strip that the panel's card continues below."""
+    """The dock's title bar: a flat strip over the pane, divided from it by a hairline."""
 
     def __init__(self, dock: QDockWidget) -> None:
         super().__init__(dock)
@@ -199,7 +198,8 @@ class PanelHeader(QWidget):
         self.close_button.clicked.connect(dock.close)
 
         self.row = QHBoxLayout(self.strip)
-        self.row.setContentsMargins(4, 2, 4, 2)
+        self.row.setContentsMargins(8, 3, 4, 3)
+        self.strip.setFixedHeight(32)  # every pane's title bar, with or without a toolbar
         self.row.setSpacing(2)
         self.row.addWidget(self.title, 1)
         self.tools_at = self.row.count()  # where a panel's toolbar goes
@@ -222,12 +222,10 @@ class PanelHeader(QWidget):
         for b, name in self._glyphs.items():
             b.setIcon(glyph(name, ink))
         line = palette.mid().color().name()
-        base = palette.base().color().name()
-        # Square bottom corners and no bottom border: the panel's card continues the box.
+        window = palette.window().color().name()
         self.strip.setStyleSheet(
-            f"QFrame#PanelHeader {{ background: {base}; border: 1px solid {line};"
-            f" border-bottom: none; border-top-left-radius: {RADIUS}px;"
-            f" border-top-right-radius: {RADIUS}px; }}"
+            f"QFrame#PanelHeader {{ background: {window}; border: none;"
+            f" border-bottom: 1px solid {line}; }}"
             " QToolButton { border: none; border-radius: 4px; padding: 2px; }"
             " QToolButton:hover { background: palette(midlight); }"
         )

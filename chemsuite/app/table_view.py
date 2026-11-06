@@ -40,6 +40,7 @@ from PySide6.QtGui import QColor, QFont, QGuiApplication, QImage, QPainter, QPal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QFrame,
     QHeaderView,
     QStyle,
     QStyledItemDelegate,
@@ -245,8 +246,15 @@ class TableView(QTableView):
         self.setWordWrap(False)
         self.setAlternatingRowColors(True)
         self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setFrameShape(QFrame.Shape.NoFrame)  # flush with the window and its panes
         vertical = self.verticalHeader()
         vertical.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        vertical.setDefaultAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # Row numbers: flat, muted, no per-row separators; one hairline against the cells.
+        vertical.setStyleSheet(
+            "QHeaderView::section { background: palette(window); color: palette(placeholder-text);"
+            " border: none; border-right: 1px solid palette(mid); padding: 0 6px 0 8px; }"
+        )
         horizontal = self.horizontalHeader()
         horizontal.setResizeContentsPrecision(200)  # never measure all 200k rows
         horizontal.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)

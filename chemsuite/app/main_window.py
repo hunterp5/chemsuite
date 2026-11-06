@@ -81,7 +81,7 @@ from .jobs import QUEUE, QUICK, Job, JobRunner
 from .jobs_ui import JobsIndicator, JobsWindow
 from .list_actions import ListActions
 from .log_ui import LogWindow
-from .panel_dock import PanelDock
+from .panel_dock import PanelDock, PanelHeader
 from .search_bar import SearchBar
 from .selection_browser import SelectionBrowser
 from .settings_hub import settings_hub
@@ -258,12 +258,18 @@ class MainWindow(QMainWindow):
         self.browser_dock.setObjectName("BrowserDock")
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.browser_dock)
         self.browser_dock.hide()
+        for dock in (self.filter_dock, self.search_dock, self.browser_dock):
+            dock.setTitleBarWidget(PanelHeader(dock))  # one title bar style for every pane
         self._unsubscribe: Callable[[], None] | None = None
         self.jobs_indicator = JobsIndicator(runner)
         self.jobs_indicator.clicked.connect(self.show_jobs)
         self.setStatusBar(StatusBar(self.jobs_indicator))
         self._status = self.statusBar().document
         self.resize(1400, 860)
+        # Panes meet at a hairline, as in native macOS split views.
+        self.setStyleSheet(
+            "QMainWindow::separator { background: palette(mid); width: 1px; height: 1px; }"
+        )
         self._build_menus()
         hub = settings_hub()
         hub.changed.connect(self._apply_settings)
