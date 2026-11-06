@@ -39,6 +39,9 @@ dev = [
 where = ["."]
 include = ["chemsuite*"]
 
+[tool.setuptools.package-data]
+"chemsuite.ionisation" = ["data/*"]  # MolGpKa weights, site templates, licence
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"

@@ -54,7 +54,8 @@ def test_every_descriptor_runs_on_a_drug() -> None:
         if spec.is_text:
             assert isinstance(value, str) and value, key
         else:
-            assert math.isfinite(value), key
+            no_base = key == "PKA_BASIC"  # aspirin has no basic site: blank is right
+            assert math.isfinite(value) or no_base, key
 
 
 def test_known_values() -> None:

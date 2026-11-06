@@ -221,7 +221,7 @@ modified.
 
 | Feature | Notes |
 |---|---|
-| pKa and permeability models | torch, unipka and chemprop make the install about 2 GB larger, so this is an optional "predictions" add-on. Settles the open question about the "(est.)" descriptors. pKa plan: [PKA_PLAN.md](PKA_PLAN.md). |
+| pKa and permeability models | torch, unipka and chemprop make the install about 2 GB larger, so this is an optional "predictions" add-on. Settles the open question about the "(est.)" descriptors. pKa: MolGpKa is built into the base install (Chemistry ▸ Predict pKa); Uni-pKa stays an optional add-on, see [PKA_PLAN.md](PKA_PLAN.md). |
 | Protein viewer, simulation, sequence/MSA, docking (Gnina), interaction fingerprints, pose browser | openmm, pdbfixer, meeko, gemmi, prolif and MAFFT. These need the 3D viewer decision: PyVista as an optional add-on, as discussed. |
 | QSAR, Quick QSAR, CoMSIA | Skipped for now (phase 7d). |
 

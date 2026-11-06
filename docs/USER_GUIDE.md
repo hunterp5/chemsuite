@@ -21,7 +21,7 @@ read Ctrl as ⌘.
 7. [Filters](#7-filters)
 8. [Background jobs](#8-background-jobs)
 9. [Plots](#9-plots)
-10. [Chemistry: descriptors and conformers](#10-chemistry-descriptors-and-conformers)
+10. [Chemistry: descriptors, pKa and conformers](#10-chemistry-descriptors-pka-and-conformers)
 11. [Data tools](#11-data-tools)
 12. [Similarity](#12-similarity)
 13. [SAR](#13-sar)
@@ -364,6 +364,7 @@ descriptors, conformers, clustering, maps and searches.
   | Partial results kept on cancel | Discarded on cancel |
   |---|---|
   | Calculate Descriptors | Clustering |
+  | Predict pKa | |
   | MedChem plots (descriptor step) | Chemical Space Map |
   | Generate Conformers | Self-Organizing Map |
   | Fingerprint Similarity | Free-Wilson |
@@ -452,7 +453,7 @@ are not already columns, then plots them.
 
 ---
 
-## 10. Chemistry: descriptors and conformers
+## 10. Chemistry: descriptors, pKa and conformers
 
 ### Calculate Descriptors (Ctrl+Shift+D)
 
@@ -462,8 +463,9 @@ are overwritten.
 
 | Group | Descriptors |
 |---|---|
-| Physicochemical | MW, Exact Mass, cLogP, cLogD 7.4 (est.), LogS (ESOL), TPSA, TPSA (N,O,S,P), Molar Refractivity, Labute ASA, Fsp3 |
-| Drug-likeness | QED, Ro5 Violations, Ro5 Pass, CNS MPO (est.), BBB Score (est.), AB-MPS (est.) |
+| Physicochemical | MW, Exact Mass, cLogP, cLogD 7.4, LogS (ESOL), TPSA, TPSA (N,O,S,P), Molar Refractivity, Labute ASA, Fsp3 |
+| Ionisation | pKa (most acidic), pKa (most basic), Charge @ pH 7.4, % Neutral @ pH 7.4 |
+| Drug-likeness | QED, Ro5 Violations, Ro5 Pass, CNS MPO, BBB Score, AB-MPS |
 | Counts | HBD, HBA, NH/OH Count, N+O Count, Rotatable Bonds, Heavy Atoms, Heteroatoms, Valence Electrons, Net Charge |
 | Rings | Rings, Aromatic Rings, Aliphatic Rings, Saturated Rings, Spiro Atoms, Bridgehead Atoms |
 | Atom Counts | C, N, O, S, P, F, Cl, Br, I |
@@ -472,11 +474,46 @@ are overwritten.
 | 3D Shape | PMI 1–3, NPR1, NPR2, PBF, Radius of Gyration, Asphericity, Eccentricity, Spherocity Index, Inertial Shape Factor |
 | Identifiers | Canonical SMILES, InChIKey, InChI, Formula, Murcko Scaffold, Generic Scaffold |
 
-- **"(est.)" values.** chemsuite has no pKa model. cLogD 7.4 is a rough correction of cLogP from
-  an estimated basic pKa, and the scores built on it inherit that. Treat them as screening
-  estimates.
+- **pKa-based values.** The Ionisation group, cLogD 7.4, CNS MPO, BBB Score and AB-MPS use
+  MolGpKa's predicted pKa values (see [Predict pKa](#predict-pka)). For CNS MPO and BBB Score, a
+  compound with no basic site is scored as if its most basic pKa were 2.
 - **3D shape descriptors** use a 3D structure when the cell has conformers.
 - **Cancelling** keeps the rows already calculated.
+
+### Predict pKa
+
+Chemistry ▸ Predict pKa predicts the pKa of every ionisable site with **MolGpKa**, a
+graph-convolutional network (Pan et al., J. Chem. Inf. Model. 2021). Its authors report a mean
+absolute error of about 0.6 pKa units on their literature test set. The model ships with
+chemsuite and runs on the CPU, at roughly 2 ms per molecule.
+
+- **Input.** A structure column and the rows. Salts are reduced to the largest fragment and
+  charges are neutralised before prediction, so a sodium salt gives its parent acid's values.
+- **pH.** Charge, % neutral, cLogD and the major species are given at this pH (default 7.4).
+  The pKa values do not depend on it.
+- **Columns** (choose any):
+
+  | Column | Meaning |
+  |---|---|
+  | pKa (most acidic) | The lowest acid pKa. Blank without an acidic site. |
+  | pKa (most basic) | The highest pKa of a protonated base (the strongest base). Blank without a basic site. |
+  | pKa Values | Every site, lowest pKa first, each marked acid or base, for example "4.47 (acid), 9.05 (base)". |
+  | Charge @ pH, % Neutral @ pH | Mean net charge, and the share of molecules with no site ionised. Zwitterions count as ionised. |
+  | cLogD *pH* | Crippen cLogP of the neutral parent plus log10(fraction neutral). |
+  | Major Species @ pH | The dominant protonation state, as a structure column. |
+
+- **How sites combine.** Each site is predicted, and ionised, independently (Henderson–
+  Hasselbalch per site). This is a good approximation when sites are far apart and a rough one
+  when they interact.
+- **Limits.**
+  - Only groups in MolGpKa's site templates are found; methylamine, for example, has no
+    matching template.
+  - Very small molecules lie outside the training data and can be badly off: triethylamine
+    comes out at 1.7 against a measured 10.75, while larger tertiary amines are close.
+  - Because only the neutral form is assumed to partition, cLogD of zwitterions and of
+    strong acids and bases comes out far lower than measured: glycine gives about −8.5.
+  - Treat the values as screening estimates, not measurements.
+- **Cancelling** keeps the rows already predicted.
 
 ### Generate Conformers
 

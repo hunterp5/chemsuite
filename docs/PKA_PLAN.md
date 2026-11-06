@@ -1,4 +1,30 @@
-# Plan: pKa prediction with Uni-pKa (drafted 2026-11-05)
+# Plan: pKa prediction (drafted 2026-11-05, revised the same day)
+
+## 0. Decision and status
+
+On 2026-11-05 the plan changed to **two models**:
+
+1. **MolGpKa, in the base install. Done.**
+   - **Code:** the network was ported to numpy (`chemsuite/ionisation/`).
+   - **Weights:** converted from the original `.pth` files without torch, by
+     `scripts/convert_molgpka_weights.py`. Together with the site templates and the MIT licence
+     notice, they sit in `chemsuite/ionisation/data/`, about 11 MB.
+   - **Verification:** the port matches upstream MolGpKa to within 5×10⁻⁵ pKa units on 42
+     molecules (`tests/ionisation/molgpka_golden.json`). The golden values were produced by
+     upstream's own featuriser and the original weights, run under PyTorch Geometric.
+   - **Speed:** about 2 ms per molecule on CPU.
+   - **What uses it:**
+     - Chemistry ▸ Predict pKa, which writes pKa, charge, % neutral, cLogD and the major
+       species at a chosen pH;
+     - the Ionisation descriptor group;
+     - cLogD 7.4, CNS MPO, BBB Score and AB-MPS, which no longer carry "(est.)".
+2. **Uni-pKa, as an optional, more accurate add-on.** This is the rest of this document. It is
+   still blocked on the weights licence (§3.1). If it is built, it plugs in behind the same
+   outputs as a model choice in Predict pKa.
+
+MolGpKa's known limits are listed in the user guide: sites are treated independently,
+coverage is limited to its templates, it is weak on very small molecules, and cLogD for
+zwitterions uses the neutral form only.
 
 ## 1. Goal
 

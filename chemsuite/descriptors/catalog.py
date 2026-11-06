@@ -21,12 +21,15 @@ the column names the results get. Functions take a sanitized RDKit molecule.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from rdkit import Chem
 from rdkit.Chem import QED, Crippen, Descriptors, Lipinski, inchi, rdMolDescriptors
 from rdkit.Chem.Scaffolds import MurckoScaffold
+
+from chemsuite.ionisation.profile import Profile, profile
 
 from . import medchem
 
@@ -47,10 +50,27 @@ class Descriptor:
         return self.decimals is TEXT
 
 
-ESTIMATE = (
-    " Estimated without a pKa model (basic pKa guessed from the nitrogen count); "
-    "use for ranking, not as a measured value."
+PKA_NOTE = (
+    " Uses MolGpKa's predicted pKa values (see Predict pKa in the user guide); a screening "
+    "estimate, not a measured value."
 )
+
+
+def _profiled(mol: Chem.Mol) -> Profile:
+    found = profile(mol)
+    if found is None:
+        raise ValueError("MolGpKa could not prepare the structure")
+    return found
+
+
+def _most_acidic(mol: Chem.Mol) -> float:
+    value = _profiled(mol).most_acidic
+    return math.nan if value is None else value
+
+
+def _most_basic(mol: Chem.Mol) -> float:
+    value = _profiled(mol).most_basic
+    return math.nan if value is None else value
 
 
 def _count(atomic_number: int) -> Callable[[Chem.Mol], int]:
@@ -144,11 +164,11 @@ _ITEMS: tuple[Descriptor, ...] = (
     Descriptor("MolLogP", "cLogP", "Physicochemical", Crippen.MolLogP, 2, "Wildman-Crippen logP."),
     Descriptor(
         "CLOGD74",
-        "cLogD 7.4 (est.)",
+        "cLogD 7.4",
         "Physicochemical",
         medchem.clogd74,
         2,
-        "cLogP corrected for ionisation at pH 7.4." + ESTIMATE,
+        "cLogP corrected for ionisation at pH 7.4." + PKA_NOTE,
     ),
     Descriptor(
         "ESOL",
@@ -191,6 +211,39 @@ _ITEMS: tuple[Descriptor, ...] = (
         2,
         "Fraction of carbons that are sp3.",
     ),
+    # -- ionisation --
+    Descriptor(
+        "PKA_ACIDIC",
+        "pKa (most acidic)",
+        "Ionisation",
+        _most_acidic,
+        2,
+        "MolGpKa's lowest acid pKa; blank without an acidic site.",
+    ),
+    Descriptor(
+        "PKA_BASIC",
+        "pKa (most basic)",
+        "Ionisation",
+        _most_basic,
+        2,
+        "MolGpKa's highest base pKa (of the conjugate acid); blank without a basic site.",
+    ),
+    Descriptor(
+        "CHARGE74",
+        "Charge @ pH 7.4",
+        "Ionisation",
+        lambda mol: _profiled(mol).charge(7.4),
+        2,
+        "Mean net charge at pH 7.4 from MolGpKa's pKa values.",
+    ),
+    Descriptor(
+        "NEUTRAL74",
+        "% Neutral @ pH 7.4",
+        "Ionisation",
+        lambda mol: 100.0 * _profiled(mol).fraction_neutral(7.4),
+        1,
+        "Share of molecules with no ionised site at pH 7.4 (zwitterions count as ionised).",
+    ),
     # -- drug-likeness --
     Descriptor(
         "QED",
@@ -218,27 +271,27 @@ _ITEMS: tuple[Descriptor, ...] = (
     ),
     Descriptor(
         "CNS_MPO",
-        "CNS MPO (est.)",
+        "CNS MPO",
         "Drug-likeness",
         medchem.cns_mpo,
         2,
-        "Wager 2010 CNS MPO score, 0-6 (≥ 4 favourable)." + ESTIMATE,
+        "Wager 2010 CNS MPO score, 0-6 (≥ 4 favourable)." + PKA_NOTE,
     ),
     Descriptor(
         "BBB_SCORE",
-        "BBB Score (est.)",
+        "BBB Score",
         "Drug-likeness",
         medchem.bbb_score,
         2,
-        "Gupta 2019 BBB score, 0-6 (≥ 4 CNS-like)." + ESTIMATE,
+        "Gupta 2019 BBB score, 0-6 (≥ 4 CNS-like)." + PKA_NOTE,
     ),
     Descriptor(
         "AB_MPS",
-        "AB-MPS (est.)",
+        "AB-MPS",
         "Drug-likeness",
         medchem.ab_mps,
         2,
-        "AbbVie multiparameter score for beyond-rule-of-5 space (≤ 14 favourable)." + ESTIMATE,
+        "AbbVie multiparameter score for beyond-rule-of-5 space (≤ 14 favourable)." + PKA_NOTE,
     ),
     # -- counts --
     Descriptor("NumHDonors", "HBD", "Counts", Lipinski.NumHDonors, 0, "Lipinski H-bond donors."),

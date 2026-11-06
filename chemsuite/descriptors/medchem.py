@@ -20,10 +20,9 @@
 * **AB-MPS**: DeGoey et al., J. Med. Chem. 2018 (doi:10.1021/acs.jmedchem.7b00717).
 * **ESOL intrinsic log S**: Delaney, J. Chem. Inf. Comput. Sci. 2004 (doi:10.1021/ci034243x).
 
-chemsuite has no pKa model (MolManager used Uni-pKa, which needs torch). cLogD 7.4 and the
-scores built on it therefore use MolManager's fallback: a rough basic pKa estimated from the
-nitrogen count and a monoprotic-base correction of cLogP. They are screening estimates and
-the catalog labels them so.
+cLogD 7.4 and the scores that need a basic pKa (CNS MPO, BBB Score, AB-MPS) use MolGpKa's
+predicted pKa values (``chemsuite.ionisation``). A molecule without a basic site is scored as
+if its most basic pKa were 2, as MolManager did.
 """
 
 from __future__ import annotations
@@ -32,6 +31,8 @@ import math
 
 from rdkit import Chem
 from rdkit.Chem import Crippen, Descriptors, Lipinski, rdMolDescriptors
+
+from chemsuite.ionisation.profile import clogd, profile
 
 _AROMATIC_ATOM = Chem.MolFromSmarts("a")
 
@@ -72,21 +73,19 @@ def ro5_pass(mol: Chem.Mol) -> str:
     return "Yes" if lipinski_violations(mol) == 0 else "No"
 
 
-def approx_basic_pka(mol: Chem.Mol) -> float:
-    """Rough conjugate-acid pKa of the most basic site (MolManager's no-model fallback)."""
-    nitrogens = sum(1 for atom in mol.GetAtoms() if atom.GetAtomicNum() == 7)
-    if nitrogens == 0:
-        return 2.0
-    return min(10.5, 7.6 + 0.35 * float(max(0, nitrogens - 1)))
+NO_BASE_PKA = 2.0  # the most basic pKa used for a molecule without a basic site
+
+
+def basic_pka(mol: Chem.Mol) -> float:
+    """MolGpKa's pKa of the most basic site (its conjugate acid); NO_BASE_PKA without one."""
+    found = profile(mol)
+    strongest = found.most_basic if found is not None else None
+    return NO_BASE_PKA if strongest is None else strongest
 
 
 def clogd74(mol: Chem.Mol) -> float:
-    """cLogD at pH 7.4: cLogP corrected for a monoprotic base of :func:`approx_basic_pka`."""
-    clogp = float(Crippen.MolLogP(mol))
-    pka = approx_basic_pka(mol)
-    if pka <= 7.4:
-        return clogp
-    return clogp - math.log10(1.0 + 10.0 ** (pka - 7.4))
+    """cLogD at pH 7.4: Crippen cLogP corrected with MolGpKa's pKa values."""
+    return clogd(mol, 7.4)
 
 
 def esol_logs(mol: Chem.Mol) -> float:
@@ -114,7 +113,7 @@ def ab_mps(mol: Chem.Mol) -> float:
 def cns_mpo(mol: Chem.Mol) -> float:
     """CNS MPO (0-6) from Wager 2010 Table 1 desirability functions."""
     clogp = float(Crippen.MolLogP(mol))
-    pka = approx_basic_pka(mol)
+    pka = basic_pka(mol)
     return (
         _mono_dec(clogp, 3.0, 5.0)
         + _mono_dec(clogd74(mol), 2.0, 4.0)
@@ -168,7 +167,7 @@ def bbb_score(mol: Chem.Mol) -> float:
         float(Lipinski.NumHDonors(mol)),
         float(Lipinski.NumHAcceptors(mol)),
         float(Descriptors.TPSA(mol)),
-        approx_basic_pka(mol),
+        basic_pka(mol),
     )
 
 
