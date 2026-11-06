@@ -48,7 +48,8 @@ Each document has its own window. From top to bottom:
   - Filters, Advanced Search and the Selection Browser dock at the side.
   - New plots and tool panels open to the right of the table, splitting the window left and
     right. A second plot joins the first as a tab.
-  - Panels sit flush against the table, divided by a thin line you can drag to resize them.
+  - Panels sit flush against the table, divided by a thin line you can drag to resize them
+    (the grab area is a few pixels wider than the line).
     Every panel (plots, Filters, Advanced Search, Selection Browser) has the same header
     showing its title. Drag the header to move the panel. A plot's
     header also holds the plot toolbar. The buttons at the right are:
@@ -56,8 +57,15 @@ Each document has its own window. From top to bottom:
     | Button | What it does |
     |---|---|
     | Cog | Opens the panel's settings (plots only). |
+    | Split square | **Arrange**: put the panel **Beside** or **Below** another panel (splitting that panel's space in two), **Tab With** another panel, dock it **Left of**, **Right of** or **Below the Table**, or **Float** it. |
     | Window with arrow | Undocks the panel into its own window, or docks it again. |
     | ✕ | Closes the panel. |
+
+  - **Arranging panels.** For stacked plots beside the table, open a second plot (it joins
+    the first as a tab), then choose Arrange ▸ Below ▸ *the first plot*. You can also drag a
+    panel by its header onto the top, bottom or side of another panel to split its space, or
+    onto its middle to tab them. **View ▸ Arrange Panes** lays out every docked panel at once:
+    **As Tabs**, **Side by Side**, **Stacked** or as a **Grid**.
 
 - **Status bar**, on one line:
   - At the left: what the current background job is doing, such as "Generating conformers…
@@ -129,7 +137,11 @@ in the background, using every processor core. You can scroll and work while tha
   - named lists;
   - filters and filter sets;
   - the advanced search and recent searches;
-  - open plots and panels with their settings.
+  - open plots and panels with their settings;
+  - the workspace layout: where each panel is docked (beside, stacked, tabbed, left, right or
+    below the table, floating), which panes are open (Filters, Advanced Search, Selection
+    Browser), column widths, and the search bar with its text and options. Filters and an
+    active advanced search always reopen visible, since they explain why rows are hidden.
 - Saving is safe. The new file is written next to the old one and swapped in only once it is
   complete, so a crash or a full disk never damages your previous version.
 - **File ▸ Export…** writes SDF, CSV/TSV, SMILES or Excel. **Export Selected…** writes only the

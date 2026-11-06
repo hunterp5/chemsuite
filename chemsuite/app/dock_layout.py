@@ -1,0 +1,314 @@
+# This file is part of chemsuite.
+# Copyright (C) 2026 Hunter Picard
+#
+# chemsuite is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# chemsuite is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Arranging panes around the table, and saving that arrangement with the document.
+
+Panes (plots, Filters, Advanced Search, the Selection Browser) dock left of, right of or below
+the table, side by side, stacked or as tabs. They can be dragged by their header, and each
+header's **Arrange** menu places the pane exactly:
+
+* **Beside** / **Below** another pane: split that pane's space in two;
+* **Tab With** another pane;
+* **Left of / Right of / Below the Table**;
+* **Float** in its own window.
+
+**View ▸ Arrange Panes** lays out every docked pane at once: as tabs, side by side, stacked or
+in a grid.
+
+Qt cannot split a pane that shares its space with tabs (``splitDockWidget`` tabs the new pane
+instead), so splitting first takes the target's tab companions out and tabs them back onto the
+target afterwards.
+
+The arrangement (Qt's ``saveState``) is saved in the document with the column widths and the
+search bar. Panels get stable object names (``Panel0``, ``Panel1``… in the order they are
+saved), so the same arrangement applies when the document's panels are reopened.
+"""
+
+from __future__ import annotations
+
+import base64
+import math
+from typing import TYPE_CHECKING, Any
+
+from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtWidgets import QDockWidget, QMenu
+
+if TYPE_CHECKING:
+    from .main_window import MainWindow
+
+LAYOUT_KEY = "layout"
+LAYOUT_VERSION = 1  # QMainWindow.saveState version tag
+TABS, SIDE, STACKED, GRID = "tabs", "side", "stacked", "grid"
+ARRANGEMENTS = (
+    (TABS, "As Tabs"),
+    (SIDE, "Side by Side"),
+    (STACKED, "Stacked"),
+    (GRID, "Grid"),
+)
+AREAS = (
+    (Qt.DockWidgetArea.LeftDockWidgetArea, "Left of the Table"),
+    (Qt.DockWidgetArea.RightDockWidgetArea, "Right of the Table"),
+    (Qt.DockWidgetArea.BottomDockWidgetArea, "Below the Table"),
+)
+
+
+def is_open(dock: QDockWidget) -> bool:
+    """Open, even when behind another tab (Qt reports a background tab as not visible)."""
+    return dock.toggleViewAction().isChecked()
+
+
+def docked(window: MainWindow) -> list[QDockWidget]:
+    """Visible, docked panes in a stable order (fixed panes, then panels as opened)."""
+    fixed = [window.filter_dock, window.search_dock, window.browser_dock]
+    return [
+        d
+        for d in [*fixed, *window._panels]
+        if is_open(d) and not d.isFloating() and d.widget() is not None
+    ]
+
+
+def tab_group(window: MainWindow, dock: QDockWidget) -> list[QDockWidget]:
+    """The panes sharing *dock*'s space as tabs (not including *dock*)."""
+    return [d for d in window.tabifiedDockWidgets(dock) if is_open(d)]
+
+
+def _take(window: MainWindow, dock: QDockWidget) -> None:
+    window.removeDockWidget(dock)  # also hides it
+
+
+def _put(dock: QDockWidget) -> None:
+    dock.show()
+
+
+def split(
+    window: MainWindow, target: QDockWidget, dock: QDockWidget, orientation: Qt.Orientation
+) -> None:
+    """Put *dock* beside (Horizontal) or below (Vertical) *target*, halving its space."""
+    if dock is target:
+        return
+    dock.setFloating(False)
+    _take(window, dock)
+    if target.isFloating():
+        target.setFloating(False)
+    companions = tab_group(window, target)
+    for d in companions:
+        _take(window, d)
+    window.splitDockWidget(target, dock, orientation)
+    if dock in window.tabifiedDockWidgets(target):
+        # Qt keeps a former tab group "tabbed" even with one pane left and tabs the new pane
+        # into it; re-adding the target gives it a plain slot that splits.
+        area = window.dockWidgetArea(target)
+        _take(window, dock)
+        _take(window, target)
+        window.addDockWidget(area, target)
+        _put(target)
+        window.splitDockWidget(target, dock, orientation)
+    _put(dock)
+    for d in companions:
+        window.tabifyDockWidget(target, d)
+        _put(d)
+    target.raise_()
+    _even(window, [target, dock], orientation)
+    dock.raise_()
+
+
+def tab_with(window: MainWindow, target: QDockWidget, dock: QDockWidget) -> None:
+    if dock is target:
+        return
+    dock.setFloating(False)
+    _take(window, dock)
+    window.tabifyDockWidget(target, dock)
+    _put(dock)
+    dock.raise_()
+
+
+def move_to_area(window: MainWindow, dock: QDockWidget, area: Qt.DockWidgetArea) -> None:
+    """Dock *dock* on one side of the table, beside whatever is already there."""
+    dock.setFloating(False)
+    _take(window, dock)
+    there = [d for d in docked(window) if window.dockWidgetArea(d) == area and d is not dock]
+    orientation = (
+        Qt.Orientation.Horizontal
+        if area == Qt.DockWidgetArea.BottomDockWidgetArea
+        else Qt.Orientation.Vertical
+    )
+    window.addDockWidget(area, dock, orientation)
+    _put(dock)
+    if not there:  # a new side: give it a useful share of the window
+        size = window.width() // 3 if orientation is Qt.Orientation.Vertical else None
+        if size is not None:
+            window.resizeDocks([dock], [max(320, size)], Qt.Orientation.Horizontal)
+        else:
+            window.resizeDocks([dock], [max(240, window.height() // 3)], Qt.Orientation.Vertical)
+    dock.raise_()
+
+
+def arrange(window: MainWindow, how: str, docks: list[QDockWidget] | None = None) -> int:
+    """Lay out every docked pane (or *docks*) right of the table; returns how many moved."""
+    docks = list(docks if docks is not None else docked(window))
+    if not docks:
+        return 0
+    area = Qt.DockWidgetArea.RightDockWidgetArea
+    for d in docks:
+        _take(window, d)
+    first = docks[0]
+    window.addDockWidget(area, first, Qt.Orientation.Horizontal)
+    _put(first)
+    rest = docks[1:]
+    if how == TABS:
+        for d in rest:
+            window.tabifyDockWidget(first, d)
+            _put(d)
+        first.raise_()
+    elif how in (SIDE, STACKED):
+        orientation = Qt.Orientation.Horizontal if how == SIDE else Qt.Orientation.Vertical
+        previous = first
+        for d in rest:
+            window.splitDockWidget(previous, d, orientation)
+            _put(d)
+            previous = d
+        _even(window, docks, orientation)
+    elif how == GRID:
+        columns = math.ceil(math.sqrt(len(docks)))
+        heads = docks[:columns]
+        for previous, d in zip(heads, heads[1:], strict=False):
+            window.splitDockWidget(previous, d, Qt.Orientation.Horizontal)
+            _put(d)
+        for k, d in enumerate(docks[columns:]):
+            above = docks[k]  # the pane above in the same column
+            window.splitDockWidget(above, d, Qt.Orientation.Vertical)
+            _put(d)
+        _even(window, heads, Qt.Orientation.Horizontal)
+    else:
+        raise ValueError(f"unknown arrangement {how!r}")
+    total = window.width() // 2 if how != TABS else max(360, window.width() // 2)
+    window.resizeDocks([first], [max(360, total)], Qt.Orientation.Horizontal)
+    if how == SIDE:
+        _even(window, docks, Qt.Orientation.Horizontal)
+    return len(docks)
+
+
+def _even(window: MainWindow, docks: list[QDockWidget], orientation: Qt.Orientation) -> None:
+    """Share the space equally between *docks* along *orientation*."""
+    if len(docks) < 2:
+        return
+    if orientation is Qt.Orientation.Horizontal:
+        sizes = [d.width() for d in docks]
+    else:
+        sizes = [d.height() for d in docks]
+    share = max(1, sum(sizes) // len(docks))
+    window.resizeDocks(docks, [share] * len(docks), orientation)
+
+
+# -- the Arrange menu ---------------------------------------------------------------------------
+def fill_arrange_menu(menu: QMenu, window: MainWindow, dock: QDockWidget) -> None:
+    """The Arrange menu of one pane's header (rebuilt each time it opens)."""
+    menu.clear()
+    others = [d for d in docked(window) if d is not dock]
+    for title, orientation in (
+        ("Beside", Qt.Orientation.Horizontal),
+        ("Below", Qt.Orientation.Vertical),
+    ):
+        sub = menu.addMenu(title)
+        sub.setEnabled(bool(others))
+        for other in others:
+            sub.addAction(
+                other.windowTitle(),
+                lambda o=other, r=orientation: split(window, o, dock, r),
+            )
+    tabs = menu.addMenu("Tab With")
+    tabs.setEnabled(bool(others))
+    group = set(tab_group(window, dock))
+    for other in others:
+        action = tabs.addAction(other.windowTitle(), lambda o=other: tab_with(window, o, dock))
+        action.setCheckable(True)
+        action.setChecked(other in group)
+    menu.addSeparator()
+    here = None if dock.isFloating() else window.dockWidgetArea(dock)
+    for area, title in AREAS:
+        action = menu.addAction(title, lambda a=area: move_to_area(window, dock, a))
+        action.setCheckable(True)
+        action.setChecked(area == here)
+    menu.addSeparator()
+    floating = menu.addAction("Float", lambda: dock.setFloating(not dock.isFloating()))
+    floating.setCheckable(True)
+    floating.setChecked(dock.isFloating())
+
+
+def fill_arrange_all_menu(menu: QMenu, window: MainWindow) -> None:
+    menu.clear()
+    count = len(docked(window))
+    for how, title in ARRANGEMENTS:
+        action = menu.addAction(title, lambda h=how: arrange(window, h))
+        action.setEnabled(count > 1 or (count == 1 and how == TABS))
+
+
+# -- saving ------------------------------------------------------------------------------------
+def name_panels(window: MainWindow, restorable: list[QDockWidget]) -> None:
+    """Name the panels that are saved ``Panel0``, ``Panel1``… in saving order, so a reopened
+    document's panels match the saved arrangement."""
+    for i, dock in enumerate(restorable):
+        dock.setObjectName(f"Panel{i}")
+    for dock in window._panels:
+        if dock not in restorable:
+            dock.setObjectName(f"Transient{id(dock)}")
+
+
+def capture(window: MainWindow) -> dict[str, Any]:
+    """The window's arrangement, column widths and search bar, as JSON-friendly data."""
+    state = bytes(window.saveState(LAYOUT_VERSION).data())
+    out: dict[str, Any] = {"docks": base64.b64encode(state).decode("ascii")}
+    widths = window.view.column_widths()
+    if widths:
+        out["widths"] = widths
+    search = window.search
+    if search.is_open or search.edit.text():
+        out["search"] = {
+            "open": search.is_open,
+            "text": search.edit.text(),
+            "case": search.case.isChecked(),
+            "whole": search.whole.isChecked(),
+            "regex": search.regex.isChecked(),
+        }
+    return out
+
+
+def restore(window: MainWindow, saved: dict[str, Any]) -> None:
+    """Apply what :func:`capture` saved; damaged parts are skipped."""
+    if not isinstance(saved, dict):
+        return
+    widths = saved.get("widths")
+    if isinstance(widths, dict):
+        window.view.set_column_widths(
+            {str(k): int(v) for k, v in widths.items() if isinstance(v, int | float) and v > 0}
+        )
+    search = saved.get("search")
+    if isinstance(search, dict):
+        bar = window.search
+        for key, action in (("case", bar.case), ("whole", bar.whole), ("regex", bar.regex)):
+            action.setChecked(bool(search.get(key)))
+        text = str(search.get("text") or "")
+        if search.get("open") or text:
+            bar.open()
+        bar.edit.setText(text)
+        bar.apply_now()
+    docks = saved.get("docks")
+    if isinstance(docks, str):
+        try:
+            data = base64.b64decode(docks.encode("ascii"), validate=True)
+        except (ValueError, UnicodeError):
+            return
+        window.restoreState(QByteArray(data), LAYOUT_VERSION)

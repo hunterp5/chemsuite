@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLineEdit,
+    QMenu,
     QSizePolicy,
     QToolButton,
     QWidget,
@@ -187,10 +188,17 @@ class PanelHeader(QWidget):
 
         self.settings = button("Settings")
         self.settings.setVisible(False)
+        self.arrange_button = button("Arrange: beside or below another pane, tabs, float")
+        self.arrange_menu = QMenu(self.arrange_button)
+        self.arrange_button.setMenu(self.arrange_menu)
+        self.arrange_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.arrange_button.setStyleSheet("QToolButton::menu-indicator { image: none; }")
+        self.arrange_menu.aboutToShow.connect(self._fill_arrange)
         self.float_button = button("Undock (or dock again)")
         self.close_button = button("Close")
         self._glyphs = {
             self.settings: "gear",
+            self.arrange_button: "arrange",
             self.float_button: "undock",
             self.close_button: "close",
         }
@@ -203,7 +211,7 @@ class PanelHeader(QWidget):
         self.row.setSpacing(2)
         self.row.addWidget(self.title, 1)
         self.tools_at = self.row.count()  # where a panel's toolbar goes
-        for b in (self.settings, self.float_button, self.close_button):
+        for b in (self.settings, self.arrange_button, self.float_button, self.close_button):
             self.row.addWidget(b)
         outer = QHBoxLayout(self)
         outer.setContentsMargins(INSET, INSET, INSET, 0)
@@ -211,6 +219,13 @@ class PanelHeader(QWidget):
         self.toolbar: QWidget | None = None
         dock.windowTitleChanged.connect(self.title.show_title)
         self._restyle()
+
+    def _fill_arrange(self) -> None:
+        from .dock_layout import fill_arrange_menu
+
+        window = self.dock.parentWidget()
+        if window is not None and hasattr(window, "_panels"):
+            fill_arrange_menu(self.arrange_menu, window, self.dock)
 
     def add_tools(self, toolbar: QWidget) -> None:
         self.toolbar = toolbar

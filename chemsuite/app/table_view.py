@@ -325,6 +325,17 @@ class TableView(QTableView):
         for col in range(min(header.count(), model.columnCount())):
             self._widths[model.column_name(col)] = header.sectionSize(col)
 
+    def column_widths(self) -> dict[str, int]:
+        """Current column widths by name (saved with the document)."""
+        self._capture_widths()
+        names = set(self.table_model.table.column_names)
+        return {name: width for name, width in self._widths.items() if name in names}
+
+    def set_column_widths(self, widths: dict[str, int]) -> None:
+        self._capture_widths()
+        self._widths.update(widths)
+        self._fit_layout()
+
     def _fit_layout(self) -> None:
         model = self.table_model
         table = model.table

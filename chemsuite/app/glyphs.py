@@ -135,7 +135,18 @@ def _close(p: QPainter) -> None:
     p.drawPath(path)
 
 
+def _arrange(p: QPainter) -> None:
+    """A pane split in two, the right half split again: arrange panes."""
+    p.drawRoundedRect(QRectF(2.5, 3, 11, 10), 1.5, 1.5)
+    path = QPainterPath(QPointF(8, 3))
+    path.lineTo(8, 13)
+    path.moveTo(8, 8)
+    path.lineTo(13.5, 8)
+    p.drawPath(path)
+
+
 GLYPHS: dict[str, Draw] = {
+    "arrange": _arrange,
     "gear": _gear,
     "undock": _undock,
     "close": _close,

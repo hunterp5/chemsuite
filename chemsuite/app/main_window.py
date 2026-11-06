@@ -68,10 +68,12 @@ from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import STRUCTURE
 
+from . import dock_layout
 from .advanced_search import EXTRAS_KEY as ADVANCED_KEY
 from .advanced_search import AdvancedSearchPanel
 from .column_actions import ColumnActions
 from .commands import apply_shortcuts, register
+from .dock_layout import LAYOUT_KEY
 from .error_report import details_of, show_error, show_log_folder
 from .filters.cards import FilterCard
 from .filters.panel import EXTRAS_KEY as FILTERS_KEY
@@ -176,6 +178,9 @@ class Workspace:
         search = (extras or {}).get(ADVANCED_KEY)
         #: the advanced search saved with the document
         self.saved_search: dict[str, Any] = search if isinstance(search, dict) else {}
+        layout = (extras or {}).get(LAYOUT_KEY)
+        #: pane arrangement, column widths and search bar saved with the document
+        self.saved_layout: dict[str, Any] = layout if isinstance(layout, dict) else {}
         panels = (extras or {}).get(PANELS_KEY)
         #: panels saved with the document, reopened when the window installs this workspace
         self.saved_panels: list[dict] = panels if isinstance(panels, list) else []
@@ -208,6 +213,16 @@ class Workspace:
         self.selection.close()
         self.lists.close()
 
+
+#: Panes meet at a 1 px line in the middle of a 5 px separator that is easy to grab.
+_LINE = "stop:0 transparent, stop:0.4 transparent, stop:0.41 palette(mid), stop:0.59 palette(mid), stop:0.6 transparent, stop:1 transparent"  # noqa: E501
+SEPARATOR_STYLE = (
+    "QMainWindow::separator { width: 5px; height: 5px; }"
+    "QMainWindow::separator:vertical { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+    f"{_LINE}); }}"
+    "QMainWindow::separator:horizontal { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+    f"{_LINE}); }}"
+)
 
 #: a new panel takes half the window, but never less than this
 PANEL_MIN_WIDTH = 360
@@ -266,10 +281,15 @@ class MainWindow(QMainWindow):
         self.setStatusBar(StatusBar(self.jobs_indicator))
         self._status = self.statusBar().document
         self.resize(1400, 860)
-        # Panes meet at a hairline, as in native macOS split views.
-        self.setStyleSheet(
-            "QMainWindow::separator { background: palette(mid); width: 1px; height: 1px; }"
+        # Panes can sit side by side, stacked or as tabs in any dock area (dock_layout.py).
+        self.setDockOptions(
+            QMainWindow.DockOption.AnimatedDocks
+            | QMainWindow.DockOption.AllowNestedDocks
+            | QMainWindow.DockOption.AllowTabbedDocks
         )
+        # Panes meet at a hairline, as in native macOS split views; the separator is wider than
+        # the line so it is easy to grab.
+        self.setStyleSheet(SEPARATOR_STYLE)
         self._build_menus()
         hub = settings_hub()
         hub.changed.connect(self._apply_settings)
@@ -355,6 +375,13 @@ class MainWindow(QMainWindow):
         self._update_status()
         self._start_parsing()
         self._restore_panels(workspace.saved_panels)
+        if workspace.saved_layout:
+            dock_layout.restore(self, workspace.saved_layout)
+        # whatever the saved arrangement, panes that hide rows stay open to say why
+        if self._filters.cards:
+            self.filter_dock.show()
+        if workspace.saved_search.get("showing"):
+            self.search_dock.show()
 
     def show_dialog(self, dialog: QDialog) -> QDialog:
         """Show a tool dialog without blocking the window (see ``ToolContext.show_dialog``)."""
@@ -773,6 +800,11 @@ class MainWindow(QMainWindow):
         self._commands["view.search_bar"] = self._search_action
         view.addAction(self._search_action)
         view.addAction(A("view.browser", "Selection &Browser", self.toggle_browser, "Ctrl+Shift+B"))
+        view.addSeparator()
+        arrange = view.addMenu("&Arrange Panes")
+        arrange.aboutToShow.connect(lambda: dock_layout.fill_arrange_all_menu(arrange, self))
+        dock_layout.fill_arrange_all_menu(arrange, self)
+        view.addSeparator()
         view.addAction(A("view.jobs", "&Jobs", self.show_jobs))
         view.addAction(A("view.log", "&Log", self.show_log))
         status = QAction("Status &Bar", self, checkable=True)
@@ -930,24 +962,36 @@ class MainWindow(QMainWindow):
         return dock
 
     def panel_states(self) -> list[dict]:
-        """Saved form of the open panels that can be restored (see ``Tool.restore``)."""
-        states = []
-        for widget in self.panels:
+        """Saved form of the open panels that can be restored (see ``Tool.restore``).
+
+        The saved panels are named ``Panel0``… in this order, which the saved arrangement
+        refers to.
+        """
+        states, docks = [], []
+        for dock in self._panels:
+            widget = dock.widget()
             if hasattr(widget, "state") and getattr(widget, "tool_id", None):
                 states.append({"tool": widget.tool_id, "state": widget.state()})
+                docks.append(dock)
+        dock_layout.name_panels(self, docks)
         return states
 
     def _restore_panels(self, saved: list[dict]) -> None:
         tools = {tool.id: tool for tool in registered_tools()}
-        for entry in saved:
+        for i, entry in enumerate(saved):
             tool = tools.get(entry.get("tool")) if isinstance(entry, dict) else None
             if tool is None or tool.restore is None or tool.missing():
                 log.warning("cannot restore saved panel %r", entry)
                 continue
+            before = list(self._panels)
             try:
                 tool.restore(ToolContext(self), dict(entry.get("state") or {}))
             except (KeyError, ValueError, TypeError):  # a damaged or outdated entry
                 log.exception("failed to restore panel %r", entry)
+                continue
+            added = [d for d in self._panels if d not in before]
+            if added:
+                added[-1].setObjectName(f"Panel{i}")  # as named when saved
 
     def _forget_panel(self, dock: PanelDock) -> None:
         if dock in self._panels:
@@ -1336,8 +1380,10 @@ class MainWindow(QMainWindow):
         snapshot = workspace.table.snapshot()
         checkpoint = workspace.table.history.checkpoint()
         extras, lists_revision = workspace.extras(), workspace.lists.revision
-        if self.panel_states():
-            extras[PANELS_KEY] = self.panel_states()
+        panels = self.panel_states()  # names the panels the arrangement refers to
+        if panels:
+            extras[PANELS_KEY] = panels
+        extras[LAYOUT_KEY] = dock_layout.capture(self)
         if self.advanced_search.state():
             extras[ADVANCED_KEY] = self.advanced_search.state()
         if self.filters.state():
