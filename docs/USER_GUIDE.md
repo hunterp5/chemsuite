@@ -21,7 +21,7 @@ read Ctrl as ⌘.
 7. [Filters](#7-filters)
 8. [Background jobs](#8-background-jobs)
 9. [Plots](#9-plots)
-10. [Chemistry: descriptors, pKa and conformers](#10-chemistry-descriptors-pka-and-conformers)
+10. [Chemistry: descriptors, pKa, standardizing and conformers](#10-chemistry-descriptors-pka-standardizing-and-conformers)
 11. [Data tools](#11-data-tools)
 12. [Similarity](#12-similarity)
 13. [SAR](#13-sar)
@@ -687,7 +687,7 @@ are not already columns, then plots them.
 
 ---
 
-## 10. Chemistry: descriptors, pKa and conformers
+## 10. Chemistry: descriptors, pKa, standardizing and conformers
 
 ### Calculate Descriptors (Ctrl+Shift+D)
 
@@ -748,6 +748,36 @@ chemsuite and runs on the CPU, at roughly 2 ms per molecule.
     strong acids and bases comes out far lower than measured: glycine gives about −8.5.
   - Treat the values as screening estimates, not measurements.
 - **Cancelling** keeps the rows already predicted.
+
+### Standardize Structures
+
+Chemistry ▸ Standardize Structures prepares structures for docking, or for any work that needs
+one consistent form of each molecule. It runs the usual preparation steps in this order, the
+order of the ChEMBL structure pipeline and RDKit's MolStandardize:
+
+| Step | Default | What it does |
+|---|---|---|
+| Clean up | On | Removes explicit hydrogens, disconnects metals bonded to N, O or F, draws functional groups one way (for example a charge-separated pyridone becomes the pyridone), and puts charges on the strongest acid. |
+| Strip salts and solvents | On | Keeps the largest organic fragment: a hydrochloride gives the free base, a hydrate the parent. |
+| Neutralise charges | On | Adds or removes hydrogens so that charges cancel. Quaternary nitrogens stay charged. |
+| Remove isotope labels | Off | Deuterium becomes hydrogen, ¹³C becomes carbon. |
+| Canonical tautomer | Off | One consistent tautomer per molecule (RDKit), so duplicates collapse. It is not necessarily the most stable or the bioactive form. If the canonical tautomer would lose any drawn stereo, the drawn tautomer is kept. |
+| Protonate at pH | Off | Each ionisable site in its majority form at the pH (default 7.4), from MolGpKa's predicted pKa values (see [Predict pKa](#predict-pka) and its limits). Carbon acids are ignored, so no carbanions are made. Kept counter-ions stay as they are. |
+
+- **Stereo** is never invented or lost. Each step keeps drawn stereocentres and double-bond
+  geometry. Over the 3,024 FDA-approved structures, with every step on, no drawn stereo was
+  lost. Undefined stereocentres and double bonds are listed in the notes, so you can
+  enumerate or fix them before docking.
+- **Output.**
+  - **Write to.** **New column** (the default) adds "*column* (Standardized)".
+    **Replace the structures** overwrites the source column. A row that cannot be
+    standardized keeps its structure.
+  - **Standardization Notes** says what changed in each row, for example "salts stripped;
+    neutralised; protonated at pH 7.4; net charge +1; 1 undefined stereocentre".
+  - Undo restores the table in one step.
+- **Next steps.** For docking, follow with [Generate Conformers](#generate-conformers) for 3D
+  coordinates. Standardized structures carry no explicit hydrogens; docking programs add them.
+- **Cancelling** keeps the rows already standardized.
 
 ### Generate Conformers
 
