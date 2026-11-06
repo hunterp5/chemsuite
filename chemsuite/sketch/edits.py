@@ -435,3 +435,58 @@ def flip(change: Change, atoms: Iterable[int], horizontal: bool) -> None:
             change.move_atom(aid, 2 * cx - atom.x, atom.y)
         else:
             change.move_atom(aid, atom.x, 2 * cy - atom.y)
+
+
+def show_hydrogens(change: Change, atoms: Iterable[int], counts: dict[int, int]) -> int:
+    """Draw each atom's implicit hydrogens (*counts*, from ``valence.check``) as H atoms, in
+    the free directions new bonds would take. Returns how many were added."""
+    added = 0
+    for aid in sorted(atoms):
+        atom = change.sketch.atoms.get(aid)
+        if atom is None or atom.is_query:
+            continue
+        for _ in range(counts.get(aid, 0)):
+            end, _existing = geometry.new_bond_target(change.sketch, aid, Order.SINGLE)
+            h = change.add_atom(Atom(*end, symbol="H"))
+            change.add_bond(aid, h, Order.SINGLE)
+            added += 1
+    return added
+
+
+def drawn_hydrogens(sketch: Sketch, aid: int) -> tuple[list[int], list[int]]:
+    """Plain H atoms drawn on *aid*: ``(removable, kept)``. A hydrogen on a wedge (it defines
+    a stereocentre), with an isotope, charge or other bonds is kept."""
+    removable, kept = [], []
+    for _bid, bond in sketch.bonds_of(aid):
+        other = bond.other(aid)
+        h = sketch.atoms[other]
+        if h.symbol != "H" or h.is_query:
+            continue
+        plain = (
+            not h.isotope
+            and not h.charge
+            and not h.radical
+            and sketch.degree(other) == 1
+            and bond.order is Order.SINGLE
+        )
+        if not plain:
+            continue
+        (kept if bond.stereo is not Stereo.NONE else removable).append(other)
+    return removable, kept
+
+
+def hide_hydrogens(change: Change, atoms: Iterable[int]) -> tuple[int, int]:
+    """Remove the plain drawn hydrogens on *atoms*; they become implicit again.
+
+    Returns ``(removed, kept)``: hydrogens on wedges stay, as they define stereocentres.
+    """
+    removed: list[int] = []
+    kept = 0
+    for aid in sorted(atoms):
+        if aid not in change.sketch.atoms:
+            continue
+        gone, stay = drawn_hydrogens(change.sketch, aid)
+        removed.extend(gone)
+        kept += len(stay)
+    erase(change, atoms=removed)
+    return len(removed), kept

@@ -46,7 +46,7 @@ from rdkit import Chem
 from rdkit.Chem.Draw import rdMolDraw2D
 
 from chemsuite.app.theme import is_dark
-from chemsuite.sketch import convert, edits, render, valence
+from chemsuite.sketch import convert, edits, render, stereo, valence
 from chemsuite.sketch.edits import Change, History
 from chemsuite.sketch.model import (
     ATOM_LIST,
@@ -124,8 +124,15 @@ def _element_rgb(symbol: str, dark: bool) -> tuple[float, float, float]:
     return r, g, b
 
 
+#: CIP labelling is skipped on drawings larger than this (it can take seconds on huge ones)
+STEREO_ATOM_LIMIT = 250
+
+
 class SketchCanvas(QWidget):
     """Draws a ``History``'s sketch and edits it through the current tool."""
+
+    #: show R/S and E/Z labels (shared by every sketcher in the session)
+    show_stereo = True
 
     #: The drawing changed (an edit, undo or redo).
     changed = Signal()
@@ -151,6 +158,9 @@ class SketchCanvas(QWidget):
         self.tool = SelectTool()
         self.report = valence.Report()
         self.scene = render.Scene()
+        self.stereo = stereo.StereoLabels()
+        #: R/S and E/Z labels the user hid one by one: ("atom" | "bond", id)
+        self.hidden_stereo: set[tuple[str, int]] = set()
         self._fitted = False
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -170,6 +180,10 @@ class SketchCanvas(QWidget):
         self.setCursor(tool.cursor)
         self.tool_changed.emit(tool.name)
         self.update()
+
+    def notify(self, text: str) -> None:
+        """A short message for the sketcher window (why an edit was not made)."""
+        self.message.emit(text)
 
     def edit(self, name: str, apply) -> None:
         """Make one undoable edit: ``apply(change)`` records it."""
@@ -210,6 +224,9 @@ class SketchCanvas(QWidget):
     def _recompute(self) -> None:
         self.report = valence.check(self.sketch)
         self.scene = render.build(self.sketch, self.report)
+        big = len(self.sketch.atoms) > STEREO_ATOM_LIMIT
+        show = SketchCanvas.show_stereo and not big and self.report.valid
+        self.stereo = stereo.labels(self.sketch) if show else stereo.StereoLabels()
         if self.hover.kind == "atom" and self.hover.id not in self.sketch.atoms:
             self.hover = NOTHING
         if self.hover.kind == "bond" and self.hover.id not in self.sketch.bonds:
@@ -411,6 +428,7 @@ class SketchCanvas(QWidget):
         for label in self.scene.labels.values():
             colour = problem if label.problem else self._atom_colour(label.symbol, dark)
             self._paint_label(p, label, font, small, colour, pal.base().color())
+        self._paint_stereo(p, font, ink, pal.base().color())
         for aid in self.scene.problems:
             if aid in self.sketch.atoms:
                 centre = self.to_screen(self.sketch.atoms[aid].pos)
@@ -419,6 +437,55 @@ class SketchCanvas(QWidget):
                 p.drawEllipse(centre, 0.36 * s, 0.36 * s)
         self.tool.paint(self, p)
         p.end()
+
+    def stereo_label_positions(self) -> list[tuple[str, QPointF]]:
+        """(text, screen position) of each R/S and E/Z label shown."""
+        sketch, out = self.sketch, []
+        for aid, code in sorted(self.stereo.atoms.items()):
+            if ("atom", aid) in self.hidden_stereo or aid not in sketch.atoms:
+                continue
+            here = sketch.atoms[aid].pos
+            spots = [sketch.atoms[n].pos for n in sketch.neighbours(aid)]
+            out.append((f"({code})", self.to_screen(_away(here, spots, 0.62))))
+        for bid, code in sorted(self.stereo.bonds.items()):
+            if ("bond", bid) in self.hidden_stereo or bid not in sketch.bonds:
+                continue
+            bond = sketch.bonds[bid]
+            a, b = sketch.atoms[bond.begin].pos, sketch.atoms[bond.end].pos
+            mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            length = math.hypot(dx, dy) or 1.0
+            normal = (-dy / length, dx / length)
+            others = [
+                sketch.atoms[n].pos
+                for end in (bond.begin, bond.end)
+                for n in sketch.neighbours(end)
+                if n not in (bond.begin, bond.end)
+            ]
+            side = sum((o[0] - mid[0]) * normal[0] + (o[1] - mid[1]) * normal[1] for o in others)
+            sign = -1.0 if side > 0 else 1.0  # the side with fewer substituents
+            spot = (mid[0] + sign * normal[0] * 0.42, mid[1] + sign * normal[1] * 0.42)
+            out.append((f"({code})", self.to_screen(spot)))
+        return out
+
+    def _paint_stereo(self, p: QPainter, font: QFont, ink: QColor, base: QColor) -> None:
+        labels = self.stereo_label_positions()
+        if not labels:
+            return
+        italic = QFont(font)
+        italic.setItalic(True)
+        italic.setPixelSize(max(5, round(font.pixelSize() * 0.72)))
+        metrics = QFontMetricsF(italic)
+        colour = QColor(ink)
+        colour.setAlphaF(0.75)
+        p.setFont(italic)
+        for text, at in labels:
+            width = metrics.horizontalAdvance(text)
+            box = QRectF(at.x() - width / 2 - 1, at.y() - metrics.ascent() / 2 - 2,
+                         width + 2, metrics.height())  # fmt: skip
+            p.fillRect(box, base)
+            p.setPen(colour)
+            p.drawText(QPointF(at.x() - width / 2, at.y() + metrics.capHeight() / 2), text)
 
     def _paint_highlights(self, p: QPainter, highlight: QColor) -> None:
         s = self.scale
@@ -705,17 +772,25 @@ class SketchCanvas(QWidget):
             editor.deleteLater()
 
     def contextMenuEvent(self, event) -> None:
+        hit = self.hit_at(self.to_model(QPointF(event.pos())))
+        self.context_menu(hit).exec(event.globalPos())
+
+    def context_menu(self, hit: Hit):
+        """The right-click menu for what is under the pointer (an atom, a bond or nothing)."""
         from PySide6.QtWidgets import QMenu
 
         from chemsuite.sketch import abbrev
 
-        hit = self.hit_at(self.to_model(QPointF(event.pos())))
         found = self.sketch.group_of(hit.id) if hit.kind == "atom" else None
         menu = QMenu(self)
         if hit.kind == "atom":
             menu.addAction("Edit Label…", lambda: self.edit_label(hit.id))
             if found is None:
                 self._query_menus(menu, hit.id)
+                self._hydrogen_actions(menu, hit.id)
+                self._centre_menu(menu, hit.id)
+        if hit.kind == "bond":
+            self._double_bond_menu(menu, hit.id)
         if found is not None:
             gid, group = found
             if group.expanded:
@@ -746,8 +821,121 @@ class SketchCanvas(QWidget):
             has_atoms
         )
         menu.addSeparator()
+        labels = menu.addAction("Show Stereo Labels (R/S, E/Z)", self.toggle_stereo_labels)
+        labels.setCheckable(True)
+        labels.setChecked(SketchCanvas.show_stereo)
+        menu.addAction("Show All Hydrogens", lambda: self.show_hydrogens(None)).setEnabled(
+            any(self.report.hydrogens.values())
+        )
+        menu.addAction("Hide All Hydrogens", lambda: self.hide_hydrogens(None)).setEnabled(
+            any(a.symbol == "H" for a in self.sketch.atoms.values())
+        )
+        menu.addSeparator()
         menu.addAction("Clear", lambda: self.set_sketch(Sketch(), "Clear")).setEnabled(has_atoms)
-        menu.exec(event.globalPos())
+        return menu
+
+    # -- stereo and hydrogens ------------------------------------------------------------------
+    def toggle_stereo_labels(self) -> None:
+        SketchCanvas.show_stereo = not SketchCanvas.show_stereo
+        self.hidden_stereo.clear()
+        self._recompute()
+
+    def _targets(self, atom: int) -> list[int]:
+        """The selected atoms when *atom* is one of them, else just *atom*."""
+        return sorted(self.selected_atoms) if atom in self.selected_atoms else [atom]
+
+    def show_hydrogens(self, atom: int | None) -> None:
+        atoms = list(self.sketch.atoms) if atom is None else self._targets(atom)
+        counts = dict(self.report.hydrogens)
+        self.edit("Show Hydrogens", lambda ch: stereo.show_hydrogens(ch, atoms, counts))
+
+    def hide_hydrogens(self, atom: int | None) -> None:
+        atoms = list(self.sketch.atoms) if atom is None else self._targets(atom)
+        kept: list[int] = []
+
+        def apply(ch) -> None:
+            kept.append(stereo.hide_hydrogens(ch, atoms)[1])
+
+        self.edit("Hide Hydrogens", apply)
+        if kept and kept[0]:
+            self.notify(
+                f"{kept[0]} hydrogen{'s' * (kept[0] != 1)} on wedges kept: they define "
+                "stereocentres."
+            )
+
+    def _hydrogen_actions(self, menu, atom: int) -> None:
+        atoms = self._targets(atom)
+        implicit = sum(self.report.hydrogens.get(a, 0) for a in atoms)
+        drawn = sum(len(edits.drawn_hydrogens(self.sketch, a)[0]) for a in atoms)
+        show = menu.addAction("Show Explicit Hydrogens", lambda: self.show_hydrogens(atom))
+        show.setEnabled(implicit > 0)
+        hide = menu.addAction("Hide Explicit Hydrogens", lambda: self.hide_hydrogens(atom))
+        hide.setEnabled(drawn > 0)
+
+    def _set_stereo(self, name: str, apply) -> None:
+        problem: list[str] = []
+        change = self.history.change(name)
+        problem.append(apply(change))
+        if problem[0]:
+            self.history.discard(change)
+            self._recompute()
+            self.notify(problem[0])
+            return
+        if self.history.commit(change) is None:
+            self._recompute()
+
+    def _centre_menu(self, menu, atom: int) -> None:
+        code = self.stereo.atoms.get(atom)
+        if code is None and atom not in self.stereo.undefined_atoms:
+            return
+        sub = menu.addMenu("Stereocentre (R/S)")
+        for want in ("R", "S"):
+            action = sub.addAction(
+                want,
+                lambda w=want: self._set_stereo(
+                    f"Make {w}", lambda ch: stereo.set_centre(ch, atom, w)
+                ),
+            )
+            action.setCheckable(True)
+            action.setChecked(code is not None and code.upper() == want)
+        sub.addSeparator()
+        shown = sub.addAction("Show Label", lambda: self._toggle_label("atom", atom))
+        shown.setCheckable(True)
+        shown.setChecked(code is not None and ("atom", atom) not in self.hidden_stereo)
+        shown.setEnabled(code is not None)
+
+    def _double_bond_menu(self, menu, bond: int) -> None:
+        code = self.stereo.bonds.get(bond)
+        if code is None and bond not in self.stereo.undefined_bonds:
+            return
+        sub = menu.addMenu("Double Bond (E/Z)")
+        for want in ("E", "Z"):
+            action = sub.addAction(
+                want,
+                lambda w=want: self._set_stereo(
+                    f"Make {w}", lambda ch: stereo.set_double_bond(ch, bond, w)
+                ),
+            )
+            action.setCheckable(True)
+            action.setChecked(code == want)
+        sub.addSeparator()
+        shown = sub.addAction("Show Label", lambda: self._toggle_label("bond", bond))
+        shown.setCheckable(True)
+        shown.setChecked(code is not None and ("bond", bond) not in self.hidden_stereo)
+        shown.setEnabled(code is not None)
+        if not menu.isEmpty():
+            menu.addSeparator()
+
+    def _toggle_label(self, kind: str, id_: int) -> None:
+        key = (kind, id_)
+        if key in self.hidden_stereo:
+            self.hidden_stereo.discard(key)
+            if not SketchCanvas.show_stereo:
+                SketchCanvas.show_stereo = True
+                self._recompute()
+        else:
+            self.hidden_stereo.add(key)
+        self.update()
 
     def _query_menus(self, menu, atom: int) -> None:
         """R-Group and Query Atom submenus for an atom."""
@@ -804,3 +992,21 @@ class SketchCanvas(QWidget):
         else:
             return False
         return True
+
+
+def _away(here, spots, distance: float):
+    """A point *distance* from *here* in the middle of the widest gap between its bonds to
+    *spots* (below-right when it has none)."""
+    if not spots:
+        return (here[0] + distance * 0.7, here[1] - distance * 0.7)
+    angles = sorted(math.atan2(y - here[1], x - here[0]) for x, y in spots)
+    if len(angles) == 1:
+        best = angles[0] + math.pi
+    else:
+        gaps = [
+            ((angles[(k + 1) % len(angles)] - a) % (2 * math.pi) or 2 * math.pi, a)
+            for k, a in enumerate(angles)
+        ]
+        width, start = max(gaps)
+        best = start + width / 2
+    return (here[0] + math.cos(best) * distance, here[1] + math.sin(best) * distance)

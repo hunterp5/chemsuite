@@ -340,6 +340,27 @@ Molfiles write them the standard CTfile way (`R#` with `M  RGP`, `A`/`Q`/`X`/`M`
 SMARTS (SMILES has no wildcards) and keeps its queries, so it can serve as a substructure
 query or R-group core.
 
+**Stereo labels.** Stereocentres show their CIP label, *(R)* or *(S)* (*(r)* / *(s)* for
+pseudo-asymmetric centres), and double bonds show *(E)* or *(Z)*. The labels come from
+RDKit's CIP labeller reading the drawing as any molfile reader would: wedges set
+stereocentres and the drawn geometry sets double bonds. Right-click the background and untick
+**Show Stereo Labels** to hide them all.
+
+- Right-click a stereocentre for **Stereocentre (R/S)**: choose **R** or **S** to set it, or
+  untick **Show Label** to hide just that label. Switching swaps the wedges and hashes that
+  start at the atom; an undefined centre gets a new wedge, placed on a hydrogen or chain end
+  where possible.
+- Right-click a double bond for **Double Bond (E/Z)**: **E** or **Z** mirrors the smaller side
+  of the bond, and wedges on that side swap so its stereocentres keep their labels. Double
+  bonds in rings cannot be switched this way.
+
+**Explicit hydrogens.** Right-click an atom (or one of several selected atoms) for **Show
+Explicit Hydrogens**, which draws its hydrogens as H atoms, or **Hide Explicit Hydrogens**,
+which makes plain drawn hydrogens implicit again. The background menu has **Show All
+Hydrogens** and **Hide All Hydrogens**. Stereocentres keep their R/S either way, and a
+hydrogen on a wedge stays, since it defines its stereocentre. The molecule itself does not
+change.
+
 **Valence.** An atom with an impossible valence is shown in red inside a dotted ring; point
 at it to see why. Hydrogens are worked out by the same rules as the table, so a drawing the
 sketcher accepts is always a valid structure there. A copied or saved molfile marks any atom

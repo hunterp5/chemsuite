@@ -480,3 +480,60 @@ def test_label_editor_accepts_atom_lists(dialog):
     canvas.edit_label(aid, "![F,Cl]")
     canvas._apply_label(aid, "![F,Cl]")
     assert canvas.sketch.atoms[aid].label == "![F,Cl]"
+
+
+def _menu(canvas, kind, id_):
+    from chemsuite.app.sketcher.canvas import Hit
+
+    return canvas.context_menu(Hit(kind, id_))
+
+
+def _action(menu, *path):
+    for title in path[:-1]:
+        menu = next(a.menu() for a in menu.actions() if a.text() == title)
+    return next(a for a in menu.actions() if a.text() == path[-1])
+
+
+def test_stereo_labels_and_menus(qapp):
+    from chemsuite.sketch import stereo
+
+    dialog = SketcherDialog("C/C=C/C[C@H](N)O")  # (R), (E)
+    dialog.resize(800, 600)
+    dialog.show()
+    qapp.processEvents()
+    canvas = dialog.canvas
+    centre, code = next(iter(canvas.stereo.atoms.items()))
+    bond = next(iter(canvas.stereo.bonds))
+    texts = sorted(t for t, _ in canvas.stereo_label_positions())
+    assert texts == sorted([f"({code})", "(E)"])
+    flip = stereo.opposite(code)
+    _action(_menu(canvas, "atom", centre), "Stereocentre (R/S)", flip).trigger()
+    assert canvas.stereo.atoms[centre] == flip
+    assert canvas.history.undo_name == f"Make {flip}"
+    _action(_menu(canvas, "bond", bond), "Double Bond (E/Z)", "Z").trigger()
+    assert canvas.stereo.bonds[bond] == "Z" and canvas.stereo.atoms[centre] == flip
+    _action(_menu(canvas, "bond", bond), "Double Bond (E/Z)", "Show Label").trigger()
+    assert "(Z)" not in [t for t, _ in canvas.stereo_label_positions()]
+    _action(_menu(canvas, "", 0), "Show Stereo Labels (R/S, E/Z)").trigger()
+    assert canvas.stereo_label_positions() == []
+    _action(_menu(canvas, "", 0), "Show Stereo Labels (R/S, E/Z)").trigger()
+    assert len(canvas.stereo_label_positions()) == 2
+    dialog.close()
+
+
+def test_explicit_hydrogens_from_the_atom_menu(qapp):
+    dialog = SketcherDialog("CC(N)O")
+    dialog.show()
+    qapp.processEvents()
+    canvas = dialog.canvas
+    oxygen = _atom(canvas, "O")
+    _action(_menu(canvas, "atom", oxygen), "Show Explicit Hydrogens").trigger()
+    hydrogens = [a for a in canvas.sketch.atoms.values() if a.symbol == "H"]
+    assert len(hydrogens) == 1 and to_smiles(canvas.sketch) == "CC(N)O"
+    hide = _action(_menu(canvas, "atom", oxygen), "Hide Explicit Hydrogens")
+    assert hide.isEnabled()
+    hide.trigger()
+    assert not any(a.symbol == "H" for a in canvas.sketch.atoms.values())
+    _action(_menu(canvas, "", 0), "Show All Hydrogens").trigger()
+    assert sum(a.symbol == "H" for a in canvas.sketch.atoms.values()) == 7  # CH3, CH, NH2, OH
+    dialog.close()

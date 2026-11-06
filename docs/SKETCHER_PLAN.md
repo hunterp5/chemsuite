@@ -195,11 +195,12 @@ Ketcher's NOTICE lists further licences for its dependencies. We take only `ketc
 |---|---|---|
 | P0 ✅ | Licence check, MolManager review, valence review, interaction spec: `docs/sketcher/`. | Done 2026-11-05. Still open: ChemDraw hotkeys checked against the team's ChemDraw (interaction-spec, open item 1). |
 | P1 ✅ | Model, edits with undo, valence, geometry, convert; canvas with select, bond, chain, atom, charge and eraser tools; molfile and SMILES copy and paste. | Done 2026-11-05: `chemsuite/sketch/` (plus `render.py` for drawing conventions and `ctfile.py` for export valences) and `chemsuite/app/sketcher/`, opened by **Draw…** in the structure editor. Moved to P2: lasso selection, the rotate handle, and double-click label editing (abbreviations need P2's `fg.sdf`). Ketcher's `0` (any bond) and generic-atom keys wait for P4. |
-| P2 | Rings and templates (`library.sdf`), fusing, abbreviations (`fg.sdf`), salts and solvents, clean-up. | Template, abbreviation and layout tests pass. |
-| P3 | Stereo: wedges, CIP display, enhanced stereo; layout comparison. | Stereo reference set passes. |
-| P4 | Queries: generic atoms, atom lists, bond queries, R-groups, attachment points; hook into structure search and filters. | Query tests pass; search uses drawn queries. |
+| P2 (most done) | Rings and templates (`library.sdf`), fusing, abbreviations (`fg.sdf`), salts and solvents, clean-up. | Done: rings, fusing, abbreviations (own table), label editing. **Left:** salts and solvents, Clean (Mod+Shift+K), lasso selection, rotate handle. |
+| P3 (part done) | Stereo: wedges, CIP display, enhanced stereo; layout comparison. | Done 2026-11-06: R/S and E/Z labels (`rdCIPLabeler`), per-label and global show/hide, set R/S and switch E/Z from the right-click menu, explicit hydrogens shown/hidden without losing stereo; reference set in `tests/sketch/test_stereo.py`. **Left:** wedge validity warnings (Ketcher `stereoValidator`), "either" double bonds, enhanced stereo (ABS/AND/OR), Hanson et al. hard cases, CoordGen vs RDKit layout comparison. |
+| P4 (part done) | Queries: generic atoms, atom lists, bond queries, R-groups, attachment points; hook into structure search and filters. | Done 2026-11-06: R-groups, A/Q/X/M (+H) and `*`, atom lists and NOT lists, CTfile round trips. **Left:** bond queries (any, single/double, aromatic, ring/chain), attachment points, drawn queries used by structure search and filters. |
 | P5 | Edit cells in place, add compounds, replace the text editor; user guide section. | Used for all structure entry in the app. |
-| Later | Reactions and arrows, text, CDXML export. | — |
+| Next | Reactions: arrow and plus, components by side, atom mapping, RXN and reaction SMILES (requested 2026-11-05). | — |
+| Later | Text, CDXML export. | — |
 
 ## 8. Open questions
 
