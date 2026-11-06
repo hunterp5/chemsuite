@@ -17,9 +17,10 @@
 
 """Sketcher review: Ketcher's valence model compared with RDKit's, case by case.
 
-``ketcher_hydrogens`` re-implements ``Atom.calcValence`` from Ketcher
-(github.com/epam/ketcher, packages/ketcher-core/src/domain/entities/atom.ts, commit
-2b031cc2, Apache-2.0) in its default valence mode, for review only. For every element in
+``ketcher_hydrogens`` is ``chemsuite.sketch.ctfile.default_hydrogens``, a port of
+``Atom.calcValence`` from Ketcher (github.com/epam/ketcher,
+packages/ketcher-core/src/domain/entities/atom.ts, commit 2b031cc2, Apache-2.0) in its
+default valence mode. For every element in
 ``ELEMENTS``, charge -2..+2, radical electrons 0..2 and bond-order sum 0..6 it asks both
 models for the implicit hydrogen count and prints the disagreements as Markdown:
 
@@ -35,114 +36,8 @@ from collections import defaultdict
 
 from rdkit import Chem, RDLogger
 
-#: Ketcher's group numbers (domain/constants/elements.ts at the same commit)
-ELEMENTS = {
-    "H": 1, "Li": 1, "Na": 1, "K": 1, "Cu": 1, "Ag": 1,
-    "Be": 2, "Mg": 2, "Ca": 2, "Zn": 2, "Hg": 2,
-    "B": 3, "Al": 3, "Ga": 3, "Tl": 3,
-    "C": 4, "Si": 4, "Ge": 4, "Sn": 4, "Pb": 4,
-    "N": 5, "P": 5, "As": 5, "Sb": 5, "Bi": 5,
-    "O": 6, "S": 6, "Se": 6, "Te": 6,
-    "F": 7, "Cl": 7, "Br": 7, "I": 7,
-    "Fe": 8, "Pt": 8,
-}  # fmt: skip
-INVALID = None  # the model reports a valence error
-
-
-def ketcher_hydrogens(label: str, charge: int, conn: int, rad: int) -> int | None:
-    """Implicit H count from Ketcher's default valence model, or INVALID."""
-    group = ELEMENTS[label]
-    a = abs(charge)
-
-    def result(value: int) -> int | None:
-        return INVALID if value < 0 else value
-
-    if group == 1:
-        if label in ("H", "Li", "Na", "K", "Rb", "Cs", "Fr"):
-            return result(1 - rad - conn - a)
-        return 0
-    if group == 2:
-        return 0 if conn + rad + a in (0, 2) else INVALID
-    if group == 3:
-        if label in ("B", "Al", "Ga", "In"):
-            return result(4 - rad - conn) if charge == -1 else result(3 - rad - conn - a)
-        if label == "Tl":
-            if charge == -1:
-                return result(2 - rad - conn) if rad + conn <= 2 else result(4 - rad - conn)
-            if charge == -2:
-                return result(3 - rad - conn) if rad + conn <= 3 else result(5 - rad - conn)
-            if rad + conn + a <= 1:
-                return result(1 - rad - conn - a)
-            return result(3 - rad - conn - a)
-        return 0
-    if group == 4:
-        if label in ("C", "Si", "Ge"):
-            return result(4 - rad - conn - a)
-        if label in ("Sn", "Pb"):
-            return result((2 if conn + rad + a <= 2 else 4) - rad - conn - a)
-        return 0
-    if group == 5:
-        if label in ("N", "P"):
-            if charge == 1:
-                return result(4 - rad - conn)
-            if charge == 2:
-                return result(3 - rad - conn)
-            return result((3 if rad + conn + a <= 3 else 5) - rad - conn - a)
-        if label in ("Bi", "Sb", "As"):
-            if charge == 1:
-                if label != "As" and rad + conn <= 2:
-                    return result(2 - rad - conn)
-                return result(4 - rad - conn)
-            if charge == 2:
-                return result(3 - rad - conn)
-            return result((3 if rad + conn <= 3 else 5) - rad - conn - a)
-        return 0
-    if group == 6:
-        if label == "O":
-            return result(3 - rad - conn) if charge >= 1 else result(2 - rad - conn - a)
-        if label in ("S", "Se", "Po"):
-            if charge == 1:
-                return result((3 if conn <= 3 else 5) - rad - conn)
-            total = conn + rad + a
-            return result((2 if total <= 2 else 4 if total <= 4 else 6) - rad - conn - a)
-        if label == "Te":
-            if charge in (-1, 0, 2) and conn <= 2:
-                return result(2 - rad - conn - a)
-            if charge in (0, 2):
-                if conn <= 4:
-                    return result(4 - rad - conn - a)
-                if charge == 0 and conn <= 6:
-                    return result(6 - rad - conn - a)
-                return INVALID
-            return 0
-        return 0
-    if group == 7:
-        if label == "F":
-            return result(1 - rad - conn - a)
-        if label in ("Cl", "Br", "I", "At"):
-            if charge == 1:
-                if conn <= 2:
-                    return result(2 - rad - conn)
-                if conn in (3, 5) or conn >= 7:
-                    return INVALID
-            elif charge == 0:
-                if conn <= 1:
-                    return result(1 - rad - conn)
-                if conn in (2, 4, 6):
-                    return 0 if rad == 1 else INVALID
-                if conn > 7:
-                    return INVALID
-        return 0
-    if group == 8:
-        if label == "Pt":
-            total = conn + rad + a
-            if total <= 2:
-                return result(2 - rad - conn - a)
-            if total <= 4:
-                return result(4 - rad - conn - a)
-            return INVALID
-        return 0 if conn + rad + a == 0 else INVALID
-    raise AssertionError(label)
+from chemsuite.sketch.ctfile import ELEMENTS, INVALID
+from chemsuite.sketch.ctfile import default_hydrogens as ketcher_hydrogens
 
 
 def rdkit_hydrogens(label: str, charge: int, conn: int, rad: int) -> int | None:

@@ -64,7 +64,7 @@ the rest of chemsuite uses.
 **How it shows while drawing.** A bad valence is shown, not refused: an atom that RDKit rejects
 is marked, and the reason appears on hover. Ketcher does the same with its `badConn` flag.
 
-**Exporting a molfile** writes hydrogen counts explicitly for any atom where the two models
+**Exporting a molfile** (done in P1) writes an explicit valence for any atom where the two models
 differ, so other programs (ChemDraw, Marvin) cannot read it differently.
 
 **Known gaps** (recorded in tests as expected failures):

@@ -56,7 +56,7 @@ test of its own.
 | Click empty canvas | New bond: a single bond at −30°, other types horizontal | `bond.ts` |
 | Click an atom | New bond in the largest gap. Zig-zag after one neighbour. 180° when a triple or cumulated double bond needs it. Reuses an atom that lands within 0.1 bond lengths. | `atomForNewBond` |
 | Click a bond | Set it to the tool's type. With the single-bond tool, a plain bond cycles single → double → triple. Clicking a wedge or hash with the same tool flips its direction. | `bondChangingAction` (`ketcher-core/…/actions/bond.ts`) |
-| Drag from an atom | Bond follows the pointer, snapping to fixed angle steps (Ctrl frees it; the step size comes from Ketcher's `fracAngle` in P1). Releasing on an atom bonds to it. | `bond.ts` |
+| Drag from an atom | Bond follows the pointer, snapping to 15° steps (Ketcher's `fracAngle`; Ctrl frees it). Releasing on an atom bonds to it. | `bond.ts` |
 
 **Chain tool**
 - Dragging draws a zig-zag chain. One bond is added per bond length dragged, and the bond count is shown while dragging. Ctrl frees the angle. (`chain.ts`)
@@ -90,6 +90,7 @@ test of its own.
 1. **ChemDraw keys.** Check the hover letters (`l`, `b`, and any letters ChemDraw uses for
    abbreviations such as Me, Et and Ph) against the Hotkeys Cheat Sheet of the team's ChemDraw
    version, and settle clashes in favour of ChemDraw.
-2. **Angle-snap step.** Read the step from Ketcher's `fracAngle` (P1).
+2. ~~**Angle-snap step.**~~ Settled in P1: 15° (`FRAC = Math.PI / 12` in
+   `ketcher-core/src/application/editor/shared/utils.ts`).
 3. **Which ChemDraw abbreviation hotkeys to add** (for example Shift+F for CF₃ in recent
    versions). This depends on item 1.

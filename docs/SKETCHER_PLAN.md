@@ -85,7 +85,10 @@ Ketcher's NOTICE lists further licences for its dependencies. We take only `ketc
   - A drawing is valid in the sketcher exactly when the table can use it.
 - **Shown while drawing:** an atom whose valence cannot be satisfied is marked, with the reason,
   not refused (as Ketcher's `badConn` does).
-- **Exporting a molfile** writes hydrogen counts for atoms where the two models differ.
+- **Exporting a molfile** writes an explicit valence on any atom where a CTfile reader would
+  count hydrogens differently from RDKit. RDKit's own writer misses some (it leaves PF₆⁻'s
+  phosphorus unmarked), so `sketch/ctfile.py` carries a port of Ketcher's `calcValence` to
+  find them; a test reads every exported reference species back through it.
 - **Tests:** the reference species become a test (`scripts/review/valence_review.py` holds
   them). ClF₃ and IF₇ are recorded as known gaps.
 
@@ -96,8 +99,8 @@ Ketcher's NOTICE lists further licences for its dependencies. We take only `ketc
   - draw chains as 120° zig-zags;
   - make a triple bond or cumulated double bond 180° to the previous bond;
   - reuse an existing atom when the new position lands within 0.1 bond lengths of it.
-- **Dragging a bond:** it snaps to fixed angle steps, and holding a modifier key frees it. The
-  exact step is taken from Ketcher's `fracAngle` in phase 1. The chain tool follows Ketcher's
+- **Dragging a bond:** it snaps to 15° steps (Ketcher's `fracAngle`, `FRAC = π/12`), and
+  holding Ctrl frees it. The chain tool follows Ketcher's
   `chain.ts`.
 - **Verified by:** geometry unit tests (angles to 0.1°, no overlapping atoms) on Ketcher's test
   cases plus our own, and round trips through RDKit that keep the drawn coordinates.

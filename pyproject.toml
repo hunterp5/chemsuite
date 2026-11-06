@@ -41,6 +41,7 @@ include = ["chemsuite*"]
 
 [tool.setuptools.package-data]
 "chemsuite.ionisation" = ["data/*"]  # MolGpKa weights, site templates, licence
+"chemsuite.sketch" = ["data/*"]  # Ketcher licence and notice; templates from P2
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

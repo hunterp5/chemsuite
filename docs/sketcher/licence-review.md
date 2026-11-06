@@ -9,6 +9,7 @@ commit.
 | Material | Path | Licence evidence | Verdict |
 |---|---|---|---|
 | Chemistry and editing rules, re-implemented in Python (no code copied) | `packages/ketcher-core/src/**`, `packages/ketcher-react/src/script/**` | Each file carries EPAM's Apache-2.0 header ("Copyright 2021 EPAM Systems, Licensed under the Apache License, Version 2.0"). The repository's LICENSE is Apache-2.0. | **OK.** Cite the source file beside each rule and keep Ketcher's NOTICE in `chemsuite/sketch/data/`. |
+| CTfile default valence model, **ported line by line** (P1) | `ketcher-core/src/domain/entities/atom.ts` (`calcValence`), `domain/constants/elements.ts` | Same Apache-2.0 header | **OK.** `chemsuite/sketch/ctfile.py` keeps EPAM's copyright and licence notice, states that it was translated and cut down (Apache-2.0 §4(b)), and points to `chemsuite/sketch/data/LICENSE-Ketcher.txt` and `NOTICE-Ketcher.txt`. |
 | Functional groups, 62 records | `packages/ketcher-react/src/templates/fg.sdf` | In the Apache-2.0 repository with no separate licence. File history starts 2022-12-22, when the files moved into `ketcher-react` (#1983); last change 2023-07-06. | **OK to ship** with LICENSE and NOTICE, after the data checks below. |
 | Salts and solvents, 135 records | `…/templates/salts-and-solvents.sdf` | Same; last change 2025-03-31 | Same |
 | Structure templates, 276 records | `…/templates/library.sdf` | Same; last change 2026-10-14 | Same |
