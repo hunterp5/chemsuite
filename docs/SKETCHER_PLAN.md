@@ -69,25 +69,25 @@ chemsuite/app/sketcher/      Qt
 | RDKit (BSD-3) | Dependency | Sanitisation, 2D layout, CIP labels (`rdCIPLabeler`, the new labeller of Hanson et al. 2018), molfile, SMILES and CDXML input. |
 
 Ketcher's NOTICE lists further licences for its dependencies. We take only `ketcher-core` and
-`ketcher-react` sources and their data files, so only Apache-2.0 applies. **Phase 0** confirms
-this file by file, including where the three SDF files came from.
+`ketcher-react` sources and their data files, so only Apache-2.0 applies.
+- P0 confirmed this at commit `2b031cc2` (`docs/sketcher/licence-review.md`).
+- **Ketcher's data is checked like any other source.** Its "Mes" record is 3-methylbenzyl,
+  not mesityl, so every record is checked against an independent definition before it ships.
 
 ## 4. Chemistry rules (each needs a verification test before it ships)
 
 ### 4.1 Valence and implicit hydrogens
 
-- **Rule:** the BIOVIA CTfile valence model, as in Ketcher's `Atom.calcValence`:
-  - per-group calculations (`calculateGroupNValence`) that take account of charge and radicals;
-  - the 2017 rule that metals get no implicit hydrogens;
-  - query atoms and atoms with attachment points get no implicit hydrogens.
-- **Shown while drawing:** an atom whose valence cannot be satisfied is marked, not refused.
-- **Verified against:**
-  1. the CTfile valence table;
-  2. RDKit's implicit-H count on reading the same molfile, for every main-group element,
-     charges −2 to +2, radicals 0 to 2 and bond-order sums 0 to 6;
-  3. Ketcher's `atom` tests.
-
-  Every disagreement is listed in `docs/sketcher/valence-review.md` and settled with a citation.
+- **Rule (decided in P0, `docs/sketcher/valence-review.md`):** RDKit's valence model, run
+  through the same molfile and sanitisation path as the rest of chemsuite.
+  - On 61 real reference species RDKit got 59 right and Ketcher's CTfile model 57. Ketcher
+    rejects PF₆⁻ and the other hexafluoro counter-ions.
+  - A drawing is valid in the sketcher exactly when the table can use it.
+- **Shown while drawing:** an atom whose valence cannot be satisfied is marked, with the reason,
+  not refused (as Ketcher's `badConn` does).
+- **Exporting a molfile** writes hydrogen counts for atoms where the two models differ.
+- **Tests:** the reference species become a test (`scripts/review/valence_review.py` holds
+  them). ClF₃ and IF₇ are recorded as known gaps.
 
 ### 4.2 Geometry: where new atoms go
 
@@ -154,27 +154,18 @@ this file by file, including where the three SDF files came from.
 
 ## 5. Verifying anything taken from MolManager
 
-Each candidate module gets a review in `docs/sketcher/molmanager-review.md` covering:
+**Done in P0:** `docs/sketcher/molmanager-review.md`, reproducible with
+`scripts/review/molmanager_review.py`. **No MolManager sketcher code passes as is.**
 
-- what it claims;
-- the cited source for that claim;
-- tests against independent reference data;
-- a verdict: **reuse as is**, **rewrite**, or **drop**.
-
-Nothing is copied before its verdict. From a first read:
-
-| Module | Claim | First read | Likely verdict |
-|---|---|---|---|
-| `iupac_*` (5 files) | — | Excluded by decision | **Not used** |
-| `fused_templates.py` | Fused-ring templates | Imports `iupac_rings` | **Rewrite** from Ketcher rules and `library.sdf` |
-| `alkene_stereo.py` | E/Z from priorities | Uses canonical ranks, not CIP | **Drop**; use `rdCIPLabeler` |
-| `valence.py` | Allowed bond-order sums | Own table, no cited source | Verify against §4.1; probably superseded |
-| `contracted_labels.py` | Contracted labels (IUPAC GR-2.2/2.3) | Own list | Verify against the IUPAC 2008 text and `fg.sdf`; probably superseded |
-| `acs_style.py` | ACS 1996 drawing parameters | Duplicates RDKit's `SetACS1996Mode` | **Drop**; call RDKit |
-| `element_colors.py` | RDKit's palette | Copy of RDKit data | **Drop**; ask RDKit |
-| `rgroups.py`, `sketch_grid.py`, `sketch_reactions.py` | Small helpers | Simple | Verify, then reuse or rewrite |
-| `bonds.py`, `sketch_graph.py`, `constants.py`, `chem.py` | Data structures, helpers | Tied to the old widget | **Rewrite** in the new model |
-| `widget*.py`, `dialog.py` (about 9,300 lines) | The canvas and dialog | The dialog reaches into the main window 10 times | **Rewrite** |
+| Module | Result | Verdict |
+|---|---|---|
+| `iupac_*` (5 files), `fused_templates.py` (imports `iupac_rings`) | Excluded by decision | **Not used** |
+| `alkene_stereo.py` | 28/32 double bonds agree with CIP; it ranks by canonical order, not CIP | **Drop**; use `rdCIPLabeler` |
+| `valence.py` | 49/61 reference species; gives chloride 2 H, and negative H counts | **Drop**; use RDKit |
+| `contracted_labels.py` | 34 agree with Ketcher; *Naph* is 2-naphthyl despite its "1-NAPH" alias; duplicate *NPR* alias | **Drop**; its 70 extra names are candidates to add after checking |
+| `acs_style.py`, `element_colors.py` | Copies of RDKit settings | **Drop**; call RDKit |
+| `rgroups.py` | Atom-map R-groups do not survive a molfile round trip | **Drop**; use molfile R-group fields |
+| All other modules | Tied to the old widget, or small geometry helpers | **Rewrite** |
 
 ## 6. How it is tested
 
@@ -194,7 +185,7 @@ Nothing is copied before its verdict. From a first read:
 
 | Phase | Work | Done when |
 |---|---|---|
-| P0 | Licence check of the Ketcher files we use; MolManager review (§5); valence review (§4.1); interaction spec (tools, hotkeys, hover and merge behaviour) written from Ketcher and ChemDraw conventions. | Reviews written and agreed. |
+| P0 ✅ | Licence check, MolManager review, valence review, interaction spec: `docs/sketcher/`. | Done 2026-11-05. Still open: ChemDraw hotkeys checked against the team's ChemDraw (interaction-spec, open item 1). |
 | P1 | Model, edits with undo, valence, geometry, convert; canvas with select, bond, chain, atom, charge and eraser tools; molfile and SMILES copy and paste. | Can draw and edit drug-like molecules; round-trip and rule tests pass. |
 | P2 | Rings and templates (`library.sdf`), fusing, abbreviations (`fg.sdf`), salts and solvents, clean-up. | Template, abbreviation and layout tests pass. |
 | P3 | Stereo: wedges, CIP display, enhanced stereo; layout comparison. | Stereo reference set passes. |
