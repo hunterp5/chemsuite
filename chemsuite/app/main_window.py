@@ -29,6 +29,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import shiboken6
 from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
@@ -39,6 +40,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QInputDialog,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressDialog,
     QVBoxLayout,
@@ -61,6 +63,7 @@ from chemsuite.core.logbook import audit
 from chemsuite.core.mols import smiles_of
 from chemsuite.core.selection import Selection
 from chemsuite.core.settings import Settings, add_recent
+from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import STRUCTURE
@@ -84,6 +87,8 @@ from .selection_browser import SelectionBrowser
 from .settings_hub import settings_hub
 from .split_join import JoinColumnsDialog, SplitColumnDialog
 from .status_bar import StatusBar
+from .structure_copy import FORMATS as COPY_FORMATS
+from .structure_copy import copy_structures
 from .structure_editor import StructureEditor, copy_structure
 from .structure_search import StructureSearchDialog, StructureSearcher
 from .table_model import TableModel
@@ -334,6 +339,9 @@ class MainWindow(QMainWindow):
         self.browser_dock.setWidget(self._browser)
         self._view.headerMenuRequested.connect(self._show_header_menu)
         self._view.structureEditRequested.connect(self._on_structure_edit_requested)
+        self._view.structureDrawRequested.connect(self._on_structure_draw_requested)
+        self._view.cellMenuRequested.connect(self._show_cell_menu)
+        self._view.deleteColumnsRequested.connect(lambda names: self.columns.delete(names))
         self._unsubscribe = workspace.table.subscribe(self._on_table_event)
         workspace.selection.subscribe(lambda *_: self._update_status())
         self._update_title()
@@ -1043,6 +1051,85 @@ class MainWindow(QMainWindow):
     def _on_structure_edit_requested(self, index: QModelIndex, typed: str) -> None:
         model = self.workspace.model
         self.edit_structure(model.oid_at(index.row()), model.column_name(index.column()), typed)
+
+    def _on_structure_draw_requested(self, index: QModelIndex) -> None:
+        model = self.workspace.model
+        self.draw_structure(model.oid_at(index.row()), model.column_name(index.column()))
+
+    def _show_cell_menu(self, index: QModelIndex, pos: QPoint) -> None:
+        menu = self.cell_menu(index)
+        menu.exec(pos)
+        menu.deleteLater()
+
+    def cell_menu(self, index: QModelIndex) -> QMenu:
+        """The right-click menu of a cell: editing and Copy As for structures, then copy/paste."""
+        model = self.workspace.model
+        table = self.workspace.table
+        name = model.column_name(index.column())
+        oid = model.oid_at(index.row())
+        menu = QMenu(self)
+        if table.kind(name) == STRUCTURE:
+            menu.addAction("Edit in Sketcher…", lambda: self.draw_structure(oid, name))
+            menu.addAction("Edit as Text…", lambda: self.edit_structure(oid, name))
+            menu.addSeparator()
+        menu.addAction("Copy", self.view.copy_selection)
+        if table.kind(name) == STRUCTURE:
+            copy_as = menu.addMenu("Copy As")
+            for fmt, title in COPY_FORMATS:
+                copy_as.addAction(title, lambda f=fmt: self.copy_structures_as(index, f))
+        menu.addAction("Paste", self.paste)
+        menu.addSeparator()
+        menu.addAction("Clear Cells", self.view.clear_selected_cells)
+        return menu
+
+    def copy_structures_as(self, index: QModelIndex, fmt: str) -> str:
+        """Copy the structures selected in *index*'s column (or just that cell) as *fmt*."""
+        model = self.workspace.model
+        table = self.workspace.table
+        name = model.column_name(index.column())
+        oids = self.view.selected_cells_by_column().get(name)
+        if oids is None or model.oid_at(index.row()) not in oids:
+            oids = np.array([model.oid_at(index.row())])
+        else:  # keep the order rows are shown in
+            rows = model.rows_of_oids(oids)
+            oids = oids[np.argsort(rows)]
+        column = table.column(name)
+        mols = [column.mol(int(slot)) for slot in table.slots_of(oids)]
+        message = copy_structures(mols, fmt)
+        self.statusBar().showMessage(message, 4000)
+        return message
+
+    def draw_structure(self, oid: int, name: str):
+        """Open the sketcher on one structure cell; OK writes the drawing back (one undo step).
+
+        A cell whose text is not a valid structure opens in the text editor instead, so the
+        text can be fixed rather than lost.
+        """
+        from chemsuite.app.sketcher import SketcherDialog
+
+        table = self.workspace.table
+        column = table.column(name)
+        mol = column.mol(int(table.slots_of([oid])[0]))
+        if mol is None and table.cell(name, oid).strip():
+            return self.edit_structure(oid, name)
+        row = int(self.workspace.model.rows_of_oids([oid])[0])
+        title = f"Draw Structure — {name}" + (f", row {row + 1}" if row >= 0 else "")
+        dialog = SketcherDialog(table.cell(name, oid) if mol is not None else "", title, self)
+
+        def accepted() -> None:
+            if name not in table or oid not in table.oids:
+                return
+            if not dialog.canvas.history.can_undo:
+                return  # nothing was drawn or changed
+            parsed = read_structure(dialog.molblock)
+            if parsed.is_blank and not table.cell(name, oid):
+                return
+            table.set_cells(name, [oid], parsed.as_column(), label=f"Draw {name}")
+
+        dialog.accepted.connect(accepted)
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
 
     def edit_current_structure(self) -> StructureEditor | None:
         cell = self._structure_cell()

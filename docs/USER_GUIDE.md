@@ -145,7 +145,12 @@ in the background, using every processor core. You can scroll and work while tha
 
 ### Cells and editing
 
-- Double-click a cell to edit it, or start typing.
+- Double-click a cell to edit it, or start typing. Double-clicking a structure opens the
+  sketcher (see [Structures](#4-structures)).
+- Right-click a cell for Copy, Paste and Clear Cells. Structure cells also offer **Edit in
+  Sketcher…**, **Edit as Text…** and **Copy As ▸ Molfile / SMILES / InChI / InChIKey / Image**.
+  Copy As takes every selected structure in that column, in the order shown: text formats one
+  per line, molfiles as an SD file. A single molfile also pastes into ChemDraw as a drawing.
 - **Copy (Ctrl+C)** copies the selected cells as tab-separated text, which pastes cleanly into
   Excel.
 - **Paste (Ctrl+V)** pastes tab-separated text starting at the current cell, as one step you can
@@ -164,14 +169,31 @@ Each column has a type:
 | Number | Plain numbers | Sorts numerically and can be plotted. The number of decimals shown is kept per column. |
 | Structure | Molecules | Drawn in the table; used by the chemistry tools. |
 
+**Selecting columns.** Click a column header to select the whole column; Shift-click selects a
+range and Ctrl-click (⌘-click) adds or removes one. Selected columns are not a selection of
+compounds, so plots and the Selection Browser are left alone. **Delete** removes the selected
+columns in one step you can undo. Sorting is in the header's right-click menu.
+
 Right-click a column header for:
 
 - **Sort Ascending / Descending.** **Then Sort…** adds a second (third…) sort key.
   **Clear Sort** returns rows to their original order (also Data ▸ Table ▸ Clear Sort).
 - **Filter This Column.** Adds a filter card for the column (see [Filters](#7-filters)).
-- **Rename…**, **Insert Column Left/Right…**, **Delete Column**. Delete acts on all selected
-  columns when you right-click one of them.
+- **Rename…**, **Duplicate Column** (a copy, with its formatting, to the right),
+  **Insert Column Left/Right…**, **Delete Column**. Delete acts on all selected columns when you
+  right-click one of them.
 - **Split Column…** and **Join Columns…**, each with a live preview.
+- **Logarithmic (log₁₀)** (Number columns). Converts the values to log₁₀; choose it again to
+  convert them back (10ˣ). The header shows "(log₁₀)". It needs every value above zero. One
+  step you can undo.
+- **Precision…** (Number columns). The number of decimals shown for every value. The stored
+  values are not rounded, so sorting, filters and tools still use the full numbers. "As typed"
+  goes back to each cell's own format.
+- **Colour Column…** Colours cell backgrounds: **Low → high** or **Low → middle → high**
+  gradients for numbers, or **One colour per value** for any column (the same value always gets
+  the same colour). Range ends left empty follow the data. Choose **None** to remove the
+  colours.
+- Precision, Logarithmic and colours are saved in the document and can be undone.
 - **Column Type ▸ Text / Number / Structure.** Converting to Number warns you if some values
   are not numbers; those cells would be cleared.
 
@@ -196,8 +218,11 @@ From the Data ▸ Table menu:
 
 ## 4. Structures
 
-- **Edit ▸ Edit Structure… (Ctrl+E)** opens the structure editor for the current structure
-  cell.
+- **Double-click a structure** to draw it in the sketcher. OK writes the drawing back as one
+  step you can undo. A cell whose text is not a valid structure opens in the text editor
+  instead, so you can fix it.
+- **Edit ▸ Edit Structure… (Ctrl+E)**, or typing in a structure cell, opens the structure
+  editor for the current structure cell.
   - Type or paste SMILES, a molfile or InChI. The drawing updates as you type.
   - **Draw…** opens the sketcher on the same structure (see below). OK puts the drawing back
     as a molfile, which keeps your layout and wedges.

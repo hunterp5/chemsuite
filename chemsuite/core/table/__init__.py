@@ -20,6 +20,7 @@ from .columns import NUMBER, TEXT, Column, NumberColumn, TextColumn
 from .events import AboutToChange, Changed
 from .filters import CategoryFilter, Filter, OidFilter, RangeFilter, TextFilter
 from .history import History
+from .style import ColourRule, ColumnStyle
 from .table import SortKey, Table
 
 __all__ = [
@@ -28,7 +29,9 @@ __all__ = [
     "AboutToChange",
     "CategoryFilter",
     "Changed",
+    "ColourRule",
     "Column",
+    "ColumnStyle",
     "Filter",
     "History",
     "NumberColumn",

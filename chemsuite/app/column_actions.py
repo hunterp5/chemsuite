@@ -18,20 +18,23 @@
 
 Each operation asks for what it needs (a name, a confirmation) and then makes one undoable change
 to the table. The dialogs are plain ``QInputDialog``/``QMessageBox`` calls so tests can answer
-them by monkeypatching.
+them by monkeypatching (Colour Column… has its own dialog, :mod:`.column_colour`).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+import numpy as np
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox, QWidget
 
 from chemsuite.core.table import NUMBER, TEXT, Table
 from chemsuite.core.table.columns import STRUCTURE, to_number
+from chemsuite.core.table.style import MAX_PRECISION
 
 KIND_TITLES = {TEXT: "Text", NUMBER: "Number", STRUCTURE: "Structure"}
+AS_TYPED = "As typed"
 
 
 class ColumnActions:
@@ -98,6 +101,74 @@ class ColumnActions:
                 f"Deleted column {names[0]}" if len(names) == 1 else f"Deleted {len(names)} columns"
             )
 
+    def duplicate(self, name: str) -> str:
+        new = self._table.duplicate_column(name)
+        self._show(f"Duplicated {name} as {new}")
+        return new
+
+    # -- numbers ------------------------------------------------------------------------------
+    def log_problem(self, name: str) -> str:
+        """Why Logarithmic cannot be switched on or off for *name* ("" when it can)."""
+        table = self._table
+        if table.kind(name) != NUMBER:
+            return "Only Number columns can be made logarithmic."
+        column = table.column(name)
+        if column.style.log10:
+            return ""
+        values = column.values()
+        values = values[~np.isnan(values)]
+        if not len(values):
+            return "The column has no numbers."
+        if (values <= 0).any():
+            return "log₁₀ needs every value above zero."
+        return ""
+
+    def toggle_log(self, name: str) -> bool:
+        """Convert *name*'s values to log₁₀, or back if they already are. One undo step."""
+        problem = self.log_problem(name)
+        if problem:
+            QMessageBox.warning(self._parent, "Logarithmic", problem)
+            return False
+        on = not self._table.column(name).style.log10
+        count = self._table.set_log10(name, on)
+        self._show(
+            f"{name}: {count:,} value(s) converted to log₁₀"
+            if on
+            else f"{name}: {count:,} value(s) converted back from log₁₀"
+        )
+        return True
+
+    def set_precision(self, name: str) -> bool:
+        """Ask how many decimals to show for every number in *name* (display only)."""
+        column = self._table.column(name)
+        items = [AS_TYPED, *map(str, range(MAX_PRECISION + 1))]
+        current = AS_TYPED if column.style.precision is None else str(column.style.precision)
+        choice, ok = QInputDialog.getItem(
+            self._parent,
+            "Precision",
+            f"Decimal places shown in “{name}”:",
+            items,
+            items.index(current),
+            False,
+        )
+        if not ok:
+            return False
+        precision = None if choice == AS_TYPED else int(choice)
+        if precision == column.style.precision:
+            return False
+        self._table.set_style(
+            name, column.style.with_(precision=precision), label=f"Precision of {name}"
+        )
+        return True
+
+    def colour(self, name: str):
+        from .column_colour import ColumnColourDialog
+
+        dialog = ColumnColourDialog(self._parent, self._table, name)
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
+
     # -- type ---------------------------------------------------------------------------------
     def convert(self, name: str, kind: str) -> bool:
         table = self._table
@@ -133,6 +204,7 @@ class ColumnActions:
         """
         table = self._table
         menu = QMenu(self._parent)
+        menu.setToolTipsVisible(True)
         sortable = table.column(name).sortable
 
         def add(title: str, slot: Callable[[], object], enabled: bool = True) -> QAction:
@@ -154,6 +226,7 @@ class ColumnActions:
         menu.addSeparator()
 
         add("Rename…", lambda: self.rename(name))
+        add("Duplicate Column", lambda: self.duplicate(name))
         add("Insert Column Left…", lambda: self.insert(position))
         add("Insert Column Right…", lambda: self.insert(position + 1))
         targets = list(selected) if name in selected else [name]
@@ -171,6 +244,28 @@ class ColumnActions:
                 "Join Columns…" if len(targets) < 2 else f"Join {len(targets)} Columns…",
                 lambda: join(targets),
             )
+        menu.addSeparator()
+
+        number = table.kind(name) == NUMBER
+        log = add("Logarithmic (log₁₀)", lambda: self.toggle_log(name), not self.log_problem(name))
+        log.setCheckable(True)
+        log.setChecked(table.column(name).style.log10)
+        log.setToolTip(
+            self.log_problem(name)
+            or "Convert the values to log₁₀; choose again to convert them back. You can undo it."
+        )
+        precision = add("Precision…", lambda: self.set_precision(name), number)
+        precision.setToolTip(
+            "Decimal places shown for every number; the stored values are not rounded."
+            if number
+            else "Only Number columns have a precision."
+        )
+        colour = add("Colour Column…", lambda: self.colour(name), table.kind(name) != STRUCTURE)
+        colour.setToolTip(
+            "Colour the cells by value (gradient) or by category."
+            if table.kind(name) != STRUCTURE
+            else "Structure columns cannot be coloured."
+        )
         menu.addSeparator()
 
         kinds = menu.addMenu("Column Type")

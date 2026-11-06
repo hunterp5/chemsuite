@@ -25,6 +25,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from PySide6.QtCore import (
+    QEvent,
     QItemSelection,
     QItemSelectionModel,
     QModelIndex,
@@ -61,6 +62,17 @@ from .table_model import KIND_ROLE, STATUS_ROLE, STRUCTURE_ROLE, TableModel
 STRUCTURE_ROW_HEIGHT = 110
 STRUCTURE_COLUMN_WIDTH = 200
 MAX_AUTO_COLUMN_WIDTH = 320
+#: keys that leave a column selection made on the header in place
+_KEEP_COLUMN_MODE = frozenset(
+    {
+        Qt.Key.Key_Delete,
+        Qt.Key.Key_Backspace,
+        Qt.Key.Key_Shift,
+        Qt.Key.Key_Control,
+        Qt.Key.Key_Meta,
+        Qt.Key.Key_Alt,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -189,13 +201,21 @@ class TableView(QTableView):
     Column widths are remembered by column name, so a model reset (filtering, adding rows)
     keeps widths the user set; only new columns, or columns whose kind changed, are fitted.
     Dragging a header moves the column in the table (one undoable step) rather than only in
-    the view.
+    the view. Clicking a header selects the column (Shift and Ctrl/⌘ extend it); sorting is in
+    the header's menu. Whole columns selected from the header are not a compound selection, so
+    they leave plots and other views alone, and Delete removes them.
     """
 
     #: (column index, global position) for a right-click on the horizontal header
     headerMenuRequested = Signal(int, QPoint)
+    #: (cell, global position) for a right-click on a cell
+    cellMenuRequested = Signal(QModelIndex, QPoint)
     #: (cell, starting text or "" to keep the cell's) when a structure cell is to be edited
     structureEditRequested = Signal(QModelIndex, str)
+    #: a structure cell was double-clicked: open the sketcher on it
+    structureDrawRequested = Signal(QModelIndex)
+    #: column names to delete (Delete pressed with whole columns selected)
+    deleteColumnsRequested = Signal(list)
 
     def __init__(
         self,
@@ -209,6 +229,7 @@ class TableView(QTableView):
         self._selection = selection
         self._syncing = False
         self._anchor_oid: int | None = None
+        self._column_mode = False  # the selection was made on the column header
         self._widths: dict[str, int] = {}
         self._kinds: dict[str, str] = {}
         self._structure_row_height = STRUCTURE_ROW_HEIGHT
@@ -229,12 +250,17 @@ class TableView(QTableView):
         horizontal = self.horizontalHeader()
         horizontal.setResizeContentsPrecision(200)  # never measure all 200k rows
         horizontal.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
-        self.setSortingEnabled(True)
+        horizontal.setSortIndicatorShown(True)
+        horizontal.setSectionsClickable(True)  # a click selects the column; sorting is a menu
+        # Note a header press before Qt selects the column, so that selection is already known
+        # to be a column selection when it reaches the compound store.
+        horizontal.viewport().installEventFilter(self)
+        self.verticalHeader().viewport().installEventFilter(self)
         horizontal.setSectionsMovable(True)
         horizontal.sectionMoved.connect(self._on_section_moved)
         horizontal.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         horizontal.customContextMenuRequested.connect(self._on_header_menu)
-        # A click on an unsortable column moves the indicator but sorts nothing: put it back.
+        # A header click flips the indicator but sorts nothing: put it back.
         horizontal.sortIndicatorChanged.connect(
             lambda *_: QTimer.singleShot(0, self._sync_sort_indicator)
         )
@@ -348,6 +374,22 @@ class TableView(QTableView):
         if column >= 0:
             self.headerMenuRequested.emit(column, self.horizontalHeader().mapToGlobal(pos))
 
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.MouseButtonPress:
+            self._column_mode = watched is self.horizontalHeader().viewport()
+        return super().eventFilter(watched, event)
+
+    def whole_columns(self) -> list[str]:
+        """The selected column names when whole columns were picked on the header, else []."""
+        model = self.table_model
+        rows = model.rowCount()
+        ranges = self.selectionModel().selection()
+        if not self._column_mode or not rows or not len(ranges):
+            return []
+        if any(r.top() != 0 or r.bottom() != rows - 1 for r in ranges):
+            return []
+        return [model.column_name(c) for c in self.selected_columns()]
+
     def selected_column_names(self) -> list[str]:
         """Names of the columns that are selected top to bottom."""
         model = self.table_model
@@ -372,10 +414,17 @@ class TableView(QTableView):
         return sorted(columns)
 
     def selected_oids(self) -> np.ndarray:
+        """Oids of the selected rows; none while whole columns are selected on the header."""
+        if self.whole_columns():
+            return np.empty(0, dtype=np.int64)
         return self.table_model.visible_oids[self.selected_rows()]
 
     def _on_view_selection(self, *_args) -> None:
-        if not self._syncing:
+        if self._syncing:
+            return
+        if self.whole_columns():
+            self._selection.set([], self._origin)  # columns are not compounds
+        else:
             self._selection.set(self.selected_oids().tolist(), self._origin)
 
     def _on_store_selection(self, oids: frozenset[int], origin: str) -> None:
@@ -399,6 +448,7 @@ class TableView(QTableView):
             for start, end in zip(starts.tolist(), ends.tolist(), strict=True):
                 selection.select(model.index(start, 0), model.index(end, last))
         self._syncing = True
+        self._column_mode = False
         try:
             self.selectionModel().select(
                 selection, QItemSelectionModel.SelectionFlag.ClearAndSelect
@@ -407,6 +457,8 @@ class TableView(QTableView):
             self._syncing = False
 
     def _restore_selection(self) -> None:
+        if not self._selection.oids and self.whole_columns():
+            return  # a column selection survives re-sorting
         self._apply_rows(self._rows_for(self._selection.oids))
 
     def _remember_anchor(self) -> None:
@@ -425,17 +477,34 @@ class TableView(QTableView):
                     QAbstractItemView.ScrollHint.PositionAtTop,
                 )
 
+    def mousePressEvent(self, event) -> None:
+        self._column_mode = False  # a cell click starts an ordinary selection
+        super().mousePressEvent(event)
+
+    def contextMenuEvent(self, event) -> None:
+        index = self.indexAt(event.pos())
+        if index.isValid():
+            self.cellMenuRequested.emit(index, event.globalPos())
+
     # -- editing ------------------------------------------------------------------------------
     def edit(self, index, trigger=None, event=None):  # type: ignore[override]
-        """Structure cells open the structure editor instead of an inline text editor."""
+        """Structure cells open the sketcher (double-click) or the structure editor (typing,
+        F2) instead of an inline text editor."""
         if trigger is None:
             return super().edit(index)
         if (
             index.isValid()
             and index.data(KIND_ROLE) == STRUCTURE
+            and trigger == QAbstractItemView.EditTrigger.DoubleClicked
+            and self.state() != QAbstractItemView.State.EditingState
+        ):
+            self.structureDrawRequested.emit(index)
+            return False
+        if (
+            index.isValid()
+            and index.data(KIND_ROLE) == STRUCTURE
             and trigger
             in (
-                QAbstractItemView.EditTrigger.DoubleClicked,
                 QAbstractItemView.EditTrigger.EditKeyPressed,
                 QAbstractItemView.EditTrigger.AnyKeyPressed,
             )
@@ -559,10 +628,16 @@ class TableView(QTableView):
             )
 
     def keyPressEvent(self, event) -> None:
+        if event.key() not in _KEEP_COLUMN_MODE:
+            self._column_mode = False  # Ctrl+A, arrows …: an ordinary cell selection
         if self.state() != QAbstractItemView.State.EditingState and event.key() in (
             Qt.Key.Key_Delete,
             Qt.Key.Key_Backspace,
         ):
-            self.clear_selected_cells()
+            columns = self.whole_columns()
+            if columns:
+                self.deleteColumnsRequested.emit(columns)
+            else:
+                self.clear_selected_cells()
             return
         super().keyPressEvent(event)

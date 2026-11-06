@@ -46,6 +46,7 @@ from typing import ClassVar
 import numpy as np
 
 from .numbers import GENERAL, classify_number, decimals_for_value, format_number
+from .style import DEFAULT_STYLE, ColumnStyle, format_fixed
 
 NUMBER = "number"
 TEXT = "text"
@@ -64,6 +65,16 @@ class Column(ABC):
     kind: ClassVar[str]
     #: Whether :meth:`sort_key` is meaningful (the table refuses to sort otherwise).
     sortable: ClassVar[bool] = True
+    #: How the column is shown (precision, log10 marker, colours). Change it only through
+    #: ``Table.set_style`` so the change is undoable; copies made with :meth:`styled_take`
+    #: keep it.
+    style: ColumnStyle = DEFAULT_STYLE
+
+    def styled_take(self, slots: np.ndarray) -> Column:
+        """:meth:`take` that keeps the column's style (snapshots, duplicates)."""
+        copy = self.take(slots)
+        copy.style = self.style
+        return copy
 
     @classmethod
     @abstractmethod
@@ -155,7 +166,14 @@ class NumberColumn(Column):
     def display(self, slot: int) -> str:
         if not self._valid[slot]:
             return ""
+        precision = self.style.precision
+        if precision is not None:
+            return format_fixed(float(self._values[slot]), precision)
         return format_number(float(self._values[slot]), int(self._decimals[slot]))
+
+    def value(self, slot: int) -> float | None:
+        """The cell's number (None when blank)."""
+        return float(self._values[slot]) if self._valid[slot] else None
 
     def blank_mask(self) -> np.ndarray:
         return ~self._valid
@@ -175,10 +193,19 @@ class NumberColumn(Column):
         if len(valid_slots):
             values, value_index = np.unique(self._values[valid_slots], return_inverse=True)
             decimals = self._decimals[valid_slots].astype(np.int64) + 128  # 0..255
+            precision = self.style.precision
+            if precision is not None:  # every cell shows the column's precision
+                decimals[:] = 128
+
+            def text(value: float, code: int) -> str:
+                if precision is not None:
+                    return format_fixed(value, precision)
+                return format_number(value, code)
+
             pairs, pair_index = np.unique(value_index * 256 + decimals, return_inverse=True)
             hits = np.fromiter(
                 (
-                    predicate(format_number(float(values[p >> 8]), int((p & 255) - 128)))
+                    predicate(text(float(values[p >> 8]), int((p & 255) - 128)))
                     for p in pairs.tolist()
                 ),
                 dtype=np.bool_,

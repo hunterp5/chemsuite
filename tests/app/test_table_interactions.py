@@ -1,0 +1,355 @@
+# This file is part of chemsuite.
+# Copyright (C) 2026 Hunter Picard
+#
+# chemsuite is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# chemsuite is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Table interactions: header selection, column delete, structure double-click and menus,
+and the column menu's Duplicate, Logarithmic, Precision and Colour."""
+
+from __future__ import annotations
+
+import pytest
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import QInputDialog, QMessageBox
+from rdkit import Chem
+
+from chemsuite.core.table.style import CATEGORIES, GRADIENT
+
+from .conftest import gui
+from .test_column_actions import menu_titles, trigger
+
+pytestmark = gui
+
+
+@pytest.fixture
+def structures(window):
+    from chemsuite.app.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    table = Table()
+    table.add_rows(
+        {"ID": ["A", "B", "C"], "SMILES": ["CCO", "c1ccccc1", "C1CC"], "IC50": ["1", "10", "100"]},
+        undoable=False,
+    )
+    table.convert_column("SMILES", "structure")
+    table.history.mark_clean()
+    window._install(Workspace(table))
+    return window
+
+
+def click_header(qtbot, view, column: int, modifier=Qt.KeyboardModifier.NoModifier) -> None:
+    header = view.horizontalHeader()
+    x = header.sectionViewportPosition(column) + header.sectionSize(column) // 2
+    qtbot.mouseClick(
+        header.viewport(), Qt.MouseButton.LeftButton, modifier, QPoint(x, header.height() // 2)
+    )
+
+
+# -- header selection ---------------------------------------------------------------------------
+
+
+def test_header_click_selects_the_column_without_sorting(qtbot, window) -> None:
+    window.show()
+    qtbot.waitExposed(window)
+    view = window.view
+    click_header(qtbot, view, 1)
+    assert view.whole_columns() == ["pIC50"]
+    assert window.workspace.table.sort_keys == ()
+    # Whole columns are not a compound selection.
+    assert not window.workspace.selection.oids
+    assert len(view.selected_oids()) == 0
+
+
+def test_shift_and_ctrl_click_select_several_columns(qtbot, structures) -> None:
+    window = structures
+    window.show()
+    qtbot.waitExposed(window)
+    view = window.view
+    click_header(qtbot, view, 0)
+    click_header(qtbot, view, 2, Qt.KeyboardModifier.ShiftModifier)
+    assert view.whole_columns() == ["ID", "SMILES", "IC50"]
+    click_header(qtbot, view, 1, Qt.KeyboardModifier.ControlModifier)
+    assert view.whole_columns() == ["ID", "IC50"]
+
+
+def test_delete_key_deletes_selected_columns_in_one_step(qtbot, structures) -> None:
+    window = structures
+    window.show()
+    qtbot.waitExposed(window)
+    view = window.view
+    table = window.workspace.table
+    click_header(qtbot, view, 0)
+    click_header(qtbot, view, 2, Qt.KeyboardModifier.ControlModifier)
+    view.setFocus()
+    qtbot.keyClick(view, Qt.Key.Key_Delete)
+    assert table.column_names == ["SMILES"]
+    table.undo()
+    assert table.column_names == ["ID", "SMILES", "IC50"]
+
+
+def test_delete_key_on_cells_still_clears_them(qtbot, window) -> None:
+    window.show()
+    qtbot.waitExposed(window)
+    view = window.view
+    model = window.workspace.model
+    view.setFocus()
+    view.setCurrentIndex(model.index(0, 1))
+    view.selectionModel().select(model.index(0, 1), view.selectionModel().SelectionFlag.Select)
+    qtbot.keyClick(view, Qt.Key.Key_Delete)
+    assert window.workspace.table.column_names == ["ID", "pIC50"]
+    assert window.workspace.table.cell("pIC50", model.oid_at(0)) == ""
+
+
+def test_select_all_after_a_column_click_is_not_a_column_selection(qtbot, window) -> None:
+    window.show()
+    qtbot.waitExposed(window)
+    view = window.view
+    click_header(qtbot, view, 0)
+    view.setFocus()
+    qtbot.keyClick(view, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert view.whole_columns() == []
+    qtbot.keyClick(view, Qt.Key.Key_Delete)
+    assert window.workspace.table.column_names == ["ID", "pIC50"]  # cells cleared, not columns
+
+
+def test_sorting_from_the_menu_keeps_a_column_selection(qtbot, window) -> None:
+    window.show()
+    qtbot.waitExposed(window)
+    click_header(qtbot, window.view, 1)
+    trigger(window.columns.build_menu("pIC50", ["pIC50"], 1), "Sort Descending")
+    assert window.workspace.table.sort_keys == (("pIC50", False),)
+    assert window.view.whole_columns() == ["pIC50"]
+
+
+# -- structures -----------------------------------------------------------------------------------
+
+
+def test_double_click_on_a_structure_opens_the_sketcher(structures) -> None:
+    from chemsuite.app.sketcher import SketcherDialog
+
+    window = structures
+    table = window.workspace.table
+    model = window.workspace.model
+    index = model.index(0, model.column_index("SMILES"))
+    assert window.view.edit(index, window.view.EditTrigger.DoubleClicked, None) is False
+    sketcher = window.findChild(SketcherDialog)
+    assert sketcher is not None and sketcher.isVisible()
+    assert sketcher.canvas.sketch.atoms  # ethanol is on the canvas
+    sketcher.accept()
+    assert table.history.undo_label != "Draw SMILES"  # OK without a change writes nothing
+
+    from chemsuite.sketch.convert import from_text
+
+    window.view.edit(index, window.view.EditTrigger.DoubleClicked, None)
+    sketcher = window.findChild(SketcherDialog)
+    sketcher.canvas.set_sketch(from_text("CCN"), "Replace")
+    sketcher.accept()
+    assert table.cell("SMILES", model.oid_at(0)) == "CCN"
+    assert table.column("SMILES").mol(0).GetNumConformers() == 1  # the drawing's layout
+    assert table.history.undo_label == "Draw SMILES"
+    table.undo()
+    assert table.cell("SMILES", model.oid_at(0)) == "CCO"
+
+
+def test_double_click_on_an_invalid_structure_opens_the_text_editor(structures) -> None:
+    from chemsuite.app.structure_editor import StructureEditor
+
+    window = structures
+    model = window.workspace.model
+    index = model.index(2, model.column_index("SMILES"))  # "C1CC" does not parse
+    window.view.edit(index, window.view.EditTrigger.DoubleClicked, None)
+    editor = window.findChild(StructureEditor)
+    assert editor is not None and editor.text == "C1CC"
+    editor.reject()
+
+
+def test_structure_cell_menu(structures) -> None:
+    window = structures
+    model = window.workspace.model
+    menu = window.cell_menu(model.index(0, model.column_index("SMILES")))
+    assert menu_titles(menu) == [
+        "Edit in Sketcher…",
+        "Edit as Text…",
+        "Copy",
+        "Copy As",
+        "Paste",
+        "Clear Cells",
+    ]
+    copy_as = next(a.menu() for a in menu.actions() if a.text() == "Copy As")
+    assert menu_titles(copy_as) == ["Molfile", "SMILES", "InChI", "InChIKey", "Image"]
+    assert menu_titles(window.cell_menu(model.index(0, 0))) == ["Copy", "Paste", "Clear Cells"]
+
+
+@pytest.mark.parametrize(
+    ("fmt", "expected"),
+    [
+        ("smiles", "CCO"),
+        ("inchi", "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3"),
+        ("inchikey", "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"),
+    ],
+)
+def test_copy_as_text_formats(structures, fmt, expected) -> None:
+    window = structures
+    model = window.workspace.model
+    window.copy_structures_as(model.index(0, model.column_index("SMILES")), fmt)
+    assert QGuiApplication.clipboard().text() == expected
+
+
+def test_copy_as_molfile_offers_the_drawing_format(structures) -> None:
+    window = structures
+    model = window.workspace.model
+    window.copy_structures_as(model.index(1, model.column_index("SMILES")), "molfile")
+    mime = QGuiApplication.clipboard().mimeData()
+    block = bytes(mime.data("chemical/x-mdl-molfile").data()).decode()
+    assert Chem.MolToSmiles(Chem.MolFromMolBlock(block)) == "c1ccccc1"
+
+
+def test_copy_as_takes_the_selected_structures_in_shown_order(structures) -> None:
+    window = structures
+    view = window.view
+    model = window.workspace.model
+    col = model.column_index("SMILES")
+    flags = view.selectionModel().SelectionFlag.Select
+    view.selectionModel().select(model.index(1, col), flags)
+    view.selectionModel().select(model.index(0, col), flags)
+    message = window.copy_structures_as(model.index(0, col), "smiles")
+    assert QGuiApplication.clipboard().text() == "CCO\nc1ccccc1"
+    assert message == "Copied 2 structures as SMILES"
+    window.copy_structures_as(model.index(0, col), "molfile")
+    text = QGuiApplication.clipboard().text()
+    assert text.count("$$$$") == 2  # an SD file
+    assert not QGuiApplication.clipboard().mimeData().hasFormat("chemical/x-mdl-molfile")
+
+
+def test_copy_as_image(structures) -> None:
+    window = structures
+    model = window.workspace.model
+    window.copy_structures_as(model.index(0, model.column_index("SMILES")), "image")
+    assert not QGuiApplication.clipboard().image().isNull()
+
+
+def test_copy_as_reports_an_invalid_structure(structures) -> None:
+    window = structures
+    model = window.workspace.model
+    message = window.copy_structures_as(model.index(2, model.column_index("SMILES")), "smiles")
+    assert message == "No valid structure to copy"
+
+
+# -- column menu ----------------------------------------------------------------------------------
+
+
+def test_menu_has_the_new_column_items(window) -> None:
+    titles = menu_titles(window.columns.build_menu("pIC50", [], 1))
+    for title in ("Duplicate Column", "Logarithmic (log₁₀)", "Precision…", "Colour Column…"):
+        assert title in titles
+
+
+def test_duplicate_column(window) -> None:
+    table = window.workspace.table
+    trigger(window.columns.build_menu("pIC50", [], 1), "Duplicate Column")
+    assert table.column_names == ["ID", "pIC50", "pIC50 copy"]
+
+
+def test_logarithmic_toggles_and_marks_the_header(structures) -> None:
+    window = structures
+    table = window.workspace.table
+    model = window.workspace.model
+    col = model.column_index("IC50")
+    menu = window.columns.build_menu("IC50", [], col)
+    trigger(menu, "Logarithmic (log₁₀)")
+    assert [table.cell("IC50", oid) for oid in model.visible_oids] == ["0", "1", "2"]
+    assert model.headerData(col, Qt.Orientation.Horizontal) == "IC50 (log₁₀)"
+    menu = window.columns.build_menu("IC50", [], col)
+    action = next(a for a in menu.actions() if a.text() == "Logarithmic (log₁₀)")
+    assert action.isChecked()
+    action.trigger()
+    assert [table.cell("IC50", oid) for oid in model.visible_oids] == ["1", "10", "100"]
+    assert model.headerData(col, Qt.Orientation.Horizontal) == "IC50"
+
+
+def test_logarithmic_is_disabled_with_a_reason(window, monkeypatch) -> None:
+    table = window.workspace.table
+    table.set_cells("pIC50", [table.oids[0]], ["-1"])
+    menu = window.columns.build_menu("pIC50", [], 1)
+    action = next(a for a in menu.actions() if a.text() == "Logarithmic (log₁₀)")
+    assert not action.isEnabled() and "above zero" in action.toolTip()
+    menu = window.columns.build_menu("ID", [], 0)
+    action = next(a for a in menu.actions() if a.text() == "Logarithmic (log₁₀)")
+    assert not action.isEnabled() and "Number" in action.toolTip()
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.append(a[2]))
+    assert not window.columns.toggle_log("pIC50")
+    assert warned
+
+
+def test_precision_is_display_only_and_undoable(window, monkeypatch) -> None:
+    table = window.workspace.table
+    model = window.workspace.model
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("2", True))
+    trigger(window.columns.build_menu("pIC50", [], 1), "Precision…")
+    assert [table.cell("pIC50", oid) for oid in model.visible_oids] == ["5.00", "6.00", "7.00"]
+    assert model.data(model.index(0, 1)) == "5.00"
+    assert table.column("pIC50").values().tolist() == [5.0, 6.0, 7.0]
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("As typed", True))
+    window.columns.set_precision("pIC50")
+    assert model.data(model.index(0, 1)) == "5"
+    table.undo()
+    assert model.data(model.index(0, 1)) == "5.00"
+
+
+def test_colour_dialog_gradient(window) -> None:
+    from chemsuite.app.column_colour import ColumnColourDialog
+
+    table = window.workspace.table
+    model = window.workspace.model
+    dialog = window.columns.colour("pIC50")
+    assert isinstance(dialog, ColumnColourDialog)
+    assert dialog.chosen_mode() == GRADIENT
+    assert "from 5 (low) to 7 (high)" in dialog.status.text()
+    dialog.minimum.setText("9")
+    assert "below high" in dialog.status.text() and not dialog.primary.isEnabled()
+    dialog.minimum.setText("")
+    dialog.accept()
+    rule = table.column("pIC50").style.colour
+    assert rule.mode == GRADIENT and rule.minimum is None
+    low = model.data(model.index(0, 1), Qt.ItemDataRole.BackgroundRole)
+    high = model.data(model.index(2, 1), Qt.ItemDataRole.BackgroundRole)
+    assert low.rgb() & 0xFFFFFF == rule.low and high.rgb() & 0xFFFFFF == rule.high
+    assert model.data(model.index(0, 0), Qt.ItemDataRole.BackgroundRole) is None
+    table.undo()
+    assert model.data(model.index(0, 1), Qt.ItemDataRole.BackgroundRole) is None
+
+
+def test_colour_dialog_categories_for_text(window) -> None:
+    table = window.workspace.table
+    model = window.workspace.model
+    dialog = window.columns.colour("ID")
+    modes = [dialog.mode.itemData(i) for i in range(dialog.mode.count())]
+    assert modes == ["off", CATEGORIES]  # no gradients for text
+    dialog.mode.setCurrentIndex(1)
+    dialog.accept()
+    assert table.column("ID").style.colour.mode == CATEGORIES
+    colours = {
+        model.data(model.index(r, 0), Qt.ItemDataRole.BackgroundRole).rgba() for r in range(3)
+    }
+    assert len(colours) == 3
+
+
+def test_colour_is_not_offered_for_structures(structures) -> None:
+    model = structures.workspace.model
+    col = model.column_index("SMILES")
+    menu = structures.columns.build_menu("SMILES", [], col)
+    action = next(a for a in menu.actions() if a.text() == "Colour Column…")
+    assert not action.isEnabled()

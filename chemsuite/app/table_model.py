@@ -35,10 +35,11 @@ from typing import Any
 
 import numpy as np
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPersistentModelIndex, Qt
+from PySide6.QtGui import QColor
 
 from chemsuite.core.table import NUMBER, Changed, Table
 from chemsuite.core.table import events as ev
-from chemsuite.core.table.columns import STRUCTURE, StructureColumn
+from chemsuite.core.table.columns import STRUCTURE, NumberColumn, StructureColumn
 
 OID_ROLE = Qt.ItemDataRole.UserRole + 1
 KIND_ROLE = Qt.ItemDataRole.UserRole + 2
@@ -64,6 +65,8 @@ class TableModel(QAbstractTableModel):
         self._row_of_slot: np.ndarray | None = None
         self._text_align = _LEFT
         self._number_align = _RIGHT
+        #: column name -> (min, max) of its numbers, for gradient colours; cleared on any change
+        self._ranges: dict[str, tuple[float, float] | None] = {}
         self._unsubscribe = table.subscribe(self._on_table_event)
 
     def set_alignment(self, horizontal: str, vertical: str) -> None:
@@ -153,6 +156,8 @@ class TableModel(QAbstractTableModel):
             return int(self._oids[index.row()])
         if role == KIND_ROLE:
             return column.kind
+        if role == Qt.ItemDataRole.BackgroundRole:
+            return self._background(name, column, slot) if column.style.colour else None
         if isinstance(column, StructureColumn):
             if role == STRUCTURE_ROLE:
                 return column, slot
@@ -174,10 +179,18 @@ class TableModel(QAbstractTableModel):
             if not 0 <= section < len(self._columns):
                 return None
             name = self._columns[section]
+            if name not in self._table:  # asked mid-change, before the mirror catches up
+                return name if role == Qt.ItemDataRole.DisplayRole else None
+            style = self._table.column(name).style
             if role == Qt.ItemDataRole.DisplayRole:
-                return name
+                return f"{name} (log₁₀)" if style.log10 else name
             if role == Qt.ItemDataRole.ToolTipRole:
-                return f"{name}\n{self._table.kind(name)} column"
+                lines = [name, f"{self._table.kind(name)} column"]
+                if style.log10:
+                    lines.append("Values converted to log₁₀ (Logarithmic)")
+                if style.precision is not None:
+                    lines.append(f"Shown with {style.precision} decimal place(s)")
+                return "\n".join(lines)
             if role == KIND_ROLE:
                 return self._table.kind(name)
             return None
@@ -208,10 +221,28 @@ class TableModel(QAbstractTableModel):
         if self._table.column(name).sortable:
             self._table.set_sort([(name, order == Qt.SortOrder.AscendingOrder)])
 
+    def _background(self, name: str, column, slot: int) -> QColor | None:
+        rule = column.style.colour
+        if rule.numeric:
+            if not isinstance(column, NumberColumn):
+                return None
+            value = column.value(slot)
+            if value is None:
+                return None
+            if name not in self._ranges:
+                self._ranges[name] = column.finite_range()
+            bounds = rule.bounds(self._ranges[name])
+            if bounds is None:
+                return None
+            return QColor.fromRgba(rule.number_colour(value, bounds))
+        text = column.display(slot)
+        return QColor.fromRgba(rule.text_colour(text)) if text else None
+
     # -- following the table --------------------------------------------------------------------
     def _on_table_event(self, event: ev.TableEvent) -> None:
         if not isinstance(event, Changed):
             return
+        self._ranges.clear()
         if event.structural:
             self._resync()
             return
@@ -219,8 +250,12 @@ class TableModel(QAbstractTableModel):
             if isinstance(change, ev.CellsChanged) and change.column in self._columns:
                 rows = self.rows_of_oids(change.oids)
                 rows = rows[rows >= 0]
+                col = self._columns.index(change.column)
+                rule = self._table.column(change.column).style.colour
+                if rule is not None and rule.numeric and self._slots.size:
+                    # A gradient that follows the data recolours the whole column.
+                    rows = np.array([0, len(self._slots) - 1])
                 if len(rows):
-                    col = self._columns.index(change.column)
                     self.dataChanged.emit(
                         self.index(int(rows.min()), col), self.index(int(rows.max()), col)
                     )

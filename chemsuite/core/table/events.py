@@ -79,6 +79,13 @@ class ColumnKindChanged:
 
 
 @dataclass(frozen=True)
+class ColumnStyleChanged:
+    """Precision, the log10 marker or colours changed (cells may read differently)."""
+
+    name: str
+
+
+@dataclass(frozen=True)
 class ViewChanged:
     """Filters or sort order changed (or a column they used went away)."""
 
@@ -92,6 +99,7 @@ Change = (
     | ColumnMoved
     | ColumnRenamed
     | ColumnKindChanged
+    | ColumnStyleChanged
     | ViewChanged
 )
 

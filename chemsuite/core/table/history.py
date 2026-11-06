@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from .columns import Column
+from .style import ColumnStyle
 
 if TYPE_CHECKING:
     from .table import Table
@@ -181,6 +182,21 @@ class ReplaceColumn(Op):
     @property
     def nbytes(self) -> int:
         return self.old.nbytes + self.new.nbytes
+
+
+@dataclass(eq=False)
+class SetStyle(Op):
+    """Change how a column is shown (see :mod:`.style`)."""
+
+    name: str
+    old: ColumnStyle
+    new: ColumnStyle
+
+    def apply(self, table: Table) -> None:
+        table._set_style(self.name, self.new)
+
+    def inverse(self) -> Op:
+        return SetStyle(self.name, self.new, self.old)
 
 
 @dataclass(eq=False)

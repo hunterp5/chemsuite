@@ -17,9 +17,10 @@
 """The chemsuite document (``.csd``): one SQLite file holding a table exactly as it was.
 
 Everything round-trips losslessly: oids (and the next oid, so oids are never reused), column
-order and kinds, each number's display format, blank vs. invalid vs. unparsed structures, and
-the sort order. Columns are stored in compressed chunks of 64k rows, so saving and opening
-stream instead of building one huge blob, and a later version can read single columns lazily.
+order and kinds, each number's display format, blank vs. invalid vs. unparsed structures, the
+sort order and each column's style (precision, log10 marker, colours). Columns are stored in
+compressed chunks of 64k rows, so saving and opening stream instead of building one huge blob,
+and a later version can read single columns lazily.
 
 Saving writes a complete new file next to the target and swaps it into place, so a crash or a
 full disk never damages the previous version. ``extras`` is a JSON object for state owned by
@@ -42,7 +43,7 @@ import numpy as np
 
 import chemsuite
 from chemsuite.core.jobs import CancelToken, Progress, check
-from chemsuite.core.table import NUMBER, TEXT, Table
+from chemsuite.core.table import NUMBER, TEXT, ColumnStyle, Table
 from chemsuite.core.table.columns import (
     STRUCTURE,
     Column,
@@ -138,6 +139,13 @@ def _write(connection, table, extras, progress, cancel) -> None:
         "next_oid": str(table.next_oid).encode(),
         "oids": zlib.compress(table.oids.astype("<i8").tobytes()),
         "sort": json.dumps(table.sort_keys).encode(),
+        "styles": json.dumps(
+            {
+                name: table.column(name).style.to_json()
+                for name in table.column_names
+                if not table.column(name).style.is_default
+            }
+        ).encode(),
         "extras": json.dumps(extras).encode(),
     }
     connection.executemany("INSERT INTO meta VALUES (?, ?)", meta.items())
@@ -230,6 +238,9 @@ def _read(connection, progress, cancel) -> tuple[Table, dict[str, Any]]:
         columns[name] = column
         if progress is not None:
             progress(done, len(specs))
+    for name, style in json.loads(meta.get("styles", b"{}")).items():
+        if name in columns:
+            columns[name].style = ColumnStyle.from_json(style).for_kind(columns[name].kind)
     table = Table.from_columns(columns, oids=oids, next_oid=int(meta["next_oid"]))
     sort = [(name, bool(asc)) for name, asc in json.loads(meta.get("sort", b"[]"))]
     if sort:

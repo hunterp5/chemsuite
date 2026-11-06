@@ -87,14 +87,14 @@ def test_mdlct_clipboard_format() -> None:
     assert _mdlct_to_text(data) == "\n".join(lines)
 
 
-def test_double_click_opens_editor_and_ok_writes_undoable_edit(structures) -> None:
+def test_f2_opens_editor_and_ok_writes_undoable_edit(structures) -> None:
     window = structures
     table = window.workspace.table
     model = window.workspace.model
     index = model.index(0, model.column_index("SMILES"))
     opened = []
     window.view.structureEditRequested.connect(lambda i, t: opened.append((i.row(), t)))
-    assert window.view.edit(index, window.view.EditTrigger.DoubleClicked, None) is False
+    assert window.view.edit(index, window.view.EditTrigger.EditKeyPressed, None) is False
     assert opened == [(0, "")]
     editor = window.findChild(StructureEditor)
     assert editor.text == "CCO" and editor.isVisible()

@@ -47,6 +47,7 @@ from .columns import (
     STRUCTURE,
     TEXT,
     Column,
+    NumberColumn,
     StructureColumn,
     as_slots,
     blank_column,
@@ -69,7 +70,9 @@ from .history import (
     RemoveColumn,
     RenameColumn,
     ReplaceColumn,
+    SetStyle,
 )
+from .style import ColumnStyle
 
 Listener = Callable[[ev.TableEvent], None]
 SortKey = tuple[str, bool]  # (column, ascending)
@@ -125,7 +128,7 @@ class Table:
         """
         everything = np.arange(len(self._oids))
         copy = Table.from_columns(
-            {name: column.take(everything) for name, column in self._columns.items()},
+            {name: column.styled_take(everything) for name, column in self._columns.items()},
             oids=self._oids,
             next_oid=self._next_oid,
         )
@@ -140,7 +143,7 @@ class Table:
         """
         slots = np.asarray(slots, dtype=np.int64)
         return Table.from_columns(
-            {name: column.take(slots) for name, column in self._columns.items()}
+            {name: column.styled_take(slots) for name, column in self._columns.items()}
         )
 
     @property
@@ -504,8 +507,56 @@ class Table:
             new, blanked = to_structure(column), 0
         else:
             raise ValueError(f"unknown column kind {kind!r}")
+        new.style = column.style.for_kind(kind)
         self._execute(Command(f"Convert {name} to {kind}", [ReplaceColumn(name, column, new)]))
         return blanked
+
+    # -- how columns are shown ----------------------------------------------------------------
+    def set_style(self, name: str, style: ColumnStyle, *, label: str | None = None) -> None:
+        """Change column *name*'s precision or colours as one undoable step."""
+        old = self.column(name).style
+        if style != old:
+            self._execute(Command(label or f"Format {name}", [SetStyle(name, old, style)]))
+
+    def set_log10(self, name: str, on: bool) -> int:
+        """Convert a number column's values to ``log10(x)`` (*on*) or back to ``10**x``.
+
+        One undoable step that also sets the column's log10 marker. Blank cells stay blank.
+        Raises ValueError if *on* and a value is zero or negative. Returns how many cells
+        changed.
+        """
+        column = self.column(name)
+        if column.kind != NUMBER:
+            raise ValueError(f"column {name!r} is not a number column")
+        if column.style.log10 == on:
+            return 0
+        values = column.values()
+        present = ~np.isnan(values)
+        if on:
+            if (values[present] <= 0).any():
+                raise ValueError(f"column {name!r} has values that are zero or negative")
+            converted = np.log10(values, where=present, out=np.full(len(values), np.nan))
+        else:
+            with np.errstate(over="ignore"):
+                raw = np.power(10.0, values, where=present, out=np.full(len(values), np.nan))
+            # 10**log10(x) is x to about 1e-15; 12 significant digits drops that noise.
+            converted = np.array([float(f"{v:.12g}") for v in raw.tolist()])
+        new = NumberColumn.from_floats(converted)
+        new.style = column.style.with_(log10=on)
+        title = "Logarithmic" if on else "Undo logarithmic"
+        self._execute(Command(f"{title} {name}", [ReplaceColumn(name, column, new)]))
+        return int(present.sum())
+
+    def duplicate_column(self, name: str, new_name: str | None = None) -> str:
+        """Copy column *name* (cells and style) to its right as one undoable step."""
+        column = self.column(name)
+        new_name = new_name or self.unique_name(f"{name} copy")
+        if new_name in self._columns:
+            raise ValueError(f"column {new_name!r} already exists")
+        position = self.column_names.index(name) + 1
+        copy = column.styled_take(np.arange(len(column)))
+        self._execute(Command(f"Duplicate column {name}", [InsertColumn(new_name, position, copy)]))
+        return new_name
 
     def apply_results(
         self,
@@ -658,12 +709,14 @@ class Table:
             return to_structure(incoming), target
         if target.is_all_blank() and not incoming.is_all_blank():
             replacement = blank_column(incoming.kind, len(target))
+            replacement.style = target.style.for_kind(incoming.kind)
             ops.append(ReplaceColumn(name, target, replacement))
             return incoming, replacement
         fitted = coerce(incoming, target.kind)
         if fitted is not None:
             return fitted, target
         replacement = to_text(target)  # a number column receiving text
+        replacement.style = target.style.for_kind(TEXT)
         ops.append(ReplaceColumn(name, target, replacement))
         return to_text(incoming), replacement
 
@@ -748,3 +801,7 @@ class Table:
         if self._affects_view(name):
             self._view = None
         self._pending.append(ev.ColumnKindChanged(name, column.kind))
+
+    def _set_style(self, name: str, style: ColumnStyle) -> None:
+        self._columns[name].style = style
+        self._pending.append(ev.ColumnStyleChanged(name))
