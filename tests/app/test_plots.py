@@ -57,7 +57,7 @@ def test_scatter_opens_in_a_dock_with_defaults(data) -> None:
     panel = data.open_tool("scatter")
     assert panel in data.panels
     assert panel.spec().x == "MW" and panel.spec().y == "pIC50"
-    assert panel.status.text().startswith("4 points · 1 rows without both values")
+    assert panel.summary.text().startswith("4 points · 1 rows without both values")
     assert data.findChild(type(data._panels[0])).windowTitle() == "pIC50 vs MW"
 
 
@@ -114,7 +114,7 @@ def test_color_by_category_and_number(data) -> None:
     assert names == ["x (2)", "y (1)", "z (1)"]  # E has no MW, so x counts 2 plotted points
     panel.set_spec(color="pIC50", size="pIC50", fit=True)
     assert len(panel.renderer._layers) == 4  # four distinct colour steps
-    assert "R² = 1.000" in panel.status.text()
+    assert "R² = 1.000" in panel.summary.text()
 
 
 def test_histogram_numbers_and_text(data) -> None:
@@ -203,7 +203,7 @@ def test_box_plot_without_groups(data) -> None:
     panel = data.open_tool("box")
     panel.set_spec(x=None, y="MW")
     assert panel.renderer.labels == ["MW"]
-    assert "4 values in 1 group · 1 blank" in panel.status.text()
+    assert "4 values in 1 group · 1 blank" in panel.summary.text()
 
 
 def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -> None:
@@ -243,16 +243,16 @@ def test_histogram_curve_and_series_fits(data) -> None:
     panel = data.open_tool("histogram")
     panel.set_spec(x="pIC50", curve="normal")
     assert not panel.curve.isHidden() and panel.fit.isHidden()
-    assert "Normal fit: μ = 7, σ = 1.581" in panel.status.text()
+    assert "Normal fit: μ = 7, σ = 1.581" in panel.summary.text()
     assert panel.renderer._curve is not None
     panel.set_spec(curve="lognormal")
-    assert "Log-normal fit" in panel.status.text()
+    assert "Log-normal fit" in panel.summary.text()
     assert panel.state()["curve"] == "lognormal"
     panel.set_spec(x="Series")  # a bar chart: no curve
     assert panel.renderer._curve is None
     scatter = data.open_tool("scatter")
     scatter.set_spec(x="MW", y="pIC50", fit=True)
-    assert len(scatter.renderer._fit_lines) == 1 and "R² = 1.000" in scatter.status.text()
+    assert len(scatter.renderer._fit_lines) == 1 and "R² = 1.000" in scatter.summary.text()
     table = data.workspace.table
     table.add_rows(
         {"MW": ["150", "250", "350"], "pIC50": ["9", "8", "7"], "Series": ["y", "y", "y"]}
@@ -260,4 +260,42 @@ def test_histogram_curve_and_series_fits(data) -> None:
     scatter.set_spec(color="Series")
     # x has two plotted points (no fit); y has four, so it gets its own line.
     assert len(scatter.renderer._fit_lines) == 1
-    assert "y: R² =" in scatter.status.text()
+    assert "y: R² =" in scatter.summary.text()
+
+
+def test_options_open_from_the_dock_settings_button(data, qtbot) -> None:
+    from PySide6.QtCore import Qt
+
+    data.show()
+    panel = data.open_tool("scatter")
+    dock = data._panels[-1]
+    # Beside the table, not under it.
+    assert data.dockWidgetArea(dock) == Qt.DockWidgetArea.RightDockWidgetArea
+    bar = dock.title_bar
+    assert bar.title.text() == "pIC50 vs MW"
+    assert panel.kind.window() is panel.options  # the options are not in the panel itself
+    assert not panel.options.isVisible()
+    bar.settings.click()
+    qtbot.waitUntil(panel.options.isVisible)
+    assert panel.summary.isVisibleTo(panel.options)
+    panel.options.hide()
+    # Histogram options replace the scatter ones.
+    panel.set_spec(kind="histogram")
+    assert not panel.options.form.isRowVisible(panel.color)
+    assert panel.options.form.isRowVisible(panel.bins)
+    bar.float_button.click()
+    assert dock.isFloating()
+    bar.float_button.click()
+    assert not dock.isFloating()
+    # A second plot joins the first as a tab.
+    data.open_tool("histogram")
+    assert data.tabifiedDockWidgets(dock) == [data._panels[-1]]
+    bar.close_button.click()
+    qtbot.waitUntil(lambda: panel not in data.panels)
+
+
+def test_panels_without_options_have_no_settings_button(data) -> None:
+    from PySide6.QtWidgets import QLabel
+
+    dock = data.add_panel(QLabel("plain"), "Plain")
+    assert not dock.title_bar.settings.isVisibleTo(dock.title_bar)

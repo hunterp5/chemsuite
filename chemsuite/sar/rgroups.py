@@ -33,7 +33,7 @@ from rdkit import Chem, rdBase
 from rdkit.Chem import rdFMCS
 from rdkit.Chem import rdRGroupDecomposition as rgd
 
-from chemsuite.core.jobs import CancelToken, check
+from chemsuite.core.jobs import Cancelled, CancelToken
 
 HYDROGEN = "H"
 _POSITION = re.compile(r"^R(\d+)$")
@@ -148,6 +148,9 @@ def decompose(
 
     With numbered attachment points the work runs in chunks (each position keeps its number);
     without, RDKit must see every molecule at once to number positions consistently.
+
+    If *cancel* is set, raises :class:`Cancelled` whose ``partial`` is the decomposition of the
+    first rows (the chunks finished), or None if none were.
     """
     n = len(mols)
     labelled = has_labelled_positions(core)
@@ -155,7 +158,8 @@ def decompose(
     rows: list[dict | None] = [None] * n
     cores: Counter[str] = Counter()
     for start in range(0, n, size):
-        check(cancel)
+        if cancel is not None and cancel.cancelled:
+            raise Cancelled(_decomposition(rows[:start], cores) if start else None)
         index = [i for i in range(start, min(n, start + size)) if mols[i] is not None]
         batch = []
         for i in index:
@@ -175,6 +179,11 @@ def decompose(
                 cores[row.get("Core", "")] += 1
         if progress is not None:
             progress(min(n, start + size), n)
+    return _decomposition(rows, cores)
+
+
+def _decomposition(rows: list[dict | None], cores: Counter[str]) -> Decomposition:
+    n = len(rows)
     positions = sorted(
         {k for row in rows if row for k in row if _POSITION.match(k)}, key=_position_key
     )

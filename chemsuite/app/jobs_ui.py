@@ -61,6 +61,10 @@ def fraction(job: Job) -> float | None:
     return min(done, total) / total if total else None
 
 
+#: text, not a raised button: it sits in the slim status bar like the other labels
+BUTTON_STYLE = "QToolButton { border: none; padding: 0px 2px; }"
+
+
 def progress_text(job: Job) -> str:
     """What a job is doing, e.g. ``Generating conformers… (120/500)``."""
     name = job.name
@@ -86,6 +90,8 @@ class JobsIndicator(QWidget):
         self._seen_failures: set[int] = set()
         self.button = QToolButton()
         self.button.setAutoRaise(True)
+        self.button.setStyleSheet(BUTTON_STYLE)
+        self.button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.button.setToolTip("Show the Jobs window")
         self.button.clicked.connect(self.clicked)
         layout = QHBoxLayout(self)
@@ -129,7 +135,9 @@ class JobsIndicator(QWidget):
             else "Show the Jobs window"
         )
         colour = FAILED_COLOUR.name() if failed and current is None else ""
-        self.button.setStyleSheet(f"color: {colour};" if colour else "")
+        self.button.setStyleSheet(
+            BUTTON_STYLE + (f" QToolButton {{ color: {colour}; }}" if colour else "")
+        )
         self.setVisible(bool(parts))
         if running or queued:
             self._timer.start()

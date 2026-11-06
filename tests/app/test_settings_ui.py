@@ -201,3 +201,31 @@ def test_general_page_workers(window) -> None:
     dialog.general.workers.setValue(2)
     dialog.accept()
     assert settings_hub().settings.performance.max_workers == 2
+
+
+def test_light_and_dark_are_fixed_whatever_the_os_uses(qapp) -> None:
+    from chemsuite.app import theme
+    from chemsuite.core.settings import Appearance
+
+    light = theme.light_palette()
+    assert light.color(theme.Role.Base).lightness() == 255
+    assert light.color(theme.Role.Window).lightness() > 230
+    assert light.color(theme.Role.Text).lightness() < 40
+    assert theme.is_dark(theme.dark_palette()) and not theme.is_dark(light)
+    appearance = Appearance()
+    appearance.theme = "light"
+    theme.apply_appearance(qapp, appearance)
+    assert not theme.is_dark(qapp.palette())
+
+
+def test_status_bar_is_slim_while_a_job_runs(window, qtbot) -> None:
+    import threading
+
+    window.show()
+    bar = window.statusBar()
+    idle = bar.height()
+    release = threading.Event()
+    window._run_with_progress("Calculating…", lambda job: release.wait(5), lambda _r: None)
+    qtbot.waitUntil(window.jobs_indicator.isVisible)
+    assert bar.height() == idle <= bar.fontMetrics().height() + 8
+    release.set()

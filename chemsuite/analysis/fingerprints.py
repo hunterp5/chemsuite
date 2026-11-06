@@ -34,7 +34,7 @@ import numpy as np
 from rdkit import Chem, DataStructs, rdBase
 from rdkit.Chem import MACCSkeys, rdFingerprintGenerator
 
-from chemsuite.core.jobs import CancelToken, check
+from chemsuite.core.jobs import Cancelled, CancelToken, check
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text
 
@@ -290,7 +290,8 @@ def similarity(fps: Fingerprints, query: Fingerprints, metric: str = "tanimoto")
     return np.where(fps.valid, out, np.nan)
 
 
-def _tiles(n: int, size: int = TILE_ROWS) -> list[tuple[int, int]]:
+def _tiles(n: int, size: int | None = None) -> list[tuple[int, int]]:
+    size = size or TILE_ROWS  # read at call time, so tests can make tiles small
     return [(start, min(n, start + size)) for start in range(0, n, size)]
 
 
@@ -308,6 +309,9 @@ def max_similarity(
     *exclude_self* gives, per row of *fps*, the ref index to ignore (the row itself when the
     rows are also refs; -1 for none), so a selected compound is not its own nearest neighbour.
     Invalid rows get NaN and -1.
+
+    If *cancel* is set, raises :class:`Cancelled` whose ``partial`` is ``(best, which)`` for
+    the first rows (those finished), or None if none were.
     """
     n = len(fps)
     best = np.full(n, -1.0)
@@ -317,8 +321,12 @@ def max_similarity(
         return np.full(n, np.nan), which
     refs = refs.take(ref_ok)
     tiles = _tiles(n)
+    finished = 0  # rows done
     for done, (start, stop) in enumerate(tiles):
-        check(cancel)
+        if cancel is not None and cancel.cancelled:
+            if not finished:
+                raise Cancelled
+            raise Cancelled(_best(fps.take(np.arange(finished)), best[:finished], which[:finished]))
         block = fps.unpacked(start, stop)
         for r_start, r_stop in _tiles(len(refs)):
             common = block @ refs.unpacked(r_start, r_stop).T
@@ -338,8 +346,13 @@ def max_similarity(
             better = top > best[start:stop]
             best[start:stop] = np.where(better, top, best[start:stop])
             which[start:stop] = np.where(better, ref_ok[arg + r_start], which[start:stop])
+        finished = stop
         if progress is not None:
             progress(done + 1, len(tiles))
+    return _best(fps, best, which)
+
+
+def _best(fps: Fingerprints, best: np.ndarray, which: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     best = np.where(best < 0, np.nan, best)
     return np.where(fps.valid, best, np.nan), np.where(fps.valid & (which >= 0), which, -1)
 

@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from chemsuite.analysis.diversity import Picks, maxmin_fingerprints, maxmin_numeric
 from chemsuite.app.tools import ToolContext
+from chemsuite.core.jobs import Cancelled
 from chemsuite.core.table.columns import NumberColumn
 
 from .common import FeatureChooser, fingerprint_task, scope_combo, scope_oids
@@ -115,14 +116,17 @@ class DiverseSubsetDialog(QDialog):
 
             def work(job):
                 fps = compute(job)
-                return fps, maxmin_fingerprints(
-                    _only_pool(fps, in_pool, seed_rows),
-                    count,
-                    seeds=seed_rows,
-                    metric=metric,
-                    progress=job.report,
-                    cancel=job.cancel_token,
-                )
+                try:
+                    return fps, maxmin_fingerprints(
+                        _only_pool(fps, in_pool, seed_rows),
+                        count,
+                        seeds=seed_rows,
+                        metric=metric,
+                        progress=job.report,
+                        cancel=job.cancel_token,
+                    )
+                except Cancelled as stopped:  # keep the picks made so far
+                    raise Cancelled(stopped.partial and (fps, stopped.partial)) from None
         else:
             values = self.features.number_values(everything)
             remember = None
@@ -131,9 +135,12 @@ class DiverseSubsetDialog(QDialog):
                 masked = [
                     np.where(in_pool | _mask(len(everything), seed_rows), v, np.nan) for v in values
                 ]
-                return None, maxmin_numeric(
-                    masked, count, seeds=seed_rows, progress=job.report, cancel=job.cancel_token
-                )
+                try:
+                    return None, maxmin_numeric(
+                        masked, count, seeds=seed_rows, progress=job.report, cancel=job.cancel_token
+                    )
+                except Cancelled as stopped:
+                    raise Cancelled(stopped.partial and (None, stopped.partial)) from None
 
         def done(result) -> None:
             fps, picks = result
@@ -141,7 +148,7 @@ class DiverseSubsetDialog(QDialog):
                 remember(fps)
             self.finish(everything, picks, name, len(seeds))
 
-        return ctx.run(f"Picking {count:,} diverse compounds…", work, done)
+        return ctx.run(f"Picking {count:,} diverse compounds…", work, done, keep_partial=True)
 
     def finish(self, everything: np.ndarray, picks: Picks, name: str, seeds: int) -> None:
         ctx = self.ctx
@@ -156,11 +163,15 @@ class DiverseSubsetDialog(QDialog):
         if self.select.isChecked():
             ctx.selection.set(picked.tolist(), "diverse")
         message = f"Picked {len(picks):,} compound(s) in “{names[name]}”"
-        if len(picks) < self.count.value():
+        if len(picks) < self.count.value() and not self.job_cancelled():
             message += " (the rest duplicate earlier picks)"
         if seeds:
             message += f", adding to {seeds:,} selected"
         ctx.show_message(message, 8000)
+
+    def job_cancelled(self) -> bool:
+        """Whether these picks are what a cancelled job had made so far."""
+        return self.job is not None and self.job.cancel_token.cancelled
 
 
 def _mask(n: int, rows: np.ndarray) -> np.ndarray:

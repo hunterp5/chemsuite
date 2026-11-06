@@ -197,3 +197,36 @@ def test_cache_follows_the_table() -> None:
     assert cache.get("S", "morgan2", oids) is None
     cache.put("S", "morgan2", oids, fps, stale)  # computed before the edit: ignored
     assert cache.get("S", "morgan2", oids) is None
+
+
+def _cancel_after(first_call: int):
+    """A token, and a progress callback that cancels after *first_call* reports."""
+    token = CancelToken()
+    calls = []
+
+    def progress(done: int, total: int) -> None:
+        calls.append(done)
+        if len(calls) >= first_call:
+            token.cancel()
+
+    return token, progress
+
+
+def test_cancel_keeps_finished_similarities_and_picks(fps, monkeypatch) -> None:
+    from chemsuite.analysis import fingerprints as module
+
+    monkeypatch.setattr(module, "TILE_ROWS", 5)
+    whole_best, whole_which = max_similarity(fps, fps.take(np.array([4, 5])))
+    token, progress = _cancel_after(2)
+    with pytest.raises(Cancelled) as stopped:
+        max_similarity(fps, fps.take(np.array([4, 5])), progress=progress, cancel=token)
+    best, which = stopped.value.partial
+    assert len(best) == len(which) == 10  # two tiles of five rows
+    np.testing.assert_array_equal(best, whole_best[:10])
+    np.testing.assert_array_equal(which, whole_which[:10])
+
+    whole = maxmin_fingerprints(fps, 6)
+    token, progress = _cancel_after(3)
+    with pytest.raises(Cancelled) as stopped:
+        maxmin_fingerprints(fps, 6, progress=progress, cancel=token)
+    assert stopped.value.partial.rows.tolist() == whole.rows[:3].tolist()

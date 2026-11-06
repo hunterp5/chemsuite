@@ -75,7 +75,13 @@ class RGroupDialog(QDialog):
     def decompose(self):
         oids = scope_oids(self.ctx, self.rows.currentData())
         work = self.core.task(oids)
-        return self.ctx.run("Decomposing R-groups…", work, lambda d: self.finish(oids, d))
+        # After a cancel, d covers the first rows only (a numbered core decomposes in chunks).
+        return self.ctx.run(
+            "Decomposing R-groups…",
+            work,
+            lambda d: self.finish(oids[: len(d)], d),
+            keep_partial=True,
+        )
 
     def finish(self, oids: np.ndarray, d: Decomposition) -> dict[str, str]:
         ctx = self.ctx

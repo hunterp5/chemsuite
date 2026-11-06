@@ -175,14 +175,16 @@ class MedChemPlotDialog(QDialog):
             )
 
         def done(columns) -> None:
+            finished = len(next(iter(columns.values())))  # fewer after a cancel
             ctx.apply_results(
-                {title_of(k): (oids, columns[k]) for k in keys},
+                {title_of(k): (oids[:finished], columns[k]) for k in keys},
                 label=f"Calculate {len(keys)} descriptor(s)",
                 overwrite=True,
             )
-            self.finish()
+            if finished == len(oids):  # classify and plot only a complete set
+                self.finish()
 
-        return ctx.run(f"Calculating {len(keys)} descriptor(s)…", work, done)
+        return ctx.run(f"Calculating {len(keys)} descriptor(s)…", work, done, keep_partial=True)
 
     def finish(self):
         """Write the classification column and open the plot."""

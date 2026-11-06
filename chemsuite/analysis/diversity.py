@@ -26,7 +26,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from chemsuite.core.jobs import CancelToken, check
+from chemsuite.core.jobs import Cancelled, CancelToken
 
 from .clustering import standardize
 from .fingerprints import Fingerprints, max_similarity, similarity
@@ -51,11 +51,16 @@ def _maxmin(
     progress: Progress | None,
     cancel: CancelToken | None,
 ) -> Picks:
-    """*nearest*: each row's distance to the seeds (inf without seeds, -inf if not pickable)."""
+    """*nearest*: each row's distance to the seeds (inf without seeds, -inf if not pickable).
+
+    If *cancel* is set, raises :class:`Cancelled` whose ``partial`` holds the picks made so far
+    (each as far from the earlier ones as a full run would make it), or None if there are none.
+    """
     rows: list[int] = []
     distances: list[float] = []
     while len(rows) < count:
-        check(cancel)
+        if cancel is not None and cancel.cancelled:
+            raise Cancelled(_picks(rows, distances) if rows else None)
         if first is not None and not rows:
             pick = first
         else:
@@ -68,6 +73,10 @@ def _maxmin(
         nearest[pick] = -np.inf
         if progress is not None:
             progress(len(rows), count)
+    return _picks(rows, distances)
+
+
+def _picks(rows: list[int], distances: list[float]) -> Picks:
     return Picks(np.array(rows, dtype=np.int64), np.array(distances))
 
 
@@ -86,7 +95,10 @@ def maxmin_fingerprints(
     seeds = np.asarray(list(seeds), dtype=np.int64)
     first = None
     if len(seeds):
-        best, _ = max_similarity(fps, fps.take(seeds), metric, cancel=cancel)
+        try:
+            best, _ = max_similarity(fps, fps.take(seeds), metric, cancel=cancel)
+        except Cancelled:
+            raise Cancelled from None  # no picks yet; its partial is not a Picks
         nearest = np.where(fps.valid, 1.0 - np.nan_to_num(best, nan=0.0), -np.inf)
         nearest[seeds] = -np.inf
     else:

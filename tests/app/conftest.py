@@ -113,3 +113,34 @@ def window(qtbot):
     w.workspace.mark_saved(w.workspace.table.history.checkpoint(), w.workspace.lists.revision)
     w.close()
     runner.shutdown()
+    destroy_now(w)
+
+
+def destroy_now(widget) -> None:
+    """Delete *widget* (and its docks, popups, panels) while the test's QApplication runs.
+
+    Left for the interpreter's exit, dozens of windows are destroyed in no particular order,
+    after Python has half torn down their wrappers: an intermittent crash at exit.
+    """
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def delete_leftover_windows():
+    """At the end of the run, delete any top-level widget a test left behind (see above)."""
+    yield
+    if NO_GUI:
+        return
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        return
+    for widget in QApplication.topLevelWidgets():
+        widget.hide()
+        widget.deleteLater()
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

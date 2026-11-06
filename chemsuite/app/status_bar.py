@@ -13,10 +13,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The window's status bar: everything on one left-aligned line.
+"""The window's status bar, on one line.
 
-Left to right: the document's row counts, what the running job is doing (with its progress,
-"Generating conformers… (120/500)"), then the latest message. ``QStatusBar`` would put messages
+Left to right: what the running job is doing (with its progress, "Generating conformers…
+(120/500)"), then the latest message; the document's row and selection counts sit at the far
+right. ``QStatusBar`` would put messages
 in front of everything and hide its other widgets while a message shows. Here
 :meth:`StatusBar.showMessage` writes into its own label instead, so the counts and the job's
 progress stay visible.
@@ -24,10 +25,12 @@ progress stay visible.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QEvent, QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QStatusBar, QWidget
 
 SPACING = 18
+#: pixels above and below the text: a slim bar that does not grow while a job shows
+PADDING = 3
 
 
 class StatusBar(QStatusBar):
@@ -40,15 +43,27 @@ class StatusBar(QStatusBar):
         self.message.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         holder = QWidget()
         row = QHBoxLayout(holder)
-        row.setContentsMargins(4, 0, 4, 0)
+        row.setContentsMargins(6, 0, 6, 0)
         row.setSpacing(SPACING)
-        row.addWidget(self.document)
         row.addWidget(self.jobs)
         row.addWidget(self.message, 1)
+        row.addWidget(self.document)
         self.addWidget(holder, 1)
+        self.setSizeGripEnabled(False)
+        self._fit_height()
         self._clear_timer = QTimer(self)
         self._clear_timer.setSingleShot(True)
         self._clear_timer.timeout.connect(self.clearMessage)
+
+    def _fit_height(self) -> None:
+        height = self.fontMetrics().height()
+        self.setFixedHeight(height + 2 * PADDING)
+        self.jobs.setMaximumHeight(height + 2)
+
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.FontChange:  # Settings ▸ Appearance ▸ font size
+            self._fit_height()
 
     # QStatusBar's message API, redirected to our own label (Python callers only; the window
     # routes status tips here too, see MainWindow.event).

@@ -135,6 +135,13 @@ class ToolContext:
         With *keep_partial*, a cancelled job whose work raised ``Cancelled(partial=…)`` still
         calls *on_done* with that partial result, so finished rows are written, not thrown away.
         *on_done* must then accept a result covering only the first rows.
+
+        Every tool that writes per-row results (or picks rows one at a time) keeps partial
+        results this way: its core function raises ``Cancelled(partial)`` with what it
+        finished (see ``compute_descriptors``, ``generate_conformers``, ``max_similarity``,
+        ``decompose``, ``_maxmin``), and its dialog passes ``keep_partial=True``. Only work
+        whose result means nothing until complete (a model fit, an embedding, clustering, a
+        pair search) leaves it off.
         """
         holder: list[Job] = []
 

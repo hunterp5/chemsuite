@@ -63,7 +63,7 @@ def test_tool_job_runs_in_background_and_records_its_result(window, qtbot) -> No
     status = window.statusBar()
     row = status.document.parentWidget().layout()
     order = [row.itemAt(i).widget() for i in range(row.count())]
-    assert order == [status.document, window.jobs_indicator, status.message]
+    assert order == [window.jobs_indicator, status.message, status.document]
     window.show_message("Hello")
     assert status.currentMessage() == "Hello" and not window.jobs_indicator.isHidden()
     assert window.isEnabled()  # nothing modal: the window keeps working

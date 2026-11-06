@@ -249,3 +249,22 @@ def test_hansch(tmp_path) -> None:
     bad.write_text("name,pi\nx,1\n")
     with pytest.raises(ValueError, match="header"):
         load_constants(bad)
+
+
+def test_cancel_keeps_the_rows_decomposed(monkeypatch) -> None:
+    from chemsuite.core.jobs import Cancelled, CancelToken
+    from chemsuite.sar import rgroups
+
+    monkeypatch.setattr(rgroups, "CHUNK", 4)
+    smiles, _ = _series()
+    mols = [Chem.MolFromSmiles(s) for s in smiles]
+    token = CancelToken()
+
+    def progress(done: int, total: int) -> None:
+        if done >= 8:
+            token.cancel()
+
+    with pytest.raises(Cancelled) as stopped:
+        decompose(mols, parse_core(CORE), progress=progress, cancel=token)
+    d = stopped.value.partial
+    assert len(d) == 8 and d.matched.all() and d.positions == ("R1", "R2")

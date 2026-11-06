@@ -25,6 +25,7 @@ from __future__ import annotations
 import colorsys
 import random
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication, QStyleFactory
 
@@ -67,7 +68,40 @@ def fusion_palette() -> QPalette:
 
 
 def light_palette() -> QPalette:
-    return fusion_palette()
+    """A true light palette, fixed colours.
+
+    Not Fusion's ``standardPalette()``: since Qt 6.5 that follows the OS colour scheme, so with
+    macOS or Windows in dark mode "Light" came out as a grey dark theme.
+    """
+    text = QColor(28, 28, 30)
+    disabled = QColor(160, 160, 165)
+    p = QPalette()
+    for role, colour in (
+        (Role.Window, QColor(246, 246, 247)),
+        (Role.WindowText, text),
+        (Role.Base, QColor(255, 255, 255)),
+        (Role.AlternateBase, QColor(245, 247, 250)),
+        (Role.ToolTipBase, QColor(255, 255, 240)),
+        (Role.ToolTipText, text),
+        (Role.PlaceholderText, QColor(128, 128, 134)),
+        (Role.Text, text),
+        (Role.Button, QColor(252, 252, 252)),
+        (Role.ButtonText, text),
+        (Role.BrightText, QColor(220, 30, 30)),
+        (Role.Link, QColor(0, 102, 204)),
+        (Role.Highlight, QColor(48, 140, 198)),
+        (Role.HighlightedText, QColor(255, 255, 255)),
+        (Role.Mid, QColor(196, 196, 200)),
+        (Role.Midlight, QColor(230, 230, 233)),
+        (Role.Dark, QColor(160, 160, 165)),
+        (Role.Light, QColor(255, 255, 255)),
+        (Role.Shadow, QColor(110, 110, 115)),
+    ):
+        p.setColor(role, colour)
+    for role in (Role.Text, Role.ButtonText, Role.WindowText):
+        p.setColor(QPalette.ColorGroup.Disabled, role, disabled)
+    p.setColor(QPalette.ColorGroup.Disabled, Role.Base, QColor(240, 240, 242))
+    return p
 
 
 def dark_palette() -> QPalette:
@@ -220,12 +254,25 @@ def apply_appearance(app: QApplication, appearance: Appearance, *, reroll: bool 
         else:
             app.setStyle("Fusion")
             app.setPalette(palette)
+        _set_colour_scheme(app, None if palette is None else palette)
     font = QFont(_original["font"])
     if appearance.app_font_pt:
         font.setPointSize(appearance.app_font_pt)
     if app.font() != font:
         app.setFont(font)
     _applied = (key,)
+
+
+def _set_colour_scheme(app: QApplication, palette: QPalette | None) -> None:
+    """Tell the platform whether the theme is light or dark, so what Qt does not paint itself
+    (macOS menus and title bars, native dialogs) matches. None: follow the OS again."""
+    hints = app.styleHints()
+    if not hasattr(hints, "setColorScheme"):  # Qt before 6.8
+        return
+    if palette is None:
+        hints.unsetColorScheme()
+    else:
+        hints.setColorScheme(Qt.ColorScheme.Dark if is_dark(palette) else Qt.ColorScheme.Light)
 
 
 def is_dark(palette: QPalette) -> bool:
@@ -240,4 +287,5 @@ def reset() -> None:
         app.setStyle(str(_original["style"]))
         app.setPalette(QPalette(_original["palette"]))
         app.setFont(QFont(_original["font"]))
+        _set_colour_scheme(app, None)
     _applied = None

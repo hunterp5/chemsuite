@@ -3,7 +3,10 @@
 A desktop medicinal chemistry workbench for working with compound tables: plotting, descriptors,
 conformers and SAR analysis. Built with Python, PySide6 and RDKit. Licensed under GPLv3.
 
-The design and roadmap are in [docs/PLAN.md](docs/PLAN.md).
+How to use it: [docs/USER_GUIDE.md](docs/USER_GUIDE.md). The design and roadmap are in
+[docs/PLAN.md](docs/PLAN.md) and [docs/ROADMAP.md](docs/ROADMAP.md).
+
+When you add a tool or change how something works, update the user guide in the same change.
 
 ## Development setup
 

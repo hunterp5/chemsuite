@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from chemsuite.analysis.fingerprints import max_similarity, query_fingerprint, similarity
 from chemsuite.app.tools import ToolContext
+from chemsuite.core.jobs import Cancelled
 from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table.columns import NumberColumn
 
@@ -193,22 +194,25 @@ class SimilarityDialog(QDialog):
                 return fps, similarity(mine, query, metric), None
             own = np.full(len(everything), -1, dtype=np.int64)
             own[ref_rows] = np.arange(len(ref_rows))  # a selected row is not its own neighbour
-            best, which = max_similarity(
-                mine,
-                fps.take(ref_rows),
-                metric,
-                exclude_self=own[target_rows],
-                progress=job.report,
-                cancel=job.cancel_token,
-            )
+            try:
+                best, which = max_similarity(
+                    mine,
+                    fps.take(ref_rows),
+                    metric,
+                    exclude_self=own[target_rows],
+                    progress=job.report,
+                    cancel=job.cancel_token,
+                )
+            except Cancelled as stopped:  # keep the first rows' similarities
+                raise Cancelled(stopped.partial and (fps, *stopped.partial)) from None
             return fps, best, which
 
         def done(result) -> None:
             fps, sims, which = result
             remember(fps)
-            self.finish(targets, sims, which, refs, name)
+            self.finish(targets[: len(sims)], sims, which, refs, name)
 
-        return ctx.run("Calculating similarity…", work, done)
+        return ctx.run("Calculating similarity…", work, done, keep_partial=True)
 
     def finish(self, targets, sims, which, refs, name) -> None:
         ctx = self.ctx

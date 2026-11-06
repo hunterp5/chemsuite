@@ -13,7 +13,10 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""A plot panel: controls, the plot, selection linking and hover cards.
+"""A plot panel: the plot, its options, selection linking and hover cards.
+
+The options (kind, columns, bins, fits…) live in a popup, :class:`PlotOptions`, opened from the
+settings button on the panel's dock title bar (see ``PanelDock``), so the plot keeps the room.
 
 The panel follows the table: it redraws (debounced) when cells, columns or filters change, and
 plots only the rows the table shows. Selecting in the plot sets the shared selection; selecting
@@ -27,17 +30,17 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QImage, QPixmap
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QImage, QPixmap
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFormLayout,
     QFrame,
     QLabel,
     QSpinBox,
-    QToolButton,
+    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -49,7 +52,8 @@ from chemsuite.core.table.columns import NUMBER, TEXT
 from chemsuite.plotting.data import colorable_columns, number_columns, shown_oids
 from chemsuite.plotting.stats import CURVES
 
-from ..flow_layout import FlowRow, compact, field
+from ..flow_layout import compact
+from .glyphs import glyph
 from .renderers import RENDERERS, Hover, PlotSpec
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
 
@@ -83,6 +87,29 @@ class HoverCard(QFrame):
         self.text.setText("\n".join(lines))
         self.adjustSize()
         self.move(pos + QPoint(16, 16))
+        self.show()
+
+
+class PlotOptions(QFrame):
+    """The plot's options, in a popup that closes when you click elsewhere."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent, Qt.WindowType.Popup)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.form = QFormLayout(self)
+        self.form.setContentsMargins(10, 10, 10, 10)
+        self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+
+    def popup(self, anchor: QWidget) -> None:
+        """Show below *anchor* (the settings button), kept on its screen."""
+        self.adjustSize()
+        below = anchor.mapToGlobal(QPoint(anchor.width() - self.width(), anchor.height()))
+        screen = anchor.screen().availableGeometry()
+        x = min(max(below.x(), screen.left()), screen.right() - self.width())
+        y = below.y()
+        if y + self.height() > screen.bottom():  # no room below: open above
+            y = anchor.mapToGlobal(QPoint(0, 0)).y() - self.height()
+        self.move(x, max(y, screen.top()))
         self.show()
 
 
@@ -132,11 +159,12 @@ class PlotPanel(QWidget):
                 Qt.ItemDataRole.ToolTipRole,
             )
         self.guide.setToolTip("Reference regions or lines drawn behind the points")
-        compact(self.x, self.y, self.color, self.size, self.curve, self.guide)
+        compact(self.x, self.y, self.color, self.size, self.curve, self.guide, chars=16)
+        #: Settings button on the dock title bar opens this (``PanelDock`` looks for ``options``)
+        self.options = PlotOptions(self)
+        form = self.options.form
+        form.addRow("Plot:", self.kind)
         self._labels: dict[QWidget, QLabel] = {}
-        self._fields: dict[QWidget, QWidget] = {}
-        controls = FlowRow()
-        controls.addWidget(self.kind)
         for title, widget in (
             ("X", self.x),
             ("Y", self.y),
@@ -148,34 +176,44 @@ class PlotPanel(QWidget):
         ):
             label = QLabel(title + ":")
             self._labels[widget] = label
-            self._fields[widget] = field(label, widget)
-            controls.addWidget(self._fields[widget])
-        controls.addWidget(self.fit)
+            form.addRow(label, widget)
+        form.addRow("", self.fit)
+        #: what was drawn: point counts, rows left out, fitted curves and their parameters
+        self.summary = QLabel(" ")
+        self.summary.setWordWrap(True)
+        self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.summary.setStyleSheet("color: palette(placeholder-text);")
+        form.addRow(self.summary)
 
-        self.mode_buttons: dict[str, QToolButton] = {}
-        modes = QButtonGroup(self)
-        tools = FlowRow()
-        for mode, text, tip in (
-            (ZOOM, "Zoom", "Drag to pan, scroll or right-drag to zoom; click a point to select"),
-            (BOX, "Box", "Drag a rectangle to select (Shift adds, ⌘/Ctrl toggles)"),
-            (LASSO, "Lasso", "Draw around points to select (Shift adds, ⌘/Ctrl toggles)"),
-        ):
-            button = QToolButton()
-            button.setText(text)
-            button.setToolTip(tip)
-            button.setCheckable(True)
-            modes.addButton(button)
-            button.toggled.connect(lambda on, m=mode: on and self.set_mode(m))
-            tools.addWidget(button)
-            self.mode_buttons[mode] = button
-        reset = QToolButton()
-        reset.setText("Reset View")
-        reset.clicked.connect(self.reset_view)
-        export = QToolButton()
-        export.setText("Export…")
-        export.clicked.connect(self.export_dialog)
-        tools.addWidget(reset)
-        tools.addWidget(export)
+        # A slim toolbar joined to the top of the plot: icon buttons, the mode ones exclusive.
+        self.toolbar = QToolBar()
+        self.toolbar.setIconSize(QSize(16, 16))
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.toolbar.setMovable(False)
+        self.mode_buttons: dict[str, QAction] = {}
+        self._glyphs: dict[QAction, str] = {}
+        modes = QActionGroup(self)
+        for mode, icon, text, tip in (
+            (ZOOM, "pan", "Pan and Zoom",
+             "Drag to pan, scroll or right-drag to zoom; click a point to select it"),
+            (BOX, "box", "Box Select", "Drag a rectangle to select (Shift adds, ⌘/Ctrl toggles)"),
+            (LASSO, "lasso", "Lasso Select",
+             "Draw around points to select (Shift adds, ⌘/Ctrl toggles)"),
+        ):  # fmt: skip
+            action = self.toolbar.addAction(text)
+            action.setToolTip(f"{text}: {tip}")
+            action.setCheckable(True)
+            modes.addAction(action)
+            action.toggled.connect(lambda on, m=mode: on and self.set_mode(m))
+            self.mode_buttons[mode] = action
+            self._glyphs[action] = icon
+        self.toolbar.addSeparator()
+        reset = self.toolbar.addAction("Reset View", self.reset_view)
+        reset.setToolTip("Reset View: fit the plot to the data")
+        export = self.toolbar.addAction("Export…", self.export_dialog)
+        export.setToolTip("Export: save the plot as PNG or SVG")
+        self._glyphs[reset] = "fit"
+        self._glyphs[export] = "export"
 
         self.view_box = SelectViewBox()
         self.plot_widget = pg.PlotWidget(viewBox=self.view_box)
@@ -183,16 +221,22 @@ class PlotPanel(QWidget):
         self.plot.showGrid(x=True, y=True, alpha=0.15)
         self.plot.setMenuEnabled(False)
         self._apply_palette()
-        self.status = QLabel(" ")
-        self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.card = HoverCard(self)
+
+        self.plot_widget.setFrameShape(QFrame.Shape.NoFrame)
+        frame = QFrame()  # one bordered box round the toolbar and the plot
+        frame.setObjectName("PlotFrame")
+        inside = QVBoxLayout(frame)
+        inside.setContentsMargins(1, 1, 1, 1)
+        inside.setSpacing(0)
+        inside.addWidget(self.toolbar)
+        inside.addWidget(self.plot_widget, 1)
+        self._frame = frame
+        self._style_toolbar()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.addWidget(controls)
-        layout.addWidget(tools)
-        layout.addWidget(self.plot_widget, 1)
-        layout.addWidget(self.status)
+        layout.addWidget(frame, 1)
 
         self.renderer = None
         self._rebuild_timer = QTimer(self)
@@ -331,9 +375,7 @@ class PlotPanel(QWidget):
             "box": (self.y,),
         }[kind]
         for widget in (self.y, self.color, self.size, self.fit, self.bins, self.curve, self.guide):
-            widget.setVisible(widget in shown)
-            if widget in self._fields:
-                self._fields[widget].setVisible(widget in shown)
+            self.options.form.setRowVisible(widget, widget in shown)
         self._labels[self.x].setText("Group by:" if kind == "box" else "X:")
         self._labels[self.y].setText("Values:" if kind == "box" else "Y:")
 
@@ -356,7 +398,7 @@ class PlotPanel(QWidget):
             if self.renderer is not None:
                 self.renderer.clear()
             self.renderer = renderer_type(self.plot)
-        self.status.setText(self.renderer.build(self.table, spec, shown_oids(self.table)))
+        self.summary.setText(self.renderer.build(self.table, spec, shown_oids(self.table)))
         self.renderer.show_selection(self.selection.oids)
         axes = (spec.kind, spec.x, spec.y, spec.bins)
         if axes != self._last_axes:
@@ -382,7 +424,34 @@ class PlotPanel(QWidget):
         super().changeEvent(event)
         if event.type() == QEvent.Type.PaletteChange and hasattr(self, "plot"):
             self._apply_palette()
+            self._style_toolbar()
             self._rebuild_timer.start()  # guide labels and marker outlines use the palette
+
+    def _style_toolbar(self) -> None:
+        """Toolbar and frame colours from the palette (called again when the theme changes)."""
+        palette = self.palette()
+        ink = palette.text().color()
+        for action, name in self._glyphs.items():
+            action.setIcon(glyph(name, ink))
+        base = palette.base().color().name()
+        line = palette.mid().color().name()
+        checked = QColor(palette.highlight().color())
+        checked.setAlphaF(0.28)
+        hover = QColor(ink)
+        hover.setAlphaF(0.08)
+        rgba = "rgba({}, {}, {}, {:.2f})".format
+        self._frame.setStyleSheet(
+            f"QFrame#PlotFrame {{ border: 1px solid {line}; border-radius: 4px;"
+            f" background: {base}; }}"
+        )
+        self.toolbar.setStyleSheet(
+            f"QToolBar {{ background: {base}; border: none;"
+            f" border-bottom: 1px solid {line}; padding: 2px 4px; spacing: 2px; }}"
+            " QToolButton { border: none; border-radius: 4px; padding: 3px; }"
+            f" QToolButton:hover {{ background: {rgba(*hover.getRgb()[:3], hover.alphaF())}; }}"
+            " QToolButton:checked {"
+            f" background: {rgba(*checked.getRgb()[:3], checked.alphaF())}; }}"
+        )
 
     def _apply_palette(self) -> None:
         palette = self.palette()
@@ -470,3 +539,4 @@ class PlotPanel(QWidget):
         self._unsubscribe_selection()
         self._rebuild_timer.stop()
         self.card.hide()
+        self.options.hide()

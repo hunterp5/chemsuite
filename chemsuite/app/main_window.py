@@ -29,16 +29,22 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, Qt, QTimer
+import shiboken6
+from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
     QFileDialog,
+    QHBoxLayout,
     QInputDialog,
+    QLabel,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
+    QSizePolicy,
+    QStyle,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -201,8 +207,74 @@ class Workspace:
         self.lists.close()
 
 
+#: a new panel takes half the window, but never less than this
+PANEL_MIN_WIDTH = 360
+
+
+class PanelTitleBar(QWidget):
+    """A dock's title, then its buttons: settings (when the panel has options), undock, close.
+
+    Mouse presses fall through to the dock, so dragging and double-clicking the title still
+    move and float it as with Qt's own title bar.
+    """
+
+    def __init__(self, dock: QDockWidget) -> None:
+        super().__init__(dock)
+        self.dock = dock
+        self.title = QLabel(dock.windowTitle())
+        self.title.setTextFormat(Qt.TextFormat.PlainText)
+        self.title.setMinimumWidth(20)  # a long title is cut off, not a wide minimum
+        self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        style = self.style()
+
+        def button(tip: str, icon=None, text: str = "") -> QToolButton:
+            b = QToolButton()
+            b.setAutoRaise(True)
+            b.setToolTip(tip)
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            if icon is not None:
+                b.setIcon(style.standardIcon(icon))
+            else:
+                b.setText(text)
+            b.setIconSize(QSize(12, 12))
+            return b
+
+        self.settings = button("Plot settings", text="⚙")
+        self.settings.setVisible(False)
+        self.float_button = button(
+            "Undock (or dock again)", QStyle.StandardPixmap.SP_TitleBarNormalButton
+        )
+        self.close_button = button("Close", QStyle.StandardPixmap.SP_TitleBarCloseButton)
+        self.float_button.clicked.connect(lambda: dock.setFloating(not dock.isFloating()))
+        self.close_button.clicked.connect(dock.close)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(6, 1, 2, 1)
+        row.setSpacing(0)
+        row.addWidget(self.title, 1)
+        for b in (self.settings, self.float_button, self.close_button):
+            row.addWidget(b)
+        dock.windowTitleChanged.connect(self.title.setText)
+
+
 class PanelDock(QDockWidget):
-    """A dock holding a tool's panel; closing it closes the panel for good."""
+    """A dock holding a tool's panel; closing it closes the panel for good.
+
+    A panel with an ``options`` popup (see ``PlotOptions``) gets a settings button on the title
+    bar that opens it.
+    """
+
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(title, parent)
+        self.title_bar = PanelTitleBar(self)
+        self.setTitleBarWidget(self.title_bar)
+
+    def setWidget(self, widget: QWidget) -> None:
+        super().setWidget(widget)
+        options = getattr(widget, "options", None)
+        bar = self.title_bar
+        bar.settings.setVisible(options is not None)
+        if options is not None:
+            bar.settings.clicked.connect(lambda: options.popup(bar.settings))
 
     def closeEvent(self, event) -> None:
         widget = self.widget()
@@ -851,10 +923,16 @@ class MainWindow(QMainWindow):
         dock.setWidget(widget)
         if hasattr(widget, "titleChanged"):
             widget.titleChanged.connect(dock.setWindowTitle)
-        previous = [d for d in self._panels if d.isVisible()]
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+        # Beside the table (left | right), not under it: tables and plots both want height.
+        # Later panels join the last one as tabs.
+        previous = [d for d in self._panels if d.isVisible() and not d.isFloating()]
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock, Qt.Orientation.Horizontal)
         if previous:
             self.tabifyDockWidget(previous[-1], dock)
+        else:
+            self.resizeDocks(
+                [dock], [max(PANEL_MIN_WIDTH, self.width() // 2)], Qt.Orientation.Horizontal
+            )
         self._panels.append(dock)
         dock.destroyed.connect(lambda _o=None, d=dock: self._forget_panel(d))
         dock.show()
@@ -1354,11 +1432,16 @@ class MainWindow(QMainWindow):
 
         invalid: list[int] = []
 
+        # The window may be gone by the time a chunk or the end arrives (closed mid-parse).
         def apply(parsed) -> None:
+            if not shiboken6.isValid(self):
+                return
             if self._workspace is not None and self.workspace.table is table:
                 invalid.append(apply_parsed(table, parsed))
 
         def finished(_r: None) -> None:
+            if not shiboken6.isValid(self):
+                return
             bad = sum(invalid)
             message = f"Read {total:,} structures"
             self.statusBar().showMessage(message + (f"; {bad:,} invalid" if bad else ""), 6000)
@@ -1366,8 +1449,12 @@ class MainWindow(QMainWindow):
         job = self._runner.submit("Reading structures", work)
         job.partial.connect(apply)
         job.finished.connect(finished)
-        job.failed.connect(lambda err: self._show_error("Reading structures", err))
-        job.done.connect(lambda: self._parse_again and self._start_parsing())
+        job.failed.connect(
+            lambda err: shiboken6.isValid(self) and self._show_error("Reading structures", err)
+        )
+        job.done.connect(
+            lambda: shiboken6.isValid(self) and self._parse_again and self._start_parsing()
+        )
         self._parse_job = job
 
     # -- closing -----------------------------------------------------------------------------
@@ -1399,6 +1486,8 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         self._runner.cancel_all(owner=self)
+        if self._parse_job is not None:  # not owned (it never blocks closing), so stop it here
+            self._parse_job.cancel()
         self._teardown()
         if self in _windows:  # closing twice must not disconnect twice
             _windows.remove(self)
