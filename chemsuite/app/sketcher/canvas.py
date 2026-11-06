@@ -123,6 +123,8 @@ class SketchCanvas(QWidget):
     changed = Signal()
     #: The tool changed (its name), so a toolbar can follow keyboard tool picks.
     tool_changed = Signal(str)
+    #: A short message for the user (why a label could not be used).
+    message = Signal(str)
 
     def __init__(self, history: History | None = None, parent: QWidget | None = None):
         super().__init__(parent)
@@ -137,6 +139,7 @@ class SketchCanvas(QWidget):
         self.selected_atoms: set[int] = set()
         self.selected_bonds: set[int] = set()
         self._preview: Change | None = None
+        self._label_editor = None
         self.tool = SelectTool()
         self.report = valence.Report()
         self.scene = render.Scene()
@@ -219,15 +222,34 @@ class SketchCanvas(QWidget):
         return QPointF(self.origin.x() + p[0] * self.scale, self.origin.y() - p[1] * self.scale)
 
     def hit_at(self, p: Point, exclude_atoms: frozenset[int] = frozenset()) -> Hit:
-        atom = self.sketch.atom_at(*p, within=ATOM_PICK, exclude=exclude_atoms)
+        """The atom or bond under a point. Atoms inside a contracted abbreviation cannot be
+        hit; its label is hit through the group's attachment atom."""
+        hidden = self.sketch.hidden_atoms()
+        exclude = frozenset(exclude_atoms) | hidden
+        atom = self.sketch.atom_at(*p, within=ATOM_PICK, exclude=exclude)
         if atom is not None:
             return Hit("atom", atom)
         bond = self.sketch.bond_at(*p, within=BOND_PICK)
         if bond is not None and not (
-            {self.sketch.bonds[bond].begin, self.sketch.bonds[bond].end} & exclude_atoms
+            {self.sketch.bonds[bond].begin, self.sketch.bonds[bond].end} & exclude
         ):
             return Hit("bond", bond)
         return NOTHING
+
+    def with_groups(self, atoms) -> set[int]:
+        """``atoms`` plus every atom of a contracted abbreviation whose label is among them."""
+        out = set(atoms)
+        for group in self.sketch.groups.values():
+            if not group.expanded and group.attach in out:
+                out |= group.atoms
+        return out
+
+    def contracted_group(self, atom: int):
+        """(id, group) when ``atom`` is the label of a contracted abbreviation."""
+        found = self.sketch.group_of(atom)
+        if found and not found[1].expanded and found[1].attach == atom:
+            return found
+        return None
 
     def fit(self) -> None:
         """Centre the drawing; shrink it if it does not fit (never enlarge past zoom 1)."""
@@ -262,7 +284,7 @@ class SketchCanvas(QWidget):
         if not add:
             self.selected_atoms.clear()
             self.selected_bonds.clear()
-        self.selected_atoms |= set(atoms)
+        self.selected_atoms |= self.with_groups(atoms)
         self.selected_bonds |= {
             bid
             for bid, b in self.sketch.bonds.items()
@@ -580,12 +602,20 @@ class SketchCanvas(QWidget):
         text, key, hit = event.text(), event.key(), self.hover
         if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             if hit.kind == "atom":
-                self.edit("Erase", lambda ch: edits.erase(ch, atoms=[hit.id]))
+                atoms = self.with_groups([hit.id])
+                self.edit("Erase", lambda ch: edits.erase(ch, atoms=atoms))
             else:
                 self.edit("Erase", lambda ch: edits.erase(ch, bonds=[hit.id]))
+        elif hit.kind == "atom" and key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.edit_label(hit.id)
         elif hit.kind == "atom" and text in ELEMENT_KEYS:
             label = ELEMENT_KEYS[text]
-            self.edit(f"Set {label}", lambda ch: edits.set_element(ch, hit.id, label))
+
+            def apply(ch):
+                self._drop_group(ch, hit.id)
+                edits.set_element(ch, hit.id, label)
+
+            self.edit(f"Set {label}", apply)
         elif hit.kind == "atom" and text in ("1", "2", "3"):
             order = BOND_KEYS[text]
             self.edit("Add bond", lambda ch: edits.bond_from_atom(ch, hit.id, order))
@@ -600,6 +630,100 @@ class SketchCanvas(QWidget):
         if self.mouse is not None:
             self.hover = self.hit_at(self.to_model(self.mouse))
         return True
+
+    def _drop_group(self, change: Change, atom: int) -> None:
+        """Typing an element on an abbreviation's label replaces the abbreviation."""
+        found = self.contracted_group(atom)
+        if found is not None:
+            gid, group = found
+            change.set_group(gid, None)
+            edits.erase(change, atoms=group.atoms - {atom})
+
+    # -- labels and abbreviations ------------------------------------------------------------
+
+    def edit_label(self, atom: int) -> None:
+        """Type an atom's label: an element (N, Cl, 13C, NH2, O-) or an abbreviation (CO2Me)."""
+        from PySide6.QtWidgets import QCompleter, QLineEdit
+
+        from chemsuite.sketch.abbrev import TABLE
+
+        self.cancel_preview()
+        if self._label_editor is not None:
+            self._label_editor.deleteLater()
+        found = self.contracted_group(atom)
+        current = found[1].label if found else self.sketch.atoms[atom].symbol
+        editor = QLineEdit(current, self)
+        editor.setObjectName("sketch-label-editor")
+        names = sorted({e.label for e in TABLE} | {a for e in TABLE for a in e.aliases})
+        completer = QCompleter(names, editor)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        editor.setCompleter(completer)
+        editor.setFixedWidth(110)
+        at = self.to_screen(self.sketch.atoms[atom].pos)
+        editor.move(int(at.x() - 20), int(at.y() - editor.sizeHint().height() / 2))
+        editor.selectAll()
+        editor.returnPressed.connect(lambda: self._apply_label(atom, editor.text()))
+        editor.editingFinished.connect(self._close_label_editor)
+        self._label_editor = editor
+        editor.show()
+        editor.setFocus()
+
+    def _apply_label(self, atom: int, text: str) -> None:
+        self._close_label_editor()
+        if atom not in self.sketch.atoms or not text.strip():
+            return
+        from chemsuite.sketch.abbrev import set_label
+
+        problem = ""
+
+        def apply(ch):
+            nonlocal problem
+            self._drop_group(ch, atom)
+            problem = set_label(ch, atom, text)
+
+        change = self.history.change(f"Label {text.strip()}")
+        apply(change)
+        if problem:
+            self.history.discard(change)
+            self.message.emit(problem)
+        elif self.history.commit(change) is None:
+            self._recompute()
+        self.setFocus()
+
+    def _close_label_editor(self) -> None:
+        editor, self._label_editor = self._label_editor, None
+        if editor is not None:
+            editor.hide()
+            editor.deleteLater()
+
+    def contextMenuEvent(self, event) -> None:
+        from PySide6.QtWidgets import QMenu
+
+        from chemsuite.sketch import abbrev
+
+        hit = self.hit_at(self.to_model(QPointF(event.pos())))
+        found = self.sketch.group_of(hit.id) if hit.kind == "atom" else None
+        menu = QMenu(self)
+        if hit.kind == "atom":
+            menu.addAction("Edit Label…", lambda: self.edit_label(hit.id))
+        if found is not None:
+            gid, group = found
+            if group.expanded:
+                menu.addAction(
+                    f"Contract to {group.label}",
+                    lambda: self.edit("Contract", lambda ch: abbrev.set_expanded(ch, gid, False)),
+                )
+            else:
+                menu.addAction(
+                    f"Expand {group.label}",
+                    lambda: self.edit("Expand", lambda ch: abbrev.set_expanded(ch, gid, True)),
+                )
+            menu.addAction(
+                f"Remove the {group.label} label (keep the atoms)",
+                lambda: self.edit("Ungroup", lambda ch: abbrev.ungroup(ch, gid)),
+            )
+        if not menu.isEmpty():
+            menu.exec(event.globalPos())
 
     def _tool_key(self, event: QKeyEvent) -> bool:
         """Without hovering, the same keys pick the matching tool (as in Ketcher)."""

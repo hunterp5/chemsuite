@@ -148,7 +148,7 @@ class SelectTool(Tool):
 
     def double_click(self, canvas, pos, hit) -> None:
         if hit.kind == "atom":
-            canvas.select_atoms(canvas.sketch.fragment(hit.id))
+            canvas.edit_label(hit.id)
         elif hit.kind == "bond":
             canvas.select_atoms(canvas.sketch.fragment(canvas.sketch.bonds[hit.id].begin))
 
@@ -257,6 +257,10 @@ class AtomTool(Tool):
         elif not hit:
             canvas.edit(f"Add {label}", lambda ch: edits.atom_on_canvas(ch, pos, label))
 
+    def double_click(self, canvas, pos, hit) -> None:
+        if hit.kind == "atom":
+            canvas.edit_label(hit.id)
+
     def dragged(self, canvas, pos, event) -> None:
         if self.start_hit.kind != "atom":
             return
@@ -308,7 +312,7 @@ class EraseTool(Tool):
 
     def _collect(self, canvas, hit) -> None:
         if hit.kind == "atom":
-            self.atoms.add(hit.id)
+            self.atoms |= canvas.with_groups([hit.id])
         elif hit.kind == "bond":
             self.bonds.add(hit.id)
         else:

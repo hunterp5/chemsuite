@@ -354,3 +354,104 @@ def test_t_cycles_the_rings(dialog):
     assert dialog.toolbar.buttons["template:Benzene"].isChecked()
     key(canvas, "t")
     assert dialog.toolbar.buttons["template:Cyclopropane"].isChecked()
+
+
+def _label_editor(canvas):
+    from PySide6.QtWidgets import QLineEdit
+
+    found = [e for e in canvas.findChildren(QLineEdit, "sketch-label-editor") if e.isVisible()]
+    return found[-1] if found else None
+
+
+def _type_label(qapp, canvas, atom, text):
+    canvas.edit_label(atom)
+    editor = _label_editor(canvas)
+    assert editor is not None and editor.isVisible()
+    editor.setText(text)
+    editor.returnPressed.emit()
+    qapp.processEvents()
+
+
+def test_double_click_types_an_abbreviation_and_it_draws_contracted(dialog, qapp):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("c1ccccc1C"))
+    methyl = next(a for a in canvas.sketch.atoms if canvas.sketch.degree(a) == 1)
+    canvas.set_tool(sk_tools.SelectTool())
+    _send(canvas, QEvent.Type.MouseButtonDblClick, canvas.sketch.atoms[methyl].pos)
+    editor = _label_editor(canvas)
+    assert editor is not None and editor.text() == "C"
+    editor.setText("CO2Me")
+    editor.returnPressed.emit()
+    qapp.processEvents()
+    assert to_smiles(canvas.sketch) == Chem.CanonSmiles("COC(=O)c1ccccc1")
+    assert canvas.history.undo_name == "Label CO2Me"
+    (group,) = canvas.sketch.groups.values()
+    # Hidden atoms cannot be picked; the label is picked through its attachment atom.
+    for aid in group.atoms - {group.attach}:
+        assert canvas.hit_at(canvas.sketch.atoms[aid].pos).id != aid
+    assert canvas.hit_at(canvas.sketch.atoms[group.attach].pos).id == group.attach
+
+
+def test_selecting_or_erasing_a_label_takes_the_whole_group(dialog, qapp):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("c1ccccc1C"))
+    methyl = next(a for a in canvas.sketch.atoms if canvas.sketch.degree(a) == 1)
+    _type_label(qapp, canvas, methyl, "Boc")
+    (group,) = canvas.sketch.groups.values()
+    canvas.set_tool(sk_tools.SelectTool())
+    click(canvas, canvas.sketch.atoms[group.attach].pos)
+    assert group.atoms <= canvas.selected_atoms
+    hover(canvas, canvas.sketch.atoms[group.attach].pos)
+    key(canvas, "", Qt.Key.Key_Delete)
+    assert to_smiles(canvas.sketch) == "c1ccccc1"
+
+
+def test_element_key_on_a_label_replaces_the_abbreviation(dialog, qapp):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("c1ccccc1C"))
+    methyl = next(a for a in canvas.sketch.atoms if canvas.sketch.degree(a) == 1)
+    _type_label(qapp, canvas, methyl, "OTf")
+    hover(canvas, canvas.sketch.atoms[methyl].pos)
+    key(canvas, "f")
+    assert to_smiles(canvas.sketch) == Chem.CanonSmiles("Fc1ccccc1")
+    assert not canvas.sketch.groups
+
+
+def test_bad_label_explains_and_changes_nothing(dialog, qapp):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("CC(C)C"))
+    centre = next(a for a in canvas.sketch.atoms if canvas.sketch.degree(a) == 3)
+    _type_label(qapp, canvas, centre, "Ph")
+    assert "one bond" in dialog.info.text()
+    _type_label(qapp, canvas, centre, "Qq")
+    assert "not an element" in dialog.info.text()
+    assert to_smiles(canvas.sketch) == "CC(C)C"
+    assert canvas.history.undo_name == "Replace drawing"  # the failed labels left no edit
+
+
+def test_enter_over_an_atom_opens_the_label_editor_and_sets_elements(dialog, qapp):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("CC"))
+    atom = min(canvas.sketch.atoms)
+    hover(canvas, canvas.sketch.atoms[atom].pos)
+    key(canvas, "\r", Qt.Key.Key_Return)
+    editor = _label_editor(canvas)
+    assert editor is not None
+    editor.setText("NH2")
+    editor.returnPressed.emit()
+    assert to_smiles(canvas.sketch) == "CN"
+
+
+def test_expand_and_contract_keep_the_molecule(dialog, qapp):
+    from chemsuite.sketch import abbrev
+
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("c1ccccc1C"))
+    methyl = next(a for a in canvas.sketch.atoms if canvas.sketch.degree(a) == 1)
+    _type_label(qapp, canvas, methyl, "tBu")
+    gid = next(iter(canvas.sketch.groups))
+    before = to_smiles(canvas.sketch)
+    canvas.edit("Expand", lambda ch: abbrev.set_expanded(ch, gid, True))
+    assert not canvas.sketch.hidden_atoms() and to_smiles(canvas.sketch) == before
+    canvas.edit("Ungroup", lambda ch: abbrev.ungroup(ch, gid))
+    assert not canvas.sketch.groups and to_smiles(canvas.sketch) == before

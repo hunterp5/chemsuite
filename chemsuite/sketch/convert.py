@@ -33,7 +33,7 @@ from rdkit.Chem import rdDepictor
 
 from chemsuite.core.mols import mol_from_text
 from chemsuite.sketch import ctfile
-from chemsuite.sketch.model import Atom, Bond, Order, Sketch, Stereo
+from chemsuite.sketch.model import Atom, Bond, Group, Order, Sketch, Stereo
 
 #: Molfile coordinates per sketch bond length. RDKit draws bonds 1.5 long; files keep that.
 FILE_BOND_LENGTH = 1.5
@@ -91,8 +91,39 @@ def drawn_molblock(sketch: Sketch) -> str:
             chunk = values[start : start + 8]
             body = "".join(f" {i:3d} {v:3d}" for i, v in chunk)
             lines.append(f"M  {tag}{len(chunk):3d}{body}")
+    lines.extend(_sgroup_lines(sketch, index, {bid: i + 1 for i, (bid, _) in enumerate(bonds)}))
     lines.append("M  END")
     return "\n".join(lines) + "\n"
+
+
+def _sgroup_lines(sketch: Sketch, atom_index: dict[int, int], bond_index: dict[int, int]):
+    """Abbreviations as CTfile superatom (``SUP``) S-groups: atoms, crossing bonds, label,
+    and ``SDS EXP`` for those shown expanded."""
+    groups = sorted(sketch.groups.items())
+    out: list[str] = []
+    for start in range(0, len(groups), 8):
+        chunk = groups[start : start + 8]
+        body = "".join(f" {start + k + 1:3d} SUP" for k in range(len(chunk)))
+        out.append(f"M  STY{len(chunk):3d}{body}")
+    for n, (_, group) in enumerate(groups, start=1):
+        atoms = sorted(atom_index[a] for a in group.atoms)
+        for start in range(0, len(atoms), 15):
+            chunk = atoms[start : start + 15]
+            out.append(f"M  SAL {n:3d}{len(chunk):3d}" + "".join(f" {a:3d}" for a in chunk))
+        crossing = sorted(
+            bond_index[bid]
+            for bid, b in sketch.bonds.items()
+            if (b.begin in group.atoms) != (b.end in group.atoms)
+        )
+        for start in range(0, len(crossing), 15):
+            chunk = crossing[start : start + 15]
+            out.append(f"M  SBL {n:3d}{len(chunk):3d}" + "".join(f" {b:3d}" for b in chunk))
+        out.append(f"M  SMT {n:3d} {group.label}")
+    expanded = [n for n, (_, g) in enumerate(groups, start=1) if g.expanded]
+    for start in range(0, len(expanded), 15):
+        chunk = expanded[start : start + 15]
+        out.append(f"M  SDS EXP{len(chunk):3d}" + "".join(f" {n:3d}" for n in chunk))
+    return out
 
 
 def to_rdkit(sketch: Sketch, *, sanitize: bool = True) -> Chem.Mol:
@@ -135,6 +166,7 @@ def to_molblock(sketch: Sketch) -> str:
         return drawn_molblock(sketch)
     Chem.ReapplyMolBlockWedging(mol)
     Chem.Kekulize(mol, clearAromaticFlags=True)
+    _add_attach_points(mol)
     if mol.GetNumAtoms() > MAX_V2000_ATOMS or mol.GetNumBonds() > MAX_V2000_ATOMS:
         return Chem.MolToMolBlock(mol, kekulize=False, forceV3000=True)
     lines = Chem.MolToMolBlock(mol, kekulize=False).split("\n")
@@ -144,6 +176,23 @@ def to_molblock(sketch: Sketch) -> str:
             line = lines[4 + atom.GetIdx()]
             lines[4 + atom.GetIdx()] = f"{line[:48]}{valence:3d}{line[51:]}"
     return "\n".join(lines)
+
+
+def _add_attach_points(mol: Chem.Mol) -> None:
+    """Give each superatom its attachment point (``SAP``): the group atom bonded outside."""
+    for k in range(len(Chem.GetMolSubstanceGroups(mol))):
+        group = Chem.GetMolSubstanceGroupWithIdx(mol, k)  # a reference; the list holds copies
+        if group.GetProp("TYPE") != "SUP" or list(group.GetAttachPoints()):
+            continue
+        members = set(group.GetAtoms())
+        for index in group.GetAtoms():
+            outside = [
+                n.GetIdx() for n in mol.GetAtomWithIdx(index).GetNeighbors()
+                if n.GetIdx() not in members
+            ]  # fmt: skip
+            if outside:
+                group.AddAttachPoint(index, outside[0], "1 ")  # CTfile ids are two wide
+                break
 
 
 def _ctfile_valence(atom: Chem.Atom) -> int | None:
@@ -213,6 +262,25 @@ def from_mol(mol: Chem.Mol) -> Sketch:
             stereo = Stereo.EITHER
         sketch.bonds[sketch.new_id()] = Bond(
             ids[bond.GetBeginAtomIdx()], ids[bond.GetEndAtomIdx()], order, stereo
+        )
+    for group in Chem.GetMolSubstanceGroups(mol):
+        if group.GetProp("TYPE") != "SUP" or not group.HasProp("LABEL"):
+            continue
+        members = list(group.GetAtoms())
+        if not members:
+            continue
+        inside = set(members)
+        attach = next(
+            (
+                i
+                for i in members
+                if any(n.GetIdx() not in inside for n in mol.GetAtomWithIdx(i).GetNeighbors())
+            ),
+            members[0],
+        )
+        expanded = group.HasProp("ESTATE") and group.GetProp("ESTATE") == "E"
+        sketch.groups[sketch.new_id()] = Group(
+            group.GetProp("LABEL"), frozenset(ids[i] for i in members), ids[attach], expanded
         )
     return sketch
 

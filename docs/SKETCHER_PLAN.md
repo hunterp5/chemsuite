@@ -42,7 +42,8 @@ chemsuite/sketch/            Qt-free (added to QT_FREE in tests/test_import_boun
   stereo.py     wedge and hash validity, CIP labels, enhanced stereo (§4.4)
   abbrev.py     functional-group abbreviations: contract and expand (§4.5)
   convert.py    model to and from RDKit and molfile (V2000/V3000), SMILES and SMARTS
-  data/         Ketcher's fg.sdf, salts-and-solvents.sdf, library.sdf, plus LICENSE and NOTICE
+  data/         Ketcher's LICENSE and NOTICE (for ctfile.py); later salts-and-solvents.sdf
+                and library.sdf after their checks
 chemsuite/app/sketcher/      Qt
   canvas.py     the drawing surface, built on QGraphicsView, drawn with chemsuite's depiction
                 code so a sketch looks like the table's drawings
@@ -136,11 +137,15 @@ Ketcher's NOTICE lists further licences for its dependencies. We take only `ketc
 
 ### 4.5 Abbreviations, generic atoms and R-groups
 
-- **Abbreviations** (Ph, Boc, CO₂Me, OTs …) come from `fg.sdf`. They are stored as
-  superatom S-groups, contracted and expanded without changing the molecule, and written as
-  `SUP` groups in molfiles.
-  - **Verified by:** expanding each abbreviation and comparing its canonical SMILES and formula
-    with the SDF record; a contract-then-expand round trip on a drug set.
+- **Abbreviations** (Ph, Boc, CO₂Me, OTs …) come from chemsuite's own table, **not**
+  `fg.sdf`.
+  - P2 found 9 unusable records and a wrong Mes in `fg.sdf`, and a wrong iBu in RDKit's list
+    (`docs/sketcher/abbreviation-review.md`).
+  - They are stored as superatom S-groups, contracted and expanded without changing the
+    molecule, and written as `SUP` groups in molfiles.
+  - **Verified by:** each entry's formula from its IUPAC name, isomer checks, placement on a
+    ring with canonical SMILES, molfile round trips; Ketcher and RDKit as cross-checks
+    (`scripts/review/abbreviation_review.py`).
 - **Generic and query atoms** (A, Q, X, M and their H variants; atom lists; NOT lists) map to
   SMARTS as in Ketcher's `generics.ts` and the CTfile specification.
   - **Verified by:** substructure searches against reference molecules.

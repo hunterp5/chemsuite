@@ -31,21 +31,21 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 
 from chemsuite.sketch import geometry
-from chemsuite.sketch.model import Atom, Bond, Order, Sketch, Stereo
+from chemsuite.sketch.model import Atom, Bond, Group, Order, Sketch, Stereo
 
 Point = tuple[float, float]
 
 
 @dataclass(frozen=True)
 class Step:
-    kind: str  # "atom" or "bond"
+    kind: str  # "atom", "bond" or "group"
     id: int
-    old: Atom | Bond | None
-    new: Atom | Bond | None
+    old: Atom | Bond | Group | None
+    new: Atom | Bond | Group | None
 
     def apply(self, sketch: Sketch, forward: bool = True) -> None:
         value = self.new if forward else self.old
-        store = sketch.atoms if self.kind == "atom" else sketch.bonds
+        store = _store(sketch, self.kind)
         if value is None:
             store.pop(self.id, None)
         else:
@@ -66,6 +66,10 @@ class Edit:
             step.apply(sketch)
 
 
+def _store(sketch: Sketch, kind: str) -> dict:
+    return {"atom": sketch.atoms, "bond": sketch.bonds, "group": sketch.groups}[kind]
+
+
 class Change:
     """Records an edit while applying it to the sketch."""
 
@@ -73,8 +77,8 @@ class Change:
         self.sketch = sketch
         self.edit = Edit(name)
 
-    def _step(self, kind: str, id_: int, new: Atom | Bond | None) -> None:
-        store = self.sketch.atoms if kind == "atom" else self.sketch.bonds
+    def _step(self, kind: str, id_: int, new: Atom | Bond | Group | None) -> None:
+        store = _store(self.sketch, kind)
         old = store.get(id_)
         if old == new:
             return
@@ -90,7 +94,18 @@ class Change:
     def set_atom(self, aid: int, atom: Atom) -> None:
         self._step("atom", aid, atom)
 
+    def add_group(self, group: Group) -> int:
+        gid = self.sketch.new_id()
+        self._step("group", gid, group)
+        return gid
+
+    def set_group(self, gid: int, group: Group | None) -> None:
+        self._step("group", gid, group)
+
     def remove_atom(self, aid: int) -> None:
+        found = self.sketch.group_of(aid)
+        if found is not None:  # an abbreviation that loses an atom is no longer that group
+            self._step("group", found[0], None)
         for bid, _ in list(self.sketch.bonds_of(aid)):
             self._step("bond", bid, None)
         self._step("atom", aid, None)
@@ -129,6 +144,9 @@ class Change:
                 continue
             ends = (target, other) if bond.begin == source else (other, target)
             self._step("bond", self.sketch.new_id(), replace(bond, begin=ends[0], end=ends[1]))
+        found = self.sketch.group_of(source)
+        if found is not None:
+            self._step("group", found[0], None)
         self._step("atom", source, None)
 
 
@@ -196,9 +214,7 @@ class History:
         change = self.change(name)
         for aid in list(self.sketch.atoms):
             change.remove_atom(aid)
-        mapping = {aid: change.add_atom(atom) for aid, atom in sketch.atoms.items()}
-        for bond in sketch.bonds.values():
-            change.add_bond(mapping[bond.begin], mapping[bond.end], bond.order, bond.stereo)
+        insert(change, sketch)
         self.commit(change)
 
     def _notify(self) -> None:
@@ -331,6 +347,14 @@ def insert(change: Change, other: Sketch) -> list[int]:
     mapping = {aid: change.add_atom(atom) for aid, atom in other.atoms.items()}
     for bond in other.bonds.values():
         change.add_bond(mapping[bond.begin], mapping[bond.end], bond.order, bond.stereo)
+    for group in other.groups.values():
+        change.add_group(
+            replace(
+                group,
+                atoms=frozenset(mapping[a] for a in group.atoms),
+                attach=mapping[group.attach],
+            )
+        )
     return list(mapping.values())
 
 
@@ -340,6 +364,7 @@ def subset(sketch: Sketch, atoms: Iterable[int]) -> Sketch:
     out = Sketch(next_id=sketch.next_id)
     out.atoms = {aid: a for aid, a in sketch.atoms.items() if aid in keep}
     out.bonds = {bid: b for bid, b in sketch.bonds.items() if b.begin in keep and b.end in keep}
+    out.groups = {gid: g for gid, g in sketch.groups.items() if g.atoms <= keep}
     return out
 
 

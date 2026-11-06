@@ -29,7 +29,7 @@ import math
 from dataclasses import dataclass, field
 
 from chemsuite.sketch import geometry
-from chemsuite.sketch.model import Order, Sketch, Stereo
+from chemsuite.sketch.model import Group, Order, Sketch, Stereo
 from chemsuite.sketch.valence import Report
 
 Point = tuple[float, float]
@@ -143,11 +143,43 @@ def _hydrogens_left(sketch: Sketch, aid: int) -> bool:
     return bool(xs) and all(x > 0.1 for x in xs)
 
 
+def group_runs(sketch: Sketch, group: Group) -> tuple[list[tuple[str, str]], int]:
+    """A contracted abbreviation's label, written from its attachment atom outwards.
+
+    The first letter sits on the attachment atom (CO₂Me); when the bond comes in from the
+    right the mirrored form is used and its last letter sits there (MeO₂C).
+    """
+    from chemsuite.sketch.abbrev import display, find
+
+    entry = find(group.label)
+    here = sketch.atoms[group.attach]
+    outside = [n for n in sketch.neighbours(group.attach) if n not in group.atoms]
+    from_right = bool(outside) and all(sketch.atoms[n].x > here.x + 0.1 for n in outside)
+    text = entry.left_label if (entry and from_right) else group.label
+    runs = display(text)
+    if from_right:
+        last, kind = runs[-1]
+        runs[-1:] = [(last[:-1], kind), (last[-1], kind)] if len(last) > 1 else [(last, kind)]
+        runs = [r for r in runs if r[0]]
+        return runs, len(runs) - 1
+    first, kind = runs[0]
+    runs[:1] = [(first[0], kind), (first[1:], kind)] if len(first) > 1 else [(first, kind)]
+    return [r for r in runs if r[0]], 0
+
+
 def build(sketch: Sketch, report: Report) -> Scene:
     scene = Scene(problems=dict(report.problems))
+    hidden = sketch.hidden_atoms()
     labelled = {aid for aid in sketch.atoms if shows_label(sketch, aid)}
     labelled |= set(report.problems)
-    for aid in labelled:
+    labelled -= hidden
+    contracted = {g.attach: g for g in sketch.groups.values() if not g.expanded}
+    for aid, group in contracted.items():
+        problem = next((report.problems[a] for a in group.atoms if a in report.problems), "")
+        runs, centre = group_runs(sketch, group)
+        scene.labels[aid] = Label(aid, sketch.atoms[aid].pos, tuple(runs), centre, "C", problem)
+        labelled.add(aid)
+    for aid in labelled - set(contracted):
         runs, centre = label_runs(sketch, aid, report.hydrogens.get(aid, 0))
         scene.labels[aid] = Label(
             aid,
@@ -159,6 +191,8 @@ def build(sketch: Sketch, report: Report) -> Scene:
         )
     rings = geometry.ring_centres(sketch)
     for bid, bond in sketch.bonds.items():
+        if bond.begin in hidden or bond.end in hidden:
+            continue
         a, b = sketch.atoms[bond.begin].pos, sketch.atoms[bond.end].pos
         if math.dist(a, b) < 1e-6:
             continue

@@ -219,14 +219,14 @@ valid valence.
 
 | Tool | Click | Drag |
 |---|---|---|
-| Select | Select an atom or bond (Shift adds); double-click selects the whole fragment | From empty canvas: box-select. From a selection: move it. Atoms dropped on other atoms merge with them, so dragging a chain end onto its start closes a ring. |
+| Select | Select an atom or bond (Shift adds; an abbreviation is selected whole). Double-click an atom to type its label; double-click a bond to select its whole fragment. | From empty canvas: box-select. From a selection: move it. Atoms dropped on other atoms merge with them, so dragging a chain end onto its start closes a ring. |
 | Erase | Delete the atom or bond | Delete everything you pass over (one undo step) |
 | Single, double, triple bond | On an atom: add a bond in the free direction (chains zig-zag; alkynes and allenes stay straight). On a bond: set that order; the single-bond tool steps single → double → triple. On empty canvas: a new bond. | From an atom or empty canvas: draw a bond. It snaps to 15° steps; hold Ctrl (⌘) for any angle. Release on an atom to bond to it. |
 | Wedge, hash, wavy | As for bonds; clicking a bond that already has that wedge reverses it | As for bonds |
 | Chain | Add a bond | Draw a zig-zag chain, one bond per bond length; the count shows by the pointer |
 | Rings (benzene, 3- to 8-membered) | On empty canvas: place the ring. On an atom: the ring shares that atom, facing the free direction. On a bond: fuse the ring onto it, away from the rest of the molecule. Fusing benzene re-draws the alternating bonds of the whole aromatic system, so naphthalene or phenanthrene come out valid whichever bond you click. | On empty canvas: turn the ring (15° steps). From an atom: aim it; drag more than a bond length to attach it through a new bond. On a bond: choose the side. |
 | Charge + / − | Change the atom's charge by one | — |
-| Element (C, N, O …) | On an atom: change its element. On empty canvas: a lone atom. | From an atom: a bond to a new atom of that element |
+| Element (C, N, O …) | On an atom: change its element. On empty canvas: a lone atom. Double-click an atom to type its label. | From an atom: a bond to a new atom of that element |
 
 **Keys over an atom or bond.** Point at an atom or bond and press a key:
 
@@ -239,6 +239,7 @@ valid valence.
 | `4` | — | Aromatic bond |
 | `=` / `-` | Charge +1 / −1 | — |
 | Delete, Backspace | Erase | Erase |
+| Enter | Type a label (see below) | — |
 
 With nothing under the pointer, the same keys choose the matching tool, and `t` steps through
 the rings. Esc returns to Select.
@@ -247,6 +248,21 @@ the rings. Esc returns to Select.
 cut and paste (molfile and SMILES, so ChemDraw and others can read it); Ctrl+Shift+M copies a
 molfile as text; Ctrl+A selects everything; Alt+H and Alt+V flip the selection (or the whole
 drawing) horizontally or vertically. Ctrl+scroll zooms, scrolling or a middle-button drag pans.
+
+**Labels and abbreviations.** Double-click an atom (or point at it and press Enter) and type:
+
+- an element, with an isotope, hydrogens or a charge if you like: `N`, `Cl`, `13C`, `NH2`,
+  `O-`, `Fe2+`, `D`;
+- or an abbreviation, which replaces the atom with that group and shows it as a label:
+  Me, Et, Pr, iPr, cPr, Bu, iBu, sBu, tBu, Cy, Ph, Bn, Tol, Mes, Tr, PMB, Ac, Bz, Piv, Boc, Cbz, Fmoc, CHO, CO2H, CO2Me, CO2Et, CO2tBu, CONH2, CN, CF3, CCl3, OMe, OEt, OAc, OBn, OCF3, OTf, OTs, OMs, MOM, THP, SEM, NO2, NHAc, NHBoc, NMe2, NCO, NCS, SMe, SCN, Ms, Ts, Tf, SO2NH2, SO2Cl, SO3H, TMS, TES, TBS, TIPS, TBDPS, Bpin, PO3H2. Common spellings work too (COOH, TBDMS, Z, nBu …), and `Ac`, `Pr` and `Ts` mean
+  acetyl, propyl and tosyl, not the elements.
+
+An abbreviation goes on an atom with at most one bond. Its label is written outwards from the
+bond, so CO₂Me on a bond from the right reads MeO₂C. The label moves, selects and erases as
+one piece. Pressing an element key over it replaces the group with that atom. Right-click it
+to **Expand** (show its atoms), **Contract** again, or **remove the label** and keep the atoms.
+The molecule itself never depends on whether a label is contracted. Molfiles keep
+abbreviations as superatom groups, which ChemDraw, Marvin and Ketcher show as labels.
 
 **Valence.** An atom with an impossible valence is shown in red inside a dotted ring; point
 at it to see why. Hydrogens are worked out by the same rules as the table, so a drawing the

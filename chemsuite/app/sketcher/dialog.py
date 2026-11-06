@@ -86,6 +86,7 @@ class SketcherDialog(QDialog):
         self.toolbar.picked.connect(self.canvas.set_tool)
         self.canvas.tool_changed.connect(lambda _n: self.toolbar.show_tool(self.canvas.tool))
         self.canvas.changed.connect(self._update)
+        self.canvas.message.connect(self._show_message)
         self.undo_button.clicked.connect(self.canvas.history.undo)
         self.redo_button.clicked.connect(self.canvas.history.redo)
         self.paste_button.clicked.connect(self.canvas.paste)
@@ -125,6 +126,10 @@ class SketcherDialog(QDialog):
             formula = rdMolDescriptors.CalcMolFormula(mol)
             self.info.setText(f"{formula} · MW {Descriptors.MolWt(mol):.2f}")
             self.info.setStyleSheet("color: palette(placeholder-text)")
+
+    def _show_message(self, text: str) -> None:
+        self.info.setText(text)
+        self.info.setStyleSheet("color: #c62828")
 
     def accept(self) -> None:
         self.canvas.cancel_preview()

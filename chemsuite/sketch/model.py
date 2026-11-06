@@ -86,11 +86,27 @@ class Bond:
         return self.order is not Order.AROMATIC and self.stereo is Stereo.NONE
 
 
+@dataclass(frozen=True)
+class Group:
+    """An abbreviation (a superatom S-group): its atoms stay real atoms in the drawing.
+
+    ``attach`` is the group atom bonded to the rest of the molecule (or any group atom for a
+    free-standing group). Contracted, the canvas draws ``label`` at ``attach`` in place of
+    the atoms; molfiles carry it as a ``SUP`` S-group.
+    """
+
+    label: str
+    atoms: frozenset[int]
+    attach: int
+    expanded: bool = False
+
+
 @dataclass
 class Sketch:
     atoms: dict[int, Atom] = field(default_factory=dict)
     bonds: dict[int, Bond] = field(default_factory=dict)
     next_id: int = 1
+    groups: dict[int, Group] = field(default_factory=dict)
 
     # -- queries ------------------------------------------------------------------------------
 
@@ -156,7 +172,22 @@ class Sketch:
         return (min(xs), min(ys), max(xs), max(ys))
 
     def copy(self) -> Sketch:
-        return Sketch(dict(self.atoms), dict(self.bonds), self.next_id)
+        return Sketch(dict(self.atoms), dict(self.bonds), self.next_id, dict(self.groups))
+
+    def group_of(self, atom: int) -> tuple[int, Group] | None:
+        """The abbreviation an atom belongs to, if any."""
+        for gid, group in self.groups.items():
+            if atom in group.atoms:
+                return gid, group
+        return None
+
+    def hidden_atoms(self) -> set[int]:
+        """Atoms drawn as part of a contracted abbreviation's label (all but its anchor)."""
+        out: set[int] = set()
+        for group in self.groups.values():
+            if not group.expanded:
+                out |= group.atoms - {group.attach}
+        return out
 
     # -- raw mutation (edits.py records these so they can be undone) --------------------------
 
