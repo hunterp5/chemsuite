@@ -25,18 +25,28 @@ from dataclasses import dataclass
 
 import numpy as np
 from PySide6.QtCore import (
+    QElapsedTimer,
     QEvent,
     QItemSelection,
     QItemSelectionModel,
     QModelIndex,
     QPoint,
+    QPointF,
     QRect,
     QSize,
     Qt,
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QImage, QPainter, QPalette
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QGuiApplication,
+    QImage,
+    QMouseEvent,
+    QPainter,
+    QPalette,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -196,6 +206,32 @@ class CellDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+#: Within this many pixels of the table's edge, a dragged column scrolls the table.
+EDGE_ZONE = 56
+#: Scrolling speed (pixels per second) entering the edge zone, and the fastest it gets.
+EDGE_MIN_SPEED, EDGE_MAX_SPEED = 150.0, 2400.0
+
+
+def edge_speed(x: int, width: int) -> float:
+    """Sideways scroll speed for a column dragged at *x* in a header *width* wide.
+
+    Zero away from the edges. Inside the edge zone it grows the closer the pointer gets and
+    keeps growing past the edge (up to two zones beyond), so a short way is precise and a long
+    table is crossed quickly. Negative scrolls left.
+    """
+    zone = min(EDGE_ZONE, width // 4)
+    if zone <= 0:
+        return 0.0
+    if x < zone:
+        depth, sign = (zone - x) / zone, -1.0
+    elif x > width - zone:
+        depth, sign = (x - (width - zone)) / zone, 1.0
+    else:
+        return 0.0
+    t = min(depth, 3.0) / 3.0  # 0 at the zone's inner edge, 1/3 at the edge, 1 far beyond
+    return sign * (EDGE_MIN_SPEED + (EDGE_MAX_SPEED - EDGE_MIN_SPEED) * t * t)
+
+
 class TableView(QTableView):
     """A table view bound to one :class:`TableModel` and the table's :class:`Selection`.
 
@@ -230,6 +266,17 @@ class TableView(QTableView):
         self._selection = selection
         self._syncing = False
         self._anchor_oid: int | None = None
+        self._anchor_x = 0  # horizontal scroll kept across a model reset
+        self._anchor_columns: list[str] = []  # whole columns selected before a reset
+        self._reveal: str | None = None  # a moved column to keep in view after the reset
+        # Dragging a column header near the table's left or right edge scrolls the table.
+        self._drag_press: QPoint | None = None
+        self._drag_pos: QPoint | None = None
+        self._drag_speed = 0.0
+        self._drag_clock = QElapsedTimer()
+        self._drag_timer = QTimer(self)
+        self._drag_timer.setInterval(16)
+        self._drag_timer.timeout.connect(self._drag_scroll)
         self._column_mode = False  # the selection was made on the column header
         self._widths: dict[str, int] = {}
         self._kinds: dict[str, str] = {}
@@ -386,6 +433,7 @@ class TableView(QTableView):
         finally:
             header.blockSignals(blocked)
         name = self.table_model.column_name(logical)
+        self._reveal = name
         QTimer.singleShot(0, lambda: self.table_model.table.move_column(name, new_visual))
 
     def _on_header_menu(self, pos: QPoint) -> None:
@@ -396,7 +444,60 @@ class TableView(QTableView):
     def eventFilter(self, watched, event) -> bool:
         if event.type() == QEvent.Type.MouseButtonPress:
             self._column_mode = watched is self.horizontalHeader().viewport()
+        if watched is self.horizontalHeader().viewport():
+            self._follow_header_drag(event)
         return super().eventFilter(watched, event)
+
+    # -- dragging columns past the edge ---------------------------------------------------------
+    def _follow_header_drag(self, event) -> None:
+        """While a column is dragged, scroll when the pointer nears or passes an edge."""
+        kind = event.type()
+        if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            self._drag_press = event.position().toPoint()
+        elif kind == QEvent.Type.MouseButtonRelease:
+            self._stop_drag_scroll()
+            self._drag_press = None
+        elif (
+            kind == QEvent.Type.MouseMove
+            and self._drag_press is not None
+            and event.buttons() & Qt.MouseButton.LeftButton
+        ):
+            pos = event.position().toPoint()
+            if (pos - self._drag_press).manhattanLength() < QApplication.startDragDistance():
+                return
+            self._drag_pos = pos
+            self._drag_speed = edge_speed(pos.x(), self.horizontalHeader().viewport().width())
+            if self._drag_speed and not self._drag_timer.isActive():
+                self._drag_clock.start()
+                self._drag_timer.start()
+            elif not self._drag_speed:
+                self._stop_drag_scroll()
+
+    def _stop_drag_scroll(self) -> None:
+        self._drag_timer.stop()
+        self._drag_speed = 0.0
+
+    def _drag_scroll(self) -> None:
+        bar = self.horizontalScrollBar()
+        before = bar.value()
+        # pixels per second, scaled by the time since the last step: smooth at any frame rate
+        elapsed = max(1, self._drag_clock.restart())
+        step = round(self._drag_speed * elapsed / 1000) or (1 if self._drag_speed > 0 else -1)
+        bar.setValue(before + step)
+        if bar.value() == before or self._drag_pos is None:
+            return
+        # Tell the header the pointer is still there so its drop marker follows the scroll.
+        viewport = self.horizontalHeader().viewport()
+        pos = QPointF(self._drag_pos)
+        move = QMouseEvent(
+            QEvent.Type.MouseMove,
+            pos,
+            viewport.mapToGlobal(pos),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            QGuiApplication.keyboardModifiers(),
+        )
+        QApplication.sendEvent(viewport, move)
 
     def whole_columns(self) -> list[str]:
         """The selected column names when whole columns were picked on the header, else []."""
@@ -484,10 +585,17 @@ class TableView(QTableView):
         self._capture_widths()
         index = self.indexAt(self.viewport().rect().topLeft())
         self._anchor_oid = self.table_model.oid_at(index.row()) if index.isValid() else None
+        self._anchor_x = self.horizontalScrollBar().value()
+        self._anchor_columns = self.whole_columns()
 
     def _after_reset(self) -> None:
         self._fit_layout()
-        self._restore_selection()
+        columns = [n for n in self._anchor_columns if n in self.table_model.table]
+        self._anchor_columns = []
+        if columns:
+            self._select_columns(columns)
+        else:
+            self._restore_selection()
         if self._anchor_oid is not None:
             rows = self.table_model.rows_of_oids([self._anchor_oid])
             if len(rows) and rows[0] >= 0:
@@ -495,6 +603,37 @@ class TableView(QTableView):
                     self.table_model.index(int(rows[0]), 0),
                     QAbstractItemView.ScrollHint.PositionAtTop,
                 )
+        # stay where the user was sideways (scrollTo above went back to the first column)
+        self.horizontalScrollBar().setValue(self._anchor_x)
+        reveal, self._reveal = self._reveal, None
+        if reveal is not None and reveal in self.table_model.table:
+            self.reveal_column(reveal)
+
+    def _select_columns(self, names: list[str]) -> None:
+        """Select whole columns by name, as a header click does."""
+        model = self.table_model
+        rows = model.rowCount()
+        if not rows:
+            return
+        selection = QItemSelection()
+        for name in names:
+            col = model.column_index(name)
+            selection.select(model.index(0, col), model.index(rows - 1, col))
+        self._column_mode = True
+        self.selectionModel().select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+
+    def reveal_column(self, name: str) -> None:
+        """Scroll sideways just enough to show column *name* whole (if it fits)."""
+        header = self.horizontalHeader()
+        col = self.table_model.column_index(name)
+        left = header.sectionPosition(col)
+        right = left + header.sectionSize(col)
+        bar = self.horizontalScrollBar()
+        width = self.viewport().width()
+        if left < bar.value():
+            bar.setValue(left)
+        elif right > bar.value() + width:
+            bar.setValue(min(left, right - width))
 
     def mousePressEvent(self, event) -> None:
         self._column_mode = False  # a cell click starts an ordinary selection

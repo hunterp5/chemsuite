@@ -188,6 +188,12 @@ range and Ctrl-click (⌘-click) adds or removes one. Selected columns are not a
 compounds, so plots and the Selection Browser are left alone. **Delete** removes the selected
 columns in one step you can undo. Sorting is in the header's right-click menu.
 
+**Moving columns.** Drag a column header left or right to move the column (one undoable
+step, saved with the document). Hold it near the table's left or right edge to scroll the
+table: the closer to the edge, the faster it scrolls, and faster still if you drag past the
+edge, so a column can go anywhere in a wide table. After the drop the table stays where you
+scrolled to, the moved column stays in view and, if it was selected, stays selected.
+
 Right-click a column header for:
 
 - **Sort Ascending / Descending.** **Then Sort…** adds a second (third…) sort key.
