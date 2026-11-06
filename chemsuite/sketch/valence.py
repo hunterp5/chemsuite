@@ -50,7 +50,15 @@ def check(sketch: Sketch) -> Report:
         mol = to_rdkit(sketch)
     except SketchError:
         return _diagnose(sketch, ids)
-    return Report({ids[a.GetIdx()]: a.GetTotalNumHs() for a in mol.GetAtoms()})
+    on_query = {
+        a for b in sketch.bonds.values() if b.order.is_query for a in (b.begin, b.end)
+    }  # a query bond has no fixed order, so neither has its atoms' hydrogen count
+    return Report(
+        {
+            ids[a.GetIdx()]: 0 if ids[a.GetIdx()] in on_query else a.GetTotalNumHs()
+            for a in mol.GetAtoms()
+        }  # fmt: skip
+    )
 
 
 def _diagnose(sketch: Sketch, ids: list[int]) -> Report:

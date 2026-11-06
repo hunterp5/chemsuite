@@ -667,3 +667,70 @@ def test_enhanced_stereo_menu_labels_and_round_trip(dialog):
     assert any(t.endswith(" &1") for t in texts) and any(t.endswith(" or1") for t in texts)
     dialog.accept()
     assert "MDLV30/STERAC1" in dialog.molblock and "MDLV30/STEREL1" in dialog.molblock
+
+
+def test_bond_query_menu_and_zero_key(dialog):
+    from chemsuite.sketch.model import BOND_QUERIES, TOPOLOGY
+
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("CCN"))
+    first, second = sorted(canvas.sketch.bonds)
+    menu = _menu(canvas, "bond", first)
+    _action(menu, "Bond Query", BOND_QUERIES[Order.SINGLE_OR_DOUBLE]).trigger()
+    assert canvas.sketch.bonds[first].order is Order.SINGLE_OR_DOUBLE
+    _action(_menu(canvas, "bond", first), "Bond Query", TOPOLOGY[1]).trigger()
+    assert canvas.sketch.bonds[first].topology == 1
+    assert [t for _, t in canvas.scene.tags] == ["S/D Rng"]
+    _action(_menu(canvas, "bond", first), "Bond Query", "Back to Single").trigger()
+    assert canvas.sketch.bonds[first].order is Order.SINGLE
+    bond = canvas.sketch.bonds[second]
+    a, b = canvas.sketch.atoms[bond.begin].pos, canvas.sketch.atoms[bond.end].pos
+    hover(canvas, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2))
+    key(canvas, "0", Qt.Key.Key_0)
+    assert canvas.sketch.bonds[second].order is Order.ANY
+    assert dialog.buttons.button(dialog.buttons.StandardButton.Ok).isEnabled()
+
+
+def test_attachment_point_menu(dialog):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("CCC"))
+    end = min(canvas.sketch.atoms)
+    _action(_menu(canvas, "atom", end), "Attachment Point", "First").trigger()
+    assert canvas.sketch.atoms[end].attach == 1
+    assert canvas.history.undo_name == "Attachment point: first"
+    assert len(canvas.scene.stubs) == 1
+    dialog.accept()
+    assert "M  APO" in dialog.molblock
+
+
+def test_drawn_query_reaches_structure_search_as_smarts(qapp, monkeypatch):
+    from dataclasses import replace
+
+    from chemsuite.app import structure_editor
+    from chemsuite.app.structure_search import QueryInput
+    from chemsuite.core.structure_input import read_structure
+    from chemsuite.sketch.model import ATOM_LIST
+
+    sketch = from_text("Clc1ccccc1")
+    halogen = convert.atom_order(sketch)[0]
+    sketch.atoms[halogen] = replace(sketch.atoms[halogen], symbol=ATOM_LIST, atom_list=("Cl", "Br"))
+    block = convert.to_molblock(sketch)
+    seen: list[str] = []
+
+    class FakeEditor:
+        def __init__(self, text, title, parent):
+            seen.append(text)
+            self.result_input = read_structure(block)
+
+        def exec(self):
+            return True
+
+        def text(self):
+            return block
+
+    monkeypatch.setattr(structure_editor, "StructureEditor", FakeEditor)
+    field = QueryInput()
+    field.draw()
+    assert field.text() == "[#17,#35]-[#6]1:[#6]:[#6]:[#6]:[#6]:[#6]:1"
+    field.draw()  # drawing again starts from the molfile, not the SMARTS
+    assert seen[1] == block

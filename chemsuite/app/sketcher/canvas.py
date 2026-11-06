@@ -50,9 +50,12 @@ from chemsuite.sketch import convert, edits, render, stereo, valence
 from chemsuite.sketch.edits import Change, History
 from chemsuite.sketch.model import (
     ATOM_LIST,
+    ATTACH_POINTS,
+    BOND_QUERIES,
     MAX_RGROUP,
     QUERY_ATOMS,
     RGROUP,
+    TOPOLOGY,
     Order,
     Sketch,
     enhanced_text,
@@ -88,7 +91,13 @@ ELEMENT_KEYS = {
     "N": "Na",
     "B": "B",
 }
-BOND_KEYS = {"1": Order.SINGLE, "2": Order.DOUBLE, "3": Order.TRIPLE, "4": Order.AROMATIC}
+BOND_KEYS = {
+    "1": Order.SINGLE,
+    "2": Order.DOUBLE,
+    "3": Order.TRIPLE,
+    "4": Order.AROMATIC,
+    "0": Order.ANY,  # Ketcher: any-bond query
+}
 
 
 @dataclass(frozen=True)
@@ -421,11 +430,12 @@ class SketchCanvas(QWidget):
         for wedge in self.scene.wedges:
             p.drawPolygon(QPolygonF([self.to_screen(wedge.tip), *map(self.to_screen, wedge.base)]))
         p.setBrush(Qt.BrushStyle.NoBrush)
-        for wavy in self.scene.wavy:
+        for wavy in [*self.scene.wavy, *self.scene.stubs]:
             path = QPainterPath(self.to_screen(wavy.points[0]))
             for point in wavy.points[1:]:
                 path.lineTo(self.to_screen(point))
             p.drawPath(path)
+        self._paint_tags(p, pal.link().color(), pal.base().color())
 
         font = QFont(self.font())
         font.setPixelSize(max(6, round(0.42 * s)))
@@ -454,6 +464,23 @@ class SketchCanvas(QWidget):
             p.drawEllipse(mid, 0.42 * s, 0.42 * s)
         self.tool.paint(self, p)
         p.end()
+
+    def _paint_tags(self, p: QPainter, colour: QColor, base: QColor) -> None:
+        """Query-bond tags (S/D, Rng …) and attachment-point numbers, small, in the link
+        colour that query atoms use."""
+        if not self.scene.tags:
+            return
+        font = QFont(self.font())
+        font.setPixelSize(max(5, round(0.26 * self.scale)))
+        metrics = QFontMetricsF(font)
+        p.setFont(font)
+        for at, text in self.scene.tags:
+            centre = self.to_screen(at)
+            width = metrics.horizontalAdvance(text)
+            p.fillRect(QRectF(centre.x() - width / 2 - 1, centre.y() - metrics.ascent() / 2 - 1,
+                              width + 2, metrics.height()), base)  # fmt: skip
+            p.setPen(colour)
+            p.drawText(QPointF(centre.x() - width / 2, centre.y() + metrics.capHeight() / 2), text)
 
     def stereo_label_positions(self) -> list[tuple[str, QPointF]]:
         """(text, screen position) of each R/S and E/Z label shown."""
@@ -816,10 +843,12 @@ class SketchCanvas(QWidget):
             menu.addAction("Edit Label…", lambda: self.edit_label(hit.id))
             if found is None:
                 self._query_menus(menu, hit.id)
+                self._attach_menu(menu, hit.id)
                 self._hydrogen_actions(menu, hit.id)
                 self._centre_menu(menu, hit.id)
         if hit.kind == "bond":
             self._double_bond_menu(menu, hit.id)
+            self._bond_query_menu(menu, hit.id)
         if found is not None:
             gid, group = found
             if group.expanded:
@@ -1054,6 +1083,52 @@ class SketchCanvas(QWidget):
         shown.setEnabled(code is not None)
         if not menu.isEmpty():
             menu.addSeparator()
+
+    def _bond_query_menu(self, menu, bond: int) -> None:
+        """Bond Query: CTfile query orders and ring/chain topology, for structure searches."""
+        here = self.sketch.bonds[bond]
+        sub = menu.addMenu("Bond Query")
+        for order, text in BOND_QUERIES.items():
+            action = sub.addAction(
+                text,
+                lambda o=order, t=text: self.edit(
+                    f"Bond: {t.lower()}", lambda ch: edits.set_bond_query(ch, bond, o)
+                ),
+            )
+            action.setCheckable(True)
+            action.setChecked(here.order is order)
+        if here.order.is_query or here.order is Order.AROMATIC:
+            sub.addAction(
+                "Back to Single",
+                lambda: self.edit(
+                    "Bond: single", lambda ch: edits.set_bond_query(ch, bond, Order.SINGLE)
+                ),  # fmt: skip
+            )
+        sub.addSeparator()
+        for value, text in TOPOLOGY.items():
+            action = sub.addAction(
+                text,
+                lambda v=value, t=text: self.edit(
+                    f"Bond: {t.lower()}", lambda ch: edits.set_bond_query(ch, bond, topology=v)
+                ),
+            )
+            action.setCheckable(True)
+            action.setChecked(here.topology == value)
+
+    def _attach_menu(self, menu, atom: int) -> None:
+        """Attachment Point for R-group members (CTfile ``M  APO``)."""
+        atoms = self._targets(atom)
+        now = {self.sketch.atoms[a].attach for a in atoms}
+        sub = menu.addMenu("Attachment Point")
+        for value, text in ATTACH_POINTS.items():
+            action = sub.addAction(
+                text,
+                lambda v=value, t=text: self.edit(
+                    f"Attachment point: {t.lower()}", lambda ch: edits.set_attach(ch, atoms, v)
+                ),
+            )
+            action.setCheckable(True)
+            action.setChecked(now == {value})
 
     def _toggle_label(self, kind: str, id_: int) -> None:
         key = (kind, id_)

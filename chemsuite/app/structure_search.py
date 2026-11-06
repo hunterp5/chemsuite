@@ -51,6 +51,7 @@ from chemsuite.analysis.structure_search import (
     QueryError,
     SearchResult,
     StructureQuery,
+    drawn_query_text,
     parse_query,
     search,
 )
@@ -58,7 +59,6 @@ from chemsuite.analysis.structure_search import (
     POOL_MIN_ROWS as SEARCH_POOL_MIN_ROWS,
 )
 from chemsuite.core.lists import ListError
-from chemsuite.core.mols import smiles_of
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import STRUCTURE
 
@@ -189,6 +189,9 @@ class QueryInput(QWidget):
     def set_text(self, text: str) -> None:
         self.edit.setText(text)
 
+    #: the molfile last drawn, and the query text it became (to redraw a SMARTS query)
+    _drawn: tuple[str, str] | None = None
+
     def use_current_row(self) -> None:
         text = self._current_structure() if self._current_structure else ""
         if text:
@@ -197,9 +200,14 @@ class QueryInput(QWidget):
     def draw(self) -> None:
         from .structure_editor import StructureEditor
 
-        editor = StructureEditor(self.edit.text(), "Query Structure", self)
+        start = self.edit.text()
+        if self._drawn is not None and self._drawn[1] == start:
+            start = self._drawn[0]  # SMARTS cannot be drawn back; the molfile can
+        editor = StructureEditor(start, "Query Structure", self)
         if editor.exec() and editor.result_input is not None and editor.result_input.mol:
-            self.edit.setText(smiles_of(editor.result_input.mol))
+            text = drawn_query_text(editor.result_input.mol)
+            self._drawn = (editor.text(), text)
+            self.edit.setText(text)
 
 
 def describe_query(query: StructureQuery) -> tuple[str, bool]:

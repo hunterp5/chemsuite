@@ -34,12 +34,38 @@ from enum import Enum
 
 
 class Order(Enum):
-    """Bond order as drawn. ``AROMATIC`` comes only from files or the aromatic bond key."""
+    """Bond order as drawn; the value is the CTfile bond type.
+
+    ``AROMATIC`` comes only from files or the aromatic bond key. 5–8 are CTfile query bonds,
+    which match more than one kind of bond in a structure search.
+    """
 
     SINGLE = 1
     DOUBLE = 2
     TRIPLE = 3
     AROMATIC = 4
+    SINGLE_OR_DOUBLE = 5
+    SINGLE_OR_AROMATIC = 6
+    DOUBLE_OR_AROMATIC = 7
+    ANY = 8
+
+    @property
+    def is_query(self) -> bool:
+        return self.value >= 5
+
+
+#: Bond query names as menus show them.
+BOND_QUERIES: dict[Order, str] = {
+    Order.ANY: "Any bond",
+    Order.SINGLE_OR_DOUBLE: "Single or double",
+    Order.SINGLE_OR_AROMATIC: "Single or aromatic",
+    Order.DOUBLE_OR_AROMATIC: "Double or aromatic",
+    Order.AROMATIC: "Aromatic",
+}
+#: CTfile bond topology: 0 either, 1 ring, 2 chain.
+TOPOLOGY = {0: "Ring or chain", 1: "Ring only", 2: "Chain only"}
+#: CTfile attachment points (``M  APO``): 1 first, 2 second, 3 both.
+ATTACH_POINTS = {0: "None", 1: "First", 2: "Second", 3: "First and second"}
 
 
 class Stereo(Enum):
@@ -165,6 +191,7 @@ class Atom:
     atom_list: tuple[str, ...] = ()  # elements when symbol is ATOM_LIST
     list_not: bool = False  # the list means "none of these"
     enhanced: str = ""  # enhanced stereo group: "abs", "and1", "or2" … ("" = absolute)
+    attach: int = 0  # R-group member attachment point: 1 first, 2 second, 3 both (M  APO)
 
     @property
     def pos(self) -> tuple[float, float]:
@@ -194,6 +221,7 @@ class Bond:
     end: int
     order: Order = Order.SINGLE
     stereo: Stereo = Stereo.NONE
+    topology: int = 0  # query: 0 ring or chain, 1 ring only, 2 chain only (CTfile)
 
     def other(self, atom: int) -> int:
         return self.end if atom == self.begin else self.begin
@@ -204,7 +232,14 @@ class Bond:
     @property
     def is_plain(self) -> bool:
         """A single, double or triple bond without a wedge."""
-        return self.order is not Order.AROMATIC and self.stereo is Stereo.NONE
+        return self.order in (Order.SINGLE, Order.DOUBLE, Order.TRIPLE) and (
+            self.stereo is Stereo.NONE and not self.topology
+        )
+
+    @property
+    def is_query(self) -> bool:
+        """A query bond: a CTfile query type or a ring/chain restriction."""
+        return self.order.is_query or bool(self.topology)
 
 
 @dataclass(frozen=True)

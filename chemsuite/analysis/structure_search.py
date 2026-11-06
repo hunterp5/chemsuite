@@ -26,6 +26,7 @@ threshold.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import Executor
 from dataclasses import dataclass
@@ -104,11 +105,32 @@ class ParsedQuery:
     is_smarts: bool
 
 
+_BRACKET = re.compile(r"\[([^\]]*)\]")
+
+
+def looks_like_smarts(text: str) -> bool:
+    """SMARTS-only syntax: in brackets an atomic number or a logical operator (``#``, ``,``,
+    ``;``, ``&``, ``!``); outside them an any bond ``~``, a ring bond ``@``, a bond list or
+    recursive SMARTS. Text with any of these is read as SMARTS before SMILES."""
+    if any(_SMARTS_INSIDE.search(inner) for inner in _BRACKET.findall(text)):
+        return True
+    outside = _BRACKET.sub("A", text)  # chirality @ lives only inside brackets
+    return any(mark in outside for mark in ("~", "@", "$(", ",", ";", "!", "&"))
+
+
+_SMARTS_INSIDE = re.compile(r"[#,;&!]|\$\(")
+
+
 def parse_query(query: StructureQuery) -> ParsedQuery:
     """The query molecule; raises :class:`QueryError` with a reason when there is none."""
     text = query.text
     if not text.strip():
         raise QueryError("Enter a structure.")
+    if query.mode == "substructure" and "\n" not in text.strip() and looks_like_smarts(text):
+        with rdBase.BlockLogs():
+            mol = Chem.MolFromSmarts(text.strip())
+        if mol is not None:  # RDKit's SMILES reader would accept some of it, losing queries
+            return ParsedQuery(mol, True)
     mol = mol_from_text(text)
     if mol is not None:
         return ParsedQuery(mol, False)
@@ -119,6 +141,37 @@ def parse_query(query: StructureQuery) -> ParsedQuery:
             return ParsedQuery(mol, True)
         raise QueryError("Not valid SMILES or SMARTS.")
     raise QueryError("Not a valid structure (SMARTS works only for substructure searches).")
+
+
+def has_query_features(mol: Chem.Mol) -> bool:
+    """Whether a drawn molecule needs SMARTS to search with: wildcard or list atoms, R-groups,
+    or query bonds (any, single or double …, ring or chain only)."""
+    for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() == 0 or atom.HasQuery() or atom.HasProp("_MolFileRLabel"):
+            return True
+    return any(bond.HasQuery() for bond in mol.GetBonds())
+
+
+def drawn_query_text(mol: Chem.Mol) -> str:
+    """The text a drawn search query becomes: canonical SMILES for a plain structure, SMARTS
+    for a drawing with query features (SKETCHER_PLAN P4).
+
+    In the SMARTS an R-group or ``*`` matches any atom, atom lists and A/Q/X/M keep their
+    meaning, and query bonds keep theirs. Plain atoms match with any substituents, as a drawn
+    structure always does in a substructure search.
+    """
+    from chemsuite.core.mols import smiles_of
+
+    if not has_query_features(mol):
+        return smiles_of(mol)
+    rw = Chem.RWMol(mol)
+    for atom in list(rw.GetAtoms()):
+        if atom.GetAtomicNum() == 0 and (
+            atom.HasProp("_MolFileRLabel") or not (atom.HasQuery() and atom.GetQueryType())
+        ) and not atom.HasProp("_MolFileAtomQuery"):  # fmt: skip
+            rw.ReplaceAtom(atom.GetIdx(), Chem.AtomFromSmarts("*"))
+    with rdBase.BlockLogs():
+        return Chem.MolToSmarts(rw.GetMol())
 
 
 def exact_key(mol: Chem.Mol, stereo: bool) -> str:

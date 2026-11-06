@@ -90,6 +90,19 @@ class Scene:
     wavy: list[Wavy] = field(default_factory=list)
     labels: dict[int, Label] = field(default_factory=dict)
     problems: dict[int, str] = field(default_factory=dict)
+    #: small text beside query bonds and attachment points: (position, text)
+    tags: list[tuple[Point, str]] = field(default_factory=list)
+    #: attachment-point stubs: wavy lines from the atom
+    stubs: list[Wavy] = field(default_factory=list)
+
+
+#: Tags on query bonds (Ketcher and ChemDraw label these bonds in the same spirit).
+QUERY_TAGS = {
+    Order.SINGLE_OR_DOUBLE: "S/D",
+    Order.SINGLE_OR_AROMATIC: "S/A",
+    Order.DOUBLE_OR_AROMATIC: "D/A",
+}
+TOPOLOGY_TAGS = {1: "Rng", 2: "Chn"}
 
 
 def shows_label(sketch: Sketch, aid: int) -> bool:
@@ -199,6 +212,14 @@ def build(sketch: Sketch, report: Report) -> Scene:
         if math.dist(a, b) < 1e-6:
             continue
         p, q = _trim(a, b, bond.begin in labelled, bond.end in labelled)
+        tag = " ".join(t for t in (QUERY_TAGS.get(bond.order, ""),
+                                   TOPOLOGY_TAGS.get(bond.topology, "")) if t)  # fmt: skip
+        if tag:
+            off = _offset(a, b, -0.3)
+            scene.tags.append((((off[0][0] + off[1][0]) / 2, (off[0][1] + off[1][1]) / 2), tag))
+        if bond.order.is_query:  # any or either-of: a dashed line, the tag says which
+            scene.lines.append(Line(p, q, bid, dashed=True))
+            continue
         if bond.stereo is Stereo.WEDGE and bond.order is Order.SINGLE:
             scene.wedges.append(_wedge(p, q, bid))
         elif bond.stereo is Stereo.HASH and bond.order is Order.SINGLE:
@@ -228,7 +249,37 @@ def build(sketch: Sketch, report: Report) -> Scene:
                 trim_a = 0.0 if bond.begin in labelled else INNER_TRIM
                 trim_b = 0.0 if bond.end in labelled else INNER_TRIM
                 scene.lines.append(Line(*_shorten(*inner, trim_a, trim_b), bid, dashed=dashed))
+    for aid, atom in sketch.atoms.items():
+        if atom.attach and aid not in hidden:
+            _attachment(sketch, aid, scene)
     return scene
+
+
+def _attachment(sketch: Sketch, aid: int, scene: Scene) -> None:
+    """A wavy stub (and its number) for each attachment point of an R-group member."""
+    here = sketch.atoms[aid].pos
+    taken = [geometry.angle_of(here, sketch.atoms[n].pos) for n in sketch.neighbours(aid)]
+    for number in (1, 2):
+        if not sketch.atoms[aid].attach & number:
+            continue
+        angle = _free_direction(taken)
+        taken.append(angle)
+        start = geometry.along(here, angle, LABEL_GAP)
+        end = geometry.along(here, angle, 0.7)
+        scene.stubs.append(Wavy(_wave(start, end, waves=2), -aid))
+        scene.tags.append((geometry.along(here, angle, 0.9), str(number)))
+
+
+def _free_direction(taken: list[float]) -> float:
+    if not taken:
+        return 0.0
+    if len(taken) == 1:
+        return taken[0] + math.pi
+    ordered = sorted(t % (2 * math.pi) for t in taken)
+    gaps = [((ordered[(i + 1) % len(ordered)] - a) % (2 * math.pi) or 2 * math.pi, a)
+            for i, a in enumerate(ordered)]  # fmt: skip
+    width, start = max(gaps)
+    return start + width / 2
 
 
 def _trim(a: Point, b: Point, cut_a: bool, cut_b: bool) -> tuple[Point, Point]:

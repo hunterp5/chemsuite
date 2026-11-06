@@ -295,6 +295,7 @@ C, V, A) and on the drawing's right-click menu.
 | Shift+`s` / Shift+`n` / Shift+`b` | Si / Na / B | — |
 | `1` `2` `3` | Add a single, double or triple bond | Set the order |
 | `4` | — | Aromatic bond |
+| `0` | — | Any-bond query |
 | `=` / `-` | Charge +1 / −1 | — |
 | Delete, Backspace | Erase | Erase |
 | Enter | Type a label (see below) | — |
@@ -360,6 +361,23 @@ Molfiles write them the standard CTfile way (`R#` with `M  RGP`, `A`/`Q`/`X`/`M`
 `[1*]` or `[*:1]` read back as R1. In a table cell, a structure with query atoms shows as
 SMARTS (SMILES has no wildcards) and keeps its queries, so it can serve as a substructure
 query or R-group core.
+
+**Bond queries.** For substructure searches a bond can match more than one kind of bond.
+Right-click it for **Bond Query**, or point at it and press `0` for **Any bond**:
+
+| Choice | Matches | Drawn |
+|---|---|---|
+| Any bond | any bond | dashed |
+| Single or double / Single or aromatic / Double or aromatic | either kind | dashed, tagged S/D, S/A or D/A |
+| Aromatic | aromatic bonds | dashed second line |
+| Ring only / Chain only | a bond in a ring / not in a ring | tagged Rng or Chn |
+
+**Back to Single** makes it a plain bond again. Atoms on a query bond show no hydrogen count,
+since their bond order is open. Molfiles write these as standard CTfile query bonds.
+
+**Attachment points.** For R-group members and substituent fragments, right-click an atom for
+**Attachment Point**: **First**, **Second** or **First and second**. Each is drawn as a short
+wavy stub with its number. Molfiles write them as `M  APO` (V3000: `ATTCHPT=`).
 
 **Stereo labels.** Stereocentres show their CIP label, *(R)* or *(S)* (*(r)* / *(s)* for
 pseudo-asymmetric centres), and double bonds show *(E)* or *(Z)*. The labels come from
@@ -502,6 +520,12 @@ Edit ▸ Structure Search… searches a structure column.
 
 - **Query.** Draw (paste) or type the query as SMILES, a molfile or InChI. For substructure
   searches you can also type SMARTS, such as `[C,N]`.
+  - **Draw…** opens the sketcher. A plain drawing comes back as SMILES.
+  - A drawing with query features comes back as SMARTS that keeps them: R-groups, `A`/`Q`/`X`/`M`,
+    atom lists, and bond queries. An R-group or `*` matches any atom there.
+  - **Draw…** again reopens your drawing, not the SMARTS.
+  - The same applies in the Structure filter card and the structure conditions of Advanced
+    Search.
 - **Modes:**
 
   | Mode | Finds |

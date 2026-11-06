@@ -103,12 +103,19 @@ def drawn_molblock(sketch: Sketch) -> str:
         stereo = _STEREO_CODES[bond.stereo] if bond.order is Order.SINGLE else 0
         if bond.order is Order.DOUBLE and bond.stereo is Stereo.EITHER:
             stereo = 3  # CTfile: double bond, cis or trans (either)
-        lines.append(f"{index[bond.begin]:3d}{index[bond.end]:3d}{bond.order.value:3d}{stereo:3d}")
+        line = f"{index[bond.begin]:3d}{index[bond.end]:3d}{bond.order.value:3d}{stereo:3d}"
+        if bond.topology:  # CTfile bond block: 111222tttsssxxxrrr, rrr the topology
+            line += f"  0{bond.topology:3d}"
+        lines.append(line)
     for tag, values in (("CHG", charges), ("ISO", isotopes), ("RAD", radicals)):
         for start in range(0, len(values), 8):  # at most eight entries per line
             chunk = values[start : start + 8]
             body = "".join(f" {i:3d} {v:3d}" for i, v in chunk)
             lines.append(f"M  {tag}{len(chunk):3d}{body}")
+    attach = [(index[aid], sketch.atoms[aid].attach) for aid in order if sketch.atoms[aid].attach]
+    for start in range(0, len(attach), 8):
+        chunk = attach[start : start + 8]
+        lines.append(f"M  APO{len(chunk):3d}" + "".join(f" {i:3d} {v:3d}" for i, v in chunk))
     for start in range(0, len(rgroups), 8):
         chunk = rgroups[start : start + 8]
         lines.append(f"M  RGP{len(chunk):3d}" + "".join(f" {i:3d} {n:3d}" for i, n in chunk))
@@ -247,13 +254,17 @@ def to_molblock(sketch: Sketch) -> str:
         or bool(mol.GetStereoGroups())  # enhanced stereo exists only in V3000
     )
     if v3000:
-        return _v3000_with_valences(mol)
+        return _v3000_with_valences(mol, [sketch.atoms[a].attach for a in atom_order(sketch)])
     lines = Chem.MolToMolBlock(mol, kekulize=False).split("\n")
     for atom in mol.GetAtoms():
         valence = _ctfile_valence(atom)
         if valence is not None:
             line = lines[4 + atom.GetIdx()]
             lines[4 + atom.GetIdx()] = f"{line[:48]}{valence:3d}{line[51:]}"
+    if any(a.attach for a in sketch.atoms.values()):  # RDKit's writer drops M  APO
+        ours = [ln for ln in drawn_molblock(sketch).split("\n") if ln.startswith("M  APO")]
+        lines = [ln for ln in lines if not ln.startswith("M  APO")]
+        lines[lines.index("M  END") : lines.index("M  END")] = ours
     if any(a.symbol == ATOM_LIST for a in sketch.atoms.values()):
         # RDKit misaligns NOT lists (``M  ALS 4   2  T``); write the lists ourselves
         ours = [ln for ln in drawn_molblock(sketch).split("\n") if ln.startswith("M  ALS")]
@@ -263,18 +274,22 @@ def to_molblock(sketch: Sketch) -> str:
     return "\n".join(ln for ln in lines if not (ln.startswith("V  ") and ln.endswith(" *")))
 
 
-def _v3000_with_valences(mol: Chem.Mol) -> str:
-    """A V3000 molfile with ``VAL=`` on atoms that need an explicit valence (as in V2000)."""
+def _v3000_with_valences(mol: Chem.Mol, attach: list[int] | None = None) -> str:
+    """A V3000 molfile with ``VAL=`` on atoms that need an explicit valence (as in V2000) and
+    ``ATTCHPT=`` on attachment points."""
     lines = Chem.MolToMolBlock(mol, kekulize=False, forceV3000=True).split("\n")
     start = lines.index("M  V30 BEGIN ATOM") + 1
     for atom in mol.GetAtoms():
         valence = _ctfile_valence(atom)
         line = lines[start + atom.GetIdx()]
+        point = attach[atom.GetIdx()] if attach else 0
+        if point and " ATTCHPT=" not in line:
+            line = f"{line} ATTCHPT={-1 if point == 3 else point}"  # CTfile: -1 means both
         if valence is not None and " VAL=" not in line:
             line = f"{line} VAL={-1 if valence == 15 else valence}"
-            if len(line) > 80:  # CTfile V3000: at most 80 characters, "-" continues a line
-                line = f"{line[:79]}-\nM  V30 {line[79:]}"
-            lines[start + atom.GetIdx()] = line
+        if len(line) > 80:  # CTfile V3000: at most 80 characters, "-" continues a line
+            line = f"{line[:79]}-\nM  V30 {line[79:]}"
+        lines[start + atom.GetIdx()] = line
     return "\n".join(lines)
 
 
@@ -350,6 +365,7 @@ def from_mol(mol: Chem.Mol) -> Sketch:
             charge=atom.GetFormalCharge(),
             radical=atom.GetNumRadicalElectrons(),
             enhanced=groups.get(atom.GetIdx(), ""),
+            attach=_attach_point(atom),
             **_atom_kind(atom),
         )
         ids.append(aid)
@@ -360,6 +376,10 @@ def from_mol(mol: Chem.Mol) -> Sketch:
             Chem.BondType.TRIPLE: Order.TRIPLE,
             Chem.BondType.AROMATIC: Order.AROMATIC,
         }.get(kind, Order.SINGLE)
+        file_type = bond.GetIntProp("_MolFileBondType") if bond.HasProp("_MolFileBondType") else 0
+        if 5 <= file_type <= 8:
+            order = Order(file_type)
+        topology = _topology(bond)
         stereo = _BOND_DIRS.get(bond.GetBondDir(), Stereo.NONE)
         if bond.HasProp("_MolFileBondStereo") and bond.GetIntProp("_MolFileBondStereo") == 4:
             stereo = Stereo.EITHER
@@ -375,7 +395,7 @@ def from_mol(mol: Chem.Mol) -> Sketch:
             )
             stereo = Stereo.EITHER if either else Stereo.NONE
         sketch.bonds[sketch.new_id()] = Bond(
-            ids[bond.GetBeginAtomIdx()], ids[bond.GetEndAtomIdx()], order, stereo
+            ids[bond.GetBeginAtomIdx()], ids[bond.GetEndAtomIdx()], order, stereo, topology
         )
     for group in Chem.GetMolSubstanceGroups(mol):
         if group.GetProp("TYPE") != "SUP" or not group.HasProp("LABEL"):
@@ -397,6 +417,26 @@ def from_mol(mol: Chem.Mol) -> Sketch:
             group.GetProp("LABEL"), frozenset(ids[i] for i in members), ids[attach], expanded
         )
     return sketch
+
+
+def _attach_point(atom: Chem.Atom) -> int:
+    """``Atom.attach`` from RDKit's ``molAttchpt`` (it reads "both" as -1, as V3000 writes it)."""
+    if not atom.HasProp("molAttchpt"):
+        return 0
+    value = atom.GetIntProp("molAttchpt")
+    return 3 if value == -1 else value if value in (1, 2) else 0
+
+
+def _topology(bond: Chem.Bond) -> int:
+    """CTfile topology of a query bond read from a molfile: 1 ring, 2 chain, 0 either."""
+    if not bond.HasQuery():
+        return 0
+    text = bond.DescribeQuery()
+    if "BondInRing 1 != val" in text:
+        return 2
+    if "BondInRing 1 = val" in text:
+        return 1
+    return 0
 
 
 _ATOMIC_NUM = re.compile(r"AtomAtomicNum (\d+) = val")

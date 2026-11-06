@@ -504,3 +504,21 @@ def set_enhanced(change: Change, atoms: Iterable[int], value: str) -> int:
             change.set_atom(aid, replace(atom, enhanced=value))
             changed += 1
     return changed
+
+
+def set_bond_query(change: Change, bid: int, order: Order | None = None, topology=None) -> None:
+    """Make a bond a query: a CTfile query order (any, single or double …) and/or a ring or
+    chain restriction. Wedges go, since a query bond has no fixed order."""
+    bond = change.sketch.bonds[bid]
+    new = replace(bond, order=order or bond.order, stereo=Stereo.NONE)
+    if topology is not None:
+        new = replace(new, topology=topology)
+    change.set_bond(bid, new)
+
+
+def set_attach(change: Change, atoms: Iterable[int], value: int) -> None:
+    """Attachment points of R-group members (CTfile ``M  APO``: 0, 1, 2 or 3 for both)."""
+    for aid in sorted(atoms):
+        atom = change.sketch.atoms.get(aid)
+        if atom is not None:
+            change.set_atom(aid, replace(atom, attach=value))
