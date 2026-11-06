@@ -31,8 +31,8 @@ from typing import Any
 
 import numpy as np
 import shiboken6
-from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, Qt, QTimer, QUrl
+from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -629,7 +629,10 @@ class MainWindow(QMainWindow):
         edit.addAction(
             A("edit.clear_cells", "Clear Cells", lambda: self.view.clear_selected_cells())
         )
-        edit.addAction(A("edit.copy_molfile", "Copy Structure as Molfile", self.copy_structure))
+        copy_as = edit.addMenu("Copy Structure As")
+        for fmt, title in COPY_FORMATS:
+            command = "edit.copy_molfile" if fmt == "molfile" else f"edit.copy_{fmt}"
+            copy_as.addAction(A(command, title, lambda f=fmt: self.copy_current_structure_as(f)))
         edit.addSeparator()
         edit.addAction(
             A("edit.structure", "Edit &Structure…", self.edit_current_structure, "Ctrl+E")
@@ -743,6 +746,7 @@ class MainWindow(QMainWindow):
                 self.copy_shown_rows_to_new_document,
             )
         )
+        data.addSeparator()  # the analysis tools follow
 
         self._tool_actions: dict[str, QAction] = {}
         menus = {
@@ -780,7 +784,32 @@ class MainWindow(QMainWindow):
 
         self._building = "Help"
         help_menu = bar.addMenu("&Help")
+        help_menu.addAction(A("help.guide", "chemsuite &User Guide", self.open_user_guide))
+        help_menu.addSeparator()
         help_menu.addAction(A("help.log_folder", "Show &Log Folder", show_log_folder))
+        about = A("help.about", "&About chemsuite", self.show_about)
+        about.setMenuRole(QAction.MenuRole.AboutRole)  # the app menu on macOS
+        help_menu.addAction(about)
+
+    def open_user_guide(self) -> None:
+        from .dialogs.kit import GUIDE
+
+        if GUIDE.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(GUIDE)))
+        else:
+            self.show_message("The user guide is not installed with this copy of chemsuite")
+
+    def show_about(self) -> None:
+        import chemsuite
+
+        QMessageBox.about(
+            self,
+            "About chemsuite",
+            f"<b>chemsuite {chemsuite.__version__}</b><br>"
+            "Compound tables, chemistry and SAR tools.<br><br>"
+            "Free software under the GNU General Public License, version 3 or later.<br>"
+            "Built on RDKit, Qt (PySide6), NumPy and pyqtgraph.",
+        )
 
     def _add_tool(self, tool: Tool, menus: dict[tuple[str, ...], Any]) -> None:
         """Put *tool* in its menu, creating the menu path as needed."""
@@ -804,6 +833,8 @@ class MainWindow(QMainWindow):
         action.setEnabled(not missing)
         action.triggered.connect(lambda _checked=False, t=tool: self.open_tool(t))
         menus[tool.menu].addAction(action)
+        if tool.separator_after:
+            menus[tool.menu].addSeparator()
         self._tool_actions[tool.id] = action
         self._commands[f"tool.{tool.id}"] = action
 
@@ -1198,6 +1229,19 @@ class MainWindow(QMainWindow):
         if row >= 0:
             self.view.scrollTo(self.workspace.model.index(row, 0))
         return int(oids[0])
+
+    def copy_current_structure_as(self, fmt: str) -> None:
+        """Copy As for the current structure cell (or the first structure in its row)."""
+        cell = self._structure_cell()
+        if cell is None:
+            self.statusBar().showMessage("Pick a cell with a valid structure to copy", 4000)
+            return
+        oid, name = cell
+        model = self.workspace.model
+        row = int(model.rows_of_oids([oid])[0])
+        if row < 0:
+            return
+        self.copy_structures_as(model.index(row, model.column_index(name)), fmt)
 
     def copy_structure(self) -> None:
         cell = self._structure_cell()

@@ -35,7 +35,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMenu,
     QPushButton,
     QScrollArea,
     QToolButton,
@@ -59,6 +58,7 @@ from chemsuite.core.table.criteria import (
 )
 
 from .flow_layout import FlowRow, compact
+from .pane import menu_button, pane_layout, section
 from .structure_search import QueryInput, StructureSearcher
 
 FILTER_KEY = "advanced"
@@ -77,7 +77,7 @@ class CriterionRow(QFrame):
     def __init__(self, table: Table, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.table = table
-        self.setFrameShape(QFrame.Shape.StyledPanel)
+        section(self, "CriterionRow")
         self.column = QComboBox()
         self.op = QComboBox()
         compact(self.column, self.op, chars=8)
@@ -115,7 +115,7 @@ class CriterionRow(QFrame):
         ):
             flow.addWidget(widget)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setContentsMargins(0, 8, 0, 10)
         layout.setSpacing(4)
         layout.addWidget(flow)
         layout.addWidget(self.error)
@@ -254,19 +254,16 @@ class AdvancedSearchPanel(QWidget):
         self.combine.addItem("all", "all")
         self.combine.addItem("any", "any")
         add = QPushButton("Add Condition")
-        self.recent_button = QToolButton()
-        self.recent_button.setText("Recent")
-        self.recent_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.recent_menu = QMenu(self.recent_button)
+        self.recent_button, self.recent_menu = menu_button("Recent")
         self.recent_menu.aboutToShow.connect(self._fill_recent)
-        self.recent_button.setMenu(self.recent_menu)
         header = FlowRow()
         header.addWidget(QLabel("Match"))
         header.addWidget(self.combine)
         header.addWidget(QLabel("of these conditions"))
 
         self._rows_box = QVBoxLayout()
-        self._rows_box.setSpacing(6)
+        self._rows_box.setContentsMargins(0, 0, 0, 0)
+        self._rows_box.setSpacing(0)  # rows divide themselves with hairlines
         self._rows_box.addStretch(1)
         host = QWidget()
         host.setLayout(self._rows_box)
@@ -302,8 +299,7 @@ class AdvancedSearchPanel(QWidget):
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color: palette(placeholder-text)")
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout = pane_layout(QVBoxLayout(self))
         layout.addWidget(header)
         layout.addWidget(scroll, 1)
         layout.addWidget(tools)

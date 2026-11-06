@@ -48,7 +48,9 @@ Each document has its own window. From top to bottom:
   - Filters, Advanced Search and the Selection Browser dock at the side.
   - New plots and tool panels open to the right of the table, splitting the window left and
     right. A second plot joins the first as a tab.
-  - Each panel has a header showing its title. Drag the header to move the panel. A plot's
+  - Panels sit flush against the table, divided by a thin line you can drag to resize them.
+    Every panel (plots, Filters, Advanced Search, Selection Browser) has the same header
+    showing its title. Drag the header to move the panel. A plot's
     header also holds the plot toolbar. The buttons at the right are:
 
     | Button | What it does |
@@ -226,8 +228,8 @@ From the Data ▸ Table menu:
   - Type or paste SMILES, a molfile or InChI. The drawing updates as you type.
   - **Draw…** opens the sketcher on the same structure (see below). OK puts the drawing back
     as a molfile, which keeps your layout and wedges.
-- **Edit ▸ Copy Structure as Molfile** puts the current structure on the clipboard for drawing
-  programs.
+- **Edit ▸ Copy Structure As ▸ Molfile / SMILES / InChI / InChIKey / Image** copies the current
+  structure (or the selected structures in its column). A molfile pastes into drawing programs.
 - A structure that cannot be read is shown as **invalid**. Its original text is kept, so you
   can fix it.
 - Rows are taller when the table has a structure column. Change the height under Settings ▸
@@ -884,6 +886,8 @@ padlock.
 
 - **View ▸ Log** shows the session's log. Filter it by level and text.
 - **Help ▸ Show Log Folder** opens the folder of log files to attach to a bug report.
+- **Help ▸ chemsuite User Guide** opens this guide; **About chemsuite** (in the chemsuite menu
+  on macOS) shows the version and licence.
 - If chemsuite hits an unexpected error, it shows a report you can copy. The details are also
   written to the log.
 

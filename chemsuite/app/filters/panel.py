@@ -36,9 +36,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
-    QMenu,
+    QPushButton,
     QScrollArea,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -46,6 +45,7 @@ from PySide6.QtWidgets import (
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 
+from ..pane import menu_button, pane_layout
 from .cards import FilterCard, card_for
 
 APPLY_DELAY_MS = 120
@@ -72,32 +72,25 @@ class FilterPanel(QWidget):
         self._refresh_timer.setInterval(250)
         self._refresh_timer.timeout.connect(self._refresh_stale)
 
-        self.add_button = QToolButton()
-        self.add_button.setText("Add Filter")
-        self.add_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.add_menu = QMenu(self.add_button)
+        self.add_button, self.add_menu = menu_button("Add Filter")
         self.add_menu.aboutToShow.connect(self._fill_add_menu)
-        self.add_button.setMenu(self.add_menu)
-        self.clear_button = QToolButton()
-        self.clear_button.setText("Remove All")
+        self.clear_button = QPushButton("Remove All")
         self.clear_button.clicked.connect(self.remove_all)
-        self.sets_button = QToolButton()
-        self.sets_button.setText("Sets")
+        self.sets_button, self.sets_menu = menu_button("Sets")
         self.sets_button.setToolTip("Save these filters under a name, or switch to a saved set")
-        self.sets_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.sets_menu = QMenu(self.sets_button)
         self.sets_menu.aboutToShow.connect(self._fill_sets_menu)
-        self.sets_button.setMenu(self.sets_menu)
         self.summary = QLabel()
         self.summary.setStyleSheet("color: palette(placeholder-text)")
 
         bar = QHBoxLayout()
+        bar.setSpacing(6)
         bar.addWidget(self.add_button)
         bar.addWidget(self.clear_button)
         bar.addWidget(self.sets_button)
         bar.addStretch(1)
         self._cards_box = QVBoxLayout()
-        self._cards_box.setSpacing(8)
+        self._cards_box.setContentsMargins(0, 0, 0, 0)
+        self._cards_box.setSpacing(0)  # sections divide themselves with hairlines
         self._cards_box.addStretch(1)
         host = QWidget()
         host.setLayout(self._cards_box)
@@ -110,7 +103,7 @@ class FilterPanel(QWidget):
         self.empty_hint.setWordWrap(True)
         self.empty_hint.setStyleSheet("color: palette(placeholder-text)")
 
-        layout = QVBoxLayout(self)
+        layout = pane_layout(QVBoxLayout(self))
         layout.addLayout(bar)
         layout.addWidget(self.summary)
         layout.addWidget(self.empty_hint)

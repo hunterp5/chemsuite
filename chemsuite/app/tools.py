@@ -65,6 +65,8 @@ class Tool:
     shortcut: str | None = None
     tip: str = ""
     restore: Callable[[ToolContext, dict], Any] | None = None
+    #: a separator follows this tool in its menu (ends a group)
+    separator_after: bool = False
 
     def missing(self) -> list[str]:
         """Required modules that cannot be imported."""

@@ -54,6 +54,7 @@ from chemsuite.core.table.filters import (
 )
 from chemsuite.core.table.numbers import format_general
 
+from ..pane import section
 from .range_slider import RangeSlider
 
 #: Text columns with at most this many distinct values get a category card by default.
@@ -83,8 +84,7 @@ class FilterCard(QFrame):
         super().__init__(parent)
         self.table = table
         self.column = column
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setObjectName("FilterCard")
+        section(self, "FilterCard")
 
         self.enabled_box = QCheckBox()
         self.enabled_box.setChecked(True)
@@ -102,14 +102,16 @@ class FilterCard(QFrame):
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(6)
         header.addWidget(self.enabled_box)
+        header.addSpacing(2)  # the check box reports no gap after its indicator
         header.addWidget(self.title, 1)
         header.addWidget(self.not_button)
         header.addWidget(self.remove_button)
         self.body = QVBoxLayout()
         self.body.setContentsMargins(0, 0, 0, 0)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 6, 8, 8)
+        outer.setContentsMargins(0, 8, 0, 10)
         outer.setSpacing(6)
         outer.addLayout(header)
         outer.addLayout(self.body)
@@ -203,9 +205,11 @@ class RangeCard(FilterCard):
         for edit, text in ((self.low_edit, "minimum"), (self.high_edit, "maximum")):
             edit.setPlaceholderText(text)
             edit.setAlignment(Qt.AlignmentFlag.AlignRight)
+            edit.setMinimumWidth(48)  # shrink with the pane rather than clip
         self.blanks = QCheckBox("Include blanks")
         self.blanks.setChecked(True)
         self.summary = QLabel()
+        self.summary.setWordWrap(True)
         self.summary.setStyleSheet("color: palette(placeholder-text)")
         bounds = QHBoxLayout()
         bounds.addWidget(self.low_edit)

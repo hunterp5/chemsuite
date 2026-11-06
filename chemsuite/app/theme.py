@@ -27,7 +27,13 @@ import random
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPalette
-from PySide6.QtWidgets import QApplication, QStyleFactory
+from PySide6.QtWidgets import (
+    QApplication,
+    QProxyStyle,
+    QStyle,
+    QStyleFactory,
+    QStyleOptionHeader,
+)
 
 from chemsuite.core.settings import DARK, GROOVY, LIGHT, SYSTEM, Appearance, custom_theme_name
 
@@ -236,6 +242,29 @@ def palette_for(appearance: Appearance, rng: random.Random | None = None) -> QPa
 _applied: tuple | None = None  # what is on screen now, so unchanged settings do nothing
 
 
+class PolishStyle(QProxyStyle):
+    """App-wide details on top of the platform or Fusion style.
+
+    Horizontal headers whose text Qt would centre by default are left-aligned, as in native
+    macOS tables; a header that asks for an alignment of its own keeps it.
+    """
+
+    def drawControl(self, element, option, painter, widget=None) -> None:
+        if (
+            element == QStyle.ControlElement.CE_HeaderLabel
+            and isinstance(option, QStyleOptionHeader)
+            and option.orientation == Qt.Orientation.Horizontal
+            and option.textAlignment & Qt.AlignmentFlag.AlignHCenter
+        ):
+            option = QStyleOptionHeader(option)
+            option.textAlignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        super().drawControl(element, option, painter, widget)
+
+
+def _set_style(app: QApplication, name: str) -> None:
+    app.setStyle(PolishStyle(name))
+
+
 def apply_appearance(app: QApplication, appearance: Appearance, *, reroll: bool = False) -> None:
     """Style, palette and font for the whole application.
 
@@ -249,10 +278,10 @@ def apply_appearance(app: QApplication, appearance: Appearance, *, reroll: bool 
     if reroll or _applied is None or _applied[0] != key:
         palette = palette_for(appearance)
         if palette is None or appearance.theme == SYSTEM:
-            app.setStyle(str(_original["style"]))
+            _set_style(app, str(_original["style"]))
             app.setPalette(QPalette(_original["palette"]))
         else:
-            app.setStyle("Fusion")
+            _set_style(app, "Fusion")
             app.setPalette(palette)
         _set_colour_scheme(app, None if palette is None else palette)
     font = QFont(_original["font"])

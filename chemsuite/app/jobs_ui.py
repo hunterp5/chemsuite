@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
-    QLabel,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -176,11 +175,10 @@ class JobsWindow(QWidget):
         self.down_button.clicked.connect(lambda: self._with_current(lambda j: runner.move(j, 1)))
         self.copy_button.clicked.connect(lambda: self._with_current(self.copy_details))
         clear.clicked.connect(runner.clear_finished)
-        self.note = QLabel(
+        self.table.setToolTip(
             "Heavy jobs run one at a time, in order; quick jobs (opening files, panels) run "
             "alongside them."
         )
-        self.note.setWordWrap(True)
         buttons = QHBoxLayout()
         for button in (self.cancel_button, self.up_button, self.down_button, self.copy_button):
             buttons.addWidget(button)
@@ -189,7 +187,6 @@ class JobsWindow(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.table, 1)
         layout.addLayout(buttons)
-        layout.addWidget(self.note)
         self._timer = QTimer(self)
         self._timer.setInterval(TICK_MS * 2)
         self._timer.timeout.connect(self.refresh)
