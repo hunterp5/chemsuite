@@ -63,7 +63,8 @@ def test_reference_labels(name, smiles, atoms, bonds):
 def test_undefined_centres_and_bonds_are_reported():
     found = stereo.labels(convert.from_text("CC(N)C=CC"))
     assert len(found.undefined_atoms) == 1 and not found.atoms
-    assert found.bonds  # 2D geometry always defines a drawn double bond's E/Z
+    # SMILES gives no E/Z here, so the layout does not invent one: the bond is "either"
+    assert not found.bonds and len(found.unknown_bonds) == 1
 
 
 def apply(sketch, fn):
@@ -113,7 +114,7 @@ def test_switch_e_and_z_keeps_centres():
 
 
 def test_ring_double_bonds_cannot_switch():
-    sketch = convert.from_text("C1CCC=CCCC1")  # cyclooctene: E/Z exists, but in a ring
+    sketch = convert.from_text(r"C1CC/C=C\CCC1")  # cis-cyclooctene: E/Z exists, in a ring
     found = stereo.labels(sketch)
     bond = next(iter(found.bonds))
     _, problem = apply(sketch, lambda ch: stereo.set_double_bond(ch, bond, stereo.opposite(

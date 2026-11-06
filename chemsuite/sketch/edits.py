@@ -33,10 +33,12 @@ from dataclasses import dataclass, field, replace
 from chemsuite.sketch import geometry
 from chemsuite.sketch.model import (
     ELEMENT_FIELDS,
+    Arrow,
     Atom,
     Bond,
     Group,
     Order,
+    Plus,
     Sketch,
     Stereo,
     query_fields,
@@ -47,10 +49,10 @@ Point = tuple[float, float]
 
 @dataclass(frozen=True)
 class Step:
-    kind: str  # "atom", "bond" or "group"
+    kind: str  # "atom", "bond", "group", "arrow" or "plus"
     id: int
-    old: Atom | Bond | Group | None
-    new: Atom | Bond | Group | None
+    old: Atom | Bond | Group | Arrow | Plus | None
+    new: Atom | Bond | Group | Arrow | Plus | None
 
     def apply(self, sketch: Sketch, forward: bool = True) -> None:
         value = self.new if forward else self.old
@@ -76,7 +78,13 @@ class Edit:
 
 
 def _store(sketch: Sketch, kind: str) -> dict:
-    return {"atom": sketch.atoms, "bond": sketch.bonds, "group": sketch.groups}[kind]
+    return {
+        "atom": sketch.atoms,
+        "bond": sketch.bonds,
+        "group": sketch.groups,
+        "arrow": sketch.arrows,
+        "plus": sketch.pluses,
+    }[kind]
 
 
 class Change:
@@ -86,7 +94,7 @@ class Change:
         self.sketch = sketch
         self.edit = Edit(name)
 
-    def _step(self, kind: str, id_: int, new: Atom | Bond | Group | None) -> None:
+    def _step(self, kind: str, id_: int, new: Atom | Bond | Group | Arrow | Plus | None) -> None:
         store = _store(self.sketch, kind)
         old = store.get(id_)
         if old == new:
@@ -102,6 +110,22 @@ class Change:
 
     def set_atom(self, aid: int, atom: Atom) -> None:
         self._step("atom", aid, atom)
+
+    def add_arrow(self, arrow: Arrow) -> int:
+        rid = self.sketch.new_id()
+        self._step("arrow", rid, arrow)
+        return rid
+
+    def set_arrow(self, rid: int, arrow: Arrow | None) -> None:
+        self._step("arrow", rid, arrow)
+
+    def add_plus(self, plus: Plus) -> int:
+        pid = self.sketch.new_id()
+        self._step("plus", pid, plus)
+        return pid
+
+    def set_plus(self, pid: int, plus: Plus | None) -> None:
+        self._step("plus", pid, plus)
 
     def add_group(self, group: Group) -> int:
         gid = self.sketch.new_id()
@@ -228,6 +252,10 @@ class History:
         change = self.change(name)
         for aid in list(self.sketch.atoms):
             change.remove_atom(aid)
+        for rid in list(self.sketch.arrows):
+            change.set_arrow(rid, None)
+        for pid in list(self.sketch.pluses):
+            change.set_plus(pid, None)
         insert(change, sketch)
         self.commit(change)
 
@@ -369,10 +397,17 @@ def erase(change: Change, atoms: Iterable[int] = (), bonds: Iterable[int] = ()) 
 
 
 def insert(change: Change, other: Sketch) -> list[int]:
-    """Add every atom and bond of ``other`` (a paste). Returns the new atom ids."""
+    """Add every atom, bond, arrow and plus sign of ``other`` (a paste). Returns the new atom
+    ids."""
     mapping = {aid: change.add_atom(atom) for aid, atom in other.atoms.items()}
     for bond in other.bonds.values():
-        change.add_bond(mapping[bond.begin], mapping[bond.end], bond.order, bond.stereo)
+        bid = change.add_bond(mapping[bond.begin], mapping[bond.end], bond.order, bond.stereo)
+        if bond.topology:
+            change.set_bond(bid, replace(change.sketch.bonds[bid], topology=bond.topology))
+    for arrow in other.arrows.values():
+        change.add_arrow(arrow)
+    for plus in other.pluses.values():
+        change.add_plus(plus)
     for group in other.groups.values():
         change.add_group(
             replace(
@@ -392,6 +427,35 @@ def subset(sketch: Sketch, atoms: Iterable[int]) -> Sketch:
     out.bonds = {bid: b for bid, b in sketch.bonds.items() if b.begin in keep and b.end in keep}
     out.groups = {gid: g for gid, g in sketch.groups.items() if g.atoms <= keep}
     return out
+
+
+def set_mapping(change: Change, atoms: Iterable[int], number: int) -> None:
+    """Give *atoms* the reaction map number *number* (0 clears it)."""
+    for aid in atoms:
+        atom = change.sketch.atoms.get(aid)
+        if atom is not None:
+            change.set_atom(aid, replace(atom, mapping=max(0, number)))
+
+
+def next_mapping(sketch: Sketch) -> int:
+    """The lowest map number not yet used."""
+    used = {a.mapping for a in sketch.atoms.values()}
+    n = 1
+    while n in used:
+        n += 1
+    return n
+
+
+def map_pair(change: Change, a: int, b: int) -> int:
+    """Map atom *a* to atom *b*: both get *a*'s number (or *b*'s, or the next free one). Any
+    other atom holding that number loses it, so each number pairs one atom with one atom."""
+    atoms = change.sketch.atoms
+    number = atoms[a].mapping or atoms[b].mapping or next_mapping(change.sketch)
+    for aid, atom in list(atoms.items()):
+        if atom.mapping == number and aid not in (a, b):
+            change.set_atom(aid, replace(atom, mapping=0))
+    set_mapping(change, (a, b), number)
+    return number
 
 
 def move(

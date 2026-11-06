@@ -176,3 +176,10 @@ def test_rdkit_layout_is_rdkits_own_even_when_coordgen_is_preferred():
         rdDepictor.SetPreferCoordGen(prefer)
     a, b = plain.GetConformer().GetPositions(), again.GetConformer().GetPositions()
     assert abs(a - b).max() < 1e-6
+
+
+def test_text_without_a_drawing_keeps_bridged_stereo():
+    # RDKit's wedges on its preferred layout of this quinuclidinium read back contradictory;
+    # convert.from_mol then lays it out the other way (found by scripts/review/reaction_review.py)
+    smiles = "C[N+]12C[C@H](OC(C)=O)C(CC1)CC2"
+    assert convert.to_smiles(convert.from_text(smiles)) == Chem.CanonSmiles(smiles)

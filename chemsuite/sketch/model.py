@@ -192,6 +192,7 @@ class Atom:
     list_not: bool = False  # the list means "none of these"
     enhanced: str = ""  # enhanced stereo group: "abs", "and1", "or2" … ("" = absolute)
     attach: int = 0  # R-group member attachment point: 1 first, 2 second, 3 both (M  APO)
+    mapping: int = 0  # reaction atom-atom map number (CTfile aamap); 0 = unmapped
 
     @property
     def pos(self) -> tuple[float, float]:
@@ -257,17 +258,99 @@ class Group:
     expanded: bool = False
 
 
+class ArrowKind(Enum):
+    """Reaction arrow styles (a subset of Ketcher's ``RxnArrowMode``, ``rxnArrow.ts``)."""
+
+    PLAIN = "plain"  # reactants -> products
+    EQUILIBRIUM = "equilibrium"  # two half-headed arrows
+    RETROSYNTHETIC = "retrosynthetic"  # open double-shafted arrow: target => precursors
+    FAILED = "failed"  # a plain arrow crossed out: the reaction did not work
+
+
+ARROW_TITLES = {
+    ArrowKind.PLAIN: "Reaction Arrow",
+    ArrowKind.EQUILIBRIUM: "Equilibrium Arrow",
+    ArrowKind.RETROSYNTHETIC: "Retrosynthetic Arrow",
+    ArrowKind.FAILED: "Failed Reaction Arrow",
+}
+
+
+@dataclass(frozen=True)
+class Arrow:
+    """A reaction arrow from tail (x0, y0) to head (x1, y1)."""
+
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    kind: ArrowKind = ArrowKind.PLAIN
+
+    @property
+    def tail(self) -> tuple[float, float]:
+        return (self.x0, self.y0)
+
+    @property
+    def head(self) -> tuple[float, float]:
+        return (self.x1, self.y1)
+
+    @property
+    def centre(self) -> tuple[float, float]:
+        return ((self.x0 + self.x1) / 2, (self.y0 + self.y1) / 2)
+
+    def moved(self, dx: float, dy: float) -> Arrow:
+        return replace(self, x0=self.x0 + dx, y0=self.y0 + dy, x1=self.x1 + dx, y1=self.y1 + dy)
+
+
+@dataclass(frozen=True)
+class Plus:
+    """A reaction plus sign at (x, y)."""
+
+    x: float
+    y: float
+
+    @property
+    def pos(self) -> tuple[float, float]:
+        return (self.x, self.y)
+
+    def moved(self, dx: float, dy: float) -> Plus:
+        return Plus(self.x + dx, self.y + dy)
+
+
 @dataclass
 class Sketch:
     atoms: dict[int, Atom] = field(default_factory=dict)
     bonds: dict[int, Bond] = field(default_factory=dict)
     next_id: int = 1
     groups: dict[int, Group] = field(default_factory=dict)
+    arrows: dict[int, Arrow] = field(default_factory=dict)
+    pluses: dict[int, Plus] = field(default_factory=dict)
 
     # -- queries ------------------------------------------------------------------------------
 
     def is_empty(self) -> bool:
-        return not self.atoms
+        """Nothing drawn: no atoms, arrows or plus signs."""
+        return not self.atoms and not self.arrows and not self.pluses
+
+    @property
+    def is_reaction(self) -> bool:
+        """The drawing has a reaction arrow (see ``chemsuite.sketch.reaction``)."""
+        return bool(self.arrows)
+
+    def arrow_at(self, x: float, y: float, within: float) -> int | None:
+        best, best_d = None, within
+        for rid, arrow in self.arrows.items():
+            d = _segment_distance((x, y), arrow.tail, arrow.head)
+            if d <= best_d:
+                best, best_d = rid, d
+        return best
+
+    def plus_at(self, x: float, y: float, within: float) -> int | None:
+        best, best_d = None, within
+        for pid, plus in self.pluses.items():
+            d = math.hypot(plus.x - x, plus.y - y)
+            if d <= best_d:
+                best, best_d = pid, d
+        return best
 
     def bonds_of(self, atom: int) -> Iterator[tuple[int, Bond]]:
         for bid, bond in self.bonds.items():
@@ -320,15 +403,25 @@ class Sketch:
         return seen
 
     def bounds(self) -> tuple[float, float, float, float]:
-        """(min x, min y, max x, max y) of the atoms; zeros for an empty sketch."""
-        if not self.atoms:
+        """(min x, min y, max x, max y) of atoms, arrows and plus signs; zeros when empty."""
+        xs = [a.x for a in self.atoms.values()] + [p.x for p in self.pluses.values()]
+        ys = [a.y for a in self.atoms.values()] + [p.y for p in self.pluses.values()]
+        for arrow in self.arrows.values():
+            xs += [arrow.x0, arrow.x1]
+            ys += [arrow.y0, arrow.y1]
+        if not xs:
             return (0.0, 0.0, 0.0, 0.0)
-        xs = [a.x for a in self.atoms.values()]
-        ys = [a.y for a in self.atoms.values()]
         return (min(xs), min(ys), max(xs), max(ys))
 
     def copy(self) -> Sketch:
-        return Sketch(dict(self.atoms), dict(self.bonds), self.next_id, dict(self.groups))
+        return Sketch(
+            dict(self.atoms),
+            dict(self.bonds),
+            self.next_id,
+            dict(self.groups),
+            dict(self.arrows),
+            dict(self.pluses),
+        )
 
     def group_of(self, atom: int) -> tuple[int, Group] | None:
         """The abbreviation an atom belongs to, if any."""

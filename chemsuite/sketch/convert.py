@@ -86,8 +86,10 @@ def drawn_molblock(sketch: Sketch) -> str:
     for aid in order:
         atom = sketch.atoms[aid]
         x, y = atom.x * FILE_BOND_LENGTH, atom.y * FILE_BOND_LENGTH
+        # ccc sss hhh bbb vvv HHH rrr iii mmm nnn eee: mmm is the atom-atom map (CTfile)
         lines.append(
-            f"{x:10.4f}{y:10.4f}{0:10.4f} {atom.symbol:<3} 0  0  0  0  0  0  0  0  0  0  0  0"
+            f"{x:10.4f}{y:10.4f}{0:10.4f} {atom.symbol:<3} 0  0  0  0  0  0  0  0  0"
+            f"{atom.mapping:3d}  0  0"
         )
         if atom.charge:
             charges.append((index[aid], atom.charge))
@@ -334,8 +336,60 @@ def from_mol(mol: Chem.Mol) -> Sketch:
     """A sketch of a molecule: its 2D coordinates (computed if it has none), Kekulé bonds, and
     wedges as in its molfile, or chosen by RDKit."""
     mol = Chem.Mol(mol)
-    if mol.GetNumConformers() == 0 or mol.GetConformer().Is3D():
-        rdDepictor.Compute2DCoords(mol)
+    if mol.GetNumConformers() and not mol.GetConformer().Is3D():
+        return _sketch_of(mol, set())
+    # A molecule without a drawing (SMILES, reaction SMILES) gives no E/Z where its text gives
+    # none; the layout must not pick one. Such bonds are drawn "either" (CTfile stereo 3), as
+    # RDKit's molfile writer marks them.
+    unknown = _undefined_double_bonds(mol)
+    first = None
+    for lay_out in _LAYOUTS:
+        laid = Chem.Mol(mol)
+        laid.RemoveAllConformers()
+        if not lay_out(laid):
+            continue
+        sketch = _sketch_of(laid, unknown)
+        first = first or sketch
+        # RDKit places wedges for the layout it is given; on a few bridged layouts they read
+        # back as contradictory and the centre is lost. Then the other layout is tried.
+        if _same_stereo(mol, sketch):
+            return sketch
+    return first if first is not None else _sketch_of(mol, unknown)
+
+
+def _layout_preferred(mol: Chem.Mol) -> bool:
+    rdDepictor.Compute2DCoords(mol)
+    conf = mol.GetConformer()
+    # CoordGen (preferred app-wide, core/depict.py) places a lone atom such as [H+] at NaN
+    return not any(math.isnan(conf.GetAtomPosition(i).x) for i in range(mol.GetNumAtoms()))
+
+
+def _layout_rdkit(mol: Chem.Mol) -> bool:
+    prefer = rdDepictor.GetPreferCoordGen()
+    rdDepictor.SetPreferCoordGen(False)
+    try:
+        rdDepictor.Compute2DCoords(mol, useRingTemplates=True)
+    finally:
+        rdDepictor.SetPreferCoordGen(prefer)
+    return True
+
+
+_LAYOUTS = (_layout_preferred, _layout_rdkit)
+
+
+def _same_stereo(mol: Chem.Mol, sketch: Sketch) -> bool:
+    """Whether the drawing reads back as *mol* (isomeric SMILES); True when either cannot be
+    read, so the check never blocks a drawing."""
+    with rdBase.BlockLogs():
+        try:
+            want = Chem.MolToSmiles(Chem.RemoveHs(mol))
+            return Chem.MolToSmiles(to_mol(sketch)) == want
+        except (ValueError, RuntimeError, SketchError):
+            return True
+
+
+def _sketch_of(mol: Chem.Mol, unknown: set[int]) -> Sketch:
+    """The sketch of *mol* as laid out in its 2D conformer."""
     conf = mol.GetConformer()
     if any(b.HasProp("_MolFileBondStereo") for b in mol.GetBonds()):
         Chem.ReapplyMolBlockWedging(mol)
@@ -366,6 +420,7 @@ def from_mol(mol: Chem.Mol) -> Sketch:
             radical=atom.GetNumRadicalElectrons(),
             enhanced=groups.get(atom.GetIdx(), ""),
             attach=_attach_point(atom),
+            mapping=atom.GetAtomMapNum() if atom.GetAtomicNum() else 0,
             **_atom_kind(atom),
         )
         ids.append(aid)
@@ -393,7 +448,7 @@ def from_mol(mol: Chem.Mol) -> Sketch:
                 (bond.HasProp("_MolFileBondStereo") and bond.GetIntProp("_MolFileBondStereo") == 3)
                 or bond.GetStereo() == Chem.BondStereo.STEREOANY
             )
-            stereo = Stereo.EITHER if either else Stereo.NONE
+            stereo = Stereo.EITHER if either or bond.GetIdx() in unknown else Stereo.NONE
         sketch.bonds[sketch.new_id()] = Bond(
             ids[bond.GetBeginAtomIdx()], ids[bond.GetEndAtomIdx()], order, stereo, topology
         )
@@ -417,6 +472,34 @@ def from_mol(mol: Chem.Mol) -> Sketch:
             group.GetProp("LABEL"), frozenset(ids[i] for i in members), ids[attach], expanded
         )
     return sketch
+
+
+def _undefined_double_bonds(mol: Chem.Mol) -> set[int]:
+    """Double bonds RDKit finds could be E or Z but are given as neither. A double bond at a
+    cumulated centre (allene, azide) is linear there and is left out."""
+    out = set()
+    probe = Chem.Mol(mol)
+    for atom in probe.GetAtoms():  # atom maps make otherwise equal groups distinct (reactions)
+        if atom.GetAtomMapNum():
+            atom.SetIsotope(1000 + atom.GetAtomMapNum())
+    with rdBase.BlockLogs():
+        try:
+            found = Chem.FindPotentialStereo(probe)
+        except (ValueError, RuntimeError):
+            return out
+    for info in found:
+        if (
+            info.type == Chem.StereoType.Bond_Double
+            and info.specified == Chem.StereoSpecified.Unspecified
+        ):
+            bond = mol.GetBondWithIdx(info.centeredOn)
+            ends = (bond.GetBeginAtom(), bond.GetEndAtom())
+            if not any(
+                sum(b.GetBondType() == Chem.BondType.DOUBLE for b in end.GetBonds()) > 1
+                for end in ends
+            ):
+                out.add(info.centeredOn)
+    return out
 
 
 def _attach_point(atom: Chem.Atom) -> int:
