@@ -219,6 +219,14 @@ class ToolContext:
             table.column(column), slot, size, window.devicePixelRatioF(), dark
         )
 
+    def add_compound(self, text: str) -> int | None:
+        """Add a structure (SMILES, molfile, InChI) as a new, selected row, one undo step.
+
+        It goes in the first structure column (a new "Structure" column if there is none).
+        Returns the new row's oid, or None when *text* is blank.
+        """
+        return self._window.append_compound(text)
+
     def open_tool(self, tool_id: str) -> Any:
         """Open another tool (e.g. a scatter plot from a correlation) and return what it opened."""
         return self._window.open_tool(tool_id)

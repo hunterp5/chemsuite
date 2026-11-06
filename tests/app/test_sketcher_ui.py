@@ -116,7 +116,6 @@ def test_bond_tool_click_empty_then_atoms_and_bond(dialog):
     assert canvas.sketch.bonds[bid].order is Order.DOUBLE
     click(canvas, mid)
     assert canvas.sketch.bonds[bid].order is Order.TRIPLE
-    assert "C4H" in dialog.info.text()
 
 
 def test_dragged_bond_snaps_to_15_degrees_and_ctrl_frees_it(dialog):

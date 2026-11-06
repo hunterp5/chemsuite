@@ -558,11 +558,9 @@ class SketchCanvas(QWidget):
         shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
         alt = bool(mods & Qt.KeyboardModifier.AltModifier)
         if event.matches(QKeySequence.StandardKey.Undo):
-            self.cancel_preview()
-            self.history.undo()
+            self._undo()
         elif event.matches(QKeySequence.StandardKey.Redo) or (mod and key == Qt.Key.Key_Y):
-            self.cancel_preview()
-            self.history.redo()
+            self._redo()
         elif mod and shift and key == Qt.Key.Key_M:
             part = edits.subset(self.sketch, self.selected_atoms) if self.selected_atoms else None
             block = convert.to_molblock(part or self.sketch)
@@ -723,7 +721,29 @@ class SketchCanvas(QWidget):
                 lambda: self.edit("Ungroup", lambda ch: abbrev.ungroup(ch, gid)),
             )
         if not menu.isEmpty():
-            menu.exec(event.globalPos())
+            menu.addSeparator()
+        history = self.history
+        menu.addAction("Undo", self._undo).setEnabled(history.can_undo)
+        menu.addAction("Redo", self._redo).setEnabled(history.can_redo)
+        menu.addSeparator()
+        has_atoms = not self.sketch.is_empty()
+        menu.addAction("Cut", self.cut).setEnabled(bool(self.selected_atoms))
+        menu.addAction("Copy", self.copy).setEnabled(has_atoms)
+        menu.addAction("Paste", self.paste)
+        menu.addAction("Select All", lambda: self.select_atoms(self.sketch.atoms)).setEnabled(
+            has_atoms
+        )
+        menu.addSeparator()
+        menu.addAction("Clear", lambda: self.set_sketch(Sketch(), "Clear")).setEnabled(has_atoms)
+        menu.exec(event.globalPos())
+
+    def _undo(self) -> None:
+        self.cancel_preview()
+        self.history.undo()
+
+    def _redo(self) -> None:
+        self.cancel_preview()
+        self.history.redo()
 
     def _tool_key(self, event: QKeyEvent) -> bool:
         """Without hovering, the same keys pick the matching tool (as in Ketcher)."""

@@ -353,3 +353,29 @@ def test_colour_is_not_offered_for_structures(structures) -> None:
     menu = structures.columns.build_menu("SMILES", [], col)
     action = next(a for a in menu.actions() if a.text() == "Colour Column…")
     assert not action.isEnabled()
+
+
+# -- Chemistry ▸ Sketcher ---------------------------------------------------------------------
+
+
+def test_chemistry_sketcher_adds_the_drawing_as_a_row(window) -> None:
+    from PySide6.QtWidgets import QPushButton
+
+    from chemsuite.app.sketcher import SketcherDialog
+    from chemsuite.sketch.convert import from_text
+
+    table = window.workspace.table
+    dialog = window.open_tool("sketcher")
+    assert isinstance(dialog, SketcherDialog) and dialog.canvas.sketch.is_empty()
+    assert dialog.buttons.button(dialog.buttons.StandardButton.Ok).text() == "Add to Table"
+    # Only OK and Cancel: undo, copy and the rest are on the keyboard and right-click menu.
+    assert len(dialog.findChildren(QPushButton)) == 2
+    assert not dialog.info.isVisible()
+    # Elements run down the left of the canvas.
+    assert dialog.toolbar.side.geometry().right() < dialog.canvas.geometry().left()
+    dialog.canvas.set_sketch(from_text("c1ccccc1O"), "Draw")
+    dialog.accept()
+    assert len(table) == 4
+    assert "Structure" in table.column_names
+    assert Chem.MolToSmiles(table.column("Structure").mol(3)) == "Oc1ccccc1"
+    assert window.workspace.selection.oids == {int(table.oids[3])}

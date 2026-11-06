@@ -235,10 +235,15 @@ From the Data ▸ Table menu:
 
 ### The sketcher
 
-Opened with **Draw…** in the structure editor (and in the structure fields of Structure Search
-and Fingerprint Similarity, which use the same editor). Drawing tools are along the top, rings
-along the bottom and elements down the right. OK is available only when every atom has a
-valid valence.
+Opened by double-clicking a structure cell, with **Draw…** in the structure editor (and in the
+structure fields of Structure Search and Fingerprint Similarity, which use the same editor), or
+blank with **Chemistry ▸ Sketcher…**, whose **Add to Table** adds the drawing as a new,
+selected row.
+
+Drawing tools are along the top, elements down the left and rings along the bottom. OK is
+available only when every atom has a valid valence; a line under the drawing says what is
+wrong. Undo, Redo, Cut, Copy, Paste, Select All and Clear are on the keyboard (Ctrl/⌘+Z, Y, X,
+C, V, A) and on the drawing's right-click menu.
 
 **Tools**
 

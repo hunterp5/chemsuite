@@ -14,7 +14,13 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The sketcher's tool bar: one checkable button per tool, icons drawn to follow the theme."""
+"""The sketcher's tool bar: one checkable button per tool, icons drawn to follow the theme.
+
+Every icon shares one style: a 20-unit grid with the drawing kept inside 3..17, a 1.6-unit
+round-capped stroke in the button text colour, and one font (the system UI font, semi-bold,
+12 px) for every element label, so C and Cl sit at the same size and weight. Buttons are all
+the same square size with the same rounded hover and checked backgrounds.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +28,17 @@ import math
 from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontDatabase,
+    QIcon,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QPolygonF,
+)
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QVBoxLayout, QWidget
 
 from chemsuite.app.sketcher import tools
@@ -30,6 +46,14 @@ from chemsuite.sketch.model import Order, Stereo
 from chemsuite.sketch.templates import RING_BAR
 
 GRID = 20.0
+STROKE = 1.6
+BUTTON = 30  # px, every tool button
+LABEL_PX = 12
+BUTTON_STYLE = (
+    "QToolButton { border: 1px solid transparent; border-radius: 6px; padding: 0; }"
+    " QToolButton:hover { background: palette(midlight); }"
+    " QToolButton:checked { background: palette(highlight); border-color: palette(highlight); }"
+)
 
 
 def _line(p: QPainter, n: int, gap: float = 4.0) -> None:
@@ -82,29 +106,51 @@ def _erase(p: QPainter) -> None:
     p.drawLine(QPointF(9, 6), QPointF(9, 14))
 
 
+def label_font() -> QFont:
+    font = QFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont))
+    font.setPixelSize(LABEL_PX)
+    font.setWeight(QFont.Weight.DemiBold)
+    font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    return font
+
+
 def _text(text: str) -> Callable[[QPainter], None]:
     def draw(p: QPainter) -> None:
-        font = p.font()
-        font.setPixelSize(13 if len(text) < 2 else 11)
-        font.setBold(True)
-        p.setFont(font)
+        p.setFont(label_font())
         p.drawText(QRectF(0, 0, GRID, GRID), Qt.AlignmentFlag.AlignCenter, text)
 
     return draw
 
 
+def _charge(sign: int) -> Callable[[QPainter], None]:
+    """A circled plus or minus, drawn as strokes like the other tools."""
+
+    def draw(p: QPainter) -> None:
+        p.drawEllipse(QPointF(10, 10), 6.5, 6.5)
+        p.drawLine(QPointF(7, 10), QPointF(13, 10))
+        if sign > 0:
+            p.drawLine(QPointF(10, 7), QPointF(10, 13))
+
+    return draw
+
+
 def icon(draw: Callable[[QPainter], None], colour: QColor) -> QIcon:
+    return QIcon(_pixmap(draw, colour))
+
+
+def _pixmap(draw: Callable[[QPainter], None], colour: QColor) -> QPixmap:
     pixmap = QPixmap(int(GRID * 2), int(GRID * 2))
     pixmap.setDevicePixelRatio(2)
     pixmap.fill(Qt.GlobalColor.transparent)
     p = QPainter(pixmap)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    pen = QPen(colour, 1.5)
+    pen = QPen(colour, STROKE)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     p.setPen(pen)
     draw(p)
     p.end()
-    return QIcon(pixmap)
+    return pixmap
 
 
 #: (key, tooltip, icon, tool factory). Shortcuts in the tooltips are the hover keys.
@@ -122,14 +168,14 @@ TOOLS: list[tuple[str, str, Callable[[QPainter], None], Callable[[], tools.Tool]
     ("wavy", "Wavy: unknown configuration", _wavy,
      lambda: tools.BondTool(Order.SINGLE, Stereo.EITHER)),
     ("chain", "Chain: drag to draw a zig-zag chain", _chain, tools.ChainTool),
-    ("plus", "Charge + (=)", _text("+"), lambda: tools.ChargeTool(+1)),
-    ("minus", "Charge − (-)", _text("−"), lambda: tools.ChargeTool(-1)),
+    ("plus", "Charge + (=)", _charge(+1), lambda: tools.ChargeTool(+1)),
+    ("minus", "Charge − (-)", _charge(-1), lambda: tools.ChargeTool(-1)),
 ]  # fmt: skip
 
 
 def _ring(size: int, aromatic: bool) -> Callable[[QPainter], None]:
     def draw(p: QPainter) -> None:
-        r = 7.0
+        r = 7.0 if size > 4 else 7.5
         pts = [
             QPointF(10 + r * math.cos(math.pi / 2 + 2 * math.pi * i / size),
                     10 - r * math.sin(math.pi / 2 + 2 * math.pi * i / size))
@@ -190,12 +236,12 @@ class SketchToolBar(QWidget):
         strips = (QHBoxLayout(self.top), QHBoxLayout(self.bottom), QVBoxLayout(self.side))
         for strip in strips:
             strip.setContentsMargins(0, 0, 0, 0)
-            strip.setSpacing(2)
+            strip.setSpacing(3)
         top, bottom, side = strips
         for i, (key, tip, draw, factory) in enumerate(TOOLS):
             self._add(top, key, tip, draw, factory)
-            if i in (1, 7, 8):
-                top.addSpacing(8)
+            if i in (1, 4, 7, 8):
+                top.addSpacing(10)
         top.addStretch(1)
         for template in RING_BAR:
             self._add(
@@ -221,6 +267,8 @@ class SketchToolBar(QWidget):
         button = QToolButton()
         button.setCheckable(True)
         button.setAutoRaise(True)
+        button.setFixedSize(BUTTON, BUTTON)
+        button.setStyleSheet(BUTTON_STYLE)
         button.setToolTip(tip)
         button.setIconSize(QSize(int(GRID), int(GRID)))
         button.setObjectName(f"sketch-tool-{key}")
@@ -233,7 +281,14 @@ class SketchToolBar(QWidget):
         self._paint_icons_for(button, key)
 
     def _paint_icons_for(self, button: QToolButton, key: str) -> None:
-        button.setIcon(icon(self._draws[key], self.palette().buttonText().color()))
+        palette = self.palette()
+        normal = _pixmap(self._draws[key], palette.buttonText().color())
+        on = _pixmap(self._draws[key], palette.highlightedText().color())
+        both = QIcon()
+        for mode in (QIcon.Mode.Normal, QIcon.Mode.Active):
+            both.addPixmap(normal, mode, QIcon.State.Off)
+            both.addPixmap(on, mode, QIcon.State.On)
+        button.setIcon(both)
 
     def show_tool(self, tool: tools.Tool) -> None:
         button = self.buttons.get(tool_key(tool))

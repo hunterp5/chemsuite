@@ -14,20 +14,25 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The sketcher window: tool bar, canvas and a status line; OK gives back a molfile."""
+"""The sketcher window: tool strips around the canvas; OK gives back a molfile.
+
+Tools run along the top, rings along the bottom and elements down the left, as in Ketcher.
+Undo, redo, cut, copy, paste and clear are on the keyboard and the canvas's right-click menu,
+so the window holds only the drawing. The line under the canvas appears only to explain a
+problem (an atom with a bad valence, a label that could not be read).
+"""
 
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
-from rdkit.Chem import Descriptors, rdMolDescriptors
 
 from chemsuite.app.sketcher.canvas import SketchCanvas
 from chemsuite.app.sketcher.toolbar import SketchToolBar
@@ -40,7 +45,12 @@ class SketcherDialog(QDialog):
     """Draw a structure. :attr:`molblock` holds the accepted drawing ("" when empty)."""
 
     def __init__(
-        self, text: str = "", title: str = "Draw Structure", parent: QWidget | None = None
+        self,
+        text: str = "",
+        title: str = "Draw Structure",
+        parent: QWidget | None = None,
+        *,
+        ok_text: str = "",
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
@@ -48,88 +58,64 @@ class SketcherDialog(QDialog):
         self.canvas = SketchCanvas(History(start) if start is not None else None)
         self.toolbar = SketchToolBar(self)  # holds the strips laid out below; not shown itself
         self.toolbar.hide()
-        self.info = QLabel(" ")
-        self.undo_button = QPushButton("Undo")
-        self.redo_button = QPushButton("Redo")
-        self.paste_button = QPushButton("Paste")
-        self.copy_button = QPushButton("Copy")
-        self.clear_button = QPushButton("Clear")
-        self.paste_button.setToolTip("Add the structure on the clipboard (molfile or SMILES)")
-        self.copy_button.setToolTip("Copy as molfile and SMILES (the selection, if any)")
+        self.info = QLabel()
+        self.info.setWordWrap(True)
+        self.info.setStyleSheet("color: #c62828")
+        self.info.hide()
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        commands = QHBoxLayout()
-        for button in (
-            self.undo_button,
-            self.redo_button,
-            self.paste_button,
-            self.copy_button,
-            self.clear_button,
-        ):
-            button.setAutoDefault(False)
-            commands.addWidget(button)
-        commands.addStretch(1)
+        if ok_text:
+            self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText(ok_text)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(self.toolbar.top)
-        middle = QHBoxLayout()
-        middle.addWidget(self.canvas, 1)
-        middle.addWidget(self.toolbar.side)
-        layout.addLayout(middle, 1)
-        layout.addWidget(self.toolbar.bottom)
-        layout.addLayout(commands)
-        layout.addWidget(self.info)
-        layout.addWidget(self.buttons)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
+        grid = QGridLayout()  # rings line up with the canvas edge, elements to its left
+        grid.setSpacing(6)
+        grid.addWidget(self.toolbar.top, 0, 0, 1, 2)
+        grid.addWidget(self.toolbar.side, 1, 0)
+        grid.addWidget(self.canvas, 1, 1)
+        grid.addWidget(self.toolbar.bottom, 2, 1)
+        grid.setColumnStretch(1, 1)
+        grid.setRowStretch(1, 1)
+        layout.addLayout(grid, 1)
+        bottom = QHBoxLayout()
+        bottom.addWidget(self.info, 1)
+        bottom.addWidget(self.buttons)
+        layout.addLayout(bottom)
         self.resize(760, 560)
 
         self.toolbar.picked.connect(self.canvas.set_tool)
         self.canvas.tool_changed.connect(lambda _n: self.toolbar.show_tool(self.canvas.tool))
         self.canvas.changed.connect(self._update)
         self.canvas.message.connect(self._show_message)
-        self.undo_button.clicked.connect(self.canvas.history.undo)
-        self.redo_button.clicked.connect(self.canvas.history.redo)
-        self.paste_button.clicked.connect(self.canvas.paste)
-        self.copy_button.clicked.connect(self.canvas.copy)
-        self.clear_button.clicked.connect(self._clear)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         self.molblock = ""
         self._update()
         self.canvas.setFocus()
 
-    def _clear(self) -> None:
+    def clear(self) -> None:
         if not self.canvas.sketch.is_empty():
             self.canvas.set_sketch(Sketch(), "Clear")
 
     def _update(self) -> None:
-        history = self.canvas.history
-        self.undo_button.setEnabled(history.can_undo)
-        self.redo_button.setEnabled(history.can_redo)
-        self.undo_button.setToolTip(f"Undo {history.undo_name}" if history.can_undo else "")
-        self.redo_button.setToolTip(f"Redo {history.redo_name}" if history.can_redo else "")
         report = self.canvas.report
         ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
         ok.setEnabled(report.valid)
-        self.copy_button.setEnabled(not self.canvas.sketch.is_empty())
-        if self.canvas.sketch.is_empty():
-            self.info.setText("Empty")
-            self.info.setStyleSheet("color: palette(placeholder-text)")
-        elif not report.valid:
+        if self.canvas.sketch.is_empty() or report.valid:
+            self.info.hide()
+            self.info.clear()
+        else:
             n = len(report.problems)
-            self.info.setText(
+            self._show_message(
                 f"{n} atom{'s' if n != 1 else ''} with a valence problem (marked; hover for why)"
             )
-            self.info.setStyleSheet("color: #c62828")
-        else:
-            mol = convert.to_mol(self.canvas.sketch)
-            formula = rdMolDescriptors.CalcMolFormula(mol)
-            self.info.setText(f"{formula} · MW {Descriptors.MolWt(mol):.2f}")
-            self.info.setStyleSheet("color: palette(placeholder-text)")
 
     def _show_message(self, text: str) -> None:
         self.info.setText(text)
-        self.info.setStyleSheet("color: #c62828")
+        self.info.setVisible(bool(text))
 
     def accept(self) -> None:
         self.canvas.cancel_preview()

@@ -1163,25 +1163,35 @@ class MainWindow(QMainWindow):
 
     def add_compound(self) -> StructureEditor:
         """Enter a structure and append it as a new row."""
-        table = self.workspace.table
         dialog = StructureEditor("", "Add Compound", self)
 
         def accepted() -> None:
             parsed = dialog.result_input
-            if parsed is None or parsed.is_blank:
-                return
-            name = next((n for n in table.column_names if table.kind(n) == STRUCTURE), None)
-            name = name or table.unique_name("Structure")
-            oids = table.add_rows({name: parsed.as_column()}, label="Add compound")
-            self.workspace.selection.set(oids.tolist(), "menu")
-            row = int(self.workspace.model.rows_of_oids(oids)[0])
-            if row >= 0:
-                self.view.scrollTo(self.workspace.model.index(row, 0))
+            if parsed is not None:
+                self.append_compound("", parsed)
 
         dialog.accepted.connect(accepted)
         dialog.finished.connect(lambda _r: dialog.deleteLater())
         dialog.open()
         return dialog
+
+    def append_compound(self, text: str, parsed=None) -> int | None:
+        """Add a structure as a new row (selected and scrolled to); its oid, or None if blank.
+
+        It goes in the first structure column, or a new "Structure" column if there is none.
+        """
+        table = self.workspace.table
+        parsed = parsed if parsed is not None else read_structure(text)
+        if parsed.is_blank:
+            return None
+        name = next((n for n in table.column_names if table.kind(n) == STRUCTURE), None)
+        name = name or table.unique_name("Structure")
+        oids = table.add_rows({name: parsed.as_column()}, label="Add compound")
+        self.workspace.selection.set(oids.tolist(), "menu")
+        row = int(self.workspace.model.rows_of_oids(oids)[0])
+        if row >= 0:
+            self.view.scrollTo(self.workspace.model.index(row, 0))
+        return int(oids[0])
 
     def copy_structure(self) -> None:
         cell = self._structure_cell()
