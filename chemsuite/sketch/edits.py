@@ -326,6 +326,23 @@ def erase(change: Change, atoms: Iterable[int] = (), bonds: Iterable[int] = ()) 
                 change.remove_atom(end)
 
 
+def insert(change: Change, other: Sketch) -> list[int]:
+    """Add every atom and bond of ``other`` (a paste). Returns the new atom ids."""
+    mapping = {aid: change.add_atom(atom) for aid, atom in other.atoms.items()}
+    for bond in other.bonds.values():
+        change.add_bond(mapping[bond.begin], mapping[bond.end], bond.order, bond.stereo)
+    return list(mapping.values())
+
+
+def subset(sketch: Sketch, atoms: Iterable[int]) -> Sketch:
+    """The atoms given and the bonds between them, as a new sketch (a copy)."""
+    keep = set(atoms)
+    out = Sketch(next_id=sketch.next_id)
+    out.atoms = {aid: a for aid, a in sketch.atoms.items() if aid in keep}
+    out.bonds = {bid: b for bid, b in sketch.bonds.items() if b.begin in keep and b.end in keep}
+    return out
+
+
 def move(
     change: Change, atoms: Iterable[int], dx: float, dy: float, merge: bool = True
 ) -> dict[int, int]:

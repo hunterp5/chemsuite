@@ -16,8 +16,9 @@
 
 """The structure editor: type or paste SMILES, a molfile or InChI, with a live drawing.
 
-It is deliberately text-first (no drawing canvas): chemists draw in ChemDraw or similar and
-paste here. The clipboard helpers read molfiles in the formats drawing programs put there.
+Type or paste text here, or press Draw to open the native sketcher on the same structure; its
+drawing comes back as a molfile, so the layout and wedges are kept. The clipboard helpers read
+molfiles in the formats drawing programs put there.
 """
 
 from __future__ import annotations
@@ -116,6 +117,8 @@ class StructureEditor(QDialog):
         self.info.setWordWrap(True)
         self.info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
+        self.draw_button = QPushButton("Draw…")
+        self.draw_button.setToolTip("Draw or edit the structure in the sketcher")
         self.paste_button = QPushButton("Paste")
         self.paste_button.setToolTip("Replace with the structure on the clipboard")
         self.clean_button = QPushButton("Canonical SMILES")
@@ -124,7 +127,13 @@ class StructureEditor(QDialog):
         self.copy_button.setToolTip("Copy as molfile and SMILES")
         self.clear_button = QPushButton("Clear")
         tools = QHBoxLayout()
-        for button in (self.paste_button, self.clean_button, self.copy_button, self.clear_button):
+        for button in (
+            self.draw_button,
+            self.paste_button,
+            self.clean_button,
+            self.copy_button,
+            self.clear_button,
+        ):
             tools.addWidget(button)
         tools.addStretch(1)
         self.buttons = QDialogButtonBox(
@@ -144,6 +153,7 @@ class StructureEditor(QDialog):
         self._timer.setInterval(PARSE_DELAY_MS)
         self._timer.timeout.connect(self.update_preview)
         self.edit.textChanged.connect(self._timer.start)
+        self.draw_button.clicked.connect(self.draw)
         self.paste_button.clicked.connect(self.paste)
         self.clean_button.clicked.connect(self.canonicalize)
         self.copy_button.clicked.connect(lambda: copy_structure(self.current.mol))
@@ -165,6 +175,15 @@ class StructureEditor(QDialog):
     def set_text(self, text: str) -> None:
         self.edit.setPlainText(text)
         self.update_preview()
+
+    def draw(self) -> None:
+        """Open the sketcher on the current structure; OK replaces the text with its molfile."""
+        from chemsuite.app.sketcher import SketcherDialog
+
+        start = self.text if self.current.mol is not None else ""
+        sketcher = SketcherDialog(start, self.windowTitle(), self)
+        if sketcher.exec():
+            self.set_text(sketcher.molblock)
 
     def paste(self) -> None:
         text = clipboard_structure_text()

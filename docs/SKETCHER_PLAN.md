@@ -189,7 +189,7 @@ Ketcher's NOTICE lists further licences for its dependencies. We take only `ketc
 | Phase | Work | Done when |
 |---|---|---|
 | P0 ✅ | Licence check, MolManager review, valence review, interaction spec: `docs/sketcher/`. | Done 2026-11-05. Still open: ChemDraw hotkeys checked against the team's ChemDraw (interaction-spec, open item 1). |
-| P1 | Model, edits with undo, valence, geometry, convert; canvas with select, bond, chain, atom, charge and eraser tools; molfile and SMILES copy and paste. | Can draw and edit drug-like molecules; round-trip and rule tests pass. |
+| P1 ✅ | Model, edits with undo, valence, geometry, convert; canvas with select, bond, chain, atom, charge and eraser tools; molfile and SMILES copy and paste. | Done 2026-11-05: `chemsuite/sketch/` (plus `render.py` for drawing conventions and `ctfile.py` for export valences) and `chemsuite/app/sketcher/`, opened by **Draw…** in the structure editor. Moved to P2: lasso selection, the rotate handle, and double-click label editing (abbreviations need P2's `fg.sdf`). Ketcher's `0` (any bond) and generic-atom keys wait for P4. |
 | P2 | Rings and templates (`library.sdf`), fusing, abbreviations (`fg.sdf`), salts and solvents, clean-up. | Template, abbreviation and layout tests pass. |
 | P3 | Stereo: wedges, CIP display, enhanced stereo; layout comparison. | Stereo reference set passes. |
 | P4 | Queries: generic atoms, atom lists, bond queries, R-groups, attachment points; hook into structure search and filters. | Query tests pass; search uses drawn queries. |

@@ -199,13 +199,57 @@ From the Data ▸ Table menu:
 - **Edit ▸ Edit Structure… (Ctrl+E)** opens the structure editor for the current structure
   cell.
   - Type or paste SMILES, a molfile or InChI. The drawing updates as you type.
-  - The editor is text-based. Draw in ChemDraw (or similar), copy, and paste here.
+  - **Draw…** opens the sketcher on the same structure (see below). OK puts the drawing back
+    as a molfile, which keeps your layout and wedges.
 - **Edit ▸ Copy Structure as Molfile** puts the current structure on the clipboard for drawing
   programs.
 - A structure that cannot be read is shown as **invalid**. Its original text is kept, so you
   can fix it.
 - Rows are taller when the table has a structure column. Change the height under Settings ▸
   Appearance.
+
+### The sketcher
+
+Opened with **Draw…** in the structure editor (and in the structure fields of Structure Search
+and Fingerprint Similarity, which use the same editor). Tools are on the bar at the top; OK is
+available only when every atom has a valid valence.
+
+**Tools**
+
+| Tool | Click | Drag |
+|---|---|---|
+| Select | Select an atom or bond (Shift adds); double-click selects the whole fragment | From empty canvas: box-select. From a selection: move it. Atoms dropped on other atoms merge with them, so dragging a chain end onto its start closes a ring. |
+| Erase | Delete the atom or bond | Delete everything you pass over (one undo step) |
+| Single, double, triple bond | On an atom: add a bond in the free direction (chains zig-zag; alkynes and allenes stay straight). On a bond: set that order; the single-bond tool steps single → double → triple. On empty canvas: a new bond. | From an atom or empty canvas: draw a bond. It snaps to 15° steps; hold Ctrl (⌘) for any angle. Release on an atom to bond to it. |
+| Wedge, hash, wavy | As for bonds; clicking a bond that already has that wedge reverses it | As for bonds |
+| Chain | Add a bond | Draw a zig-zag chain, one bond per bond length; the count shows by the pointer |
+| Charge + / − | Change the atom's charge by one | — |
+| Element (C, N, O …) | On an atom: change its element. On empty canvas: a lone atom. | From an atom: a bond to a new atom of that element |
+
+**Keys over an atom or bond.** Point at an atom or bond and press a key:
+
+| Key | Over an atom | Over a bond |
+|---|---|---|
+| `c` `n` `o` `s` `p` `f` `h` `i` | That element | — |
+| `l` / `b` / `d` | Cl / Br / deuterium | — |
+| Shift+`s` / Shift+`n` / Shift+`b` | Si / Na / B | — |
+| `1` `2` `3` | Add a single, double or triple bond | Set the order |
+| `4` | — | Aromatic bond |
+| `=` / `-` | Charge +1 / −1 | — |
+| Delete, Backspace | Erase | Erase |
+
+With nothing under the pointer, the same keys choose the matching tool. Esc returns to Select.
+
+**Other keys:** Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y undo and redo; Ctrl+C, Ctrl+X, Ctrl+V copy,
+cut and paste (molfile and SMILES, so ChemDraw and others can read it); Ctrl+Shift+M copies a
+molfile as text; Ctrl+A selects everything; Alt+H and Alt+V flip the selection (or the whole
+drawing) horizontally or vertically. Ctrl+scroll zooms, scrolling or a middle-button drag pans.
+
+**Valence.** An atom with an impossible valence is shown in red inside a dotted ring; point
+at it to see why. Hydrogens are worked out by the same rules as the table, so a drawing the
+sketcher accepts is always a valid structure there. A copied or saved molfile marks any atom
+whose hydrogen count other programs would work out differently, so they read the same
+structure.
 
 ---
 
