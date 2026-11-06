@@ -47,8 +47,6 @@ class SpaceMapDialog(ToolDialog):
         super().__init__(
             ctx.parent,
             "Chemical Space Map",
-            "Place compounds on a 2D map so similar compounds sit close together, then plot "
-            "the map.",
             guide="chemical-space-map",
         )
         self.ctx = ctx

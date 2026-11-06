@@ -73,11 +73,10 @@ Tool dialogs do not block the window. While one is open you can still select row
 filters and scroll the table, and the dialog's row counts follow along. Opening another
 document closes any open tool dialogs.
 
-Tools are moving to one dialog layout. Cluster and Chemical Space Map use it now, and the other
-tools will follow. Every dialog on it reads the same way, top to bottom:
+Tools are moving to one dialog layout. Cluster, Chemical Space Map and Predict pKa use it now,
+and the other tools will follow. The window title names the tool; every dialog on the layout
+reads the same way, top to bottom:
 
-- **Header.** The tool's name, a sentence on what it does, and a **Guide** link to its section
-  of this guide.
 - **Input.** What to work on: structures or number columns, and **Rows**.
   - Rows is **All · Shown · Selected**, with each option's count. The counts update as you
     select rows or change filters.
@@ -95,6 +94,7 @@ tools will follow. Every dialog on it reads the same way, top to bottom:
   - Heads-ups that do not stop the run, such as "may take minutes", appear in grey below it.
 - **Main button.** It names the action and how many rows it covers, such as **Cluster 1,204
   Rows**.
+- **Guide.** The button at the bottom left opens the tool's section of this guide.
 
 ---
 

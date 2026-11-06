@@ -56,8 +56,6 @@ class PkaDialog(ToolDialog):
         super().__init__(
             ctx.parent,
             "Predict pKa",
-            "Predict each ionisable site's pKa with MolGpKa, and what that means at a pH: "
-            "charge, cLogD and the major species.",
             guide="predict-pka",
         )
         self.ctx = ctx

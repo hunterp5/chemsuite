@@ -17,13 +17,13 @@
 
 A tool dialog is a :class:`ToolDialog`:
 
-* a **header**: the tool's name, one sentence on what it does, and a Guide link;
 * **sections** in a fixed order, *Input* (structures or columns, which rows), *Method*,
   *Output* (column names, what to do if they exist), each a :class:`Section` with one label
   column, fields of one width, and help text under the field it explains;
 * a **footer**: a sentence saying what will happen, which turns into the problem (with a
-  warning mark) when something must be fixed first, then Cancel and the primary button,
-  which names the action ("Cluster 1,204 Rows").
+  warning mark) when something must be fixed first, then Guide (bottom left, opening the
+  tool's section of the user guide), Cancel and the primary button, which names the action
+  ("Cluster 1,204 Rows"). There is no header: the window title names the tool.
 
 Shared controls keep tools alike: :class:`RowsChoice` (All · Shown · Selected, with counts) and
 :class:`OutputChoice` (If it exists: Replace it · Add a new column).
@@ -56,6 +56,7 @@ from PySide6.QtWidgets import (
     QLayout,
     QLineEdit,
     QListWidget,
+    QPushButton,
     QSizePolicy,
     QToolButton,
     QVBoxLayout,
@@ -313,36 +314,13 @@ class OutputChoice(Segmented):
 
 
 class ToolDialog(QDialog):
-    """A tool's dialog: header, sections, footer (see the module notes)."""
+    """A tool's dialog: sections and footer (see the module notes)."""
 
-    def __init__(
-        self,
-        parent: QWidget | None,
-        title: str,
-        blurb: str,
-        *,
-        guide: str = "",
-    ) -> None:
+    def __init__(self, parent: QWidget | None, title: str, *, guide: str = "") -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.job = None
         self.guide_anchor = guide
-
-        heading = QLabel(title)
-        font = heading.font()
-        font.setPointSizeF(font.pointSizeF() + 3)
-        font.setWeight(QFont.Weight.DemiBold)
-        heading.setFont(font)
-        self.blurb = QLabel(blurb)
-        self.blurb.setWordWrap(True)
-        self.guide_link = QLabel('<a href="guide">Guide</a>')
-        self.guide_link.setToolTip("Open this tool's section of the user guide")
-        self.guide_link.linkActivated.connect(lambda _href: self.open_guide())
-        self.guide_link.setVisible(GUIDE.exists())
-        top = QHBoxLayout()
-        top.addWidget(heading)
-        top.addStretch(1)
-        top.addWidget(self.guide_link)
 
         self.sections = QVBoxLayout()
         self.sections.setSpacing(6)
@@ -373,6 +351,11 @@ class ToolDialog(QDialog):
             " QPushButton:disabled { background: palette(button); color: palette(mid);"
             " border-color: palette(mid); }"
         )
+        self.guide_button = QPushButton("Guide")
+        self.guide_button.setToolTip("Open this tool's section of the user guide")
+        self.guide_button.setAutoDefault(False)
+        self.guide_button.clicked.connect(self.open_guide)
+        self.guide_button.setVisible(GUIDE.exists())
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         words = QVBoxLayout()
@@ -383,22 +366,24 @@ class ToolDialog(QDialog):
         footer.setSpacing(8)
         footer.addWidget(self.warning_mark)
         footer.addLayout(words, 1)
-        footer.addWidget(self.buttons, 0, Qt.AlignmentFlag.AlignBottom)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 14)
         layout.setSpacing(6)
-        layout.addLayout(top)
-        layout.addWidget(self.blurb)
-        layout.addSpacing(4)
         layout.addLayout(self.sections)
         layout.addSpacing(4)
         layout.addWidget(rule)
         layout.addLayout(footer)
+        bottom = QHBoxLayout()
+        bottom.addWidget(self.guide_button)
+        bottom.addStretch(1)
+        bottom.addWidget(self.buttons)
+        layout.addLayout(bottom)
         # The dialog is always exactly as big as its contents: rows that appear or disappear
         # (another method's settings) resize it rather than leave gaps.
         layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
-        self.blurb.setFixedWidth(LABEL_WIDTH + 10 + FIELD_WIDTH)
+        self.status.setFixedWidth(LABEL_WIDTH + 10 + FIELD_WIDTH - 20)
+        self.note_label.setFixedWidth(LABEL_WIDTH + 10 + FIELD_WIDTH - 20)
 
     # -- building ---------------------------------------------------------------------------
     def section(self, title: str) -> Section:

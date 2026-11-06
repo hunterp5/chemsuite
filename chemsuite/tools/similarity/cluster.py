@@ -42,8 +42,6 @@ class ClusterDialog(ToolDialog):
         super().__init__(
             ctx.parent,
             "Cluster",
-            "Group compounds by similarity. Each row gets a cluster number; cluster 1 is "
-            "the largest.",
             guide="cluster",
         )
         self.ctx = ctx
