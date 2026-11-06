@@ -24,7 +24,7 @@ def _open(ctx: ToolContext):
     from .dialog import BinningDialog
 
     dialog = BinningDialog(ctx)
-    dialog.open()
+    ctx.show_dialog(dialog)
     return dialog
 
 

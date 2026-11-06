@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.fingerprints import max_similarity, query_fingerprint, similarity
+from chemsuite.app.dialogs import follow_rows
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.structure_input import read_structure
@@ -52,14 +53,22 @@ class SimilarityDialog(QDialog):
         self.job = None
         self.features = FeatureChooser(ctx, numbers_allowed=False)
         self.to_structure = QRadioButton("A structure:")
-        self.to_selection = QRadioButton(
-            f"The selected rows ({len(ctx.selection):,}): similarity to the nearest one"
-        )
+        self.to_selection = QRadioButton()
         group = QButtonGroup(self)
         group.addButton(self.to_structure)
         group.addButton(self.to_selection)
         self.to_structure.setChecked(True)
-        self.to_selection.setEnabled(len(ctx.selection) > 0)
+
+        def follow() -> None:
+            count = len(ctx.selection)
+            self.to_selection.setText(
+                f"The selected rows ({count:,}): similarity to the nearest one"
+            )
+            self.to_selection.setEnabled(count > 0)
+            if not count and self.to_selection.isChecked():
+                self.to_structure.setChecked(True)
+
+        follow_rows(self.to_selection, ctx, follow)
         self.query = QLineEdit()
         self.query.setPlaceholderText("SMILES, or Draw… / Current Row")
         draw = QPushButton("Draw…")

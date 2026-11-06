@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QDockWidget, QWidget
+from PySide6.QtWidgets import QDialog, QDockWidget, QWidget
 
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
@@ -198,6 +198,14 @@ class ToolContext:
         with a ``titleChanged(str)`` signal keeps the dock's title up to date.
         """
         return self._window.add_panel(widget, title)
+
+    def show_dialog(self, dialog: QDialog) -> QDialog:
+        """Show a tool's dialog without blocking the window.
+
+        The table stays usable (select rows, change filters) while the dialog is open. The
+        dialog closes with the document.
+        """
+        return self._window.show_dialog(dialog)
 
     def structure_image(self, column: str, oid: int, size: QSize) -> QImage | None:
         """A drawing of one structure cell (cached; None for a blank or invalid cell)."""

@@ -35,15 +35,17 @@ changes, and overrides :meth:`~ToolDialog.problem`, :meth:`~ToolDialog.summary`,
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QEvent, Qt, QUrl, Signal
+import shiboken6
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFont, QPalette
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -75,21 +77,12 @@ def muted(label: QLabel) -> None:
     label.setForegroundRole(QPalette.ColorRole.PlaceholderText)
 
 
-def help_label(text: str = "") -> QLabel:
-    """Small grey text explaining the field above it."""
-    label = QLabel(text)
-    label.setWordWrap(True)
-    label.setTextFormat(Qt.TextFormat.PlainText)
-    font = label.font()
-    font.setPointSizeF(max(8.0, font.pointSizeF() - 1))
-    label.setFont(font)
-    muted(label)
-    label.setFixedWidth(FIELD_WIDTH)
-    return label
-
-
 class Section(QWidget):
-    """A titled group of fields: a small capitalised heading and rule over a form."""
+    """A titled group of fields: a small capitalised heading and rule over a form.
+
+    Explanations are tooltips on the field and its label, not text in the dialog, so the
+    dialog stays compact.
+    """
 
     def __init__(self, title: str) -> None:
         super().__init__()
@@ -120,56 +113,33 @@ class Section(QWidget):
         layout.setSpacing(8)
         layout.addLayout(heading)
         layout.addLayout(self.form)
-        self._rows: dict[QWidget, QWidget] = {}  # field → what the form holds (field or box)
-        self._helps: dict[QWidget, QLabel] = {}
+        self._captions: dict[QWidget, QLabel] = {}
 
     def row(self, label: str, field: QWidget, help: str = "") -> QWidget:
-        """Add *field* with *label* ("" for none) and optional help text; returns *field*."""
+        """Add *field* with *label* ("" for none); *help* becomes its tooltip. Returns *field*."""
         caption = QLabel(f"{label}:" if label else "")
         caption.setMinimumWidth(LABEL_WIDTH)
         caption.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if isinstance(field, _FIXED_WIDTH_FIELDS):
             field.setFixedWidth(FIELD_WIDTH)
-        box = QWidget()
-        column = QVBoxLayout(box)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(3)
-        column.addWidget(field)
-        note = help_label()
-        column.addWidget(note)
-        self.form.addRow(caption, box)
-        self._rows[field] = box
-        self._helps[field] = note
+        self.form.addRow(caption, field)
+        self._captions[field] = caption
         self.set_help(field, help)
         return field
 
     def set_help(self, field: QWidget, text: str) -> None:
-        """Change (or with "" hide) the help under *field*."""
-        note = self._helps[field]
-        note.setText(text)
-        note.setVisible(bool(text))
-        self._fit(field)
+        """The explanation shown when hovering *field* or its label ("" for none)."""
+        field.setToolTip(text)
+        self._captions[field].setToolTip(text)
 
-    def _fit(self, field: QWidget) -> None:
-        # A word-wrapped label inside a form row: give the row its real height up front, or the
-        # form squeezes it (Qt sizes rows before it knows how many lines the help needs).
-        note = self._helps[field]
-        height = field.sizeHint().height()
-        if note.isVisibleTo(self) or note.text():
-            height += 3 + note.heightForWidth(FIELD_WIDTH)
-        self._rows[field].setFixedHeight(max(height, field.minimumSizeHint().height()))
+    def help(self, field: QWidget) -> str:
+        return field.toolTip()
 
     def set_row_visible(self, field: QWidget, visible: bool) -> None:
-        self.form.setRowVisible(self._rows[field], visible)
+        self.form.setRowVisible(field, visible)
 
     def is_row_visible(self, field: QWidget) -> bool:
-        return self.form.isRowVisible(self._rows[field])
-
-    def changeEvent(self, event: QEvent) -> None:
-        super().changeEvent(event)
-        if event.type() == QEvent.Type.FontChange:
-            for field in self._rows:
-                self._fit(field)
+        return self.form.isRowVisible(field)
 
 
 class Segmented(QWidget):
@@ -233,10 +203,52 @@ def _segment_style(index: int, count: int) -> str:
     )
 
 
-class RowsChoice(Segmented):
-    """Which rows a tool works on: All · Shown · Selected, with live counts.
+def follow_rows(widget: QWidget, ctx, update: Callable[[], None]) -> None:
+    """Call *update* now and whenever the selection or table changes, while *widget* lives.
 
-    *ctx* is the tool's ``ToolContext``. Selected is greyed out while nothing is selected.
+    Tool dialogs do not block the window, so anything showing row counts must keep up.
+    """
+    unsubscribe: list[Callable[[], None]] = []
+
+    def stop() -> None:
+        while unsubscribe:
+            unsubscribe.pop()()
+
+    def changed(*_args) -> None:
+        if shiboken6.isValid(widget):
+            update()
+        else:
+            stop()
+
+    unsubscribe += [ctx.selection.subscribe(changed), ctx.table.subscribe(changed)]
+    widget.destroyed.connect(lambda *_a: stop())
+    update()
+
+
+def selected_only(ctx, text: str = "Selected rows only") -> QCheckBox:
+    """A "Selected rows only (N)" check box whose count follows the selection.
+
+    It is unticked and disabled while nothing is selected.
+    """
+    box = QCheckBox()
+
+    def update() -> None:
+        count = len(ctx.selection)
+        box.setText(f"{text} ({count:,})")
+        box.setEnabled(count > 0)
+        if not count:
+            box.setChecked(False)
+
+    follow_rows(box, ctx, update)
+    return box
+
+
+class RowsChoice(Segmented):
+    """Which rows a tool works on: All · Shown · Selected, with counts that stay current.
+
+    *ctx* is the tool's ``ToolContext``. Dialogs do not block the window, so the counts follow
+    the selection and filters while the dialog is open. Choosing Selected with nothing selected
+    is allowed (you may be about to select rows); :meth:`problem` then says so.
     """
 
     def __init__(self, ctx, current: str = "all") -> None:
@@ -245,7 +257,24 @@ class RowsChoice(Segmented):
             current,
         )
         self.ctx = ctx
+        self._unsubscribe = [
+            ctx.selection.subscribe(lambda *_a: self._follow()),
+            ctx.table.subscribe(lambda *_a: self._follow()),
+        ]
         self.update_counts()
+
+    def _follow(self) -> None:
+        if not shiboken6.isValid(self):  # the dialog closed with its window
+            self.detach()
+            return
+        self.update_counts()
+        self.changed.emit(self.value())
+
+    def detach(self) -> None:
+        """Stop following the table and selection (the dialog is closing)."""
+        for unsubscribe in self._unsubscribe:
+            unsubscribe()
+        self._unsubscribe = []
 
     def update_counts(self) -> None:
         from chemsuite.plotting.data import shown_oids
@@ -258,7 +287,11 @@ class RowsChoice(Segmented):
         }
         for key, title in (("all", "All"), ("shown", "Shown"), ("selected", "Selected")):
             self.set_text(key, f"{title} ({counts[key]:,})")
-        self.set_enabled("selected", counts["selected"] > 0, "Select rows in the table first")
+
+    def problem(self) -> str:
+        if self.value() == "selected" and not len(self.ctx.selection):
+            return "No rows are selected. Select rows in the table, or choose All or Shown."
+        return ""
 
     def oids(self) -> np.ndarray:
         from chemsuite.tools.similarity.common import scope_oids
@@ -395,9 +428,16 @@ class ToolDialog(QDialog):
         return None
 
     # -- behaviour --------------------------------------------------------------------------
+    def _problem(self) -> str:
+        """The kit's own checks (rows to work on), then the tool's."""
+        for choice in self.findChildren(RowsChoice):
+            if choice.isVisibleTo(self) and choice.problem():
+                return choice.problem()
+        return self.problem()
+
     def refresh(self) -> None:
         """Bring the footer and the primary button up to date with the fields."""
-        problem = self.problem()
+        problem = self._problem()
         self.warning_mark.setVisible(bool(problem))
         self.status.setText(problem or self.summary())
         self.status.setStyleSheet("color: #b36b00;" if problem else "")
@@ -408,11 +448,16 @@ class ToolDialog(QDialog):
         self.primary.setEnabled(not problem)
 
     def accept(self) -> None:
-        if self.problem():
+        if self._problem():
             self.refresh()
             return
         self.job = self.run()
         super().accept()
+
+    def done(self, result: int) -> None:
+        for choice in self.findChildren(RowsChoice):
+            choice.detach()
+        super().done(result)
 
     def open_guide(self) -> None:
         url = QUrl.fromLocalFile(str(GUIDE))
@@ -429,5 +474,6 @@ __all__ = [
     "Section",
     "Segmented",
     "ToolDialog",
-    "help_label",
+    "follow_rows",
+    "selected_only",
 ]

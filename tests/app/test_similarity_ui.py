@@ -154,16 +154,17 @@ def test_cluster_dialog_uses_the_dialog_kit(chem, qtbot) -> None:
     dialog = chem.open_tool("cluster")
     # One label column: the feature rows live in the dialog's Input section.
     assert dialog.features.form is None
-    # Rows: Selected is greyed out until something is selected; counts follow the table.
+    # Help is a tooltip on the field and its label, not text in the dialog.
+    assert "tighter clusters" in dialog.cutoff.toolTip()
+    # The dialog does not block the window, so the row counts follow the selection live.
+    assert not dialog.isModal()
     rows = dialog.rows
     assert rows.buttons["all"].text() == "All (9)"
-    assert not rows.buttons["selected"].isEnabled()
-    assert dialog.primary.text() == "Cluster 9 Rows"
-    dialog.reject()
+    rows.set_value("selected")  # nothing selected yet: the footer says so
+    assert "No rows are selected" in dialog.status.text() and not dialog.primary.isEnabled()
     chem.workspace.selection.set([int(o) for o in table.oids[:4]], "test")
-    dialog = chem.open_tool("cluster")
-    dialog.rows.set_value("selected")
-    assert dialog.primary.text() == "Cluster 4 Rows"
+    assert rows.buttons["selected"].text() == "Selected (4)"
+    assert dialog.primary.text() == "Cluster 4 Rows" and dialog.primary.isEnabled()
     # The footer says what will happen, then turns into the problem and blocks the button.
     assert "Butina at 0.60" in dialog.status.text() and dialog.primary.isEnabled()
     assert not dialog.warning_mark.isVisibleTo(dialog)
@@ -184,3 +185,23 @@ def test_cluster_dialog_uses_the_dialog_kit(chem, qtbot) -> None:
     job = dialog.cluster()
     qtbot.waitUntil(lambda: "Cluster (2)" in table.column_names, timeout=20_000)
     assert "Cluster" in table.column_names
+
+
+def test_older_dialogs_follow_the_selection_and_close_with_the_document(chem) -> None:
+    """Dialogs do not block the table, so their selected-row counts stay current."""
+    from chemsuite.app.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    table = chem.workspace.table
+    dialog = chem.open_tool("diverse_subset")
+    assert not dialog.isModal() and not dialog.seeded.isEnabled()
+    selected = dialog.rows.findData("selected")
+    chem.workspace.selection.set([int(o) for o in table.oids[:3]], "test")
+    assert dialog.seeded.isEnabled() and "(3)" in dialog.seeded.text()
+    assert dialog.rows.itemText(selected) == "Selected rows (3)"
+    dialog.seeded.setChecked(True)
+    chem.workspace.selection.set([], "test")
+    assert not dialog.seeded.isEnabled() and not dialog.seeded.isChecked()
+    # A new document closes the dialog: it belongs to the old table.
+    chem._install(Workspace(Table()))
+    assert not dialog.isVisible()

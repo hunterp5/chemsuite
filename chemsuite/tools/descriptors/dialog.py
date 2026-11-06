@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from chemsuite.app.dialogs import selected_only
 from chemsuite.app.tools import ToolContext
 from chemsuite.descriptors.catalog import CATALOG, COMMON, GROUPS, in_group
 from chemsuite.descriptors.compute import compute_descriptors
@@ -73,8 +74,7 @@ class DescriptorDialog(QDialog):
         for button in (common, everything, none):
             presets.addWidget(button)
         presets.addStretch(1)
-        self.selected_only = QCheckBox(f"Selected rows only ({len(ctx.selection):,})")
-        self.selected_only.setEnabled(len(ctx.selection) > 0)
+        self.selected_only = selected_only(ctx)
         self.overwrite = QCheckBox("Update columns that already have these names")
         self.overwrite.setChecked(True)
         self.overwrite.setToolTip(

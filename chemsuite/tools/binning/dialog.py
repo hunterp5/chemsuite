@@ -44,6 +44,7 @@ from chemsuite.analysis.binning import (
     parse_names,
     parse_numbers,
 )
+from chemsuite.app.dialogs import selected_only
 from chemsuite.app.tools import ToolContext
 from chemsuite.plotting.data import number_columns, numbers
 
@@ -93,8 +94,7 @@ class BinningDialog(QDialog):
         self.write_range.setChecked(True)
         self.write_class = QCheckBox("Class column:")
         self.write_class.setChecked(True)
-        self.selected_only = QCheckBox(f"Selected rows only ({len(ctx.selection):,})")
-        self.selected_only.setEnabled(len(ctx.selection) > 0)
+        self.selected_only = selected_only(ctx)
         self.preview = QTableWidget(0, 3)
         self.preview.setHorizontalHeaderLabels(["Range", "Class", "Rows"])
         self.preview.verticalHeader().hide()

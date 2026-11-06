@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from chemsuite.app.dialogs import selected_only
 from chemsuite.app.tools import ToolContext
 from chemsuite.conformers.etkdg import ConformerSettings, generate_conformers
 from chemsuite.core.jobs.parallel import default_workers
@@ -92,8 +93,7 @@ class ConformerDialog(QDialog):
         self.seed.setRange(-1, 2**31 - 1)
         self.seed.setSpecialValueText("Random")
         self.seed.setToolTip("The same seed gives the same conformers every time.")
-        self.selected_only = QCheckBox(f"Selected rows only ({len(ctx.selection):,})")
-        self.selected_only.setEnabled(len(ctx.selection) > 0)
+        self.selected_only = selected_only(ctx)
         self.overwrite = QCheckBox("Replace an existing 3D column of the same name")
         self.overwrite.setChecked(True)
         self.summary = QLabel()
@@ -241,8 +241,7 @@ class ExportConformersDialog(QDialog):
         default = three_d[-1] if three_d else ctx.default_structure_column()
         if default:
             self.structure.setCurrentText(default)
-        self.selected_only = QCheckBox(f"Selected rows only ({len(ctx.selection):,})")
-        self.selected_only.setEnabled(len(ctx.selection) > 0)
+        self.selected_only = selected_only(ctx)
         self.selected_only.setChecked(len(ctx.selection) > 0)
         note = QLabel(
             "Each conformer is written as its own record, lowest energy first, with a "

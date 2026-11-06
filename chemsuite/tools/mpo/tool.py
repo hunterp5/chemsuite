@@ -24,7 +24,7 @@ def _open(ctx: ToolContext):
     from .dialog import MpoDialog
 
     dialog = MpoDialog(ctx)
-    dialog.open()
+    ctx.show_dialog(dialog)
     return dialog
 
 

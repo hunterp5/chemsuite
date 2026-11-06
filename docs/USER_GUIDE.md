@@ -69,16 +69,22 @@ Each document has its own window. From top to bottom:
 
 ### Tool dialogs
 
+Tool dialogs do not block the window. While one is open you can still select rows, change
+filters and scroll the table, and the dialog's row counts follow along. Opening another
+document closes any open tool dialogs.
+
 Tools are moving to one dialog layout. Cluster and Chemical Space Map use it now, and the other
 tools will follow. Every dialog on it reads the same way, top to bottom:
 
 - **Header.** The tool's name, a sentence on what it does, and a **Guide** link to its section
   of this guide.
 - **Input.** What to work on: structures or number columns, and **Rows**.
-  - Rows is **All · Shown · Selected**, with each option's count.
-  - **Selected** is greyed out until you select rows in the table.
+  - Rows is **All · Shown · Selected**, with each option's count. The counts update as you
+    select rows or change filters.
+  - If you choose **Selected** with nothing selected, the footer says so. Select rows in the
+    table and the dialog is ready to run.
 - **Method.** The tool's settings. Settings that only apply to one method appear when you
-  choose that method. Grey text under a field explains it.
+  choose that method. Hover over a field or its label for an explanation.
 - **Output.** The name of the result column, and **If it exists: Replace it · Add a new
   column**. Adding a new column keeps the earlier result and names the new one "Cluster (2)",
   and so on.

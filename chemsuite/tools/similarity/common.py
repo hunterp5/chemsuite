@@ -38,6 +38,7 @@ from chemsuite.analysis.fingerprints import (
     Fingerprints,
 )
 from chemsuite.analysis.fingerprints import fingerprint_task as cached_fingerprint_task
+from chemsuite.app.dialogs import follow_rows
 from chemsuite.app.tools import ToolContext
 from chemsuite.plotting.data import number_columns, numbers, shown_oids
 
@@ -48,10 +49,14 @@ LABEL_COLUMNS = ("ID", "Name", "Title", "Compound", "Compound ID")
 def scope_combo(ctx: ToolContext, default: str = "all") -> QComboBox:
     combo = QComboBox()
     for key, title in SCOPES.items():
-        if key == "selected":
-            title += f" ({len(ctx.selection):,})"
         combo.addItem(title, key)
     combo.setCurrentIndex(max(0, combo.findData(default)))
+    selected = combo.findData("selected")
+    follow_rows(
+        combo,
+        ctx,
+        lambda: combo.setItemText(selected, f"{SCOPES['selected']} ({len(ctx.selection):,})"),
+    )
     return combo
 
 

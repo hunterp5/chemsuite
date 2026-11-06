@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.mpo import COMBINE, SHAPES, Desirability, MpoProfile
+from chemsuite.app.dialogs import selected_only
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import number_columns, numbers
@@ -113,8 +114,7 @@ class MpoDialog(QDialog):
         self.skip_missing = QCheckBox("Score rows missing a property on the others")
         self.output = QLineEdit(_last_output)
         self.per_property = QCheckBox("Also add a desirability column per property")
-        self.selected_only = QCheckBox(f"Selected rows only ({len(ctx.selection):,})")
-        self.selected_only.setEnabled(len(ctx.selection) > 0)
+        self.selected_only = selected_only(ctx)
         self.overwrite = QCheckBox("Replace an existing column of the same name")
         self.overwrite.setChecked(True)
         self.status = QLabel()

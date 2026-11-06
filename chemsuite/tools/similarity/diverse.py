@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.diversity import Picks, maxmin_fingerprints, maxmin_numeric
+from chemsuite.app.dialogs import selected_only
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.table.columns import NumberColumn
@@ -50,10 +51,8 @@ class DiverseSubsetDialog(QDialog):
         self.count = QSpinBox()
         self.count.setRange(1, 1_000_000)
         self.count.setValue(min(50, max(1, len(ctx.table))))
-        self.seeded = QCheckBox(
-            f"Add to the selected rows ({len(ctx.selection):,}): pick what they do not cover"
-        )
-        self.seeded.setEnabled(len(ctx.selection) > 0)
+        self.seeded = selected_only(ctx, "Add to the selected rows")
+        self.seeded.setToolTip("Pick the compounds the selected rows do not already cover.")
         self.output = QLineEdit(RANK_COLUMN)
         self.select = QCheckBox("Select the picked rows")
         self.select.setChecked(True)

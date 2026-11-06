@@ -24,7 +24,7 @@ def _open(ctx: ToolContext):
     from .dialog import DescriptorDialog  # imported on first use: keeps startup fast
 
     dialog = DescriptorDialog(ctx)
-    dialog.open()
+    ctx.show_dialog(dialog)
     return dialog
 
 

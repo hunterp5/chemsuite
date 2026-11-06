@@ -24,7 +24,7 @@ def _open_generate(ctx: ToolContext):
     from .dialog import ConformerDialog  # imported on first use: keeps startup fast
 
     dialog = ConformerDialog(ctx)
-    dialog.open()
+    ctx.show_dialog(dialog)
     return dialog
 
 
@@ -32,7 +32,7 @@ def _open_export(ctx: ToolContext):
     from .dialog import ExportConformersDialog
 
     dialog = ExportConformersDialog(ctx)
-    dialog.open()
+    ctx.show_dialog(dialog)
     return dialog
 
 

@@ -26,7 +26,7 @@ def _map(ctx: ToolContext):
     from .map_dialog import SpaceMapDialog
 
     dialog = SpaceMapDialog(ctx)
-    dialog.open()
+    ctx.show_dialog(dialog)
     return dialog
 
 
@@ -34,7 +34,7 @@ def _som(ctx: ToolContext):
     from .som_ui import SomDialog
 
     dialog = SomDialog(ctx)
-    dialog.open()
+    ctx.show_dialog(dialog)
     return dialog
 
 

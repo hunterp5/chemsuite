@@ -25,7 +25,7 @@ def _dialog(kind: str):
         from .dialog import MedChemPlotDialog
 
         dialog = MedChemPlotDialog(ctx, kind)
-        dialog.open()
+        ctx.show_dialog(dialog)
         return dialog
 
     return open_dialog

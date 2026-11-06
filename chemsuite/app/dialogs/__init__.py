@@ -26,7 +26,8 @@ from .kit import (
     Section,
     Segmented,
     ToolDialog,
-    help_label,
+    follow_rows,
+    selected_only,
 )
 
 __all__ = [
@@ -37,5 +38,6 @@ __all__ = [
     "Section",
     "Segmented",
     "ToolDialog",
-    "help_label",
+    "follow_rows",
+    "selected_only",
 ]

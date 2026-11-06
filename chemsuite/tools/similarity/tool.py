@@ -30,7 +30,7 @@ def _dialog(name: str):
             "cluster": cluster.ClusterDialog,
         }[name]
         dialog = cls(ctx)
-        dialog.open()
+        ctx.show_dialog(dialog)
         return dialog
 
     return open_dialog

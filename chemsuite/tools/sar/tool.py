@@ -28,7 +28,7 @@ def _dialog(module: str, name: str):
 
         cls = getattr(import_module(f"{__package__}.{module}"), name)
         dialog = cls(ctx)
-        dialog.open()
+        ctx.show_dialog(dialog)
         return dialog
 
     return open_dialog

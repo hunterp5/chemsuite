@@ -34,6 +34,7 @@ from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QDockWidget,
     QFileDialog,
     QInputDialog,
@@ -232,6 +233,7 @@ class MainWindow(QMainWindow):
         self._lists: ListActions | None = None
         self._browser: SelectionBrowser | None = None
         self._panels: list[PanelDock] = []
+        self._dialogs: list[QDialog] = []  # open tool dialogs (they do not block the table)
         self.filter_dock = QDockWidget("Filters", self)
         self.filter_dock.setObjectName("FilterDock")
         self.filter_dock.setAllowedAreas(
@@ -340,7 +342,27 @@ class MainWindow(QMainWindow):
         self._start_parsing()
         self._restore_panels(workspace.saved_panels)
 
+    def show_dialog(self, dialog: QDialog) -> QDialog:
+        """Show a tool dialog without blocking the window (see ``ToolContext.show_dialog``)."""
+        dialog.setWindowModality(Qt.WindowModality.NonModal)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
+        self._dialogs.append(dialog)
+
+        def forget(_result: int = 0) -> None:
+            if dialog in self._dialogs:
+                self._dialogs.remove(dialog)
+
+        dialog.finished.connect(forget)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        return dialog
+
     def _teardown(self) -> None:
+        for dialog in list(self._dialogs):
+            if shiboken6.isValid(dialog):
+                dialog.reject()
+        self._dialogs.clear()
         for dock in list(self._panels):
             dock.close()
         self._panels.clear()
