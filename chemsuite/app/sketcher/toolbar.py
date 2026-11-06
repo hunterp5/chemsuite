@@ -101,6 +101,15 @@ def _select(p: QPainter) -> None:
     )  # fmt: skip
 
 
+def _lasso(p: QPainter) -> None:
+    path = QPainterPath(QPointF(6, 15.5))
+    path.cubicTo(QPointF(1, 12), QPointF(2, 3.5), QPointF(10, 3.5))
+    path.cubicTo(QPointF(18, 3.5), QPointF(19, 11), QPointF(11, 12))
+    path.cubicTo(QPointF(8, 12.3), QPointF(6.5, 13.5), QPointF(6, 15.5))
+    path.lineTo(QPointF(7.5, 18))
+    p.drawPath(path)
+
+
 def _erase(p: QPainter) -> None:
     p.drawRoundedRect(QRectF(4, 6, 12, 8), 2, 2)
     p.drawLine(QPointF(9, 6), QPointF(9, 14))
@@ -155,7 +164,9 @@ def _pixmap(draw: Callable[[QPainter], None], colour: QColor) -> QPixmap:
 
 #: (key, tooltip, icon, tool factory). Shortcuts in the tooltips are the hover keys.
 TOOLS: list[tuple[str, str, Callable[[QPainter], None], Callable[[], tools.Tool]]] = [
-    ("select", "Select and move (Esc)", _select, tools.SelectTool),
+    ("select", "Select and move; drag the handle to rotate (Esc)", _select, tools.SelectTool),
+    ("lasso", "Lasso select: draw round atoms to select them", _lasso,
+     lambda: tools.SelectTool(lasso=True)),
     ("erase", "Erase (Delete)", _erase, tools.EraseTool),
     ("single", "Single bond (1); click a bond to cycle", lambda p: _line(p, 1),
      lambda: tools.BondTool(Order.SINGLE)),
@@ -218,8 +229,9 @@ def tool_key(tool: tools.Tool) -> str:
         return f"template:{tool.template.name}"
     if isinstance(tool, tools.ChargeTool):
         return "plus" if tool.delta > 0 else "minus"
+    if isinstance(tool, tools.SelectTool):
+        return "lasso" if tool.lasso else "select"
     return {
-        tools.SelectTool: "select",
         tools.EraseTool: "erase",
         tools.ChainTool: "chain",
     }.get(type(tool), "")
@@ -247,7 +259,7 @@ class SketchToolBar(QWidget):
         top, bottom, side = strips
         for i, (key, tip, draw, factory) in enumerate(TOOLS):
             self._add(top, key, tip, draw, factory)
-            if i in (1, 4, 7, 8):
+            if i in (2, 5, 8, 9):
                 top.addSpacing(10)
         top.addStretch(1)
         for template in RING_BAR:

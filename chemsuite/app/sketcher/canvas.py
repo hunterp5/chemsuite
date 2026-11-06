@@ -55,7 +55,10 @@ from chemsuite.sketch.model import (
     RGROUP,
     Order,
     Sketch,
+    enhanced_text,
+    next_enhanced,
     next_rgroup,
+    parse_enhanced,
 )
 
 Point = tuple[float, float]
@@ -161,6 +164,8 @@ class SketchCanvas(QWidget):
         self.stereo = stereo.StereoLabels()
         #: R/S and E/Z labels the user hid one by one: ("atom" | "bond", id)
         self.hidden_stereo: set[tuple[str, int]] = set()
+        #: wedges that do not say what they seem to: bond id -> why (stereo.wedge_problems)
+        self.wedge_problems: dict[int, str] = {}
         self._fitted = False
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -227,6 +232,8 @@ class SketchCanvas(QWidget):
         big = len(self.sketch.atoms) > STEREO_ATOM_LIMIT
         show = SketchCanvas.show_stereo and not big and self.report.valid
         self.stereo = stereo.labels(self.sketch) if show else stereo.StereoLabels()
+        checks = not big and self.report.valid
+        self.wedge_problems = stereo.wedge_problems(self.sketch) if checks else {}
         if self.hover.kind == "atom" and self.hover.id not in self.sketch.atoms:
             self.hover = NOTHING
         if self.hover.kind == "bond" and self.hover.id not in self.sketch.bonds:
@@ -435,18 +442,33 @@ class SketchCanvas(QWidget):
                 p.setPen(QPen(problem, max(1.0, 0.03 * s), Qt.PenStyle.DotLine))
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawEllipse(centre, 0.36 * s, 0.36 * s)
+        warn = QColor("#e65100")  # amber: a warning, not an error
+        for bid in self.wedge_problems:
+            bond = self.sketch.bonds.get(bid)
+            if bond is None:
+                continue
+            a, b = self.sketch.atoms[bond.begin].pos, self.sketch.atoms[bond.end].pos
+            mid = self.to_screen(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2))
+            p.setPen(QPen(warn, max(1.0, 0.03 * s), Qt.PenStyle.DotLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(mid, 0.42 * s, 0.42 * s)
         self.tool.paint(self, p)
         p.end()
 
     def stereo_label_positions(self) -> list[tuple[str, QPointF]]:
         """(text, screen position) of each R/S and E/Z label shown."""
         sketch, out = self.sketch, []
-        for aid, code in sorted(self.stereo.atoms.items()):
+        shown = {aid: f"({code})" for aid, code in self.stereo.atoms.items()}
+        for aid, atom in sketch.atoms.items():
+            group = enhanced_text(atom.enhanced)
+            if group and SketchCanvas.show_stereo:
+                shown[aid] = f"{shown[aid]} {group}" if aid in shown else group
+        for aid, text in sorted(shown.items()):
             if ("atom", aid) in self.hidden_stereo or aid not in sketch.atoms:
                 continue
             here = sketch.atoms[aid].pos
             spots = [sketch.atoms[n].pos for n in sketch.neighbours(aid)]
-            out.append((f"({code})", self.to_screen(_away(here, spots, 0.62))))
+            out.append((text, self.to_screen(_away(here, spots, 0.62))))
         for bid, code in sorted(self.stereo.bonds.items()):
             if ("bond", bid) in self.hidden_stereo or bid not in sketch.bonds:
                 continue
@@ -613,7 +635,10 @@ class SketchCanvas(QWidget):
         if event.type() == QEvent.Type.ToolTip:
             pos = self.to_model(event.position() if hasattr(event, "position") else event.pos())
             hit = self.hit_at(pos)
-            message = self.report.problems.get(hit.id, "") if hit.kind == "atom" else ""
+            if hit.kind == "atom":
+                message = self.report.problems.get(hit.id, "")
+            else:
+                message = self.wedge_problems.get(hit.id, "") if hit.kind == "bond" else ""
             if message:
                 QToolTip.showText(event.globalPos(), message, self)
             else:
@@ -648,10 +673,14 @@ class SketchCanvas(QWidget):
             self.cut()
         elif event.matches(QKeySequence.StandardKey.Paste):
             self.paste()
+        elif mod and shift and key == Qt.Key.Key_K:
+            self.clean()
         elif mod and shift and key == Qt.Key.Key_A:
             self.clear_selection()
         elif event.matches(QKeySequence.StandardKey.SelectAll):
             self.select_atoms(self.sketch.atoms)
+        elif alt and key == Qt.Key.Key_E:
+            self.popup_enhanced()
         elif alt and key in (Qt.Key.Key_H, Qt.Key.Key_V):
             atoms = self.selected_atoms or set(self.sketch.atoms)
             horizontal = key == Qt.Key.Key_H
@@ -821,6 +850,8 @@ class SketchCanvas(QWidget):
             has_atoms
         )
         menu.addSeparator()
+        self._salts_menu(menu.addMenu("Add Salt or Solvent"))
+        menu.addSeparator()
         labels = menu.addAction("Show Stereo Labels (R/S, E/Z)", self.toggle_stereo_labels)
         labels.setCheckable(True)
         labels.setChecked(SketchCanvas.show_stereo)
@@ -831,8 +862,47 @@ class SketchCanvas(QWidget):
             any(a.symbol == "H" for a in self.sketch.atoms.values())
         )
         menu.addSeparator()
+        what = "Clean Selection" if self.selected_atoms else "Clean Structure"
+        clean = menu.addAction(f"{what}\t{_shortcut('Ctrl+Shift+K')}", self.clean)
+        clean.setEnabled(has_atoms and self.report.valid)
         menu.addAction("Clear", lambda: self.set_sketch(Sketch(), "Clear")).setEnabled(has_atoms)
         return menu
+
+    def _salts_menu(self, menu) -> None:
+        from chemsuite.sketch import salts
+
+        for group in salts.GROUPS:
+            sub = menu.addMenu(group)
+            for entry in salts.TABLE:
+                if entry.group == group:
+                    sub.addAction(entry.title, lambda e=entry: self.add_salt(e))
+
+    def add_salt(self, entry) -> None:
+        """Drop a salt or solvent to the right of the drawing and select it."""
+        from chemsuite.sketch import salts
+
+        added: list[int] = []
+        self.edit(f"Add {entry.name}", lambda ch: added.extend(salts.place(ch, entry)))
+        self.select_atoms(added)
+        self._ensure_visible()
+
+    def _ensure_visible(self) -> None:
+        """Refit when the drawing has grown past the window's edges."""
+        if self.sketch.is_empty():
+            return
+        x0, y0, x1, y1 = self.sketch.bounds()
+        a, b = self.to_screen((x0, y1)), self.to_screen((x1, y0))
+        if not self.rect().adjusted(8, 8, -8, -8).contains(QRectF(a, b).toRect()):
+            self.fit()
+
+    def clean(self) -> None:
+        """Clean Structure (ChemDraw's Mod+Shift+K): a fresh layout for the fragments of the
+        selection, or for the whole drawing, keeping place, turn and stereo (``layout.py``)."""
+        from chemsuite.sketch import layout
+
+        atoms = set(self.selected_atoms) or None
+        name = "Clean Selection" if atoms else "Clean Structure"
+        self._set_stereo(name, lambda ch: layout.clean(ch, atoms))
 
     # -- stereo and hydrogens ------------------------------------------------------------------
     def toggle_stereo_labels(self) -> None:
@@ -903,21 +973,80 @@ class SketchCanvas(QWidget):
         shown.setCheckable(True)
         shown.setChecked(code is not None and ("atom", atom) not in self.hidden_stereo)
         shown.setEnabled(code is not None)
+        self.enhanced_menu(menu.addMenu("Enhanced Stereo"), self._centres(self._targets(atom)))
+
+    def popup_enhanced(self):
+        """Alt+E (Ketcher): the Enhanced Stereo menu for the selected stereocentres, or all."""
+        from PySide6.QtGui import QCursor
+        from PySide6.QtWidgets import QMenu
+
+        atoms = self._centres(sorted(self.selected_atoms) or sorted(self.sketch.atoms))
+        if not atoms:
+            self.notify("Select one or more stereocentres for enhanced stereo.")
+            return None
+        menu = QMenu(self)
+        self.enhanced_menu(menu, atoms)
+        menu.popup(QCursor.pos())
+        return menu
+
+    def _centres(self, atoms) -> list[int]:
+        """The stereocentres among *atoms* (labelled or not yet defined)."""
+        known = set(self.stereo.atoms) | set(self.stereo.undefined_atoms)
+        return [a for a in atoms if a in known]
+
+    def enhanced_menu(self, menu, atoms: list[int]) -> None:
+        """Enhanced stereo for *atoms* (V3000 ABS / AND / OR groups): absolute, "and" (a
+        racemic mixture of this and its mirror image) or "or" (one of the two, unknown)."""
+        values = {self.sketch.atoms[a].enhanced for a in atoms if a in self.sketch.atoms}
+        current = values.pop() if len(values) == 1 else None
+
+        def setter(value: str, name: str):
+            return lambda: self.edit(name, lambda ch: edits.set_enhanced(ch, atoms, value))
+
+        plain = menu.addAction("Absolute (as drawn)", setter("", "Enhanced stereo: absolute"))
+        plain.setCheckable(True)
+        plain.setChecked(current == "")
+        tagged = menu.addAction("Absolute, labelled abs", setter("abs", "Enhanced stereo: abs"))
+        tagged.setCheckable(True)
+        tagged.setChecked(current == "abs")
+        for kind, title, meaning in (
+            ("and", "AND", "racemic: this and its mirror image"),
+            ("or", "OR", "one of this or its mirror image, not known which"),
+        ):
+            sub = menu.addMenu(f"{title} Group ({meaning})")
+            used = sorted(
+                {p[1] for a in self.sketch.atoms.values()
+                 if (p := parse_enhanced(a.enhanced)) and p[0] == kind}
+            )  # fmt: skip
+            for n in used:
+                value = f"{kind}{n}"
+                action = sub.addAction(
+                    enhanced_text(value), setter(value, f"Enhanced stereo: {value}")
+                )
+                action.setCheckable(True)
+                action.setChecked(current == value)
+            new = f"{kind}{next_enhanced(self.sketch, kind)}"
+            sub.addAction(
+                f"New Group ({enhanced_text(new)})", setter(new, f"Enhanced stereo: {new}")
+            )
+        menu.setEnabled(bool(atoms))
 
     def _double_bond_menu(self, menu, bond: int) -> None:
         code = self.stereo.bonds.get(bond)
-        if code is None and bond not in self.stereo.undefined_bonds:
+        unknown = bond in self.stereo.unknown_bonds
+        if code is None and not unknown and bond not in self.stereo.undefined_bonds:
             return
         sub = menu.addMenu("Double Bond (E/Z)")
-        for want in ("E", "Z"):
+        for want, text in (("E", "E"), ("Z", "Z"), (stereo.UNKNOWN, "Unknown (crossed bond)")):
             action = sub.addAction(
-                want,
-                lambda w=want: self._set_stereo(
-                    f"Make {w}", lambda ch: stereo.set_double_bond(ch, bond, w)
+                text,
+                lambda w=want, t=text: self._set_stereo(
+                    "Make E/Z unknown" if w == stereo.UNKNOWN else f"Make {t}",
+                    lambda ch: stereo.set_double_bond(ch, bond, w),
                 ),
             )
             action.setCheckable(True)
-            action.setChecked(code == want)
+            action.setChecked(code == want or (unknown and want == stereo.UNKNOWN))
         sub.addSeparator()
         shown = sub.addAction("Show Label", lambda: self._toggle_label("bond", bond))
         shown.setCheckable(True)
@@ -992,6 +1121,11 @@ class SketchCanvas(QWidget):
         else:
             return False
         return True
+
+
+def _shortcut(portable: str) -> str:
+    """A shortcut as the platform writes it (⇧⌘K on macOS)."""
+    return QKeySequence(portable).toString(QKeySequence.SequenceFormat.NativeText)
 
 
 def _away(here, spots, distance: float):

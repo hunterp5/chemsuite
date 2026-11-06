@@ -104,7 +104,13 @@ class SketcherDialog(QDialog):
         report = self.canvas.report
         ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
         ok.setEnabled(report.valid)
-        if self.canvas.sketch.is_empty() or report.valid:
+        wedges = len(self.canvas.wedge_problems)
+        if report.valid and wedges:
+            self._show_message(
+                f"{wedges} wedge{'s' if wedges != 1 else ''} that may not mean what you intend "
+                "(marked; hover for why)"
+            )
+        elif self.canvas.sketch.is_empty() or report.valid:
             self.info.hide()
             self.info.clear()
         else:

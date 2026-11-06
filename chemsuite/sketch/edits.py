@@ -490,3 +490,17 @@ def hide_hydrogens(change: Change, atoms: Iterable[int]) -> tuple[int, int]:
         kept += len(stay)
     erase(change, atoms=removed)
     return len(removed), kept
+
+
+def set_enhanced(change: Change, atoms: Iterable[int], value: str) -> int:
+    """Put *atoms* in enhanced stereo group *value* ("abs", "and1", "or2" …, or "" for none).
+
+    Returns how many atoms changed.
+    """
+    changed = 0
+    for aid in sorted(atoms):
+        atom = change.sketch.atoms.get(aid)
+        if atom is not None and atom.enhanced != value:
+            change.set_atom(aid, replace(atom, enhanced=value))
+            changed += 1
+    return changed

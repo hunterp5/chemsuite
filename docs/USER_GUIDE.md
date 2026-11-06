@@ -276,7 +276,8 @@ C, V, A) and on the drawing's right-click menu.
 
 | Tool | Click | Drag |
 |---|---|---|
-| Select | Select an atom or bond (Shift adds; an abbreviation is selected whole). Double-click an atom to type its label; double-click a bond to select its whole fragment. | From empty canvas: box-select. From a selection: move it. Atoms dropped on other atoms merge with them, so dragging a chain end onto its start closes a ring. |
+| Select | Select an atom or bond (Shift adds; an abbreviation is selected whole). Double-click an atom to type its label; double-click a bond to select its whole fragment. | From empty canvas: box-select. From a selection: move it. Atoms dropped on other atoms merge with them, so dragging a chain end onto its start closes a ring. With two or more atoms selected, a round handle appears above them: drag it to rotate the selection about its centre (15° steps; hold Ctrl (⌘) for any angle). |
+| Lasso | As Select | From empty canvas: draw a loop round the atoms to select (Shift adds). Moving and rotating work as in Select. |
 | Erase | Delete the atom or bond | Delete everything you pass over (one undo step) |
 | Single, double, triple bond | On an atom: add a bond in the free direction (chains zig-zag; alkynes and allenes stay straight). On a bond: set that order; the single-bond tool steps single → double → triple. On empty canvas: a new bond. | From an atom or empty canvas: draw a bond. It snaps to 15° steps; hold Ctrl (⌘) for any angle. Release on an atom to bond to it. |
 | Wedge, hash, wavy | As for bonds; clicking a bond that already has that wedge reverses it | As for bonds |
@@ -304,7 +305,20 @@ the rings. Esc returns to Select.
 **Other keys:** Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y undo and redo; Ctrl+C, Ctrl+X, Ctrl+V copy,
 cut and paste (molfile and SMILES, so ChemDraw and others can read it); Ctrl+Shift+M copies a
 molfile as text; Ctrl+A selects everything; Alt+H and Alt+V flip the selection (or the whole
-drawing) horizontally or vertically. Ctrl+scroll zooms, scrolling or a middle-button drag pans.
+drawing) horizontally or vertically; Ctrl+Shift+K cleans the structure (below). Ctrl+scroll
+zooms, scrolling or a middle-button drag pans.
+
+**Clean Structure (Ctrl+Shift+K).** Redraws the molecule with even bond lengths and angles,
+also on the background right-click menu. With atoms selected it cleans only the molecules they
+belong to (**Clean Selection**). The cleaned drawing stays where it was and keeps its turn on
+the page; it is never mirrored. Stereocentres and double bonds keep their configuration: your
+wedges stay where they still mean the same thing, and are re-placed where they would not. If
+a clean would change the stereochemistry, the drawing is left alone and a line says why.
+
+**Salts and solvents.** Right-click the background for **Add Salt or Solvent**: 135 common
+solvents, acids, bases, salts and buffers in groups (alcohols, ethers, polar aprotic, salts and
+buffers …), named in full with their usual short name (DMF, THF, TFA). The one you pick is
+drawn to the right of the drawing and selected, so you can move it straight away.
 
 **Labels and abbreviations.** Double-click an atom (or point at it and press Enter) and type:
 
@@ -359,7 +373,31 @@ stereocentres and the drawn geometry sets double bonds. Right-click the backgrou
   where possible.
 - Right-click a double bond for **Double Bond (E/Z)**: **E** or **Z** mirrors the smaller side
   of the bond, and wedges on that side swap so its stereocentres keep their labels. Double
-  bonds in rings cannot be switched this way.
+  bonds in rings cannot be switched this way. **Unknown (crossed bond)** marks the geometry as
+  not known: the bond is drawn crossed, has no E/Z label, and molfiles mark it "either".
+
+**Wedge warnings.** A wedge or hash that does not say what it seems to is ringed in amber,
+with the reason when you point at it and a note under the drawing. It is a warning only; OK
+still works.
+
+- **Defines nothing**: the atom at its narrow end is not a stereocentre.
+- **Points the wrong way**: the stereocentre is at its wide end; the narrow end belongs there.
+- **Contradict each other**: the wedges at an atom (for example a wedge and a hash on opposite
+  bonds) give no configuration.
+- **Ambiguous**: turning one bond slightly would change the configuration, as when the wedge
+  sits between two bonds drawn in a straight line. Spread the bonds out.
+
+**Enhanced stereo.** For mixtures and unknown absolute configuration, right-click a
+stereocentre (or several selected ones) for **Enhanced Stereo**, or press Alt+E for the
+selected centres:
+
+- **Absolute (as drawn)**, the default, or **Absolute, labelled abs**;
+- **AND Group**: a racemic mixture, this drawing and its mirror image, shown `&1`, `&2` …;
+- **OR Group**: one of this drawing or its mirror image, not known which, shown `or1` …
+
+Centres in the same group change together. The group shows after the R/S label, e.g.
+*(R) &1*. A drawing with groups is saved as a V3000 molfile, which ChemDraw, Marvin and
+Ketcher read; CXSMILES such as `C[C@H](N)O |&1:1|` pastes in with its groups.
 
 **Explicit hydrogens.** Right-click an atom (or one of several selected atoms) for **Show
 Explicit Hydrogens**, which draws its hydrogens as H atoms, or **Hide Explicit Hydrogens**,

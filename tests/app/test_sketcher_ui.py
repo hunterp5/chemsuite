@@ -26,6 +26,7 @@ from PySide6.QtGui import QGuiApplication, QKeyEvent, QMouseEvent
 from rdkit import Chem
 
 from chemsuite.app.sketcher import SketcherDialog
+from chemsuite.app.sketcher import canvas as sk_canvas
 from chemsuite.app.sketcher import tools as sk_tools
 from chemsuite.sketch import convert
 from chemsuite.sketch.convert import from_text, to_smiles
@@ -537,3 +538,132 @@ def test_explicit_hydrogens_from_the_atom_menu(qapp):
     _action(_menu(canvas, "", 0), "Show All Hydrogens").trigger()
     assert sum(a.symbol == "H" for a in canvas.sketch.atoms.values()) == 7  # CH3, CH, NH2, OH
     dialog.close()
+
+
+def test_lasso_selects_the_atoms_it_encircles(dialog):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("CCCCCC"))
+    dialog.toolbar.buttons["lasso"].click()
+    assert canvas.tool.lasso and dialog.toolbar.buttons["lasso"].isChecked()
+    xs = sorted(a.x for a in canvas.sketch.atoms.values())
+    cut = (xs[2] + xs[3]) / 2  # loop round the three left-hand atoms
+    x0, y0, _x1, y1 = canvas.sketch.bounds()
+    loop = [(x0 - 0.5, y0 - 0.5), (cut, y0 - 0.5), (cut, y1 + 0.5), (x0 - 0.5, y1 + 0.5)]
+    _send(canvas, QEvent.Type.MouseButtonPress, loop[0])
+    for point in [*loop[1:], loop[0]]:
+        _send(canvas, QEvent.Type.MouseMove, point, button=Qt.MouseButton.NoButton)
+    _send(canvas, QEvent.Type.MouseButtonRelease, loop[0], buttons=Qt.MouseButton.NoButton)
+    assert {canvas.sketch.atoms[a].x for a in canvas.selected_atoms} == set(xs[:3])
+    assert len(canvas.selected_bonds) == 2
+    assert sk_tools.inside_polygon((0.5, 0.5), [(0, 0), (1, 0), (1, 1), (0, 1)])
+    assert not sk_tools.inside_polygon((1.5, 0.5), [(0, 0), (1, 0), (1, 1), (0, 1)])
+
+
+def test_rotate_handle_turns_the_selection_in_15_degree_steps(dialog):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("CC.O"))
+    carbons = [a for a, atom in canvas.sketch.atoms.items() if atom.symbol == "C"]
+    oxygen = _atom(canvas, "O")
+    still = canvas.sketch.atoms[oxygen]
+    canvas.set_tool(sk_tools.SelectTool())
+    canvas.select_atoms(carbons)
+    before = _angle(canvas, next(iter(canvas.sketch.bonds)))
+    at, centre = sk_tools.SelectTool.handle(canvas)
+    start = canvas.to_model(at)
+    radius = math.dist(start, centre)
+    turn = math.radians(50)  # snaps to 45
+    base = math.atan2(start[1] - centre[1], start[0] - centre[0])
+    end = (centre[0] + radius * math.cos(base + turn), centre[1] + radius * math.sin(base + turn))
+    drag(canvas, start, end)
+    after = _angle(canvas, next(iter(canvas.sketch.bonds)))
+    assert (after - before) % 180 == pytest.approx(45, abs=0.01)
+    assert canvas.history.undo_name == "Rotate"
+    assert canvas.sketch.atoms[oxygen] == still
+    assert set(carbons) <= canvas.selected_atoms
+
+
+def test_clean_shortcut_tidies_the_drawing_and_undoes_in_one_step(dialog):
+    canvas = dialog.canvas
+    sketch = from_text("C[C@H](N)C(=O)O")
+    for aid, atom in list(sketch.atoms.items()):
+        sketch.atoms[aid] = atom.moved(atom.x * 1.3 + 0.2 * (aid % 2), atom.y * 0.8)
+    canvas.set_sketch(sketch)
+    smiles = to_smiles(canvas.sketch)
+    assert convert.bond_length_spread(canvas.sketch) > 0.1
+    key(canvas, "K", Qt.Key.Key_K, Qt.KeyboardModifier.ControlModifier
+        | Qt.KeyboardModifier.ShiftModifier)  # fmt: skip
+    assert canvas.history.undo_name == "Clean Structure"
+    assert convert.bond_length_spread(canvas.sketch) < 0.02
+    assert to_smiles(canvas.sketch) == smiles
+    canvas.history.undo()
+    assert convert.bond_length_spread(canvas.sketch) > 0.1
+
+
+def test_salts_menu_adds_a_solvent_beside_the_drawing(dialog):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("c1ccccc1N"))
+    menu = canvas.context_menu(sk_canvas.NOTHING)
+    _action(menu, "Add Salt or Solvent", "Polar aprotic", "N,N-dimethylformamide (DMF)").trigger()
+    assert to_smiles(canvas.sketch) == Chem.CanonSmiles("Nc1ccccc1.CN(C)C=O")
+    assert len(canvas.selected_atoms) == 5
+    assert canvas.history.undo_name == "Add N,N-dimethylformamide"
+    texts = [a.text() for a in canvas.context_menu(sk_canvas.NOTHING).actions()]
+    assert "Clean Selection\t" + sk_canvas._shortcut("Ctrl+Shift+K") in texts
+
+
+def test_either_double_bond_from_the_menu_draws_crossed(dialog):
+    from chemsuite.sketch import stereo
+
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("C/C=C/C"))
+    bond = next(iter(canvas.stereo.bonds))
+    _action(_menu(canvas, "bond", bond), "Double Bond (E/Z)", "Unknown (crossed bond)").trigger()
+    assert bond in canvas.stereo.unknown_bonds and not canvas.stereo.bonds
+    assert canvas.history.undo_name == "Make E/Z unknown"
+    lines = [ln for ln in canvas.scene.lines if ln.bond == bond]
+    assert len(lines) == 2
+    (a1, b1), (a2, b2) = (lines[0].a, lines[0].b), (lines[1].a, lines[1].b)
+    from chemsuite.sketch.layout import _crosses
+
+    assert _crosses(a1, b1, a2, b2)  # the two lines of the bond cross
+    menu = _menu(canvas, "bond", bond)
+    assert _action(menu, "Double Bond (E/Z)", "Unknown (crossed bond)").isChecked()
+    _action(menu, "Double Bond (E/Z)", "E").trigger()
+    assert canvas.stereo.bonds[bond] == "E"
+    assert stereo.UNKNOWN == "either"
+
+
+def test_bad_wedge_is_marked_and_explained_without_blocking_ok(dialog):
+    from dataclasses import replace
+
+    from chemsuite.sketch import stereo
+    from chemsuite.sketch.model import Stereo
+
+    canvas = dialog.canvas
+    sketch = from_text("CCC")
+    first = min(sketch.bonds)
+    sketch.bonds[first] = replace(sketch.bonds[first], stereo=Stereo.WEDGE)
+    canvas.set_sketch(sketch)
+    assert canvas.wedge_problems == {first: stereo.NO_CENTRE}
+    assert dialog.info.isVisible() and "wedge" in dialog.info.text()
+    assert dialog.buttons.button(dialog.buttons.StandardButton.Ok).isEnabled()
+
+
+def test_enhanced_stereo_menu_labels_and_round_trip(dialog):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("C[C@H](N)C[C@@H](O)C"))
+    first, second = sorted(canvas.stereo.atoms)
+    and_group = "AND Group (racemic: this and its mirror image)"
+    _action(_menu(canvas, "atom", first), "Enhanced Stereo", and_group, "New Group (&1)").trigger()
+    assert canvas.sketch.atoms[first].enhanced == "and1"
+    assert canvas.history.undo_name == "Enhanced stereo: and1"
+    canvas.select_atoms([second])
+    menu = canvas.popup_enhanced()  # Alt+E on the selection
+    _action(menu, "OR Group (one of this or its mirror image, not known which)",
+            "New Group (or1)").trigger()  # fmt: skip
+    menu.close()
+    assert canvas.sketch.atoms[second].enhanced == "or1"
+    texts = [t for t, _ in canvas.stereo_label_positions()]
+    assert any(t.endswith(" &1") for t in texts) and any(t.endswith(" or1") for t in texts)
+    dialog.accept()
+    assert "MDLV30/STERAC1" in dialog.molblock and "MDLV30/STEREL1" in dialog.molblock

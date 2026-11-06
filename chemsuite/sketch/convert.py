@@ -44,6 +44,7 @@ from chemsuite.sketch.model import (
     Order,
     Sketch,
     Stereo,
+    parse_enhanced,
 )
 
 #: Molfile coordinates per sketch bond length. RDKit draws bonds 1.5 long; files keep that.
@@ -100,6 +101,8 @@ def drawn_molblock(sketch: Sketch) -> str:
             radicals.append((index[aid], _RADICAL_CODES.get(atom.radical, 3)))
     for _, bond in bonds:
         stereo = _STEREO_CODES[bond.stereo] if bond.order is Order.SINGLE else 0
+        if bond.order is Order.DOUBLE and bond.stereo is Stereo.EITHER:
+            stereo = 3  # CTfile: double bond, cis or trans (either)
         lines.append(f"{index[bond.begin]:3d}{index[bond.end]:3d}{bond.order.value:3d}{stereo:3d}")
     for tag, values in (("CHG", charges), ("ISO", isotopes), ("RAD", radicals)):
         for start in range(0, len(values), 8):  # at most eight entries per line
@@ -159,7 +162,54 @@ def to_rdkit(sketch: Sketch, *, sanitize: bool = True) -> Chem.Mol:
         mol = Chem.MolFromMolBlock(drawn_molblock(sketch), sanitize=sanitize, removeHs=False)
     if mol is None:
         raise SketchError("RDKit cannot read this drawing.")
+    if any(a.enhanced for a in sketch.atoms.values()):
+        mol = _with_stereo_groups(sketch, mol)
     return mol
+
+
+_GROUP_TYPES = {
+    "abs": Chem.StereoGroupType.STEREO_ABSOLUTE,
+    "and": Chem.StereoGroupType.STEREO_AND,
+    "or": Chem.StereoGroupType.STEREO_OR,
+}
+_GROUP_KINDS = {v: k for k, v in _GROUP_TYPES.items()}
+
+
+def _with_stereo_groups(sketch: Sketch, mol: Chem.Mol) -> Chem.Mol:
+    """*mol* with the drawing's enhanced stereo groups (V3000 ``MDLV30/STEABS``, ``STERAC``,
+    ``STEREL``). Only atoms RDKit reads as stereocentres can belong to a group."""
+    members: dict[tuple[str, int], list[int]] = {}
+    for i, aid in enumerate(atom_order(sketch)):
+        parsed = parse_enhanced(sketch.atoms[aid].enhanced)
+        if parsed and mol.GetAtomWithIdx(i).GetChiralTag() != Chem.ChiralType.CHI_UNSPECIFIED:
+            members.setdefault(parsed, []).append(i)
+    if not members:
+        return mol
+    rw = Chem.RWMol(mol)
+    groups = [
+        Chem.CreateStereoGroup(_GROUP_TYPES[kind], rw, atoms, readId=n)
+        for (kind, n), atoms in sorted(members.items())
+    ]
+    rw.SetStereoGroups(groups)
+    return rw.GetMol()
+
+
+def enhanced_of(mol: Chem.Mol) -> dict[int, str]:
+    """Atom index -> ``Atom.enhanced`` value for each atom in one of *mol*'s stereo groups."""
+    out: dict[int, str] = {}
+    counts = {"and": 0, "or": 0}
+    for group in mol.GetStereoGroups():
+        kind = _GROUP_KINDS.get(group.GetGroupType())
+        if kind is None:
+            continue
+        if kind == "abs":
+            value = "abs"
+        else:
+            counts[kind] += 1
+            value = f"{kind}{group.GetReadId() or group.GetWriteId() or counts[kind]}"
+        for atom in group.GetAtoms():
+            out[atom.GetIdx()] = value
+    return out
 
 
 def to_mol(sketch: Sketch) -> Chem.Mol:
@@ -191,8 +241,13 @@ def to_molblock(sketch: Sketch) -> str:
     Chem.ReapplyMolBlockWedging(mol)
     Chem.Kekulize(mol, clearAromaticFlags=True)
     _add_attach_points(mol)
-    if mol.GetNumAtoms() > MAX_V2000_ATOMS or mol.GetNumBonds() > MAX_V2000_ATOMS:
-        return Chem.MolToMolBlock(mol, kekulize=False, forceV3000=True)
+    v3000 = (
+        mol.GetNumAtoms() > MAX_V2000_ATOMS
+        or mol.GetNumBonds() > MAX_V2000_ATOMS
+        or bool(mol.GetStereoGroups())  # enhanced stereo exists only in V3000
+    )
+    if v3000:
+        return _v3000_with_valences(mol)
     lines = Chem.MolToMolBlock(mol, kekulize=False).split("\n")
     for atom in mol.GetAtoms():
         valence = _ctfile_valence(atom)
@@ -206,6 +261,21 @@ def to_molblock(sketch: Sketch) -> str:
         lines[lines.index("M  END") : lines.index("M  END")] = ours
     # RDKit adds "V  aaa *" value lines for dummy atoms; they carry nothing
     return "\n".join(ln for ln in lines if not (ln.startswith("V  ") and ln.endswith(" *")))
+
+
+def _v3000_with_valences(mol: Chem.Mol) -> str:
+    """A V3000 molfile with ``VAL=`` on atoms that need an explicit valence (as in V2000)."""
+    lines = Chem.MolToMolBlock(mol, kekulize=False, forceV3000=True).split("\n")
+    start = lines.index("M  V30 BEGIN ATOM") + 1
+    for atom in mol.GetAtoms():
+        valence = _ctfile_valence(atom)
+        line = lines[start + atom.GetIdx()]
+        if valence is not None and " VAL=" not in line:
+            line = f"{line} VAL={-1 if valence == 15 else valence}"
+            if len(line) > 80:  # CTfile V3000: at most 80 characters, "-" continues a line
+                line = f"{line[:79]}-\nM  V30 {line[79:]}"
+            lines[start + atom.GetIdx()] = line
+    return "\n".join(lines)
 
 
 def _add_attach_points(mol: Chem.Mol) -> None:
@@ -270,6 +340,7 @@ def from_mol(mol: Chem.Mol) -> Sketch:
     scale = median(lengths) if lengths and median(lengths) > 1e-6 else FILE_BOND_LENGTH
     sketch = Sketch()
     ids: list[int] = []
+    groups = enhanced_of(mol)
     for atom in mol.GetAtoms():
         p = conf.GetAtomPosition(atom.GetIdx())
         aid = sketch.new_id()
@@ -278,6 +349,7 @@ def from_mol(mol: Chem.Mol) -> Sketch:
             p.y / scale,
             charge=atom.GetFormalCharge(),
             radical=atom.GetNumRadicalElectrons(),
+            enhanced=groups.get(atom.GetIdx(), ""),
             **_atom_kind(atom),
         )
         ids.append(aid)
@@ -291,6 +363,17 @@ def from_mol(mol: Chem.Mol) -> Sketch:
         stereo = _BOND_DIRS.get(bond.GetBondDir(), Stereo.NONE)
         if bond.HasProp("_MolFileBondStereo") and bond.GetIntProp("_MolFileBondStereo") == 4:
             stereo = Stereo.EITHER
+        if order is Order.DOUBLE:  # wedge directions mean nothing on a double bond
+            wavy_beside = any(
+                other.GetBondDir() == Chem.BondDir.UNKNOWN
+                for end in (bond.GetBeginAtom(), bond.GetEndAtom())
+                for other in end.GetBonds()
+            )  # a wavy single bond beside it already says "unknown" (RDKit writes both)
+            either = not wavy_beside and (
+                (bond.HasProp("_MolFileBondStereo") and bond.GetIntProp("_MolFileBondStereo") == 3)
+                or bond.GetStereo() == Chem.BondStereo.STEREOANY
+            )
+            stereo = Stereo.EITHER if either else Stereo.NONE
         sketch.bonds[sketch.new_id()] = Bond(
             ids[bond.GetBeginAtomIdx()], ids[bond.GetEndAtomIdx()], order, stereo
         )

@@ -26,7 +26,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 
 from chemsuite.sketch import edits, geometry
 from chemsuite.sketch.model import MAX_RGROUP, RGROUP, Order, Stereo, next_rgroup
@@ -91,23 +91,69 @@ class Tool:
         pass
 
 
+#: The rotate handle sits this many pixels above the selection's box.
+HANDLE_GAP = 22.0
+HANDLE_RADIUS = 6.0
+
+
+def inside_polygon(point: Point, polygon: list[Point]) -> bool:
+    """Even-odd test: is *point* inside the closed *polygon*?"""
+    x, y = point
+    inside = False
+    j = len(polygon) - 1
+    for i, (xi, yi) in enumerate(polygon):
+        xj, yj = polygon[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
 class SelectTool(Tool):
-    """Click to select, Shift-click to add, drag empty canvas for a box, drag to move.
+    """Click to select, Shift-click to add, drag empty canvas for a box (or a lasso), drag
+    the selection to move it, drag the handle above it to rotate it.
 
     Double-click selects a whole fragment. Atoms dropped onto other atoms merge with them
-    (Ketcher ``atomMerge``).
+    (Ketcher ``atomMerge``). Rotation snaps to 15 degree steps; Ctrl (⌘) frees it (Ketcher
+    ``tool/rotate.ts``).
     """
 
-    name = "select"
     cursor = Qt.CursorShape.ArrowCursor
 
-    def __init__(self):
+    def __init__(self, lasso: bool = False):
         super().__init__()
+        self.lasso = lasso
+        self.name = "lasso" if lasso else "select"
         self.moving: set[int] = set()
         self.box_end: Point | None = None
+        self.path: list[Point] = []
+        self.rotating: tuple[set[int], Point] | None = None
+        self.angle = 0.0
+        self.tip: Point | None = None
+
+    @staticmethod
+    def handle(canvas) -> tuple[QPointF, Point] | None:
+        """The rotate handle (screen point) and the centre it turns about (model point), when
+        two or more atoms are selected."""
+        atoms = [canvas.sketch.atoms[a] for a in canvas.selected_atoms if a in canvas.sketch.atoms]
+        if len(atoms) < 2:
+            return None
+        xs, ys = [a.x for a in atoms], [a.y for a in atoms]
+        centre = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+        top = canvas.to_screen((centre[0], max(ys)))
+        return QPointF(top.x(), top.y() - 0.35 * canvas.scale - HANDLE_GAP), centre
 
     def press(self, canvas, pos, hit, event) -> None:
         super().press(canvas, pos, hit, event)
+        self.rotating, self.path, self.angle = None, [], 0.0
+        found = self.handle(canvas)
+        if found is not None:
+            at, centre = found
+            gap = event.position() - at
+            if math.hypot(gap.x(), gap.y()) <= HANDLE_RADIUS + 4:
+                self.rotating = (set(canvas.selected_atoms), centre)
+                self.moving = set()
+                return
         add = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
         self.moving = set()
         already = (hit.kind == "atom" and hit.id in canvas.selected_atoms) or (
@@ -121,29 +167,61 @@ class SelectTool(Tool):
         elif not add:
             canvas.clear_selection()
 
+    def _rotation(self, pos, event) -> float:
+        _, centre = self.rotating
+        start = geometry.angle_of(centre, self.start)
+        angle = geometry.angle_of(centre, pos) - start
+        return angle if _free_angle(event) else geometry.snap_angle(angle)
+
     def dragged(self, canvas, pos, event) -> None:
-        if self.moving:
+        if self.rotating is not None:
+            atoms, centre = self.rotating
+            angle = self.angle = self._rotation(pos, event)
+            self.box_end = None
+            self.tip = pos
+            canvas.preview("Rotate", lambda ch: edits.rotate(ch, atoms, centre, angle))
+        elif self.moving:
             dx, dy = pos[0] - self.start[0], pos[1] - self.start[1]
             atoms = set(self.moving)
             canvas.preview("Move", lambda ch: edits.move(ch, atoms, dx, dy, merge=False))
         else:
-            self.box_end = pos
-            x0, x1 = sorted((self.start[0], pos[0]))
-            y0, y1 = sorted((self.start[1], pos[1]))
-            inside = [
-                aid for aid, a in canvas.sketch.atoms.items() if x0 <= a.x <= x1 and y0 <= a.y <= y1
-            ]
             add = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            if self.lasso:
+                if not self.path:
+                    self.path = [self.start]
+                self.path.append(pos)
+                inside = [
+                    aid
+                    for aid, a in canvas.sketch.atoms.items()
+                    if inside_polygon(a.pos, self.path)
+                ]
+            else:
+                self.box_end = pos
+                x0, x1 = sorted((self.start[0], pos[0]))
+                y0, y1 = sorted((self.start[1], pos[1]))
+                inside = [
+                    aid
+                    for aid, a in canvas.sketch.atoms.items()
+                    if x0 <= a.x <= x1 and y0 <= a.y <= y1
+                ]
             canvas.select_atoms(inside, add)
 
     def finish_drag(self, canvas, pos, event) -> None:
-        if self.moving:
+        if self.rotating is not None:
+            atoms, centre = self.rotating
+            angle = self._rotation(pos, event)
+            canvas.cancel_preview()
+            canvas.edit("Rotate", lambda ch: edits.rotate(ch, atoms, centre, angle))
+            canvas.select_atoms(atoms & set(canvas.sketch.atoms))
+            self.rotating, self.tip = None, None
+        elif self.moving:
             dx, dy = pos[0] - self.start[0], pos[1] - self.start[1]
             atoms = set(self.moving)
             canvas.cancel_preview()
             canvas.edit("Move", lambda ch: edits.move(ch, atoms, dx, dy, merge=True))
             canvas.select_atoms(atoms & set(canvas.sketch.atoms))
         self.box_end = None
+        self.path = []
         canvas.update()
 
     def double_click(self, canvas, pos, hit) -> None:
@@ -153,13 +231,37 @@ class SelectTool(Tool):
             canvas.select_atoms(canvas.sketch.fragment(canvas.sketch.bonds[hit.id].begin))
 
     def paint(self, canvas, painter) -> None:
-        if self.box_end is None or self.start is None:
-            return
         colour = QColor(canvas.palette().highlight().color())
-        painter.setPen(QPen(colour, 1, Qt.PenStyle.DashLine))
-        colour.setAlpha(30)
-        painter.setBrush(colour)
-        painter.drawRect(QRectF(canvas.to_screen(self.start), canvas.to_screen(self.box_end)))
+        fill = QColor(colour)
+        fill.setAlpha(30)
+        if self.box_end is not None and self.start is not None:
+            painter.setPen(QPen(colour, 1, Qt.PenStyle.DashLine))
+            painter.setBrush(fill)
+            painter.drawRect(QRectF(canvas.to_screen(self.start), canvas.to_screen(self.box_end)))
+        if len(self.path) > 1:
+            painter.setPen(QPen(colour, 1, Qt.PenStyle.DashLine))
+            painter.setBrush(fill)
+            painter.drawPolygon(QPolygonF([canvas.to_screen(p) for p in self.path]))
+        if self.rotating is not None and self.dragging and self.tip is not None:
+            _, centre = self.rotating  # while turning: a spoke from the centre to the pointer
+            anchor, tip = canvas.to_screen(centre), canvas.to_screen(self.tip)
+            painter.setPen(QPen(colour, 1.4, Qt.PenStyle.DashLine))
+            painter.drawLine(anchor, tip)
+            painter.setPen(QPen(colour, 1.4))
+            painter.setBrush(canvas.palette().base())
+            painter.drawEllipse(anchor, 2.5, 2.5)
+            painter.drawEllipse(tip, HANDLE_RADIUS, HANDLE_RADIUS)
+            painter.setPen(canvas.palette().placeholderText().color())
+            painter.drawText(tip + QPointF(10, -8), f"{math.degrees(self.angle):+.0f}°")
+            return
+        found = self.handle(canvas)
+        if found is None or self.dragging:
+            return
+        at, _centre = found
+        painter.setPen(QPen(colour, 1.4))
+        painter.drawLine(QPointF(at.x(), at.y() + HANDLE_RADIUS), QPointF(at.x(), at.y() + 12))
+        painter.setBrush(canvas.palette().base())
+        painter.drawEllipse(at, HANDLE_RADIUS, HANDLE_RADIUS)
 
 
 class BondTool(Tool):

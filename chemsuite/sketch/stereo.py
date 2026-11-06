@@ -33,6 +33,7 @@ Setting a label edits the drawing, never a stored flag:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, replace
 
 from rdkit import Chem, rdBase
@@ -53,6 +54,8 @@ class StereoLabels:
     bonds: dict[int, str] = field(default_factory=dict)  # bond id -> E, Z
     undefined_atoms: frozenset[int] = frozenset()
     undefined_bonds: frozenset[int] = frozenset()
+    #: double bonds drawn as "either" (crossed): E/Z deliberately unknown
+    unknown_bonds: frozenset[int] = frozenset()
 
 
 def bond_order(sketch: Sketch) -> list[int]:
@@ -92,15 +95,117 @@ def labels(sketch: Sketch) -> StereoLabels:
         for s in potential
         if s.type == Chem.StereoType.Bond_Double and s.specified == unspecified
     }
+    unknown = {
+        bonds[s.centeredOn]
+        for s in potential
+        if s.type == Chem.StereoType.Bond_Double and s.specified == Chem.StereoSpecified.Unknown
+    }
     return StereoLabels(
         atom_labels,
         bond_labels,
         frozenset(open_atoms - set(atom_labels)),
         frozenset(open_bonds - set(bond_labels)),
+        frozenset(unknown - set(bond_labels)),
     )
 
 
 # -- R / S ------------------------------------------------------------------------------------
+#: How far (degrees) one bond at a centre is turned to test whether its reading is robust.
+NUDGE = 10.0
+
+NO_CENTRE = "This wedge defines nothing: the atom at its narrow end is not a stereocentre."
+WRONG_END = (
+    "This wedge points the wrong way: its narrow end must be at the stereocentre, which is "
+    "the atom at its wide end."
+)
+CONTRADICTORY = "The wedges at this atom contradict each other, so its configuration is unknown."
+AMBIGUOUS = (
+    "Ambiguous: turning one bond at this centre slightly would change its configuration. "
+    "Spread its bonds more evenly."
+)
+
+
+def wedge_problems(sketch: Sketch) -> dict[int, str]:
+    """Wedges and hashes that do not say what they seem to, as bond id -> reason.
+
+    Judged by RDKit reading the drawing as a molfile (SKETCHER_PLAN §4.4):
+
+    - a wedge whose narrow end RDKit does not read as a stereocentre (or atropisomer axis)
+      defines nothing; when its wide end is a possible stereocentre it is drawn backwards;
+    - wedges at a possible stereocentre that RDKit cannot read a configuration from contradict
+      each other (for example a wedge and a hash on opposite bonds);
+    - a centre whose configuration changes when any one of its bonds is turned by 10 degrees
+      is drawn ambiguously (three bonds in a half plane, two bonds on top of each other).
+
+    Wavy bonds ("either") are never a problem.
+    """
+    wedged = {
+        bid: b
+        for bid, b in sketch.bonds.items()
+        if b.order is Order.SINGLE and b.stereo in (Stereo.WEDGE, Stereo.HASH)
+    }
+    if not wedged:
+        return {}
+    try:
+        mol = to_rdkit(sketch)
+    except SketchError:
+        return {}
+    order = atom_order(sketch)
+    index = {aid: i for i, aid in enumerate(order)}
+    with rdBase.BlockLogs():
+        potential = {
+            s.centeredOn
+            for s in Chem.FindPotentialStereo(mol)
+            if s.type == Chem.StereoType.Atom_Tetrahedral
+        }
+    atrop = {
+        i
+        for b in mol.GetBonds()
+        if b.GetStereo() in (Chem.BondStereo.STEREOATROPCW, Chem.BondStereo.STEREOATROPCCW)
+        for i in (b.GetBeginAtomIdx(), b.GetEndAtomIdx())
+    }
+    unspecified = Chem.ChiralType.CHI_UNSPECIFIED
+    out: dict[int, str] = {}
+    centres: set[int] = set()
+    for bid, bond in wedged.items():
+        i = index[bond.begin]
+        if i in atrop:
+            continue
+        tag = mol.GetAtomWithIdx(i).GetChiralTag()
+        if i not in potential and tag == unspecified:
+            out[bid] = WRONG_END if index[bond.end] in potential else NO_CENTRE
+        elif tag == unspecified:
+            out[bid] = CONTRADICTORY
+        else:
+            centres.add(bond.begin)
+    for centre in sorted(centres):
+        if _ambiguous(sketch, centre, mol.GetAtomWithIdx(index[centre]).GetChiralTag(), index):
+            for bid, bond in wedged.items():
+                if bond.begin == centre:
+                    out[bid] = AMBIGUOUS
+    return out
+
+
+def _ambiguous(sketch: Sketch, centre: int, tag, index: dict[int, int]) -> bool:
+    """Does RDKit read *centre* differently when one of its bonds is turned by NUDGE?"""
+    cx, cy = sketch.atoms[centre].pos
+    for n in sketch.neighbours(centre):
+        for turn in (NUDGE, -NUDGE):
+            trial = sketch.copy()
+            atom = trial.atoms[n]
+            t = math.radians(turn)
+            dx, dy = atom.x - cx, atom.y - cy
+            c, s = math.cos(t), math.sin(t)
+            trial.atoms[n] = atom.moved(cx + dx * c - dy * s, cy + dx * s + dy * c)
+            try:
+                read = to_rdkit(trial).GetAtomWithIdx(index[centre]).GetChiralTag()
+            except SketchError:
+                return True
+            if read != tag:
+                return True
+    return False
+
+
 def set_centre(change: Change, aid: int, want: str) -> str:
     """Make atom *aid* R or S (r/s for pseudo-asymmetric centres). Returns "" or why not."""
     sketch = change.sketch
@@ -179,13 +284,26 @@ def _side(sketch: Sketch, start: int, skip_bond: int) -> set[int]:
 
 
 # -- E / Z ------------------------------------------------------------------------------------
+UNKNOWN = "either"
+
+
 def set_double_bond(change: Change, bid: int, want: str) -> str:
-    """Make double bond *bid* E or Z by reflecting one side. Returns "" or why not."""
+    """Make double bond *bid* E or Z by reflecting one side, or ``UNKNOWN`` (drawn crossed).
+
+    Returns "" or why not.
+    """
     sketch = change.sketch
     bond = sketch.bonds.get(bid)
     if bond is None or bond.order is not Order.DOUBLE:
         return "This is not a double bond."
-    now = labels(sketch)
+    if want == UNKNOWN:
+        if bond.stereo is not Stereo.EITHER:
+            change.set_bond(bid, replace(bond, stereo=Stereo.EITHER))
+        return ""
+    if bond.stereo is Stereo.EITHER:  # back to the geometry as drawn
+        bond = replace(bond, stereo=Stereo.NONE)
+        change.set_bond(bid, bond)
+    now = labels(change.sketch)
     current = now.bonds.get(bid)
     if current == want:
         return ""

@@ -48,7 +48,7 @@ class Stereo(Enum):
     NONE = 0
     WEDGE = 1  # solid: towards the viewer
     HASH = 6  # hashed: away from the viewer
-    EITHER = 4  # wavy: unknown configuration
+    EITHER = 4  # wavy single bond, or crossed double bond: unknown configuration
 
 
 #: CTfile query atoms (BIOVIA CTfile formats, atom block "atom symbol"), as RDKit reads them.
@@ -113,6 +113,36 @@ def query_fields(text: str) -> dict | None:
     return None
 
 
+_ENHANCED = re.compile(r"(abs)|(and|or)([1-9]\d?)")
+
+
+def parse_enhanced(text: str) -> tuple[str, int] | None:
+    """("abs" | "and" | "or", group number) for an ``Atom.enhanced`` value; None for ""."""
+    match = _ENHANCED.fullmatch(text)
+    if not match:
+        return None
+    if match.group(1):
+        return ("abs", 0)
+    return (match.group(2), int(match.group(3)))
+
+
+def enhanced_text(value: str) -> str:
+    """How a group is shown beside its centre: abs, &1, or1."""
+    parsed = parse_enhanced(value)
+    if parsed is None:
+        return ""
+    kind, n = parsed
+    return {"abs": "abs", "and": f"&{n}", "or": f"or{n}"}[kind]
+
+
+def next_enhanced(sketch: Sketch, kind: str) -> int:
+    """The lowest unused group number of *kind* ("and" or "or")."""
+    used = {
+        p[1] for a in sketch.atoms.values() if (p := parse_enhanced(a.enhanced)) and p[0] == kind
+    }
+    return next(n for n in range(1, 100) if n not in used)
+
+
 def next_rgroup(sketch: Sketch, skip: int | None = None) -> int:
     """The lowest R-group number not used in *sketch* (ignoring atom *skip*)."""
     used = {a.rgroup for aid, a in sketch.atoms.items() if a.symbol == RGROUP and aid != skip}
@@ -134,6 +164,7 @@ class Atom:
     rgroup: int = 0  # R-group number when symbol is RGROUP
     atom_list: tuple[str, ...] = ()  # elements when symbol is ATOM_LIST
     list_not: bool = False  # the list means "none of these"
+    enhanced: str = ""  # enhanced stereo group: "abs", "and1", "or2" … ("" = absolute)
 
     @property
     def pos(self) -> tuple[float, float]:

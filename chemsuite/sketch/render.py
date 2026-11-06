@@ -211,6 +211,11 @@ def build(sketch: Sketch, report: Report) -> Scene:
             scene.lines.append(Line(p, q, bid))
             for side in (1, -1):
                 scene.lines.append(Line(*_offset(p, q, side * TRIPLE_OFFSET), bid))
+        elif bond.order is Order.DOUBLE and bond.stereo is Stereo.EITHER:
+            # unknown E/Z: the two lines cross (CTfile bond stereo 3, as ChemDraw draws it)
+            a1, b1 = _offset(p, q, DOUBLE_OFFSET / 2)
+            a2, b2 = _offset(p, q, -DOUBLE_OFFSET / 2)
+            scene.lines.extend((Line(a1, b2, bid), Line(a2, b1, bid)))
         else:
             side = _double_side(sketch, bid, rings)
             dashed = bond.order is Order.AROMATIC
