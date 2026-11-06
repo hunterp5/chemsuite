@@ -60,6 +60,8 @@ from .view_box import BOX, LASSO, ZOOM, SelectViewBox
 NONE = "(none)"
 KINDS = {"scatter": "Scatter", "histogram": "Histogram", "box": "Box Plot"}
 REBUILD_DELAY_MS = 150
+#: left, top, right, bottom space round the plot, so the axis titles do not touch the edges
+AXIS_MARGINS = (6, 6, 10, 6)
 ImageProvider = Callable[[int], QImage | None]
 
 
@@ -187,7 +189,7 @@ class PlotPanel(QWidget):
 
         # A slim toolbar joined to the top of the plot: icon buttons, the mode ones exclusive.
         self.toolbar = QToolBar()
-        self.toolbar.setIconSize(QSize(16, 16))
+        self.toolbar.setIconSize(QSize(15, 15))
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.toolbar.setMovable(False)
         self.mode_buttons: dict[str, QAction] = {}
@@ -220,6 +222,8 @@ class PlotPanel(QWidget):
         self.plot = self.plot_widget.getPlotItem()
         self.plot.showGrid(x=True, y=True, alpha=0.15)
         self.plot.setMenuEnabled(False)
+        # breathing room between the axis titles and the pane's edges
+        self.plot.layout.setContentsMargins(*AXIS_MARGINS)
         self._apply_palette()
         self.card = HoverCard(self)
 
@@ -470,7 +474,7 @@ class PlotPanel(QWidget):
         self._frame.setStyleSheet(f"QFrame#PlotFrame {{ border: none; background: {base}; }}")
         self.toolbar.setStyleSheet(
             f"QToolBar {{ {bar} }}"
-            " QToolButton { border: none; border-radius: 4px; padding: 3px; }"
+            " QToolButton { border: none; border-radius: 4px; padding: 2px; }"
             f" QToolButton:hover {{ background: {rgba(*hover.getRgb()[:3], hover.alphaF())}; }}"
             " QToolButton:checked {"
             f" background: {rgba(*checked.getRgb()[:3], checked.alphaF())}; }}"

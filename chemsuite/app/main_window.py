@@ -83,7 +83,7 @@ from .jobs import QUEUE, QUICK, Job, JobRunner
 from .jobs_ui import JobsIndicator, JobsWindow
 from .list_actions import ListActions
 from .log_ui import LogWindow
-from .panel_dock import PanelDock, PanelHeader
+from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader, schedule_header_refresh
 from .search_bar import SearchBar
 from .selection_browser import SelectionBrowser
 from .settings_hub import settings_hub
@@ -288,8 +288,10 @@ class MainWindow(QMainWindow):
             | QMainWindow.DockOption.AllowTabbedDocks
         )
         # Panes meet at a hairline, as in native macOS split views; the separator is wider than
-        # the line so it is easy to grab.
-        self.setStyleSheet(SEPARATOR_STYLE)
+        # the line so it is easy to grab. Tabbed panes show their tabs in their headers, so
+        # Qt's tab bar below them is hidden.
+        self.setStyleSheet(SEPARATOR_STYLE + HIDE_DOCK_TABS)
+        self.tabifiedDockWidgetActivated.connect(lambda *_: schedule_header_refresh(self))
         self._build_menus()
         hub = settings_hub()
         hub.changed.connect(self._apply_settings)

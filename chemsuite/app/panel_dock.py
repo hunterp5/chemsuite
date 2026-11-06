@@ -26,22 +26,37 @@ lasso…), then settings, undock and close. A panel opts into each part by what 
 
 Mouse presses on the header's empty space and on the title (when not editing) fall through to
 the dock, so dragging the header still moves the panel.
+
+Panes tabbed together show their tabs in the header in place of the title (Qt's own tab bar
+below the panes is hidden, see :data:`HIDE_DOCK_TABS`): the current pane's tab is raised, a
+click on another tab brings that pane forward, and double-clicking the current tab renames it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QSize, Qt
-from PySide6.QtGui import QFocusEvent, QKeyEvent, QMouseEvent
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFocusEvent,
+    QFont,
+    QFontMetrics,
+    QKeyEvent,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+)
 from PySide6.QtWidgets import (
     QDockWidget,
     QFrame,
     QHBoxLayout,
     QLineEdit,
+    QMainWindow,
     QMenu,
     QSizePolicy,
     QToolButton,
+    QToolTip,
     QWidget,
 )
 
@@ -49,6 +64,15 @@ from .glyphs import glyph
 
 #: panes sit flush against each other, as in native macOS split views
 INSET = 0
+#: the height of every pane's title bar, with or without a toolbar or tabs
+HEADER_HEIGHT = 26
+#: Qt's tab bar under tabbed panes, hidden because the tabs are in the panes' headers (only
+#: the main window's own tab bars match, not tab widgets inside panes)
+HIDE_DOCK_TABS = (
+    "QMainWindow > QTabBar { max-height: 0px; }"
+    " QMainWindow > QTabBar::tab { height: 0px; min-height: 0px; max-height: 0px;"
+    " padding: 0px; margin: 0px; border: none; }"
+)
 
 
 class TitleEdit(QLineEdit):
@@ -56,6 +80,9 @@ class TitleEdit(QLineEdit):
 
     Enter keeps the new title, Escape or clicking away with nothing typed puts it back.
     """
+
+    #: editing ended, kept or cancelled
+    stopped = Signal()
 
     def __init__(self, on_rename: Callable[[str], None] | None = None) -> None:
         super().__init__()
@@ -99,6 +126,7 @@ class TitleEdit(QLineEdit):
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.deselect()
         self._style()
+        self.stopped.emit()
 
     def _finish(self) -> None:
         if not self.editing:
@@ -167,6 +195,206 @@ class TitleEdit(QLineEdit):
         self._finish()
 
 
+class HeaderTabs(QWidget):
+    """The tabs of panes sharing one space, drawn in the current pane's header.
+
+    The current tab is a raised segment; the others are plain text that darkens on hover.
+    Pressing the current tab falls through to the dock (dragging it moves the pane), a click on
+    another tab raises that pane, and double-clicking the current tab asks to rename it.
+    """
+
+    rename_requested = Signal()
+    PAD = 9  # text inset within a tab
+    GAP = 2
+    MIN_TAB = 44
+
+    def __init__(self, dock: QDockWidget) -> None:
+        super().__init__()
+        self.dock = dock
+        self.docks: list[QDockWidget] = []
+        self._rects: list[QRectF] = []
+        self._hover = -1
+        #: double-clicking the current tab renames the pane
+        self.renamable = False
+        self.setMouseTracking(True)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(self.MIN_TAB)
+
+    def set_docks(self, docks: list[QDockWidget]) -> None:
+        self.docks = list(docks)
+        self._hover = -1
+        self._layout_tabs()
+        self.update()
+
+    def titles(self) -> list[str]:
+        return [d.windowTitle() for d in self.docks]
+
+    def _font(self, current: bool) -> QFont:
+        font = self.font()
+        if current:
+            font.setWeight(font.Weight.DemiBold)
+        return font
+
+    def _layout_tabs(self) -> None:
+        """Tabs take their text's width; when that does not fit, they share the width evenly."""
+        self._rects = []
+        if not self.docks:
+            return
+        height = self.height()
+        widths = []
+        for d in self.docks:
+            metrics = self.fontMetrics() if d is not self.dock else _metrics(self._font(True))
+            widths.append(metrics.horizontalAdvance(d.windowTitle()) + 2 * self.PAD + 1)
+        room = self.width() - self.GAP * (len(widths) - 1)
+        if sum(widths) > room:
+            # Shrink the widest tabs first, as far as an even share
+            share = max(self.MIN_TAB, room / len(widths))
+            widths = _fit(widths, max(room, share * len(widths)), self.MIN_TAB)
+        x = 0.0
+        tab_h = min(height - 4, 20)
+        y = (height - tab_h) / 2
+        for w in widths:
+            self._rects.append(QRectF(x, y, w, tab_h))
+            x += w + self.GAP
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._layout_tabs()
+
+    def tab_at(self, pos) -> int:
+        for i, rect in enumerate(self._rects):
+            if rect.contains(pos):
+                return i
+        return -1
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        palette = self.palette()
+        ink = palette.text().color()
+        for i, (dock, rect) in enumerate(zip(self.docks, self._rects, strict=False)):
+            if rect.left() >= self.width():
+                break
+            current = dock is self.dock
+            box = rect.adjusted(0.5, 0.5, -0.5, -0.5)
+            if current:
+                painter.setPen(QColor(palette.mid().color()))
+                painter.setBrush(palette.base())
+                painter.drawRoundedRect(box, 5, 5)
+            elif i == self._hover:
+                hover = QColor(ink)
+                hover.setAlphaF(0.07)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(hover)
+                painter.drawRoundedRect(box, 5, 5)
+            font = self._font(current)
+            painter.setFont(font)
+            colour = QColor(ink)
+            if not current:
+                colour.setAlphaF(0.85 if i == self._hover else 0.6)
+            painter.setPen(colour)
+            text_rect = rect.adjusted(self.PAD, 0, -self.PAD, 0)
+            text = _metrics(font).elidedText(
+                dock.windowTitle(), Qt.TextElideMode.ElideRight, int(text_rect.width())
+            )
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
+        painter.end()
+
+    # -- events -------------------------------------------------------------------------------
+    def event(self, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.ToolTip:
+            i = self.tab_at(QPointF(event.pos()))
+            if i < 0:
+                QToolTip.hideText()
+                return True
+            tip = self.docks[i].windowTitle()
+            if self.docks[i] is not self.dock:
+                tip += "\nClick to show"
+            elif self.renamable:
+                tip += "\nDouble-click to rename"
+            QToolTip.showText(event.globalPos(), tip, self)
+            return True
+        return super().event(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        i = self.tab_at(event.position())
+        if i != self._hover:
+            self._hover = i
+            self.update()
+        event.ignore()  # a drag that began on the current tab moves the dock
+
+    def leaveEvent(self, event) -> None:
+        self._hover = -1
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        i = self.tab_at(event.position())
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and i >= 0
+            and self.docks[i] is not self.dock
+        ):
+            self.docks[i].raise_()
+            event.accept()
+            return
+        event.ignore()  # the current tab or empty space: the dock handles it (drag)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        event.ignore()
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        i = self.tab_at(event.position())
+        if i >= 0 and self.docks[i] is self.dock and self.renamable:
+            self.rename_requested.emit()
+            event.accept()
+            return
+        event.ignore()
+
+
+def _metrics(font: QFont) -> QFontMetrics:
+    return QFontMetrics(font)
+
+
+def _fit(widths: list[float], room: float, floor: float) -> list[float]:
+    """Cap the widest of *widths* so they sum to *room* (never below *floor*)."""
+    if sum(widths) <= room:
+        return widths
+    lo, hi = floor, max(widths)
+    for _ in range(30):  # the cap that makes them fit, by bisection
+        cap = (lo + hi) / 2
+        if sum(min(w, cap) for w in widths) > room:
+            hi = cap
+        else:
+            lo = cap
+    return [min(w, lo) for w in widths]
+
+
+def panes_in_order(window: QMainWindow) -> list[QDockWidget]:
+    """Every pane in a fixed order (fixed panes, then panels as opened): the tabs' order."""
+    fixed = [getattr(window, n, None) for n in ("filter_dock", "search_dock", "browser_dock")]
+    panels = list(getattr(window, "_panels", []))
+    return [d for d in [*fixed, *panels] if isinstance(d, QDockWidget)]
+
+
+def refresh_headers(window: QMainWindow) -> None:
+    """Bring every pane header's tabs up to date with how the panes are grouped."""
+    window._header_refresh_pending = False  # type: ignore[attr-defined]
+    for dock in window.findChildren(QDockWidget):
+        header = dock.titleBarWidget()
+        if isinstance(header, PanelHeader):
+            header.update_tabs()
+
+
+def schedule_header_refresh(window: QWidget | None) -> None:
+    """Refresh the headers once control returns to the event loop (Qt regroups docks in
+    several steps, and the grouping is only final afterwards)."""
+    if not isinstance(window, QMainWindow) or getattr(window, "_header_refresh_pending", False):
+        return
+    window._header_refresh_pending = True  # type: ignore[attr-defined]
+    QTimer.singleShot(0, window, lambda: refresh_headers(window))
+
+
 class PanelHeader(QWidget):
     """The dock's title bar: a flat strip over the pane, divided from it by a hairline."""
 
@@ -183,7 +411,7 @@ class PanelHeader(QWidget):
             b.setAutoRaise(True)
             b.setToolTip(tip)
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            b.setIconSize(QSize(14, 14))
+            b.setIconSize(QSize(13, 13))
             return b
 
         self.settings = button("Settings")
@@ -205,11 +433,17 @@ class PanelHeader(QWidget):
         self.float_button.clicked.connect(lambda: dock.setFloating(not dock.isFloating()))
         self.close_button.clicked.connect(dock.close)
 
+        self.tabs = HeaderTabs(dock)
+        self.tabs.setVisible(False)
+        self.tabs.rename_requested.connect(self._rename_from_tab)
+        self.title.stopped.connect(self.update_tabs)
+
         self.row = QHBoxLayout(self.strip)
-        self.row.setContentsMargins(8, 3, 4, 3)
-        self.strip.setFixedHeight(32)  # every pane's title bar, with or without a toolbar
+        self.row.setContentsMargins(6, 2, 4, 2)
+        self.strip.setFixedHeight(HEADER_HEIGHT)
         self.row.setSpacing(2)
         self.row.addWidget(self.title, 1)
+        self.row.addWidget(self.tabs, 1)
         self.tools_at = self.row.count()  # where a panel's toolbar goes
         for b in (self.settings, self.arrange_button, self.float_button, self.close_button):
             self.row.addWidget(b)
@@ -218,7 +452,42 @@ class PanelHeader(QWidget):
         outer.addWidget(self.strip)
         self.toolbar: QWidget | None = None
         dock.windowTitleChanged.connect(self.title.show_title)
+        for signal in (
+            dock.windowTitleChanged,
+            dock.visibilityChanged,
+            dock.topLevelChanged,
+            dock.dockLocationChanged,
+        ):
+            signal.connect(lambda *_: schedule_header_refresh(self.dock.parentWidget()))
         self._restyle()
+
+    # -- tabs -----------------------------------------------------------------------------------
+    def tab_docks(self) -> list[QDockWidget]:
+        """The panes tabbed with this one, in tab order (empty when it is not tabbed)."""
+        window = self.dock.parentWidget()
+        if not isinstance(window, QMainWindow) or self.dock.isFloating():
+            return []
+        from .dock_layout import is_open
+
+        group = {d for d in window.tabifiedDockWidgets(self.dock) if is_open(d)}
+        if not group:
+            return []
+        group.add(self.dock)
+        ordered = [d for d in panes_in_order(window) if d in group]
+        return ordered + [d for d in group if d not in ordered]
+
+    def update_tabs(self) -> None:
+        docks = self.tab_docks()
+        tabbed = bool(docks) and not self.title.editing
+        self.tabs.renamable = self.title.editable
+        self.tabs.set_docks(docks)
+        self.tabs.setVisible(tabbed)
+        self.title.setVisible(not tabbed)
+
+    def _rename_from_tab(self) -> None:
+        self.tabs.setVisible(False)
+        self.title.setVisible(True)
+        self.title.start_editing()
 
     def _fill_arrange(self) -> None:
         from .dock_layout import fill_arrange_menu

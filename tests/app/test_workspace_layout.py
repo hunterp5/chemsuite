@@ -151,3 +151,44 @@ def test_damaged_layout_is_ignored(data):
 
     dock_layout.restore(data, {"docks": "%%%", "widths": {"MW": "x"}, "search": 3})
     dock_layout.restore(data, "junk")
+
+
+def test_tabbed_panes_show_their_tabs_in_the_header(data, qtbot):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtWidgets import QTabBar
+
+    from chemsuite.app import dock_layout
+
+    first, second = two_plots(data)
+    qtbot.waitUntil(lambda: second.title_bar.tabs.isVisible())
+    header = second.title_bar
+    assert header.tabs.titles() == [first.windowTitle(), second.windowTitle()]
+    assert not header.title.isVisible()
+    # Qt's own tab bar under the panes takes no room
+    bars = [b for b in data.findChildren(QTabBar) if b.parent() is data and b.isVisible()]
+    assert bars and all(b.height() == 0 for b in bars)
+    # a click on the other tab brings that pane forward
+    rect = header.tabs._rects[0]
+    qtbot.mouseClick(header.tabs, Qt.MouseButton.LeftButton, pos=rect.center().toPoint())
+    qtbot.waitUntil(lambda: first.title_bar.tabs.isVisible())
+    assert first.title_bar.tabs.titles() == header.tabs.titles()
+    # double-clicking the current tab renames the pane
+    current = first.title_bar.tabs._rects[0].center()
+    qtbot.mouseDClick(
+        first.title_bar.tabs, Qt.MouseButton.LeftButton, pos=QPointF(current).toPoint()
+    )
+    assert first.title_bar.title.editing and first.title_bar.title.isVisible()
+    first.title_bar.title.cancel()
+    qtbot.waitUntil(lambda: first.title_bar.tabs.isVisible())
+    # split apart: plain titles again
+    dock_layout.split(data, first, second, Qt.Orientation.Vertical)
+    qtbot.waitUntil(lambda: not second.title_bar.tabs.isVisible())
+    assert second.title_bar.title.isVisible() and first.title_bar.title.isVisible()
+
+
+def test_header_tabs_share_the_width_when_crowded():
+    from chemsuite.app.panel_dock import _fit
+
+    assert _fit([50, 60], 200, 44) == [50, 60]
+    fitted = _fit([200, 60, 100], 240, 44)
+    assert abs(sum(fitted) - 240) < 1 and fitted[1] == 60  # the widest give way first

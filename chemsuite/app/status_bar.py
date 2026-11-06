@@ -26,11 +26,12 @@ progress stay visible.
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QTimer
+from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QStatusBar, QWidget
 
 SPACING = 18
 #: pixels above and below the text: a slim bar that does not grow while a job shows
-PADDING = 3
+PADDING = 2
 
 
 class StatusBar(QStatusBar):
@@ -41,14 +42,15 @@ class StatusBar(QStatusBar):
         self.message = QLabel()
         # A long message must not widen the window: it is cut off instead.
         self.message.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        holder = QWidget()
+        # Not added with addWidget: QStatusBar's own layout puts 3 px above its items, which
+        # pushes the text off centre in a slim bar. The row fills the bar instead (resizeEvent).
+        holder = self.holder = QWidget(self)
         row = QHBoxLayout(holder)
         row.setContentsMargins(6, 0, 6, 0)
         row.setSpacing(SPACING)
         row.addWidget(self.jobs)
         row.addWidget(self.message, 1)
         row.addWidget(self.document)
-        self.addWidget(holder, 1)
         self.setSizeGripEnabled(False)
         self._fit_height()
         self._clear_timer = QTimer(self)
@@ -59,6 +61,10 @@ class StatusBar(QStatusBar):
         height = self.fontMetrics().height()
         self.setFixedHeight(height + 2 * PADDING)
         self.jobs.setMaximumHeight(height + 2)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.holder.setGeometry(self.rect())
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)

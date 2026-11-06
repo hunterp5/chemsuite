@@ -61,6 +61,13 @@ Each document has its own window. From top to bottom:
     | Window with arrow | Undocks the panel into its own window, or docks it again. |
     | ✕ | Closes the panel. |
 
+  - **Tabbed panels.** Panels that share a space show their tabs in the header, where the
+    title would be, so no extra row is taken below the plot. The current panel's tab is
+    raised. Click another tab to bring that panel forward. Drag the current tab (or the
+    header's empty space) to move the panel. Double-click the current tab to rename a plot.
+    When the header is narrow, long tab titles are shortened with "…"; hover over a tab to
+    see its full title.
+  - Plots leave a little space between the axis titles and the panel's edges.
   - **Arranging panels.** For stacked plots beside the table, open a second plot (it joins
     the first as a tab), then choose Arrange ▸ Below ▸ *the first plot*. You can also drag a
     panel by its header onto the top, bottom or side of another panel to split its space, or
