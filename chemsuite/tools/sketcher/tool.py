@@ -27,7 +27,7 @@ def _open(ctx: ToolContext):
     dialog = SketcherDialog("", "Sketcher", ctx.parent, ok_text="Add to Table")
 
     def accepted() -> None:
-        if dialog.result_text() and ctx.add_compound(dialog.result_text()) is not None:
+        if dialog.molblock and ctx.add_compound(dialog.molblock) is not None:
             ctx.show_message("Added the drawing as a new row")
 
     dialog.accepted.connect(accepted)

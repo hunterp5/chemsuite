@@ -106,10 +106,10 @@ def test_f2_opens_sketcher_and_ok_writes_undoable_edit(structures) -> None:
     sketcher = _sketcher(window)
     assert sketcher is not None and sketcher.isVisible()
     assert convert.to_smiles(sketcher.canvas.history.sketch) == "CCO"
-    sketcher.entry.setText(ASPIRIN_SMILES)
-    sketcher.accept()  # undrawn typed text is drawn, then kept as typed
-    assert table.cell("SMILES", model.oid_at(0)) == ASPIRIN_SMILES
-    assert table.history.undo_label == "Edit SMILES"
+    sketcher.canvas.set_sketch(convert.from_text(ASPIRIN_SMILES), "Paste")
+    sketcher.accept()
+    assert table.cell("SMILES", model.oid_at(0)) == Chem.CanonSmiles(ASPIRIN_SMILES)
+    assert table.history.undo_label == "Draw SMILES"
     assert table.column("SMILES").mol(0) is not None  # stored parsed, no background job
     table.undo()
     assert table.cell("SMILES", model.oid_at(0)) == "CCO"
@@ -123,9 +123,10 @@ def test_typing_in_a_structure_cell_starts_with_the_key(structures, qtbot) -> No
     window.view.setFocus()
     window.view.setCurrentIndex(model.index(1, model.column_index("SMILES")))
     qtbot.keyClicks(window.view, "N")
-    sketcher = _sketcher(window)
-    assert sketcher is not None and sketcher.entry.text() == "N"
-    sketcher.reject()
+    assert _sketcher(window) is None
+    editor = window.findChild(StructureEditor)
+    assert editor is not None and editor.text == "N"
+    editor.reject()
 
 
 def test_invalid_cell_text_opens_the_text_editor(structures) -> None:
@@ -146,8 +147,7 @@ def test_cancel_changes_nothing(structures) -> None:
     window.edit_current_structure()
     sketcher = _sketcher(window)
     assert convert.to_smiles(sketcher.canvas.history.sketch) == "CCO"
-    sketcher.entry.setText("CCN")
-    sketcher.load_text()
+    sketcher.canvas.set_sketch(convert.from_text("CCN"), "Paste")
     sketcher.reject()
     assert window.workspace.table.cell("SMILES", model.oid_at(0)) == "CCO"
     assert not window.isWindowModified()
@@ -157,7 +157,7 @@ def test_add_compound_appends_a_row(structures) -> None:
     window = structures
     table = window.workspace.table
     sketcher = window.add_compound()
-    sketcher.entry.setText("CCN")
+    sketcher.canvas.set_sketch(convert.from_text("CCN"), "Paste")
     sketcher.accept()
     assert len(table) == 3
     new = table.oids[-1]
@@ -168,7 +168,7 @@ def test_add_compound_appends_a_row(structures) -> None:
 def test_add_compound_to_a_table_without_structures(window) -> None:
     table = window.workspace.table
     sketcher = window.add_compound()
-    sketcher.entry.setText("CCN")
+    sketcher.canvas.set_sketch(convert.from_text("CCN"), "Paste")
     sketcher.accept()
     assert table.kind("Structure") == "structure"
     assert len(table) == 4

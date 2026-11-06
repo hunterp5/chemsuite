@@ -146,7 +146,7 @@ class SimilarityDialog(QDialog):
         dialog = SketcherDialog(self.query.text(), "Query Structure", self)
         if not dialog.exec():
             return
-        found = read_structure(dialog.result_text()) if dialog.result_text() else None
+        found = read_structure(dialog.molblock) if dialog.molblock else None
         if found is not None and found.mol is not None:
             self.query.setText(smiles_of(found.mol))
 

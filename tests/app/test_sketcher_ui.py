@@ -722,8 +722,12 @@ def test_drawn_query_reaches_structure_search_as_smarts(qapp, monkeypatch):
         real_init(self, block, *args, **kwargs)
 
     monkeypatch.setattr(SketcherDialog, "__init__", init)
-    monkeypatch.setattr(SketcherDialog, "exec", lambda self: True)
-    monkeypatch.setattr(SketcherDialog, "result_text", lambda self: block)
+
+    def accept(self):
+        self.molblock = block
+        return True
+
+    monkeypatch.setattr(SketcherDialog, "exec", accept)
     field = QueryInput()
     field.draw()
     assert field.text() == "[#17,#35]-[#6]1:[#6]:[#6]:[#6]:[#6]:[#6]:1"

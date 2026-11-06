@@ -21,21 +21,18 @@ Undo, redo, cut, copy, paste and clear are on the keyboard and the canvas's righ
 so the window holds only the drawing. The line under the canvas appears only to explain a
 problem (an atom with a bad valence, a label that could not be read).
 
-A text line above the drawing takes SMILES, InChI or a molfile: Enter draws it. It is the way
-in for anyone who would rather type, and what typing into a structure cell opens with. Text
-that was typed and then left undrawn-over is given back exactly as typed (``result_text``).
+SMILES, InChI or a molfile pastes straight onto the canvas (Ctrl+V); typing text goes to the
+structure editor (``chemsuite.app.structure_editor``), not here.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -57,19 +54,11 @@ class SketcherDialog(QDialog):
         parent: QWidget | None = None,
         *,
         ok_text: str = "",
-        typed: str = "",
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
         start = convert.from_text(text) if text.strip() else None
         self.canvas = SketchCanvas(History(start) if start is not None else None)
-        self.entry = QLineEdit()
-        self.entry.setObjectName("sketch-text-entry")
-        self.entry.setPlaceholderText("Type or paste SMILES, InChI or a molfile, then Enter")
-        self.entry.setClearButtonEnabled(True)
-        self.entry.returnPressed.connect(self.load_text)
-        #: (text, the edit that drew it) for the text last drawn from the entry line
-        self._typed: tuple[str, object] | None = None
         self.toolbar = SketchToolBar(self)  # holds the strips laid out below; not shown itself
         self.toolbar.hide()
         self.info = QLabel()
@@ -88,12 +77,11 @@ class SketcherDialog(QDialog):
         grid = QGridLayout()  # rings line up with the canvas edge, elements to its left
         grid.setSpacing(6)
         grid.addWidget(self.toolbar.top, 0, 0, 1, 2)
-        grid.addWidget(self.entry, 1, 1)
-        grid.addWidget(self.toolbar.side, 2, 0)
-        grid.addWidget(self.canvas, 2, 1)
-        grid.addWidget(self.toolbar.bottom, 3, 1)
+        grid.addWidget(self.toolbar.side, 1, 0)
+        grid.addWidget(self.canvas, 1, 1)
+        grid.addWidget(self.toolbar.bottom, 2, 1)
         grid.setColumnStretch(1, 1)
-        grid.setRowStretch(2, 1)
+        grid.setRowStretch(1, 1)
         layout.addLayout(grid, 1)
         bottom = QHBoxLayout()
         bottom.addWidget(self.info, 1)
@@ -109,38 +97,9 @@ class SketcherDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
         self.molblock = ""
         self._update()
-        if typed or (text.strip() and start is None):
-            # typed into a cell, or text that cannot be drawn (SMARTS, a typo): keep it to edit
-            self.entry.setText(typed or text.strip())
-            if start is None and not typed:
-                self._show_message("This text is not a structure the sketcher can draw.")
-            self.entry.setFocus()
-            self.entry.end(False)
-        else:
-            self.canvas.setFocus()
-
-    TYPED_EDIT = "Type structure"
-
-    def load_text(self) -> bool:
-        """Draw the entry line's text, replacing the drawing (one undo step)."""
-        text = self.entry.text().strip()
-        if not text:
-            return False
-        sketch = convert.from_text(text)
-        if sketch is None:
-            self._show_message(f"Not SMILES, InChI or a molfile the sketcher can read: {text}")
-            return False
-        self.canvas.set_sketch(sketch, self.TYPED_EDIT)
-        self._typed = (text, self.canvas.history.last_edit)
+        if text.strip() and start is None:  # SMARTS or a typo: start blank and say why
+            self._show_message("This text is not a structure the sketcher can draw.")
         self.canvas.setFocus()
-        return True
-
-    def result_text(self) -> str:
-        """What the dialog gives back: the typed text exactly as typed when nothing was drawn
-        after it, otherwise the drawing as a molfile ("" when empty)."""
-        if self._typed is not None and self.canvas.history.last_edit is self._typed[1]:
-            return self._typed[0]
-        return self.molblock
 
     def clear(self) -> None:
         if not self.canvas.sketch.is_empty():
@@ -169,19 +128,8 @@ class SketcherDialog(QDialog):
         self.info.setText(text)
         self.info.setVisible(bool(text))
 
-    def keyPressEvent(self, event) -> None:
-        # Enter in the text line draws the text (returnPressed); it must not also press OK.
-        if self.entry.hasFocus() and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
     def accept(self) -> None:
         self.canvas.cancel_preview()
-        pending = self.entry.text().strip()
-        undrawn = pending and (self._typed is None or pending != self._typed[0])
-        if undrawn and not self.load_text():  # OK with undrawn text: draw it first
-            return
         if not self.canvas.report.valid:
             return
         sketch = self.canvas.sketch

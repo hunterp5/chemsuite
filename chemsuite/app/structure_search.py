@@ -209,7 +209,7 @@ class QueryInput(QWidget):
         dialog = SketcherDialog(start, "Query Structure", self)
         if not dialog.exec():
             return
-        result = dialog.result_text()
+        result = dialog.molblock
         parsed = read_structure(result) if result else None
         if parsed is None or parsed.mol is None:
             return

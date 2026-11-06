@@ -1144,8 +1144,13 @@ class MainWindow(QMainWindow):
         return (model.oid_at(current.row()), name) if name else None
 
     def _on_structure_edit_requested(self, index: QModelIndex, typed: str) -> None:
+        """F2 opens the sketcher; typing a character starts the text editor with it."""
         model = self.workspace.model
-        self.draw_structure(model.oid_at(index.row()), model.column_name(index.column()), typed)
+        oid, name = model.oid_at(index.row()), model.column_name(index.column())
+        if typed:
+            self.edit_structure(oid, name, typed)
+        else:
+            self.draw_structure(oid, name)
 
     def _on_structure_draw_requested(self, index: QModelIndex) -> None:
         model = self.workspace.model
@@ -1194,40 +1199,35 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(message, 4000)
         return message
 
-    def draw_structure(self, oid: int, name: str, typed: str = ""):
+    def draw_structure(self, oid: int, name: str):
         """Open the sketcher on one structure cell; OK writes it back (one undo step).
 
-        *typed* is what was typed into the cell: it fills the sketcher's text line, and if it
-        is accepted without drawing over it the cell keeps it exactly as typed. A cell whose
-        text is not a valid structure opens in the text editor instead, so the text can be
-        fixed rather than lost.
+        A cell whose text is not a valid structure opens in the text editor instead, so the
+        text can be fixed rather than lost.
         """
         from chemsuite.app.sketcher import SketcherDialog
 
         table = self.workspace.table
         column = table.column(name)
         mol = column.mol(int(table.slots_of([oid])[0]))
-        if mol is None and table.cell(name, oid).strip() and not typed:
+        if mol is None and table.cell(name, oid).strip():
             return self.edit_structure(oid, name)
         row = int(self.workspace.model.rows_of_oids([oid])[0])
         title = f"Draw Structure — {name}" + (f", row {row + 1}" if row >= 0 else "")
         # open from the stored molecule: it keeps drawn coordinates and query atoms the cell
         # text (SMILES) cannot hold
         start = molblock_of(mol) if mol is not None else ""
-        dialog = SketcherDialog(start, title, self, typed=typed)
+        dialog = SketcherDialog(start, title, self)
 
         def accepted() -> None:
             if name not in table or oid not in table.oids:
                 return
             if not dialog.canvas.history.can_undo:
                 return  # nothing was drawn or changed
-            parsed = read_structure(dialog.result_text())
+            parsed = read_structure(dialog.molblock)
             if parsed.is_blank and not table.cell(name, oid):
                 return
-            if parsed.kind != "molfile" and parsed.display == table.cell(name, oid):
-                return  # the same text typed again
-            label = f"Edit {name}" if parsed.kind != "molfile" else f"Draw {name}"
-            table.set_cells(name, [oid], parsed.as_column(), label=label)
+            table.set_cells(name, [oid], parsed.as_column(), label=f"Draw {name}")
 
         dialog.accepted.connect(accepted)
         dialog.finished.connect(lambda _r: dialog.deleteLater())
@@ -1267,15 +1267,14 @@ class MainWindow(QMainWindow):
         return dialog
 
     def add_compound(self):
-        """Draw (or type) a structure in the sketcher and append it as a new row."""
+        """Draw a structure in the sketcher and append it as a new row."""
         from chemsuite.app.sketcher import SketcherDialog
 
         dialog = SketcherDialog("", "Add Compound", self, ok_text="Add")
 
         def accepted() -> None:
-            text = dialog.result_text()
-            if text:
-                self.append_compound(text)
+            if dialog.molblock:
+                self.append_compound(dialog.molblock)
 
         dialog.accepted.connect(accepted)
         dialog.finished.connect(lambda _r: dialog.deleteLater())
