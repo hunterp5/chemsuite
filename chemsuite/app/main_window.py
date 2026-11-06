@@ -63,7 +63,7 @@ from chemsuite.core.logbook import audit
 from chemsuite.core.mols import smiles_of
 from chemsuite.core.selection import Selection
 from chemsuite.core.settings import Settings, add_recent
-from chemsuite.core.structure_input import read_structure
+from chemsuite.core.structure_input import molblock_of, read_structure
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import STRUCTURE
@@ -1151,7 +1151,9 @@ class MainWindow(QMainWindow):
             return self.edit_structure(oid, name)
         row = int(self.workspace.model.rows_of_oids([oid])[0])
         title = f"Draw Structure — {name}" + (f", row {row + 1}" if row >= 0 else "")
-        dialog = SketcherDialog(table.cell(name, oid) if mol is not None else "", title, self)
+        # open from the stored molecule: it keeps drawn coordinates and query atoms the cell
+        # text (SMILES) cannot hold
+        dialog = SketcherDialog(molblock_of(mol) if mol is not None else "", title, self)
 
         def accepted() -> None:
             if name not in table or oid not in table.oids:

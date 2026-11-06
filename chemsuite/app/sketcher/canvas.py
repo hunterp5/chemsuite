@@ -48,7 +48,15 @@ from rdkit.Chem.Draw import rdMolDraw2D
 from chemsuite.app.theme import is_dark
 from chemsuite.sketch import convert, edits, render, valence
 from chemsuite.sketch.edits import Change, History
-from chemsuite.sketch.model import Order, Sketch
+from chemsuite.sketch.model import (
+    ATOM_LIST,
+    MAX_RGROUP,
+    QUERY_ATOMS,
+    RGROUP,
+    Order,
+    Sketch,
+    next_rgroup,
+)
 
 Point = tuple[float, float]
 
@@ -355,9 +363,11 @@ class SketchCanvas(QWidget):
 
     def _atom_colour(self, symbol: str, dark: bool) -> QColor:
         """RDKit's element colour (its dark-mode palette on dark themes); C and H use the text
-        colour so they read on any background."""
+        colour so they read on any background, R-groups and query atoms the link colour."""
         if symbol in ("C", "H"):
             return self.palette().text().color()
+        if symbol in QUERY_ATOMS or symbol in (RGROUP, ATOM_LIST):
+            return self.palette().link().color()
         r, g, b = _element_rgb(symbol, dark)
         return QColor.fromRgbF(r, g, b)
 
@@ -639,7 +649,7 @@ class SketchCanvas(QWidget):
 
     # -- labels and abbreviations ------------------------------------------------------------
 
-    def edit_label(self, atom: int) -> None:
+    def edit_label(self, atom: int, text: str | None = None) -> None:
         """Type an atom's label: an element (N, Cl, 13C, NH2, O-) or an abbreviation (CO2Me)."""
         from PySide6.QtWidgets import QCompleter, QLineEdit
 
@@ -649,8 +659,8 @@ class SketchCanvas(QWidget):
         if self._label_editor is not None:
             self._label_editor.deleteLater()
         found = self.contracted_group(atom)
-        current = found[1].label if found else self.sketch.atoms[atom].symbol
-        editor = QLineEdit(current, self)
+        current = found[1].label if found else self.sketch.atoms[atom].label
+        editor = QLineEdit(current if text is None else text, self)
         editor.setObjectName("sketch-label-editor")
         names = sorted({e.label for e in TABLE} | {a for e in TABLE for a in e.aliases})
         completer = QCompleter(names, editor)
@@ -704,6 +714,8 @@ class SketchCanvas(QWidget):
         menu = QMenu(self)
         if hit.kind == "atom":
             menu.addAction("Edit Label…", lambda: self.edit_label(hit.id))
+            if found is None:
+                self._query_menus(menu, hit.id)
         if found is not None:
             gid, group = found
             if group.expanded:
@@ -736,6 +748,29 @@ class SketchCanvas(QWidget):
         menu.addSeparator()
         menu.addAction("Clear", lambda: self.set_sketch(Sketch(), "Clear")).setEnabled(has_atoms)
         menu.exec(event.globalPos())
+
+    def _query_menus(self, menu, atom: int) -> None:
+        """R-Group and Query Atom submenus for an atom."""
+        here = self.sketch.atoms[atom]
+
+        def setter(label: str):
+            return lambda: self.edit(f"Set {label}", lambda ch: edits.set_element(ch, atom, label))
+
+        rgroups = menu.addMenu("R-Group")
+        top = min(next_rgroup(self.sketch, skip=atom), MAX_RGROUP)
+        for n in range(1, top + 1):
+            action = rgroups.addAction(f"R{n}", setter(f"R{n}"))
+            action.setCheckable(True)
+            action.setChecked(here.symbol == RGROUP and here.rgroup == n)
+        queries = menu.addMenu("Query Atom")
+        for symbol, meaning in QUERY_ATOMS.items():
+            action = queries.addAction(f"{symbol}\t{meaning}", setter(symbol))
+            action.setCheckable(True)
+            action.setChecked(here.symbol == symbol)
+        queries.addSeparator()
+        queries.addAction("Atom List…", lambda: self.edit_label(atom, "[C,N,O]"))
+        if here.is_query:
+            queries.addAction("Back to Carbon", setter("C"))
 
     def _undo(self) -> None:
         self.cancel_preview()

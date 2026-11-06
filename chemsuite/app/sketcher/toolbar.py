@@ -193,6 +193,13 @@ ATOM_KEYS = {"C": "c", "N": "n", "O": "o", "S": "s", "P": "p", "F": "f", "Cl": "
              "I": "i", "H": "h"}  # fmt: skip
 
 
+#: R-group and wildcard buttons under the elements (label, tooltip)
+QUERY_TOOLS = (
+    ("R", "R-group: each new one takes the next number (R1, R2, …)"),
+    ("A", "Any atom except hydrogen (A); more queries in the atom's right-click menu"),
+)
+
+
 def tool_key(tool: tools.Tool) -> str:
     """The toolbar key of a tool instance (used to check the matching button)."""
     if isinstance(tool, tools.AtomTool):
@@ -259,6 +266,11 @@ class SketchToolBar(QWidget):
                 f"{symbol} ({ATOM_KEYS[symbol]} over an atom)",
                 _text(symbol),
                 lambda s=symbol: tools.AtomTool(s),
+            )
+        side.addSpacing(10)
+        for symbol, tip in QUERY_TOOLS:
+            self._add(
+                side, f"atom:{symbol}", tip, _text(symbol), lambda s=symbol: tools.AtomTool(s)
             )
         side.addStretch(1)
         self.buttons["select"].setChecked(True)

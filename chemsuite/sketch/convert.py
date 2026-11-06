@@ -26,6 +26,7 @@ are interpreted by RDKit's molfile reader, not by code of our own.
 from __future__ import annotations
 
 import math
+import re
 from statistics import median
 
 from rdkit import Chem, rdBase
@@ -33,7 +34,17 @@ from rdkit.Chem import rdDepictor
 
 from chemsuite.core.mols import mol_from_text
 from chemsuite.sketch import ctfile
-from chemsuite.sketch.model import Atom, Bond, Group, Order, Sketch, Stereo
+from chemsuite.sketch.model import (
+    ATOM_LIST,
+    QUERY_ATOMS,
+    RGROUP,
+    Atom,
+    Bond,
+    Group,
+    Order,
+    Sketch,
+    Stereo,
+)
 
 #: Molfile coordinates per sketch bond length. RDKit draws bonds 1.5 long; files keep that.
 FILE_BOND_LENGTH = 1.5
@@ -70,7 +81,7 @@ def drawn_molblock(sketch: Sketch) -> str:
         raise SketchError("The drawing has more than 999 atoms or bonds.")
     lines = ["", "  chemsuite sketch", ""]
     lines.append(f"{len(order):3d}{len(bonds):3d}  0  0  0  0  0  0  0  0999 V2000")
-    charges, isotopes, radicals = [], [], []
+    charges, isotopes, radicals, rgroups, lists = [], [], [], [], []
     for aid in order:
         atom = sketch.atoms[aid]
         x, y = atom.x * FILE_BOND_LENGTH, atom.y * FILE_BOND_LENGTH
@@ -79,8 +90,12 @@ def drawn_molblock(sketch: Sketch) -> str:
         )
         if atom.charge:
             charges.append((index[aid], atom.charge))
-        if atom.isotope:
+        if atom.isotope and not atom.is_query:
             isotopes.append((index[aid], atom.isotope))
+        if atom.symbol == RGROUP:
+            rgroups.append((index[aid], atom.rgroup or 1))
+        if atom.symbol == ATOM_LIST:
+            lists.append((index[aid], atom))
         if atom.radical:
             radicals.append((index[aid], _RADICAL_CODES.get(atom.radical, 3)))
     for _, bond in bonds:
@@ -91,6 +106,15 @@ def drawn_molblock(sketch: Sketch) -> str:
             chunk = values[start : start + 8]
             body = "".join(f" {i:3d} {v:3d}" for i, v in chunk)
             lines.append(f"M  {tag}{len(chunk):3d}{body}")
+    for start in range(0, len(rgroups), 8):
+        chunk = rgroups[start : start + 8]
+        lines.append(f"M  RGP{len(chunk):3d}" + "".join(f" {i:3d} {n:3d}" for i, n in chunk))
+    for i, atom in lists:  # CTfile: M  ALS aaa nn e [L1 ] [L2 ] ...  (e: T = NOT list)
+        elements = atom.atom_list[:16]
+        flag = "T" if atom.list_not else "F"
+        lines.append(
+            f"M  ALS {i:3d}{len(elements):3d} {flag} " + "".join(f"{e:<4}" for e in elements)
+        )
     lines.extend(_sgroup_lines(sketch, index, {bid: i + 1 for i, (bid, _) in enumerate(bonds)}))
     lines.append("M  END")
     return "\n".join(lines) + "\n"
@@ -175,7 +199,13 @@ def to_molblock(sketch: Sketch) -> str:
         if valence is not None:
             line = lines[4 + atom.GetIdx()]
             lines[4 + atom.GetIdx()] = f"{line[:48]}{valence:3d}{line[51:]}"
-    return "\n".join(lines)
+    if any(a.symbol == ATOM_LIST for a in sketch.atoms.values()):
+        # RDKit misaligns NOT lists (``M  ALS 4   2  T``); write the lists ourselves
+        ours = [ln for ln in drawn_molblock(sketch).split("\n") if ln.startswith("M  ALS")]
+        lines = [ln for ln in lines if not ln.startswith("M  ALS")]
+        lines[lines.index("M  END") : lines.index("M  END")] = ours
+    # RDKit adds "V  aaa *" value lines for dummy atoms; they carry nothing
+    return "\n".join(ln for ln in lines if not (ln.startswith("V  ") and ln.endswith(" *")))
 
 
 def _add_attach_points(mol: Chem.Mol) -> None:
@@ -200,6 +230,8 @@ def _ctfile_valence(atom: Chem.Atom) -> int | None:
 
     The field holds the total valence (bond orders plus hydrogens); 15 means zero.
     """
+    if atom.GetAtomicNum() == 0:
+        return None  # query atoms and R-groups have no valence of their own
     bonds = int(sum(b.GetBondTypeAsDouble() for b in atom.GetBonds()))
     hydrogens = atom.GetTotalNumHs()
     symbol = atom.GetSymbol()
@@ -244,10 +276,9 @@ def from_mol(mol: Chem.Mol) -> Sketch:
         sketch.atoms[aid] = Atom(
             p.x / scale,
             p.y / scale,
-            symbol=atom.GetSymbol(),
             charge=atom.GetFormalCharge(),
-            isotope=atom.GetIsotope(),
             radical=atom.GetNumRadicalElectrons(),
+            **_atom_kind(atom),
         )
         ids.append(aid)
     for bond in mol.GetBonds():
@@ -283,6 +314,41 @@ def from_mol(mol: Chem.Mol) -> Sketch:
             group.GetProp("LABEL"), frozenset(ids[i] for i in members), ids[attach], expanded
         )
     return sketch
+
+
+_ATOMIC_NUM = re.compile(r"AtomAtomicNum (\d+) = val")
+
+
+def _atom_kind(atom: Chem.Atom) -> dict:
+    """``symbol`` and the fields that go with it, for an element, query atom or R-group.
+
+    Molfile query atoms come back from RDKit with their CTfile symbol as the query type (A, Q,
+    X, M and their H forms), atom lists as an OR of atomic numbers (``not`` for a NOT list) and
+    R-groups as dummies with ``_MolFileRLabel``. SMILES dummies follow RDKit's R-group
+    convention: ``[2*]`` and ``[*:2]`` are R2, a plain ``*`` is "any atom".
+    """
+    if atom.GetAtomicNum() != 0:
+        return {"symbol": atom.GetSymbol(), "isotope": atom.GetIsotope()}
+    if atom.HasQuery():
+        kind = atom.GetQueryType()
+        if kind in QUERY_ATOMS:
+            return {"symbol": kind}
+        if atom.HasProp("_MolFileAtomQuery"):
+            text = atom.DescribeQuery()
+            numbers = [int(n) for n in _ATOMIC_NUM.findall(text)]
+            table = Chem.GetPeriodicTable()
+            if numbers and "AtomAtomicNum" in text:
+                return {
+                    "symbol": ATOM_LIST,
+                    "atom_list": tuple(table.GetElementSymbol(n) for n in numbers),
+                    "list_not": text.lstrip().startswith("not"),
+                }
+    if atom.HasProp("_MolFileRLabel"):
+        return {"symbol": RGROUP, "rgroup": atom.GetIntProp("_MolFileRLabel")}
+    number = atom.GetIsotope() or atom.GetAtomMapNum()
+    if number:
+        return {"symbol": RGROUP, "rgroup": number}
+    return {"symbol": "*"}
 
 
 def from_text(text: str) -> Sketch | None:

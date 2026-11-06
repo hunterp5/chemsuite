@@ -36,12 +36,12 @@ import re
 from dataclasses import dataclass, replace
 from statistics import median
 
-from rdkit import Chem
+from rdkit import Chem, rdBase
 from rdkit.Chem import rdDepictor
 
 from chemsuite.sketch import geometry
 from chemsuite.sketch.edits import Change
-from chemsuite.sketch.model import Atom, Group, Order
+from chemsuite.sketch.model import ELEMENT_FIELDS, Atom, Group, Order, query_fields
 
 Point = tuple[float, float]
 
@@ -159,20 +159,24 @@ _ELEMENT_LABEL = re.compile(r"^(\d+)?([A-Z][a-z]?)(?:H(\d*))?([+-−]\d*|\d*[+-�
 
 
 def parse_label(text: str):
-    """What a typed label means: ``("atom", symbol, isotope, charge)``, ``("abbrev", entry)``
-    or None.
+    """What a typed label means: ``("atom", symbol, isotope, charge)``, ``("abbrev", entry)``,
+    ``("query", fields)`` or None.
 
     Atom labels may carry an isotope, the hydrogens the atom would have anyway, and a charge:
     ``N``, ``Cl``, ``13C``, ``OH``, ``NH2``, ``N+``, ``O-``, ``D``.
 
     Order: an abbreviation written exactly (so ``Ac``, ``Pr`` and ``Ts`` are acetyl, propyl and
-    tosyl, as in ChemDraw, not actinium, praseodymium and tennessine), then element symbols
-    (so ``co`` is not taken for cobalt but ``Co`` is), then abbreviations in any case.
+    tosyl, as in ChemDraw, not actinium, praseodymium and tennessine), then R-groups and query
+    atoms (``R1``, ``A``, ``Q``, ``X``, ``[C,N,O]``; see ``model.query_fields``), then element
+    symbols (so ``co`` is not taken for cobalt but ``Co`` is), then abbreviations in any case.
     """
     text = text.strip()
     exact = _EXACT.get(text)
     if exact is not None:
         return ("abbrev", exact)
+    query = query_fields(text)
+    if query is not None:
+        return ("query", query)
     if text in ("D", "T"):
         return ("atom", "H", 2 if text == "D" else 3, 0)
     match = _ELEMENT_LABEL.match(text)
@@ -186,7 +190,8 @@ def parse_label(text: str):
 
 def _is_element(symbol: str) -> bool:
     try:
-        return Chem.GetPeriodicTable().GetAtomicNumber(symbol) > 0
+        with rdBase.BlockLogs():
+            return Chem.GetPeriodicTable().GetAtomicNumber(symbol) > 0
     except (RuntimeError, ValueError):
         return False
 
@@ -285,7 +290,13 @@ def set_label(change: Change, atom: int, text: str) -> str:
     """Apply a typed label to an atom. Returns "" or why the label could not be used."""
     parsed = parse_label(text)
     if parsed is None:
-        return f"“{text}” is not an element or a known abbreviation."
+        return f"“{text}” is not an element, query atom or known abbreviation."
+    if parsed[0] == "query":
+        old = change.sketch.atoms[atom]
+        new = replace(old, **parsed[1])
+        if new != old:
+            change.set_atom(atom, new)
+        return ""
     if parsed[0] == "abbrev":
         try:
             place(change, atom, parsed[1])
@@ -294,7 +305,9 @@ def set_label(change: Change, atom: int, text: str) -> str:
         return ""
     _, symbol, isotope, charge = parsed
     old = change.sketch.atoms[atom]
-    change.set_atom(atom, replace(old, symbol=symbol, isotope=isotope, charge=charge))
+    change.set_atom(
+        atom, replace(old, symbol=symbol, isotope=isotope, charge=charge, **ELEMENT_FIELDS)
+    )
     return ""
 
 

@@ -65,16 +65,40 @@ def smiles_of(mol: Chem.Mol) -> str:
             return ""
 
 
+def has_query_atoms(mol: Chem.Mol) -> bool:
+    """Whether *mol* has wildcard or atom-list atoms (molfile A, Q, X, M, L, ...), which SMILES
+    cannot write. R-groups are not counted: SMILES writes them as ``[1*]``."""
+    return any(
+        atom.GetAtomicNum() == 0
+        and atom.HasQuery()
+        and bool(atom.GetQueryType() or atom.HasProp("_MolFileAtomQuery"))
+        for atom in mol.GetAtoms()
+    )
+
+
+def display_text(mol: Chem.Mol) -> str:
+    """How a parsed molfile is shown in a cell: canonical SMILES, or SMARTS when the drawing
+    has query atoms that SMILES would turn into plain ``*``."""
+    if has_query_atoms(mol):
+        with rdBase.BlockLogs():
+            try:
+                return Chem.MolToSmarts(mol)
+            except (RuntimeError, ValueError):
+                pass
+    return smiles_of(mol)
+
+
 def parse_structure(text: str) -> tuple[bytes, str]:
     """``(blob, display text)`` for one structure cell; ``(b"", text)`` when it does not parse.
 
     Valid SMILES and InChI keep the text exactly as written. A molfile block is displayed as its
-    canonical SMILES (the block's coordinates are kept in the blob).
+    canonical SMILES, or SMARTS when it has query atoms (the block's coordinates and queries
+    are kept in the blob).
     """
     mol = mol_from_text(text)
     if mol is None:
         return b"", text
-    return mol_to_blob(mol), (smiles_of(mol) if looks_like_molblock(text) else text.strip())
+    return mol_to_blob(mol), (display_text(mol) if looks_like_molblock(text) else text.strip())
 
 
 def parse_structures(texts: list[str]) -> list[bytes]:

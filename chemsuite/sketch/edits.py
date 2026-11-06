@@ -31,7 +31,16 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 
 from chemsuite.sketch import geometry
-from chemsuite.sketch.model import Atom, Bond, Group, Order, Sketch, Stereo
+from chemsuite.sketch.model import (
+    ELEMENT_FIELDS,
+    Atom,
+    Bond,
+    Group,
+    Order,
+    Sketch,
+    Stereo,
+    query_fields,
+)
 
 Point = tuple[float, float]
 
@@ -290,17 +299,29 @@ def set_bond_order(change: Change, bid: int, order: Order) -> None:
 ISOTOPE_LABELS = {"D": ("H", 2), "T": ("H", 3)}
 
 
-def set_element(change: Change, aid: int, label: str) -> None:
-    """Set an atom's element. Charge and radical stay; a different element clears the isotope."""
+def label_fields(label: str) -> dict:
+    """Atom fields for a tool label: an element, D/T, an R-group (R1) or a query (A, [C,N])."""
+    query = query_fields(label)
+    if query is not None:
+        return query
     symbol, isotope = ISOTOPE_LABELS.get(label, (label, 0))
+    return {"symbol": symbol, "isotope": isotope, **ELEMENT_FIELDS}
+
+
+def set_element(change: Change, aid: int, label: str) -> None:
+    """Set an atom's element or query. Charge and radical stay; a different element clears
+    the isotope."""
     atom = change.sketch.atoms[aid]
-    if symbol != atom.symbol or label in ISOTOPE_LABELS:
-        change.set_atom(aid, replace(atom, symbol=symbol, isotope=isotope))
+    fields = label_fields(label)
+    if fields["symbol"] == atom.symbol and label not in ISOTOPE_LABELS and not atom.is_query:
+        return
+    new = replace(atom, **fields)
+    if new != atom:
+        change.set_atom(aid, new)
 
 
 def atom_on_canvas(change: Change, point: Point, label: str = "C") -> int:
-    symbol, isotope = ISOTOPE_LABELS.get(label, (label, 0))
-    return change.add_atom(Atom(*point, symbol=symbol, isotope=isotope))
+    return change.add_atom(Atom(*point, **label_fields(label)))
 
 
 def add_charge(change: Change, aid: int, delta: int) -> None:

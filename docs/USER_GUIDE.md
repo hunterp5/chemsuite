@@ -258,7 +258,7 @@ C, V, A) and on the drawing's right-click menu.
 | Chain | Add a bond | Draw a zig-zag chain, one bond per bond length; the count shows by the pointer |
 | Rings (benzene, 3- to 8-membered) | On empty canvas: place the ring. On an atom: the ring shares that atom, facing the free direction. On a bond: fuse the ring onto it, away from the rest of the molecule. Fusing benzene re-draws the alternating bonds of the whole aromatic system, so naphthalene or phenanthrene come out valid whichever bond you click. | On empty canvas: turn the ring (15° steps). From an atom: aim it; drag more than a bond length to attach it through a new bond. On a bond: choose the side. |
 | Charge + / − | Change the atom's charge by one | — |
-| Element (C, N, O …) | On an atom: change its element. On empty canvas: a lone atom. Double-click an atom to type its label. | From an atom: a bond to a new atom of that element |
+| Element (C, N, O …), R, A | On an atom: change its element (or make it an R-group or "any atom"). On empty canvas: a lone atom. Double-click an atom to type its label. | From an atom: a bond to a new atom of that element |
 
 **Keys over an atom or bond.** Point at an atom or bond and press a key:
 
@@ -295,6 +295,32 @@ one piece. Pressing an element key over it replaces the group with that atom. Ri
 to **Expand** (show its atoms), **Contract** again, or **remove the label** and keep the atoms.
 The molecule itself never depends on whether a label is contracted. Molfiles keep
 abbreviations as superatom groups, which ChemDraw, Marvin and Ketcher show as labels.
+
+**R-groups and query atoms.** For R-group cores, reaction templates and substructure
+queries, an atom can stand for more than one element:
+
+| Label | Means |
+|---|---|
+| `R1` … `R99` | R-group *n* (plain `R` is R1) |
+| `A` / `AH` | any atom except hydrogen / any atom |
+| `Q` / `QH` | any atom except carbon and hydrogen / any atom except carbon |
+| `X` / `XH` | any halogen / any halogen or hydrogen |
+| `M` / `MH` | any metal / any metal or hydrogen |
+| `*` | any atom |
+| `[C,N,O]` | one of the listed elements (up to 16) |
+| `![F,Cl]` | none of the listed elements |
+
+The **R** button under the elements places R-groups, numbering each new one with the next free
+number (R1, R2, …); clicking an existing R-group keeps its number. The **A** button places
+"any atom". Right-click an atom for the **R-Group** and **Query Atom** menus (with **Atom
+List…** and **Back to Carbon**), or type any label above in the label editor. Query atoms are
+drawn in the accent colour and carry no hydrogens of their own.
+
+Molfiles write them the standard CTfile way (`R#` with `M  RGP`, `A`/`Q`/`X`/`M`, `L` with
+`M  ALS`), so ChemDraw, Marvin and Ketcher read them; SMILES writes an R-group as `[1*]` and
+`[1*]` or `[*:1]` read back as R1. In a table cell, a structure with query atoms shows as
+SMARTS (SMILES has no wildcards) and keeps its queries, so it can serve as a substructure
+query or R-group core.
 
 **Valence.** An atom with an impossible valence is shown in red inside a dotted ring; point
 at it to see why. Hydrogens are worked out by the same rules as the table, so a drawing the

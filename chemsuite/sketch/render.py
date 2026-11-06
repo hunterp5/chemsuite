@@ -94,7 +94,7 @@ class Scene:
 
 def shows_label(sketch: Sketch, aid: int) -> bool:
     atom = sketch.atoms[aid]
-    if atom.symbol != "C":
+    if atom.symbol != "C" or atom.is_query:
         return True
     return bool(atom.charge or atom.isotope or atom.radical) or sketch.degree(aid) == 0
 
@@ -109,9 +109,11 @@ def _charge_text(charge: int) -> str:
 def label_runs(sketch: Sketch, aid: int, hydrogens: int) -> tuple[list[tuple[str, str]], int]:
     """The runs of an atom's label and the index of its element symbol."""
     atom = sketch.atoms[aid]
-    symbol = atom.symbol
+    symbol = atom.label
     runs: list[tuple[str, str]] = []
-    if atom.symbol == "H" and atom.isotope in (2, 3):
+    if atom.is_query:
+        pass  # R1, A, [C,N,O]: no isotope; the label is the whole symbol
+    elif atom.symbol == "H" and atom.isotope in (2, 3):
         symbol = "D" if atom.isotope == 2 else "T"
     elif atom.isotope:
         runs.append((str(atom.isotope), "sup"))

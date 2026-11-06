@@ -29,7 +29,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 
 from chemsuite.sketch import edits, geometry
-from chemsuite.sketch.model import Order, Stereo
+from chemsuite.sketch.model import MAX_RGROUP, RGROUP, Order, Stereo, next_rgroup
 
 Point = tuple[float, float]
 
@@ -250,11 +250,20 @@ class AtomTool(Tool):
         self.label = label
         self.name = f"atom:{label}"
 
+    def resolved(self, canvas, atom: int | None = None) -> str:
+        """The label to apply: the R tool numbers each new R-group with the next free number."""
+        if self.label != "R":
+            return self.label
+        if atom is not None and canvas.sketch.atoms[atom].symbol == RGROUP:
+            return canvas.sketch.atoms[atom].label  # already an R-group: keep its number
+        return f"R{min(next_rgroup(canvas.sketch, skip=atom), MAX_RGROUP)}"
+
     def click(self, canvas, pos, hit, event) -> None:
-        label = self.label
         if hit.kind == "atom":
+            label = self.resolved(canvas, hit.id)
             canvas.edit(f"Set {label}", lambda ch: edits.set_element(ch, hit.id, label))
         elif not hit:
+            label = self.resolved(canvas)
             canvas.edit(f"Add {label}", lambda ch: edits.atom_on_canvas(ch, pos, label))
 
     def double_click(self, canvas, pos, hit) -> None:
@@ -270,7 +279,7 @@ class AtomTool(Tool):
         if not _free_angle(event):
             angle = geometry.snap_angle(angle)
         end = geometry.along(origin, angle)
-        label = self.label
+        label = self.resolved(canvas)
 
         def apply(ch):
             bid = edits.bond_to_point(ch, start, end)

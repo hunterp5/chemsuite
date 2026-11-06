@@ -27,6 +27,7 @@ middle of an edit. RDKit judges the chemistry through ``valence.py`` and ``conve
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -50,18 +51,107 @@ class Stereo(Enum):
     EITHER = 4  # wavy: unknown configuration
 
 
+#: CTfile query atoms (BIOVIA CTfile formats, atom block "atom symbol"), as RDKit reads them.
+QUERY_ATOMS: dict[str, str] = {
+    "A": "Any atom except hydrogen",
+    "Q": "Any heteroatom (not carbon or hydrogen)",
+    "X": "Any halogen",
+    "M": "Any metal",
+    "AH": "Any atom, including hydrogen",
+    "QH": "Any atom except carbon",
+    "XH": "Any halogen or hydrogen",
+    "MH": "Any metal or hydrogen",
+    "*": "Any atom",
+}
+RGROUP = "R#"  # an R-group; ``Atom.rgroup`` is its number
+ATOM_LIST = "L"  # one of (or none of) ``Atom.atom_list``
+
+
+MAX_RGROUP = 99
+_RGROUP_TEXT = re.compile(r"R(\d{0,2})")
+_LIST_TEXT = re.compile(r"(!?)\[([A-Za-z]{1,2}(?:\s*,\s*[A-Za-z]{1,2})*)\]")
+
+
+def query_fields(text: str) -> dict | None:
+    """The Atom fields for a typed query label, or None when *text* is not one.
+
+    ``R`` / ``R1``-``R99`` (an R-group; plain ``R`` means R1), the CTfile wildcards in
+    QUERY_ATOMS (``A``, ``Q``, ``X``, ``M``, their ``H`` forms and ``*``), and atom lists
+    ``[C,N,O]`` or ``![F,Cl]`` ("none of these"). List members must be real elements.
+    """
+    text = text.strip()
+    if text in QUERY_ATOMS:
+        return {"symbol": text, "rgroup": 0, "atom_list": (), "list_not": False, "isotope": 0}
+    match = _RGROUP_TEXT.fullmatch(text)
+    if match:
+        number = int(match.group(1) or 1)
+        if not 1 <= number <= MAX_RGROUP:
+            return None
+        return {"symbol": RGROUP, "rgroup": number, "atom_list": (), "list_not": False,
+                "isotope": 0}  # fmt: skip
+    match = _LIST_TEXT.fullmatch(text)
+    if match:
+        from rdkit import Chem, rdBase
+
+        table = Chem.GetPeriodicTable()
+        elements: list[str] = []
+        for item in match.group(2).split(","):
+            name = item.strip()
+            name = name[:1].upper() + name[1:].lower()
+            try:
+                with rdBase.BlockLogs():
+                    if table.GetAtomicNumber(name) <= 0:
+                        return None
+            except (RuntimeError, ValueError):
+                return None
+            if name not in elements:
+                elements.append(name)
+        if not 1 <= len(elements) <= 16:  # CTfile allows up to 16 list members
+            return None
+        return {"symbol": ATOM_LIST, "rgroup": 0, "atom_list": tuple(elements),
+                "list_not": bool(match.group(1)), "isotope": 0}  # fmt: skip
+    return None
+
+
+def next_rgroup(sketch: Sketch, skip: int | None = None) -> int:
+    """The lowest R-group number not used in *sketch* (ignoring atom *skip*)."""
+    used = {a.rgroup for aid, a in sketch.atoms.items() if a.symbol == RGROUP and aid != skip}
+    return next(n for n in range(1, MAX_RGROUP + 2) if n not in used)
+
+
+#: The fields that make a plain element atom (no R-group number or list).
+ELEMENT_FIELDS = {"rgroup": 0, "atom_list": (), "list_not": False}
+
+
 @dataclass(frozen=True)
 class Atom:
     x: float
     y: float
-    symbol: str = "C"
+    symbol: str = "C"  # an element, a QUERY_ATOMS key, RGROUP or ATOM_LIST
     charge: int = 0
     isotope: int = 0  # mass number; 0 means natural abundance
     radical: int = 0  # unpaired electrons
+    rgroup: int = 0  # R-group number when symbol is RGROUP
+    atom_list: tuple[str, ...] = ()  # elements when symbol is ATOM_LIST
+    list_not: bool = False  # the list means "none of these"
 
     @property
     def pos(self) -> tuple[float, float]:
         return (self.x, self.y)
+
+    @property
+    def is_query(self) -> bool:
+        """An R-group, wildcard or atom list rather than one element."""
+        return self.symbol in QUERY_ATOMS or self.symbol in (RGROUP, ATOM_LIST)
+
+    @property
+    def label(self) -> str:
+        """The text drawn for the atom's symbol: R1, A, [C,N,O], ![F,Cl], or the element."""
+        if self.symbol == RGROUP:
+            return f"R{self.rgroup}" if self.rgroup else "R"
+        if self.symbol == ATOM_LIST:
+            return ("!" if self.list_not else "") + "[" + ",".join(self.atom_list) + "]"
+        return self.symbol
 
     def moved(self, x: float, y: float) -> Atom:
         return replace(self, x=x, y=y)

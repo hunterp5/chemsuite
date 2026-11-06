@@ -27,6 +27,7 @@ from rdkit import Chem
 
 from chemsuite.app.sketcher import SketcherDialog
 from chemsuite.app.sketcher import tools as sk_tools
+from chemsuite.sketch import convert
 from chemsuite.sketch.convert import from_text, to_smiles
 from chemsuite.sketch.model import Order
 
@@ -454,3 +455,28 @@ def test_expand_and_contract_keep_the_molecule(dialog, qapp):
     assert not canvas.sketch.hidden_atoms() and to_smiles(canvas.sketch) == before
     canvas.edit("Ungroup", lambda ch: abbrev.ungroup(ch, gid))
     assert not canvas.sketch.groups and to_smiles(canvas.sketch) == before
+
+
+def test_r_tool_numbers_each_new_rgroup_and_menu_offers_queries(dialog):
+    canvas = dialog.canvas
+    dialog.toolbar.buttons["atom:R"].click()
+    click(canvas, (0.0, 0.0))
+    click(canvas, (3.0, 0.0))
+    assert sorted(a.label for a in canvas.sketch.atoms.values()) == ["R1", "R2"]
+    first = next(aid for aid, a in canvas.sketch.atoms.items() if a.label == "R1")
+    click(canvas, (0.0, 0.0))  # clicking an R-group again keeps its number
+    assert canvas.sketch.atoms[first].label == "R1"
+    dialog.toolbar.buttons["atom:A"].click()
+    click(canvas, (0.0, 0.0))
+    assert canvas.sketch.atoms[first].label == "A"
+    assert " A " in convert.to_molblock(canvas.sketch)
+
+
+def test_label_editor_accepts_atom_lists(dialog):
+    canvas = dialog.canvas
+    dialog.toolbar.buttons["atom:N"].click()
+    click(canvas, (0.0, 0.0))
+    aid = _atom(canvas, "N")
+    canvas.edit_label(aid, "![F,Cl]")
+    canvas._apply_label(aid, "![F,Cl]")
+    assert canvas.sketch.atoms[aid].label == "![F,Cl]"
