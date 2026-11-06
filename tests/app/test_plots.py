@@ -229,6 +229,7 @@ def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -
         "fit": True,
         "curve": None,
         "guide": None,
+        "title": None,
     }
     assert histogram.spec().x == "Series" and histogram.spec().kind == "histogram"
 
@@ -299,3 +300,36 @@ def test_panels_without_options_have_no_settings_button(data) -> None:
 
     dock = data.add_panel(QLabel("plain"), "Plain")
     assert not dock.title_bar.settings.isVisibleTo(dock.title_bar)
+
+
+def test_rename_a_plot_from_its_header(data, qtbot, tmp_path) -> None:
+    from PySide6.QtCore import Qt
+
+    data.show()
+    panel = data.open_tool("scatter")
+    dock = data._panels[-1]
+    title = dock.title_bar.title
+    assert panel.toolbar.parent() is not None and dock.isAncestorOf(panel.toolbar)  # in header
+    assert title.isReadOnly()
+    title.start_editing()
+    assert title.editing
+    qtbot.keyClicks(title, "Potency map")
+    qtbot.keyClick(title, Qt.Key.Key_Return)
+    assert not title.editing
+    assert panel.title() == "Potency map" and dock.windowTitle() == "Potency map"
+    panel.set_spec(x="pIC50", y="MW")  # a named plot keeps its name
+    assert title.text() == "Potency map"
+    # Escape puts the old title back.
+    title.start_editing()
+    qtbot.keyClicks(title, "Oops")
+    qtbot.keyClick(title, Qt.Key.Key_Escape)
+    assert title.text() == "Potency map" and panel.title() == "Potency map"
+    # Saved with the document.
+    assert panel.state()["title"] == "Potency map"
+    target = tmp_path / "named.csd"
+    assert data._save_to(target)
+    # An empty title goes back to the automatic one.
+    title.start_editing()
+    title.clear()
+    qtbot.keyClick(title, Qt.Key.Key_Return)
+    assert panel.title() == "MW vs pIC50" and panel.custom_title is None

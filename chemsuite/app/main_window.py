@@ -30,21 +30,16 @@ from pathlib import Path
 from typing import Any
 
 import shiboken6
-from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
     QFileDialog,
-    QHBoxLayout,
     QInputDialog,
-    QLabel,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
-    QSizePolicy,
-    QStyle,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -82,6 +77,7 @@ from .jobs import QUEUE, QUICK, Job, JobRunner
 from .jobs_ui import JobsIndicator, JobsWindow
 from .list_actions import ListActions
 from .log_ui import LogWindow
+from .panel_dock import PanelDock
 from .search_bar import SearchBar
 from .selection_browser import SelectionBrowser
 from .settings_hub import settings_hub
@@ -209,79 +205,6 @@ class Workspace:
 
 #: a new panel takes half the window, but never less than this
 PANEL_MIN_WIDTH = 360
-
-
-class PanelTitleBar(QWidget):
-    """A dock's title, then its buttons: settings (when the panel has options), undock, close.
-
-    Mouse presses fall through to the dock, so dragging and double-clicking the title still
-    move and float it as with Qt's own title bar.
-    """
-
-    def __init__(self, dock: QDockWidget) -> None:
-        super().__init__(dock)
-        self.dock = dock
-        self.title = QLabel(dock.windowTitle())
-        self.title.setTextFormat(Qt.TextFormat.PlainText)
-        self.title.setMinimumWidth(20)  # a long title is cut off, not a wide minimum
-        self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        style = self.style()
-
-        def button(tip: str, icon=None, text: str = "") -> QToolButton:
-            b = QToolButton()
-            b.setAutoRaise(True)
-            b.setToolTip(tip)
-            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            if icon is not None:
-                b.setIcon(style.standardIcon(icon))
-            else:
-                b.setText(text)
-            b.setIconSize(QSize(12, 12))
-            return b
-
-        self.settings = button("Plot settings", text="⚙")
-        self.settings.setVisible(False)
-        self.float_button = button(
-            "Undock (or dock again)", QStyle.StandardPixmap.SP_TitleBarNormalButton
-        )
-        self.close_button = button("Close", QStyle.StandardPixmap.SP_TitleBarCloseButton)
-        self.float_button.clicked.connect(lambda: dock.setFloating(not dock.isFloating()))
-        self.close_button.clicked.connect(dock.close)
-        row = QHBoxLayout(self)
-        row.setContentsMargins(6, 1, 2, 1)
-        row.setSpacing(0)
-        row.addWidget(self.title, 1)
-        for b in (self.settings, self.float_button, self.close_button):
-            row.addWidget(b)
-        dock.windowTitleChanged.connect(self.title.setText)
-
-
-class PanelDock(QDockWidget):
-    """A dock holding a tool's panel; closing it closes the panel for good.
-
-    A panel with an ``options`` popup (see ``PlotOptions``) gets a settings button on the title
-    bar that opens it.
-    """
-
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(title, parent)
-        self.title_bar = PanelTitleBar(self)
-        self.setTitleBarWidget(self.title_bar)
-
-    def setWidget(self, widget: QWidget) -> None:
-        super().setWidget(widget)
-        options = getattr(widget, "options", None)
-        bar = self.title_bar
-        bar.settings.setVisible(options is not None)
-        if options is not None:
-            bar.settings.clicked.connect(lambda: options.popup(bar.settings))
-
-    def closeEvent(self, event) -> None:
-        widget = self.widget()
-        if widget is not None and hasattr(widget, "close_panel"):
-            widget.close_panel()
-        super().closeEvent(event)
-        self.deleteLater()
 
 
 class MainWindow(QMainWindow):

@@ -53,7 +53,7 @@ from chemsuite.plotting.data import colorable_columns, number_columns, shown_oid
 from chemsuite.plotting.stats import CURVES
 
 from ..flow_layout import compact
-from .glyphs import glyph
+from ..glyphs import glyph
 from .renderers import RENDERERS, Hover, PlotSpec
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
 
@@ -232,11 +232,14 @@ class PlotPanel(QWidget):
         inside.addWidget(self.toolbar)
         inside.addWidget(self.plot_widget, 1)
         self._frame = frame
+        self._header_attached = False
+        #: a title the user typed (None: the automatic "pIC50 vs MW")
+        self.custom_title: str | None = None
         self._style_toolbar()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.addWidget(frame, 1)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(4, 4, 4, 4)
+        self._layout.addWidget(frame, 1)
 
         self.renderer = None
         self._rebuild_timer = QTimer(self)
@@ -333,10 +336,13 @@ class PlotPanel(QWidget):
             "fit": spec.fit,
             "curve": spec.curve,
             "guide": spec.guide,
+            "title": self.custom_title,
         }
 
     def set_state(self, state: dict) -> None:
         """Apply saved settings; names of columns that no longer exist are ignored."""
+        title = state.get("title")
+        self.custom_title = title.strip() or None if isinstance(title, str) else None
         known = ("kind", "x", "y", "color", "size", "bins", "fit", "curve", "guide")
         values = {key: state[key] for key in known if key in state}
         if values.get("kind") not in KINDS:
@@ -406,7 +412,22 @@ class PlotPanel(QWidget):
             self.reset_view()
         self.titleChanged.emit(self.title())
 
+    def set_custom_title(self, text: str | None) -> None:
+        """Name the plot; empty or None goes back to the automatic title."""
+        self.custom_title = (text or "").strip() or None
+        self.titleChanged.emit(self.title())
+
+    def attach_header(self, attached: bool) -> None:
+        """The dock's header now holds the toolbar and meets the top of the plot (one card)."""
+        self._header_attached = attached
+        self._layout.setContentsMargins(4, 0 if attached else 4, 4, 4)
+        self._style_toolbar()
+
     def title(self) -> str:
+        return self.custom_title or self.automatic_title()
+
+    def automatic_title(self) -> str:
+        """The title from the plotted columns: "pIC50 vs MW", "Histogram: MW"."""
         spec = self.spec()
         if spec.kind == "scatter" and spec.x and spec.y:
             return f"{spec.y} vs {spec.x}"
@@ -440,13 +461,19 @@ class PlotPanel(QWidget):
         hover = QColor(ink)
         hover.setAlphaF(0.08)
         rgba = "rgba({}, {}, {}, {:.2f})".format
+        if self._header_attached:  # the header above is the card's top; its line divides them
+            corners = "border-top-left-radius: 0px; border-top-right-radius: 0px;"
+            bar = "background: transparent; border: none; padding: 0px; spacing: 2px;"
+        else:
+            corners = ""
+            bar = f"background: {base}; border: none; border-bottom: 1px solid {line};"
+            bar += " padding: 2px 4px; spacing: 2px;"
         self._frame.setStyleSheet(
-            f"QFrame#PlotFrame {{ border: 1px solid {line}; border-radius: 4px;"
+            f"QFrame#PlotFrame {{ border: 1px solid {line}; border-radius: 5px; {corners}"
             f" background: {base}; }}"
         )
         self.toolbar.setStyleSheet(
-            f"QToolBar {{ background: {base}; border: none;"
-            f" border-bottom: 1px solid {line}; padding: 2px 4px; spacing: 2px; }}"
+            f"QToolBar {{ {bar} }}"
             " QToolButton { border: none; border-radius: 4px; padding: 3px; }"
             f" QToolButton:hover {{ background: {rgba(*hover.getRgb()[:3], hover.alphaF())}; }}"
             " QToolButton:checked {"

@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Small line icons for the plot toolbar, drawn as vectors in the theme's text colour.
+"""Small line icons (plot toolbar, panel headers), drawn as vectors in the theme's text colour.
 
 Drawn rather than taken from a font, so they look the same on every OS and follow light and
 dark themes (the panel redraws them when the palette changes).
@@ -96,7 +96,49 @@ def _export(p: QPainter) -> None:
     p.drawPath(path)
 
 
+def _gear(p: QPainter) -> None:
+    """A cog: settings."""
+    import math
+
+    c = GRID / 2
+    path = QPainterPath()
+    for i in range(8):
+        a = i * math.pi / 4
+        inner, outer = 4.6, 6.6
+        path.moveTo(c + inner * math.cos(a), c + inner * math.sin(a))
+        path.lineTo(c + outer * math.cos(a), c + outer * math.sin(a))
+    p.drawPath(path)
+    p.drawEllipse(QPointF(c, c), 4.4, 4.4)
+    p.drawEllipse(QPointF(c, c), 1.8, 1.8)
+
+
+def _undock(p: QPainter) -> None:
+    """A window with an arrow out of its corner: float the panel (or dock it again)."""
+    path = QPainterPath(QPointF(7, 3))
+    path.lineTo(3, 3)
+    path.lineTo(3, 13)
+    path.lineTo(13, 13)
+    path.lineTo(13, 9)
+    path.moveTo(8, 8)
+    path.lineTo(13.5, 2.5)
+    path.moveTo(9.5, 2.5)
+    path.lineTo(13.5, 2.5)
+    path.lineTo(13.5, 6.5)
+    p.drawPath(path)
+
+
+def _close(p: QPainter) -> None:
+    path = QPainterPath(QPointF(4, 4))
+    path.lineTo(12, 12)
+    path.moveTo(12, 4)
+    path.lineTo(4, 12)
+    p.drawPath(path)
+
+
 GLYPHS: dict[str, Draw] = {
+    "gear": _gear,
+    "undock": _undock,
+    "close": _close,
     "pan": _pan,
     "box": _box,
     "lasso": _lasso,

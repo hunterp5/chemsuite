@@ -48,13 +48,14 @@ Each document has its own window. From top to bottom:
   - Filters, Advanced Search and the Selection Browser dock at the side.
   - New plots and tool panels open to the right of the table, splitting the window left and
     right. A second plot joins the first as a tab.
-  - Drag a panel's title bar to move it. Its buttons are:
+  - Each panel has a header showing its title. Drag the header to move the panel. A plot's
+    header also holds the plot toolbar. The buttons at the right are:
 
     | Button | What it does |
     |---|---|
-    | ⚙ | Opens the panel's settings (plots only). |
-    | Undock | Floats the panel in its own window, or docks it again. |
-    | Close | Closes the panel. |
+    | Cog | Opens the panel's settings (plots only). |
+    | Window with arrow | Undocks the panel into its own window, or docks it again. |
+    | ✕ | Closes the panel. |
 
 - **Status bar**, on one line:
   - At the left: what the current background job is doing, such as "Generating conformers…
@@ -358,9 +359,20 @@ descriptors, conformers, clustering, maps and searches.
 Open a plot from the **Plot** menu: **New Scatter Plot (Ctrl+Shift+P)**, **New Histogram** or
 **New Box Plot**. It opens to the right of the table.
 
+### Naming a plot
+
+The plot's title in its header starts as an automatic title, such as "pIC50 vs MW" or
+"Histogram: MW", and follows the columns you plot.
+
+- **Double-click** the title to rename the plot.
+- **Enter** keeps the new name. **Escape** puts the old one back.
+- A named plot keeps its name when you change its columns.
+- Clear the name and press Enter to go back to the automatic title.
+- The name is saved with the document, and is the suggested file name when you export.
+
 ### Plot settings
 
-Click **⚙** on the plot's title bar for its settings. Changes apply immediately.
+Click the **cog** in the plot's header for its settings. Changes apply immediately.
 
 | Setting | Scatter | Histogram | Box plot |
 |---|---|---|---|
@@ -381,7 +393,7 @@ The settings popup also shows a summary of what was drawn:
 
 ### Working with a plot
 
-The toolbar along the top of the plot has five buttons:
+The toolbar in the plot's header has five buttons:
 
 | Button | Name | What it does |
 |---|---|---|
