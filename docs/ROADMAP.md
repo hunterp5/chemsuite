@@ -215,7 +215,7 @@ modified.
 | PubChem, ChEMBL, vendor, patent and SQL queries | Network access, off by default under policy. Plain HTTPS REST calls, not MolManager's client libraries. SQL through the standard library or an optional driver. |
 | Retrosynthesis | AiZynthFinder through its own Python interpreter (path in Settings). |
 | Metabolite prediction | BioTransformer (Java .jar, path in Settings). |
-| Sketcher | **Decided: needed.** A robust drawing sketcher that works with the table: edit a structure cell in place, draw a query for structure search and filters, and add new compounds. MolManager's is about 18k lines, so this is a project of its own and needs its own plan. |
+| Sketcher | **Decided: needed.** A robust drawing sketcher that works with the table: edit a structure cell in place, draw a query for structure search and filters, and add new compounds. Plan: [SKETCHER_PLAN.md](SKETCHER_PLAN.md) (native, Ketcher rules as reference, verified; no MolManager iupac_* code). |
 
 **Tier 3: heavy add-ons (a separate optional install)**
 
