@@ -140,13 +140,15 @@ class SimilarityDialog(QDialog):
             self.query.setText(smiles_of(mol))
 
     def draw(self) -> None:
-        from chemsuite.app.structure_editor import StructureEditor
+        from chemsuite.app.sketcher import SketcherDialog
+        from chemsuite.core.mols import smiles_of
 
-        editor = StructureEditor(self.query.text(), "Query Structure", self)
-        if editor.exec() and editor.result_input.mol is not None:
-            from chemsuite.core.mols import smiles_of
-
-            self.query.setText(smiles_of(editor.result_input.mol))
+        dialog = SketcherDialog(self.query.text(), "Query Structure", self)
+        if not dialog.exec():
+            return
+        found = read_structure(dialog.result_text()) if dialog.result_text() else None
+        if found is not None and found.mol is not None:
+            self.query.setText(smiles_of(found.mol))
 
     def _mode_changed(self, *_args) -> None:
         to_structure = self.to_structure.isChecked()

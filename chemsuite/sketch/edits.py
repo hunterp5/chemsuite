@@ -211,6 +211,11 @@ class History:
         return bool(self._redo)
 
     @property
+    def last_edit(self) -> Edit | None:
+        """The edit Undo would undo next."""
+        return self._undo[-1] if self._undo else None
+
+    @property
     def undo_name(self) -> str:
         return self._undo[-1].name if self._undo else ""
 

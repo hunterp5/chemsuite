@@ -23,6 +23,7 @@ from rdkit import Chem
 
 from chemsuite.app.structure_editor import StructureEditor
 from chemsuite.core.structure_input import molblock_of
+from chemsuite.sketch import convert
 
 from .conftest import gui
 
@@ -87,7 +88,13 @@ def test_mdlct_clipboard_format() -> None:
     assert _mdlct_to_text(data) == "\n".join(lines)
 
 
-def test_f2_opens_editor_and_ok_writes_undoable_edit(structures) -> None:
+def _sketcher(window):
+    from chemsuite.app.sketcher import SketcherDialog
+
+    return window.findChild(SketcherDialog)
+
+
+def test_f2_opens_sketcher_and_ok_writes_undoable_edit(structures) -> None:
     window = structures
     table = window.workspace.table
     model = window.workspace.model
@@ -96,10 +103,11 @@ def test_f2_opens_editor_and_ok_writes_undoable_edit(structures) -> None:
     window.view.structureEditRequested.connect(lambda i, t: opened.append((i.row(), t)))
     assert window.view.edit(index, window.view.EditTrigger.EditKeyPressed, None) is False
     assert opened == [(0, "")]
-    editor = window.findChild(StructureEditor)
-    assert editor.text == "CCO" and editor.isVisible()
-    editor.set_text(ASPIRIN_SMILES)
-    editor.accept()
+    sketcher = _sketcher(window)
+    assert sketcher is not None and sketcher.isVisible()
+    assert convert.to_smiles(sketcher.canvas.history.sketch) == "CCO"
+    sketcher.entry.setText(ASPIRIN_SMILES)
+    sketcher.accept()  # undrawn typed text is drawn, then kept as typed
     assert table.cell("SMILES", model.oid_at(0)) == ASPIRIN_SMILES
     assert table.history.undo_label == "Edit SMILES"
     assert table.column("SMILES").mol(0) is not None  # stored parsed, no background job
@@ -115,21 +123,32 @@ def test_typing_in_a_structure_cell_starts_with_the_key(structures, qtbot) -> No
     window.view.setFocus()
     window.view.setCurrentIndex(model.index(1, model.column_index("SMILES")))
     qtbot.keyClicks(window.view, "N")
-    editor = window.findChild(StructureEditor)
-    assert editor is not None and editor.text == "N"
+    sketcher = _sketcher(window)
+    assert sketcher is not None and sketcher.entry.text() == "N"
+    sketcher.reject()
+
+
+def test_invalid_cell_text_opens_the_text_editor(structures) -> None:
+    window = structures
+    table = window.workspace.table
+    oid = window.workspace.model.oid_at(0)
+    table.set_cells("SMILES", [oid], ["C1CC"], label="Typo")
+    editor = window.draw_structure(oid, "SMILES")
+    assert isinstance(editor, StructureEditor) and editor.text == "C1CC"
     editor.reject()
 
 
 def test_cancel_changes_nothing(structures) -> None:
     window = structures
-    editor = window.edit_current_structure()
-    assert editor is None  # no current cell yet
+    assert window.edit_current_structure() is None  # no current cell yet
     model = window.workspace.model
     window.view.setCurrentIndex(model.index(0, 0))  # the ID column: uses the row's structure
-    editor = window.edit_current_structure()
-    assert editor.text == "CCO"
-    editor.set_text("CCN")
-    editor.reject()
+    window.edit_current_structure()
+    sketcher = _sketcher(window)
+    assert convert.to_smiles(sketcher.canvas.history.sketch) == "CCO"
+    sketcher.entry.setText("CCN")
+    sketcher.load_text()
+    sketcher.reject()
     assert window.workspace.table.cell("SMILES", model.oid_at(0)) == "CCO"
     assert not window.isWindowModified()
 
@@ -137,9 +156,9 @@ def test_cancel_changes_nothing(structures) -> None:
 def test_add_compound_appends_a_row(structures) -> None:
     window = structures
     table = window.workspace.table
-    editor = window.add_compound()
-    editor.set_text("CCN")
-    editor.accept()
+    sketcher = window.add_compound()
+    sketcher.entry.setText("CCN")
+    sketcher.accept()
     assert len(table) == 3
     new = table.oids[-1]
     assert table.cell("SMILES", int(new)) == "CCN"
@@ -148,9 +167,9 @@ def test_add_compound_appends_a_row(structures) -> None:
 
 def test_add_compound_to_a_table_without_structures(window) -> None:
     table = window.workspace.table
-    editor = window.add_compound()
-    editor.set_text("CCN")
-    editor.accept()
+    sketcher = window.add_compound()
+    sketcher.entry.setText("CCN")
+    sketcher.accept()
     assert table.kind("Structure") == "structure"
     assert len(table) == 4
 

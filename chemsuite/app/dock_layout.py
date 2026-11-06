@@ -32,7 +32,8 @@ Qt cannot split a pane that shares its space with tabs (``splitDockWidget`` tabs
 instead), so splitting first takes the target's tab companions out and tabs them back onto the
 target afterwards.
 
-The arrangement (Qt's ``saveState``) is saved in the document with the column widths and the
+The arrangement (Qt's ``saveState``, which includes the splitter positions between the table
+and the panes) is saved in the document with the column widths and the
 search bar. Panels get stable object names (``Panel0``, ``Panel1``… in the order they are
 saved), so the same arrangement applies when the document's panels are reopened.
 """
@@ -305,7 +306,12 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
             bar.open()
         bar.edit.setText(text)
         bar.apply_now()
-    docks = saved.get("docks")
+    restore_docks(window, saved)
+
+
+def restore_docks(window: MainWindow, saved: dict[str, Any]) -> None:
+    """Apply the saved pane arrangement and splitter positions only."""
+    docks = saved.get("docks") if isinstance(saved, dict) else None
     if isinstance(docks, str):
         try:
             data = base64.b64decode(docks.encode("ascii"), validate=True)

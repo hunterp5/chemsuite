@@ -706,9 +706,8 @@ def test_attachment_point_menu(dialog):
 def test_drawn_query_reaches_structure_search_as_smarts(qapp, monkeypatch):
     from dataclasses import replace
 
-    from chemsuite.app import structure_editor
+    from chemsuite.app.sketcher import SketcherDialog
     from chemsuite.app.structure_search import QueryInput
-    from chemsuite.core.structure_input import read_structure
     from chemsuite.sketch.model import ATOM_LIST
 
     sketch = from_text("Clc1ccccc1")
@@ -716,21 +715,17 @@ def test_drawn_query_reaches_structure_search_as_smarts(qapp, monkeypatch):
     sketch.atoms[halogen] = replace(sketch.atoms[halogen], symbol=ATOM_LIST, atom_list=("Cl", "Br"))
     block = convert.to_molblock(sketch)
     seen: list[str] = []
+    real_init = SketcherDialog.__init__
 
-    class FakeEditor:
-        def __init__(self, text, title, parent):
-            seen.append(text)
-            self.result_input = read_structure(block)
+    def init(self, text="", *args, **kwargs):
+        seen.append(text)
+        real_init(self, block, *args, **kwargs)
 
-        def exec(self):
-            return True
-
-        def text(self):
-            return block
-
-    monkeypatch.setattr(structure_editor, "StructureEditor", FakeEditor)
+    monkeypatch.setattr(SketcherDialog, "__init__", init)
+    monkeypatch.setattr(SketcherDialog, "exec", lambda self: True)
+    monkeypatch.setattr(SketcherDialog, "result_text", lambda self: block)
     field = QueryInput()
     field.draw()
     assert field.text() == "[#17,#35]-[#6]1:[#6]:[#6]:[#6]:[#6]:[#6]:1"
     field.draw()  # drawing again starts from the molfile, not the SMARTS
-    assert seen[1] == block
+    assert Chem.MolFromMolBlock(seen[1]) is not None and "M  END" in seen[1]

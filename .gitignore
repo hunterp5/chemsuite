@@ -24,3 +24,7 @@ htmlcov/
 # Claude Code per-user settings
 .claude/settings.local.json
 scripts/.screenshot-config/
+
+# Local data and sessions
+/fda_approved.sdf
+/test_session.csd

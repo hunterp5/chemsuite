@@ -379,10 +379,22 @@ class MainWindow(QMainWindow):
         self._restore_panels(workspace.saved_panels)
         if workspace.saved_layout:
             dock_layout.restore(self, workspace.saved_layout)
-        # whatever the saved arrangement, panes that hide rows stay open to say why
+            # The new table and panels are laid out on the next pass, which would share the
+            # space out afresh and lose the saved splitter positions: apply them once more
+            # after that pass.
+            QTimer.singleShot(0, lambda ws=workspace: self._restore_dock_sizes(ws))
+        self._keep_hiding_panes_open()
+
+    def _restore_dock_sizes(self, workspace: Workspace) -> None:
+        if self._workspace is workspace:
+            dock_layout.restore_docks(self, workspace.saved_layout)
+            self._keep_hiding_panes_open()
+
+    def _keep_hiding_panes_open(self) -> None:
+        """Whatever the saved arrangement, panes that hide rows stay open to say why."""
         if self._filters.cards:
             self.filter_dock.show()
-        if workspace.saved_search.get("showing"):
+        if self.workspace.saved_search.get("showing"):
             self.search_dock.show()
 
     def show_dialog(self, dialog: QDialog) -> QDialog:
@@ -1133,7 +1145,7 @@ class MainWindow(QMainWindow):
 
     def _on_structure_edit_requested(self, index: QModelIndex, typed: str) -> None:
         model = self.workspace.model
-        self.edit_structure(model.oid_at(index.row()), model.column_name(index.column()), typed)
+        self.draw_structure(model.oid_at(index.row()), model.column_name(index.column()), typed)
 
     def _on_structure_draw_requested(self, index: QModelIndex) -> None:
         model = self.workspace.model
@@ -1182,49 +1194,57 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(message, 4000)
         return message
 
-    def draw_structure(self, oid: int, name: str):
-        """Open the sketcher on one structure cell; OK writes the drawing back (one undo step).
+    def draw_structure(self, oid: int, name: str, typed: str = ""):
+        """Open the sketcher on one structure cell; OK writes it back (one undo step).
 
-        A cell whose text is not a valid structure opens in the text editor instead, so the
-        text can be fixed rather than lost.
+        *typed* is what was typed into the cell: it fills the sketcher's text line, and if it
+        is accepted without drawing over it the cell keeps it exactly as typed. A cell whose
+        text is not a valid structure opens in the text editor instead, so the text can be
+        fixed rather than lost.
         """
         from chemsuite.app.sketcher import SketcherDialog
 
         table = self.workspace.table
         column = table.column(name)
         mol = column.mol(int(table.slots_of([oid])[0]))
-        if mol is None and table.cell(name, oid).strip():
+        if mol is None and table.cell(name, oid).strip() and not typed:
             return self.edit_structure(oid, name)
         row = int(self.workspace.model.rows_of_oids([oid])[0])
         title = f"Draw Structure — {name}" + (f", row {row + 1}" if row >= 0 else "")
         # open from the stored molecule: it keeps drawn coordinates and query atoms the cell
         # text (SMILES) cannot hold
-        dialog = SketcherDialog(molblock_of(mol) if mol is not None else "", title, self)
+        start = molblock_of(mol) if mol is not None else ""
+        dialog = SketcherDialog(start, title, self, typed=typed)
 
         def accepted() -> None:
             if name not in table or oid not in table.oids:
                 return
             if not dialog.canvas.history.can_undo:
                 return  # nothing was drawn or changed
-            parsed = read_structure(dialog.molblock)
+            parsed = read_structure(dialog.result_text())
             if parsed.is_blank and not table.cell(name, oid):
                 return
-            table.set_cells(name, [oid], parsed.as_column(), label=f"Draw {name}")
+            if parsed.kind != "molfile" and parsed.display == table.cell(name, oid):
+                return  # the same text typed again
+            label = f"Edit {name}" if parsed.kind != "molfile" else f"Draw {name}"
+            table.set_cells(name, [oid], parsed.as_column(), label=label)
 
         dialog.accepted.connect(accepted)
         dialog.finished.connect(lambda _r: dialog.deleteLater())
         dialog.open()
         return dialog
 
-    def edit_current_structure(self) -> StructureEditor | None:
+    def edit_current_structure(self):
+        """Edit ▸ Edit Structure (Ctrl+E): the sketcher on the current structure cell."""
         cell = self._structure_cell()
         if cell is None:
             self.statusBar().showMessage("Pick a row in a table with a structure column", 4000)
             return None
-        return self.edit_structure(*cell)
+        return self.draw_structure(*cell)
 
     def edit_structure(self, oid: int, name: str, typed: str = "") -> StructureEditor:
-        """Open the structure editor on one cell; OK writes it back as one undoable edit."""
+        """Open the text editor on one cell (Edit as Text…, and cells whose text is not a
+        structure); OK writes it back as one undoable edit."""
         table = self.workspace.table
         row = int(self.workspace.model.rows_of_oids([oid])[0])
         title = f"Edit Structure — {name}" + (f", row {row + 1}" if row >= 0 else "")
@@ -1246,14 +1266,16 @@ class MainWindow(QMainWindow):
         dialog.open()
         return dialog
 
-    def add_compound(self) -> StructureEditor:
-        """Enter a structure and append it as a new row."""
-        dialog = StructureEditor("", "Add Compound", self)
+    def add_compound(self):
+        """Draw (or type) a structure in the sketcher and append it as a new row."""
+        from chemsuite.app.sketcher import SketcherDialog
+
+        dialog = SketcherDialog("", "Add Compound", self, ok_text="Add")
 
         def accepted() -> None:
-            parsed = dialog.result_input
-            if parsed is not None:
-                self.append_compound("", parsed)
+            text = dialog.result_text()
+            if text:
+                self.append_compound(text)
 
         dialog.accepted.connect(accepted)
         dialog.finished.connect(lambda _r: dialog.deleteLater())

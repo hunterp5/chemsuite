@@ -146,8 +146,9 @@ in the background, using every processor core. You can scroll and work while tha
   - the advanced search and recent searches;
   - open plots and panels with their settings;
   - the workspace layout: where each panel is docked (beside, stacked, tabbed, left, right or
-    below the table, floating), which panes are open (Filters, Advanced Search, Selection
-    Browser), column widths, and the search bar with its text and options. Filters and an
+    below the table, floating), the size of each pane (where you dragged the dividers
+    between the table and the panes, and between panes), which panes are open (Filters,
+    Advanced Search, Selection Browser), column widths, and the search bar with its text and options. Filters and an
     active advanced search always reopen visible, since they explain why rows are hidden.
 - Saving is safe. The new file is written next to the old one and swapped in only once it is
   complete, so a crash or a full disk never damages your previous version.
@@ -228,7 +229,7 @@ From the Data ▸ Table menu:
 
 | Command | What it does |
 |---|---|
-| Add Compound… | Opens the structure editor and adds the compound as a new row. |
+| Add Compound… | Opens the sketcher; draw, or type into its text line, and **Add** appends the compound as a new row. |
 | Add Rows… | Adds empty rows. |
 | Add Column… | Adds a column. |
 | Split Column… / Join Columns… | As above. |
@@ -248,11 +249,15 @@ From the Data ▸ Table menu:
 - **Double-click a structure** to draw it in the sketcher. OK writes the drawing back as one
   step you can undo. A cell whose text is not a valid structure opens in the text editor
   instead, so you can fix it.
-- **Edit ▸ Edit Structure… (Ctrl+E)**, or typing in a structure cell, opens the structure
-  editor for the current structure cell.
-  - Type or paste SMILES, a molfile or InChI. The drawing updates as you type.
-  - **Draw…** opens the sketcher on the same structure (see below). OK puts the drawing back
-    as a molfile, which keeps your layout and wedges.
+- **Edit ▸ Edit Structure… (Ctrl+E)**, **F2**, or typing in a structure cell opens the
+  sketcher on the current structure cell. What you type goes into the text line above the
+  drawing:
+  - Press **Enter** to draw it. Type or paste SMILES, InChI or a molfile.
+  - Press **OK** to keep it. Text that you accept without drawing over it is stored exactly as
+    you typed it. Once you change the drawing, the cell stores the drawing as a molfile, which
+    keeps your layout and wedges.
+- **Edit as Text…** (right-click a structure cell) opens the plain text editor. Use it to
+  change the stored text itself, such as a SMILES with a typo.
 - **Edit ▸ Copy Structure As ▸ Molfile / SMILES / InChI / InChIKey / Image** copies the current
   structure (or the selected structures in its column). A molfile pastes into drawing programs.
 - A structure that cannot be read is shown as **invalid**. Its original text is kept, so you
@@ -262,8 +267,8 @@ From the Data ▸ Table menu:
 
 ### The sketcher
 
-Opened by double-clicking a structure cell, with **Draw…** in the structure editor (and in the
-structure fields of Structure Search and Fingerprint Similarity, which use the same editor), or
+Opened by double-clicking a structure cell, Ctrl+E, F2 or typing in one, **Add Compound…**,
+**Draw…** in the structure fields of Structure Search and Fingerprint Similarity, or
 blank with **Chemistry ▸ Sketcher…**, whose **Add to Table** adds the drawing as a new,
 selected row.
 

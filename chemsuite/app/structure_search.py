@@ -198,16 +198,24 @@ class QueryInput(QWidget):
             self.edit.setText(text)
 
     def draw(self) -> None:
-        from .structure_editor import StructureEditor
+        """Draw the query in the sketcher. A drawing with query features comes back as SMARTS
+        (``drawn_query_text``); drawing again reopens the drawing, not the SMARTS."""
+        from chemsuite.app.sketcher import SketcherDialog
+        from chemsuite.core.structure_input import read_structure
 
         start = self.edit.text()
         if self._drawn is not None and self._drawn[1] == start:
             start = self._drawn[0]  # SMARTS cannot be drawn back; the molfile can
-        editor = StructureEditor(start, "Query Structure", self)
-        if editor.exec() and editor.result_input is not None and editor.result_input.mol:
-            text = drawn_query_text(editor.result_input.mol)
-            self._drawn = (editor.text(), text)
-            self.edit.setText(text)
+        dialog = SketcherDialog(start, "Query Structure", self)
+        if not dialog.exec():
+            return
+        result = dialog.result_text()
+        parsed = read_structure(result) if result else None
+        if parsed is None or parsed.mol is None:
+            return
+        text = drawn_query_text(parsed.mol) if parsed.kind == "molfile" else result
+        self._drawn = (result, text)
+        self.edit.setText(text)
 
 
 def describe_query(query: StructureQuery) -> tuple[str, bool]:

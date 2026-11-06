@@ -192,3 +192,30 @@ def test_header_tabs_share_the_width_when_crowded():
     assert _fit([50, 60], 200, 44) == [50, 60]
     fitted = _fit([200, 60, 100], 240, 44)
     assert abs(sum(fitted) - 240) < 1 and fitted[1] == 60  # the widest give way first
+
+
+def test_splitter_positions_are_saved_with_the_document(data, qtbot, tmp_path):
+    from chemsuite.app import dock_layout
+    from chemsuite.app.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    data.resize(1400, 900)
+    first, second = two_plots(data)
+    dock_layout.split(data, first, second, Qt.Orientation.Vertical)
+    qtbot.wait(50)
+    data.resizeDocks([first], [380], Qt.Orientation.Horizontal)  # table | panes
+    data.resizeDocks([first, second], [600, 200], Qt.Orientation.Vertical)  # pane | pane
+    qtbot.wait(50)
+    table_width, top_height = data.view.width(), first.height()
+    assert top_height > second.height() + 100  # not an even split
+    target = tmp_path / "splitters.csd"
+    assert data._save_to(target)
+
+    data._install(Workspace(Table()))
+    qtbot.wait(50)
+    data.open_path(target)
+    qtbot.waitUntil(lambda: len(data._panels) == 2, timeout=10_000)
+    qtbot.wait(100)
+    first, second = data._panels
+    assert abs(data.view.width() - table_width) <= 4
+    assert abs(first.height() - top_height) <= 4
