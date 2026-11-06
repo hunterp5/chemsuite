@@ -28,6 +28,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from chemsuite.sketch import geometry
 from chemsuite.sketch.model import Order, Sketch, Stereo
 from chemsuite.sketch.valence import Report
 
@@ -156,7 +157,7 @@ def build(sketch: Sketch, report: Report) -> Scene:
             sketch.atoms[aid].symbol,
             report.problems.get(aid, ""),
         )
-    rings = _ring_centres(sketch)
+    rings = geometry.ring_centres(sketch)
     for bid, bond in sketch.bonds.items():
         a, b = sketch.atoms[bond.begin].pos, sketch.atoms[bond.end].pos
         if math.dist(a, b) < 1e-6:
@@ -211,22 +212,18 @@ def _offset(a: Point, b: Point, d: float) -> tuple[Point, Point]:
     return (a[0] + nx * d, a[1] + ny * d), (b[0] + nx * d, b[1] + ny * d)
 
 
-def _side_of(a: Point, b: Point, p: Point) -> float:
-    return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
-
-
 def _double_side(sketch: Sketch, bid: int, rings: dict[int, Point]) -> int:
     """+1 to draw the second line on the left of begin→end, -1 on the right, 0 centred."""
     bond = sketch.bonds[bid]
     a, b = sketch.atoms[bond.begin].pos, sketch.atoms[bond.end].pos
     if bid in rings:
-        return 1 if _side_of(a, b, rings[bid]) > 0 else -1
+        return 1 if geometry.side_of(a, b, rings[bid]) > 0 else -1
     left = right = 0
     for end in (bond.begin, bond.end):
         for n in sketch.neighbours(end):
             if n in (bond.begin, bond.end):
                 continue
-            s = _side_of(a, b, sketch.atoms[n].pos)
+            s = geometry.side_of(a, b, sketch.atoms[n].pos)
             if s > 1e-6:
                 left += 1
             elif s < -1e-6:
@@ -235,43 +232,6 @@ def _double_side(sketch: Sketch, bid: int, rings: dict[int, Point]) -> int:
     if left == right or (1 in ends and left and right):
         return 0
     return 1 if left > right else -1
-
-
-def _ring_centres(sketch: Sketch) -> dict[int, Point]:
-    """For each ring bond, the centre of the smallest ring through it (up to 8 atoms)."""
-    out: dict[int, Point] = {}
-    for bid, bond in sketch.bonds.items():
-        path = _shortest_path(sketch, bond.begin, bond.end, skip=bid, limit=7)
-        if path:
-            pts = [sketch.atoms[a].pos for a in path]
-            out[bid] = (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
-    return out
-
-
-def _shortest_path(sketch: Sketch, start: int, goal: int, skip: int, limit: int) -> list[int]:
-    """Atoms on the shortest path start→goal not using bond ``skip`` (at most ``limit`` bonds)."""
-    adjacency: dict[int, list[int]] = {}
-    for bid, bond in sketch.bonds.items():
-        if bid == skip:
-            continue
-        adjacency.setdefault(bond.begin, []).append(bond.end)
-        adjacency.setdefault(bond.end, []).append(bond.begin)
-    previous = {start: start}
-    frontier = [start]
-    for _ in range(limit):
-        nxt = []
-        for atom in frontier:
-            for n in adjacency.get(atom, ()):
-                if n not in previous:
-                    previous[n] = atom
-                    if n == goal:
-                        path = [goal]
-                        while path[-1] != start:
-                            path.append(previous[path[-1]])
-                        return path
-                    nxt.append(n)
-        frontier = nxt
-    return []
 
 
 def _wedge(tip: Point, end: Point, bid: int) -> Wedge:

@@ -18,14 +18,16 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
-from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QWidget
+from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QVBoxLayout, QWidget
 
 from chemsuite.app.sketcher import tools
 from chemsuite.sketch.model import Order, Stereo
+from chemsuite.sketch.templates import RING_BAR
 
 GRID = 20.0
 
@@ -123,6 +125,23 @@ TOOLS: list[tuple[str, str, Callable[[QPainter], None], Callable[[], tools.Tool]
     ("plus", "Charge + (=)", _text("+"), lambda: tools.ChargeTool(+1)),
     ("minus", "Charge − (-)", _text("−"), lambda: tools.ChargeTool(-1)),
 ]  # fmt: skip
+
+
+def _ring(size: int, aromatic: bool) -> Callable[[QPainter], None]:
+    def draw(p: QPainter) -> None:
+        r = 7.0
+        pts = [
+            QPointF(10 + r * math.cos(math.pi / 2 + 2 * math.pi * i / size),
+                    10 - r * math.sin(math.pi / 2 + 2 * math.pi * i / size))
+            for i in range(size)
+        ]  # fmt: skip
+        p.drawPolygon(QPolygonF(pts))
+        if aromatic:
+            p.drawEllipse(QPointF(10, 10), r * 0.55, r * 0.55)
+
+    return draw
+
+
 ATOMS = ("C", "N", "O", "S", "P", "F", "Cl", "Br", "I", "H")
 ATOM_KEYS = {"C": "c", "N": "n", "O": "o", "S": "s", "P": "p", "F": "f", "Cl": "l", "Br": "b",
              "I": "i", "H": "h"}  # fmt: skip
@@ -142,6 +161,8 @@ def tool_key(tool: tools.Tool) -> str:
         return {Order.SINGLE: "single", Order.DOUBLE: "double", Order.TRIPLE: "triple"}.get(
             tool.order, ""
         )
+    if isinstance(tool, tools.TemplateTool):
+        return f"template:{tool.template.name}"
     if isinstance(tool, tools.ChargeTool):
         return "plus" if tool.delta > 0 else "minus"
     return {
@@ -152,7 +173,9 @@ def tool_key(tool: tools.Tool) -> str:
 
 
 class SketchToolBar(QWidget):
-    """Tool buttons; ``picked`` carries a new tool instance."""
+    """The tool buttons, in three strips as in Ketcher: drawing tools (``top``), rings
+    (``bottom``) and elements (``side``, a column). One exclusive group spans them all;
+    ``picked`` carries a new tool instance."""
 
     picked = Signal(object)
 
@@ -163,23 +186,35 @@ class SketchToolBar(QWidget):
         self.buttons: dict[str, QToolButton] = {}
         self._factories: dict[str, Callable[[], tools.Tool]] = {}
         self._draws: dict[str, Callable[[QPainter], None]] = {}
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
+        self.top, self.bottom, self.side = QWidget(), QWidget(), QWidget()
+        strips = (QHBoxLayout(self.top), QHBoxLayout(self.bottom), QVBoxLayout(self.side))
+        for strip in strips:
+            strip.setContentsMargins(0, 0, 0, 0)
+            strip.setSpacing(2)
+        top, bottom, side = strips
         for i, (key, tip, draw, factory) in enumerate(TOOLS):
-            self._add(layout, key, tip, draw, factory)
+            self._add(top, key, tip, draw, factory)
             if i in (1, 7, 8):
-                layout.addSpacing(8)
-        layout.addSpacing(8)
+                top.addSpacing(8)
+        top.addStretch(1)
+        for template in RING_BAR:
+            self._add(
+                bottom,
+                f"template:{template.name}",
+                f"{template.name} (t cycles the rings)",
+                _ring(len(template.atoms), template.aromatic),
+                lambda t=template: tools.TemplateTool(t),
+            )
+        bottom.addStretch(1)
         for symbol in ATOMS:
             self._add(
-                layout,
+                side,
                 f"atom:{symbol}",
                 f"{symbol} ({ATOM_KEYS[symbol]} over an atom)",
                 _text(symbol),
                 lambda s=symbol: tools.AtomTool(s),
             )
-        layout.addStretch(1)
+        side.addStretch(1)
         self.buttons["select"].setChecked(True)
 
     def _add(self, layout, key, tip, draw, factory) -> None:

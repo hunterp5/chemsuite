@@ -92,6 +92,16 @@ class Hit:
 NOTHING = Hit("")
 
 
+def _next_ring(tool):
+    """``t`` cycles the ring bar, starting from benzene (Ketcher)."""
+    from chemsuite.app.sketcher.tools import TemplateTool
+    from chemsuite.sketch.templates import RING_BAR
+
+    if isinstance(tool, TemplateTool) and tool.template in RING_BAR:
+        return RING_BAR[(RING_BAR.index(tool.template) + 1) % len(RING_BAR)]
+    return RING_BAR[0]
+
+
 @lru_cache(maxsize=256)
 def _element_rgb(symbol: str, dark: bool) -> tuple[float, float, float]:
     options = rdMolDraw2D.MolDrawOptions()
@@ -610,6 +620,8 @@ class SketchCanvas(QWidget):
             self.set_tool(tools.ChargeTool(-1))
         elif event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.set_tool(tools.EraseTool())
+        elif text == "t":
+            self.set_tool(tools.TemplateTool(_next_ring(self.tool)))
         else:
             return False
         return True

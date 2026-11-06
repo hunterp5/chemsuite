@@ -136,6 +136,48 @@ def chain_points(start: Point, angle: float, bonds: int) -> list[Point]:
     return points
 
 
+def side_of(a: Point, b: Point, p: Point) -> float:
+    """Positive when ``p`` is left of the line a→b, negative when right."""
+    return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
+
+
+def ring_centres(sketch: Sketch) -> dict[int, Point]:
+    """For each ring bond, the centre of the smallest ring through it (up to 8 atoms)."""
+    out: dict[int, Point] = {}
+    for bid, bond in sketch.bonds.items():
+        path = shortest_path(sketch, bond.begin, bond.end, skip=bid, limit=7)
+        if path:
+            pts = [sketch.atoms[a].pos for a in path]
+            out[bid] = (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+    return out
+
+
+def shortest_path(sketch: Sketch, start: int, goal: int, skip: int, limit: int) -> list[int]:
+    """Atoms on the shortest path start→goal not using bond ``skip`` (at most ``limit`` bonds)."""
+    adjacency: dict[int, list[int]] = {}
+    for bid, bond in sketch.bonds.items():
+        if bid == skip:
+            continue
+        adjacency.setdefault(bond.begin, []).append(bond.end)
+        adjacency.setdefault(bond.end, []).append(bond.begin)
+    previous = {start: start}
+    frontier = [start]
+    for _ in range(limit):
+        nxt = []
+        for atom in frontier:
+            for n in adjacency.get(atom, ()):
+                if n not in previous:
+                    previous[n] = atom
+                    if n == goal:
+                        path = [goal]
+                        while path[-1] != start:
+                            path.append(previous[path[-1]])
+                        return path
+                    nxt.append(n)
+        frontier = nxt
+    return []
+
+
 def _dist(a: Point, b: Point) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 

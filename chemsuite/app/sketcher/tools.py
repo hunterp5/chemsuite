@@ -319,3 +319,53 @@ class EraseTool(Tool):
     def release(self, canvas, pos, event) -> None:
         canvas.commit_preview()
         self.start, self.start_hit, self.dragging = None, None, False
+
+
+class TemplateTool(Tool):
+    """Rings and templates (interaction-spec §3, Ketcher ``tool/template.ts``).
+
+    Click empty canvas to place, an atom to attach there, a bond to fuse. Dragging rotates on
+    empty canvas, aims from an atom (past one bond length it attaches through a new bond), and
+    picks the side on a bond.
+    """
+
+    def __init__(self, template=None):
+        super().__init__()
+        from chemsuite.sketch.templates import BENZENE
+
+        self.template = template or BENZENE
+        self.name = f"template:{self.template.name}"
+
+    def click(self, canvas, pos, hit, event) -> None:
+        from chemsuite.sketch import templates
+
+        t = self.template
+        if hit.kind == "atom":
+            canvas.edit(f"Add {t.name}", lambda ch: templates.on_atom(ch, t, hit.id))
+        elif hit.kind == "bond":
+            canvas.edit(f"Fuse {t.name}", lambda ch: templates.on_bond(ch, t, hit.id))
+        else:
+            canvas.edit(f"Add {t.name}", lambda ch: templates.on_canvas(ch, t, pos))
+
+    def dragged(self, canvas, pos, event) -> None:
+        from chemsuite.sketch import templates
+
+        t, hit = self.template, self.start_hit
+        if hit.kind == "bond":
+            bond = canvas.sketch.bonds[hit.id]
+            a, b = canvas.sketch.atoms[bond.begin].pos, canvas.sketch.atoms[bond.end].pos
+            side = 1 if geometry.side_of(a, b, pos) > 0 else -1
+            canvas.preview(f"Fuse {t.name}", lambda ch: templates.on_bond(ch, t, hit.id, side))
+            return
+        origin = canvas.sketch.atoms[hit.id].pos if hit.kind == "atom" else self.start
+        angle = geometry.angle_of(origin, pos)
+        if not _free_angle(event):
+            angle = geometry.snap_angle(angle)
+        if hit.kind == "atom":
+            extra = math.dist(origin, pos) > 1.0
+            canvas.preview(
+                f"Add {t.name}", lambda ch: templates.on_atom(ch, t, hit.id, angle, extra)
+            )
+        else:
+            start = self.start
+            canvas.preview(f"Add {t.name}", lambda ch: templates.on_canvas(ch, t, start, angle))

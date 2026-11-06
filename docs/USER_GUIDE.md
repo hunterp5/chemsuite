@@ -211,8 +211,9 @@ From the Data ▸ Table menu:
 ### The sketcher
 
 Opened with **Draw…** in the structure editor (and in the structure fields of Structure Search
-and Fingerprint Similarity, which use the same editor). Tools are on the bar at the top; OK is
-available only when every atom has a valid valence.
+and Fingerprint Similarity, which use the same editor). Drawing tools are along the top, rings
+along the bottom and elements down the right. OK is available only when every atom has a
+valid valence.
 
 **Tools**
 
@@ -223,6 +224,7 @@ available only when every atom has a valid valence.
 | Single, double, triple bond | On an atom: add a bond in the free direction (chains zig-zag; alkynes and allenes stay straight). On a bond: set that order; the single-bond tool steps single → double → triple. On empty canvas: a new bond. | From an atom or empty canvas: draw a bond. It snaps to 15° steps; hold Ctrl (⌘) for any angle. Release on an atom to bond to it. |
 | Wedge, hash, wavy | As for bonds; clicking a bond that already has that wedge reverses it | As for bonds |
 | Chain | Add a bond | Draw a zig-zag chain, one bond per bond length; the count shows by the pointer |
+| Rings (benzene, 3- to 8-membered) | On empty canvas: place the ring. On an atom: the ring shares that atom, facing the free direction. On a bond: fuse the ring onto it, away from the rest of the molecule. Fusing benzene re-draws the alternating bonds of the whole aromatic system, so naphthalene or phenanthrene come out valid whichever bond you click. | On empty canvas: turn the ring (15° steps). From an atom: aim it; drag more than a bond length to attach it through a new bond. On a bond: choose the side. |
 | Charge + / − | Change the atom's charge by one | — |
 | Element (C, N, O …) | On an atom: change its element. On empty canvas: a lone atom. | From an atom: a bond to a new atom of that element |
 
@@ -238,7 +240,8 @@ available only when every atom has a valid valence.
 | `=` / `-` | Charge +1 / −1 | — |
 | Delete, Backspace | Erase | Erase |
 
-With nothing under the pointer, the same keys choose the matching tool. Esc returns to Select.
+With nothing under the pointer, the same keys choose the matching tool, and `t` steps through
+the rings. Esc returns to Select.
 
 **Other keys:** Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y undo and redo; Ctrl+C, Ctrl+X, Ctrl+V copy,
 cut and paste (molfile and SMILES, so ChemDraw and others can read it); Ctrl+Shift+M copies a

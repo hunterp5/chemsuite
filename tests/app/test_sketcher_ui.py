@@ -321,3 +321,36 @@ def test_dragging_a_selected_bond_moves_the_whole_selection(dialog):
     for aid, (x, y) in before.items():
         assert canvas.sketch.atoms[aid].pos == pytest.approx((x + 3.0, y))
     assert canvas.history.undo_name == "Move"
+
+
+def test_ring_tool_places_fuses_and_spiro(dialog):
+    canvas = dialog.canvas
+    dialog.toolbar.buttons["template:Benzene"].click()
+    assert isinstance(canvas.tool, sk_tools.TemplateTool)
+    click(canvas, (0.0, 0.0))
+    assert to_smiles(canvas.sketch) == "c1ccccc1"
+    bid = min(canvas.sketch.bonds)
+    bond = canvas.sketch.bonds[bid]
+    a, b = canvas.sketch.atoms[bond.begin].pos, canvas.sketch.atoms[bond.end].pos
+    click(canvas, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2))
+    assert to_smiles(canvas.sketch) == Chem.CanonSmiles("c1ccc2ccccc2c1")
+    assert canvas.history.undo_name == "Fuse Benzene"
+
+
+def test_ring_drag_from_atom_past_one_bond_attaches_by_a_bond(dialog):
+    canvas = dialog.canvas
+    canvas.set_sketch(from_text("CC"))
+    atom = max(canvas.sketch.atoms, key=lambda a: canvas.sketch.atoms[a].x)
+    p = canvas.sketch.atoms[atom].pos
+    dialog.toolbar.buttons["template:Cyclohexane"].click()
+    drag(canvas, p, (p[0] + 2.0, p[1]))
+    assert to_smiles(canvas.sketch) == Chem.CanonSmiles("CCC1CCCCC1")
+
+
+def test_t_cycles_the_rings(dialog):
+    canvas = dialog.canvas
+    hover(canvas, (50.0, 50.0))
+    key(canvas, "t")
+    assert dialog.toolbar.buttons["template:Benzene"].isChecked()
+    key(canvas, "t")
+    assert dialog.toolbar.buttons["template:Cyclopropane"].isChecked()

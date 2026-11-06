@@ -46,7 +46,8 @@ class SketcherDialog(QDialog):
         self.setWindowTitle(title)
         start = convert.from_text(text) if text.strip() else None
         self.canvas = SketchCanvas(History(start) if start is not None else None)
-        self.toolbar = SketchToolBar()
+        self.toolbar = SketchToolBar(self)  # holds the strips laid out below; not shown itself
+        self.toolbar.hide()
         self.info = QLabel(" ")
         self.undo_button = QPushButton("Undo")
         self.redo_button = QPushButton("Redo")
@@ -71,8 +72,12 @@ class SketcherDialog(QDialog):
         commands.addStretch(1)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(self.toolbar)
-        layout.addWidget(self.canvas, 1)
+        layout.addWidget(self.toolbar.top)
+        middle = QHBoxLayout()
+        middle.addWidget(self.canvas, 1)
+        middle.addWidget(self.toolbar.side)
+        layout.addLayout(middle, 1)
+        layout.addWidget(self.toolbar.bottom)
         layout.addLayout(commands)
         layout.addWidget(self.info)
         layout.addWidget(self.buttons)
