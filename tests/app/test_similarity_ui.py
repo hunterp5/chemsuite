@@ -146,3 +146,41 @@ def test_hierarchical_limit(chem, monkeypatch) -> None:
     assert "up to 3 rows" in dialog.status.text()
     assert not dialog.buttons.button(dialog.buttons.StandardButton.Ok).isEnabled()
     dialog.reject()
+
+
+def test_cluster_dialog_uses_the_dialog_kit(chem, qtbot) -> None:
+    """The kit's shared behaviour, through the first dialog built on it."""
+    table = chem.workspace.table
+    dialog = chem.open_tool("cluster")
+    # One label column: the feature rows live in the dialog's Input section.
+    assert dialog.features.form is None
+    # Rows: Selected is greyed out until something is selected; counts follow the table.
+    rows = dialog.rows
+    assert rows.buttons["all"].text() == "All (9)"
+    assert not rows.buttons["selected"].isEnabled()
+    assert dialog.primary.text() == "Cluster 9 Rows"
+    dialog.reject()
+    chem.workspace.selection.set([int(o) for o in table.oids[:4]], "test")
+    dialog = chem.open_tool("cluster")
+    dialog.rows.set_value("selected")
+    assert dialog.primary.text() == "Cluster 4 Rows"
+    # The footer says what will happen, then turns into the problem and blocks the button.
+    assert "Butina at 0.60" in dialog.status.text() and dialog.primary.isEnabled()
+    assert not dialog.warning_mark.isVisibleTo(dialog)
+    dialog.features.use_numbers.setChecked(True)
+    assert dialog.features.problem() == dialog.status.text()  # no columns ticked
+    assert dialog.warning_mark.isVisibleTo(dialog) and not dialog.primary.isEnabled()
+    dialog.features.use_fingerprints.setChecked(True)
+    # Method settings come and go with the method.
+    dialog.method.setCurrentIndex(dialog.method.findData("kmeans"))
+    assert dialog._method_section.is_row_visible(dialog.k)
+    assert not dialog._method_section.is_row_visible(dialog.cutoff)
+    # "Add a new column" keeps an earlier result.
+    dialog.method.setCurrentIndex(dialog.method.findData("butina"))
+    job = dialog.cluster()
+    qtbot.waitUntil(lambda: not job.running, timeout=20_000)
+    dialog = chem.open_tool("cluster")
+    dialog.if_exists.set_value("new")
+    job = dialog.cluster()
+    qtbot.waitUntil(lambda: "Cluster (2)" in table.column_names, timeout=20_000)
+    assert "Cluster" in table.column_names

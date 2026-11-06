@@ -89,18 +89,41 @@ def fingerprint_task(
 
 
 class FeatureChooser(QWidget):
-    """Fingerprints of a structure column, or a set of number columns."""
+    """Fingerprints of a structure column, or a set of number columns.
+
+    Given a dialog *section* (see ``chemsuite.app.dialogs``), its rows go into that section,
+    sharing the dialog's label column, and "Compare by" is a segmented choice. Without one it
+    lays its rows out in its own form (dialogs not yet on the dialog kit).
+    """
 
     changed = Signal()
 
-    def __init__(self, ctx: ToolContext, *, metric: bool = True, numbers_allowed: bool = True):
+    def __init__(
+        self,
+        ctx: ToolContext,
+        *,
+        metric: bool = True,
+        numbers_allowed: bool = True,
+        section=None,
+    ):
         super().__init__()
         self.ctx = ctx
-        self.use_fingerprints = QRadioButton("Fingerprints")
-        self.use_numbers = QRadioButton("Number columns")
-        group = QButtonGroup(self)
-        group.addButton(self.use_fingerprints)
-        group.addButton(self.use_numbers)
+        self.section = section
+        if section is not None:
+            from chemsuite.app.dialogs import Segmented
+
+            self.compare = Segmented(
+                (("fingerprints", "Fingerprints"), ("numbers", "Number columns"))
+            )
+            self.use_fingerprints = self.compare.buttons["fingerprints"]
+            self.use_numbers = self.compare.buttons["numbers"]
+        else:
+            self.compare = None
+            self.use_fingerprints = QRadioButton("Fingerprints")
+            self.use_numbers = QRadioButton("Number columns")
+            group = QButtonGroup(self)
+            group.addButton(self.use_fingerprints)
+            group.addButton(self.use_numbers)
         self.use_fingerprints.setChecked(True)
         self.structure = QComboBox()
         self.structure.addItems(ctx.structure_columns())
@@ -124,15 +147,25 @@ class FeatureChooser(QWidget):
             item.setCheckState(Qt.CheckState.Unchecked)
             self.columns.addItem(item)
 
-        self.form = QFormLayout(self)
-        self.form.setContentsMargins(0, 0, 0, 0)
-        if numbers_allowed:
-            self.form.addRow("Compare by:", self.use_fingerprints)
-            self.form.addRow("", self.use_numbers)
-        self.form.addRow("Structures:", self.structure)
-        self.form.addRow("Fingerprint:", self.kind)
-        self.form.addRow("Similarity:", self.metric)
-        self.form.addRow("Columns:", self.columns)
+        if section is not None:
+            self.form = None
+            if numbers_allowed:
+                section.row("Compare by", self.compare)
+            section.row("Structures", self.structure)
+            section.row("Fingerprint", self.kind)
+            section.row("Similarity", self.metric)
+            section.row("Columns", self.columns, help="Tick the number columns to compare by.")
+            self.columns.setMaximumHeight(120)
+        else:
+            self.form = QFormLayout(self)
+            self.form.setContentsMargins(0, 0, 0, 0)
+            if numbers_allowed:
+                self.form.addRow("Compare by:", self.use_fingerprints)
+                self.form.addRow("", self.use_numbers)
+            self.form.addRow("Structures:", self.structure)
+            self.form.addRow("Fingerprint:", self.kind)
+            self.form.addRow("Similarity:", self.metric)
+            self.form.addRow("Columns:", self.columns)
         self._show_metric = metric
         if not ctx.structure_columns():
             self.use_numbers.setChecked(True)
@@ -149,11 +182,20 @@ class FeatureChooser(QWidget):
 
     def _changed(self) -> None:
         fingerprints = self.fingerprints()
-        self.form.setRowVisible(self.structure, fingerprints)
-        self.form.setRowVisible(self.kind, fingerprints)
-        self.form.setRowVisible(self.metric, fingerprints and self._show_metric)
-        self.form.setRowVisible(self.columns, not fingerprints)
+        self._show(self.structure, fingerprints)
+        self._show(self.kind, fingerprints)
+        self._show(self.metric, fingerprints and self._show_metric)
+        self._show(self.columns, not fingerprints)
+        if self.section is not None:
+            kind = KINDS.get(self.kind.currentData())
+            self.section.set_help(self.kind, kind.help if kind is not None else "")
         self.changed.emit()
+
+    def _show(self, field: QWidget, visible: bool) -> None:
+        if self.section is not None:
+            self.section.set_row_visible(field, visible)
+        else:
+            self.form.setRowVisible(field, visible)
 
     def fingerprints(self) -> bool:
         return self.use_fingerprints.isChecked()

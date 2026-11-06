@@ -67,6 +67,29 @@ Each document has its own window. From top to bottom:
 
   View ▸ Status Bar hides or shows it.
 
+### Tool dialogs
+
+Tools are moving to one dialog layout. Cluster and Chemical Space Map use it now, and the other
+tools will follow. Every dialog on it reads the same way, top to bottom:
+
+- **Header.** The tool's name, a sentence on what it does, and a **Guide** link to its section
+  of this guide.
+- **Input.** What to work on: structures or number columns, and **Rows**.
+  - Rows is **All · Shown · Selected**, with each option's count.
+  - **Selected** is greyed out until you select rows in the table.
+- **Method.** The tool's settings. Settings that only apply to one method appear when you
+  choose that method. Grey text under a field explains it.
+- **Output.** The name of the result column, and **If it exists: Replace it · Add a new
+  column**. Adding a new column keeps the earlier result and names the new one "Cluster (2)",
+  and so on.
+- **Footer.** A sentence saying what will happen, for example "Butina at 0.60 by Morgan r=2
+  fingerprints of SMILES → Cluster, Cluster Size, Cluster Centre".
+  - If something has to be fixed first, the sentence becomes the problem, marked ⚠, and the
+    main button is greyed out.
+  - Heads-ups that do not stop the run, such as "may take minutes", appear in grey below it.
+- **Main button.** It names the action and how many rows it covers, such as **Cluster 1,204
+  Rows**.
+
 ---
 
 ## 2. Files and documents
@@ -591,6 +614,9 @@ Data ▸ Similarity ▸ Cluster… groups compounds using one of three methods:
 - The result is three columns: the cluster number, **… Size**, and **… Centre**, which marks
   each cluster's representative compound.
 - Rows that cannot be clustered (no structure, a missing number) get no cluster.
+- Butina works on fingerprints only. Ward linkage needs number columns. Hierarchical clustering
+  has a row limit. The dialog's footer explains each of these when it applies.
+- **If it exists: Add a new column** keeps an earlier clustering beside the new one.
 
 ---
 
@@ -681,8 +707,12 @@ number columns. It writes the coordinates as two columns and opens a scatter plo
 | UMAP | Neighbours, minimum distance | Fits on up to 50,000 compounds, then places the rest. |
 | t-SNE | Perplexity | Warns above 50,000 rows. |
 
-- **Same map every run** makes UMAP repeatable, but slower: it runs on one processor core.
-- **Colour by** any column.
+- **Same map every run** makes UMAP and t-SNE repeatable, but slower: it runs on one processor
+  core.
+- **Column names** sets the prefix for the two columns ("UMAP 1", "UMAP 2"). **If they
+  exist: Add a new column** keeps an earlier map.
+- **Colour plot by** any column.
+- A map needs at least 3 rows.
 - The job shows as "Calculating UMAP…" (or PCA / t-SNE) in the status bar.
 
 ### Self-Organizing Map

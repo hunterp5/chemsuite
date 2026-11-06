@@ -18,127 +18,145 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtWidgets import (
-    QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QDoubleSpinBox,
-    QFormLayout,
-    QLabel,
-    QLineEdit,
-    QSpinBox,
-    QVBoxLayout,
-)
+from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox
 
 from chemsuite.analysis import clustering as cl
+from chemsuite.app.dialogs import OutputChoice, RowsChoice, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn
 
-from .common import FeatureChooser, fingerprint_task, scope_combo, scope_oids
+from .common import FeatureChooser, fingerprint_task
 
 CLUSTER_COLUMN = "Cluster"
+METHOD_HELP = {
+    "butina": "Any number of clusters: compounds at least as similar as the cutoff group "
+    "around a centre.",
+    "kmeans": "A fixed number of clusters of similar size.",
+    "hierarchical": "A fixed number of clusters, merged step by step; choose how distances "
+    "between groups are measured.",
+}
 
 
-class ClusterDialog(QDialog):
+class ClusterDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Cluster")
+        super().__init__(
+            ctx.parent,
+            "Cluster",
+            "Group compounds by similarity. Each row gets a cluster number; cluster 1 is "
+            "the largest.",
+            guide="cluster",
+        )
         self.ctx = ctx
-        self.job = None
-        self.features = FeatureChooser(ctx)
+
+        inputs = self.section("Input")
+        self.features = FeatureChooser(ctx, section=inputs)
+        self.rows = inputs.row("Rows", RowsChoice(ctx))
+
+        method = self.section("Method")
         self.method = QComboBox()
         for key, title in cl.METHODS.items():
             self.method.addItem(title, key)
+        method.row("Method", self.method)
         self.cutoff = QDoubleSpinBox()
         self.cutoff.setRange(0.05, 1.0)
         self.cutoff.setSingleStep(0.05)
         self.cutoff.setValue(0.6)
-        self.cutoff.setToolTip(
-            "Compounds at least this similar are neighbours. Higher: smaller, tighter clusters."
+        method.row(
+            "Cutoff",
+            self.cutoff,
+            help="Compounds at least this similar are neighbours. Higher gives smaller, "
+            "tighter clusters.",
         )
         self.k = QSpinBox()
         self.k.setRange(2, 10_000)
         self.k.setValue(10)
+        method.row("Clusters", self.k)
         self.linkage = QComboBox()
         for key, title in cl.LINKAGES.items():
             self.linkage.addItem(title, key)
-        self.rows = scope_combo(ctx)
+        method.row("Linkage", self.linkage)
+        self._method_section = method
+
+        output = self.section("Output")
         self.output = QLineEdit(CLUSTER_COLUMN)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Cluster")
-        self.form = QFormLayout()
-        self.form.addRow("Method:", self.method)
-        self.form.addRow("Similarity cutoff:", self.cutoff)
-        self.form.addRow("Clusters:", self.k)
-        self.form.addRow("Linkage:", self.linkage)
-        self.form.addRow("Rows:", self.rows)
-        self.form.addRow("Result column:", self.output)
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.features)
-        layout.addLayout(self.form)
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(520, 0)
+        output.row("Column name", self.output)
+        self.if_exists = output.row("If it exists", OutputChoice())
+        self._output_section = output
+
         for signal in (
             self.method.currentIndexChanged,
-            self.rows.currentIndexChanged,
             self.linkage.currentIndexChanged,
+            self.cutoff.valueChanged,
+            self.k.valueChanged,
+            self.rows.changed,
             self.features.changed,
+            self.output.textChanged,
         ):
             signal.connect(lambda *_: self._update())
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
         self._update()
 
+    def _name(self) -> str:
+        return self.output.text().strip() or CLUSTER_COLUMN
+
     def _rows(self) -> int:
-        return len(scope_oids(self.ctx, self.rows.currentData()))
+        return len(self.rows.oids())
 
     def problem(self) -> str:
         problem = self.features.problem()
         method = self.method.currentData()
         fingerprints = self.features.fingerprints()
+        rows = self._rows()
         if problem:
             return problem
+        if not rows:
+            return "There are no rows to cluster."
         if method == "butina" and not fingerprints:
             return "Butina works on fingerprints; choose k-means or hierarchical for numbers."
-        if method == "hierarchical" and self._rows() > cl.MAX_HIERARCHICAL:
+        if method == "hierarchical" and rows > cl.MAX_HIERARCHICAL:
             return (
                 f"Hierarchical clustering handles up to {cl.MAX_HIERARCHICAL:,} rows "
-                f"(here {self._rows():,}). Use Butina or k-means, or fewer rows."
+                f"(here {rows:,}). Use Butina or k-means, or fewer rows."
             )
         if method == "hierarchical" and fingerprints and self.linkage.currentData() == "ward":
             return "Ward linkage needs number columns: choose average or complete."
         return ""
 
+    def note(self) -> str:
+        rows = self._rows()
+        if self.method.currentData() == "butina" and rows > cl.BUTINA_WARN_ROWS:
+            return f"Butina compares every pair: {rows:,} rows may take minutes (you can cancel)."
+        return ""
+
+    def summary(self) -> str:
+        method = self.method.currentData()
+        how = {
+            "butina": f"Butina at {self.cutoff.value():.2f}",
+            "kmeans": f"k-means into {self.k.value():,}",
+            "hierarchical": f"{self.linkage.currentText()} hierarchical into {self.k.value():,}",
+        }[method]
+        name = self._name()
+        return f"{how} by {self.features.describe()} → {name}, {name} Size, {name} Centre"
+
+    def verb(self) -> str:
+        return f"Cluster {self._rows():,} Rows"
+
     def _update(self) -> None:
         method = self.method.currentData()
-        self.form.setRowVisible(self.cutoff, method == "butina")
-        self.form.setRowVisible(self.k, method != "butina")
-        self.form.setRowVisible(self.linkage, method == "hierarchical")
-        problem = self.problem()
-        note = problem
-        if not problem and method == "butina" and self._rows() > cl.BUTINA_WARN_ROWS:
-            note = (
-                f"Butina compares every pair: {self._rows():,} rows may take minutes "
-                "(it can be cancelled)."
-            )
-        self.status.setText(note)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
+        section = self._method_section
+        section.set_row_visible(self.cutoff, method == "butina")
+        section.set_row_visible(self.k, method != "butina")
+        section.set_row_visible(self.linkage, method == "hierarchical")
+        section.set_help(self.method, METHOD_HELP[method])
+        self.refresh()
 
-    def accept(self) -> None:
-        if self.problem():
-            return
-        self.job = self.cluster()
-        super().accept()
+    def run(self):
+        return self.cluster()
 
     def cluster(self):
         ctx = self.ctx
-        oids = scope_oids(ctx, self.rows.currentData())
+        oids = self.rows.oids()
         method = self.method.currentData()
+        overwrite = self.if_exists.overwrite()
         k, cutoff, linkage = self.k.value(), self.cutoff.value(), self.linkage.currentData()
         name = self.output.text().strip() or CLUSTER_COLUMN
         if self.features.fingerprints():
@@ -173,11 +191,13 @@ class ClusterDialog(QDialog):
             fps, clusters = result
             if remember is not None:
                 remember(fps)
-            self.finish(oids, clusters, name)
+            self.finish(oids, clusters, name, overwrite)
 
         return ctx.run("Clustering…", work, done)
 
-    def finish(self, oids: np.ndarray, clusters: cl.Clusters, name: str) -> dict[str, str]:
+    def finish(
+        self, oids: np.ndarray, clusters: cl.Clusters, name: str, overwrite: bool = True
+    ) -> dict[str, str]:
         ctx = self.ctx
         member = clusters.labels >= 0
         number = np.where(member, clusters.labels + 1, np.nan)
@@ -190,7 +210,7 @@ class ClusterDialog(QDialog):
                 f"{name} Centre": (oids, centre),
             },
             label="Cluster",
-            overwrite=True,
+            overwrite=overwrite,
         )
         left_out = int((~member).sum())
         message = (

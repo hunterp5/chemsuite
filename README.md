@@ -7,6 +7,8 @@ How to use it: [docs/USER_GUIDE.md](docs/USER_GUIDE.md). The design and roadmap 
 [docs/PLAN.md](docs/PLAN.md) and [docs/ROADMAP.md](docs/ROADMAP.md).
 
 When you add a tool or change how something works, update the user guide in the same change.
+Build tool dialogs from `chemsuite.app.dialogs` (header, Input / Method / Output sections, footer),
+so every dialog is laid out the same way.
 
 ## Development setup
 
