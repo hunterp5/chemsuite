@@ -35,6 +35,7 @@ from PySide6.QtCore import QSize
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QDialog, QDockWidget, QWidget
 
+from chemsuite.core.lists import RowLists
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import STRUCTURE, Column
@@ -88,6 +89,11 @@ class ToolContext:
     @property
     def selection(self) -> Selection:
         return self._window.workspace.selection
+
+    @property
+    def lists(self) -> RowLists:
+        """The document's named row lists."""
+        return self._window.workspace.lists
 
     @property
     def parent(self) -> QWidget:

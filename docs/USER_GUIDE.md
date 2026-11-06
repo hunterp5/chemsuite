@@ -736,6 +736,61 @@ Data ▸ Table ▸ Bin Column… groups a number column into bins.
 
 ---
 
+### Calculator
+
+Data ▸ Utilities ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
+formula is checked as you type, and **Preview** shows the result for the first shown rows.
+**Insert ▸ Column** and **Insert ▸ Function** put a column name or function at the cursor.
+
+- **Columns:** `[IC50 (nM)]` for any name, or a plain name such as `MW`. Case does not matter
+  when the name is unambiguous.
+- **Operators:** `+ − * /`, `^` or `**` for powers, `%` for the remainder, comparisons
+  `= != <> < <= > >=`, and `and`, `or`, `not`. `+` joins text when either side is text.
+- **Conditions:** `if(condition, then, else)`, e.g. `if([pIC50] >= 7, "Active", "Inactive")`.
+- **Blanks:** a blank cell gives a blank result, and so do dividing by zero and the log of a
+  negative number. Use `ifblank(x, 0)` to fill blanks and `isblank(x)` to test for them.
+
+| Group | Functions |
+|---|---|
+| Math | `abs sqrt exp ln log log10 log2 floor ceil round(x, digits) sin cos tan`, `min(a, b, …)`, `max(a, b, …)`, `clip(x, low, high)`; constants `pi`, `e` |
+| Logic | `if isblank ifblank` |
+| Statistics (over the rows calculated) | `mean median std sum count percentile(x, p) rank(x, descending) zscore normalize`; `min(x)` and `max(x)` with one argument |
+| Text | `len upper lower trim contains(t, part) concat(a, b, …) number(t) text(x)` |
+| Chemistry | `MW ExactMW logP TPSA HBD HBA RotB Rings AromaticRings HeavyAtoms Fsp3 Charge QED Formula SMILES InChIKey Scaffold`, each taking a structure column, and `substructure(structure, "SMARTS")`, which counts the matches |
+
+Examples: `9 - log10([IC50 (nM)])` gives pIC50 from an IC50 in nM;
+`[pIC50] - logP([Structure])` gives lipophilic efficiency (LipE);
+`1.37 * [pIC50] / HeavyAtoms([Structure])` gives ligand efficiency in kcal/mol per heavy atom;
+and `substructure([Structure], "[NX3;H2]c")` counts primary anilines.
+
+Choose the rows (All, Shown or Selected; other rows stay blank), the new column's name, and
+whether to replace a column of that name. Comparisons give True / False text columns. The
+column is one undoable step. Large tables are calculated in the background; cancelling keeps
+the rows already done, except for formulas with statistics, which need every row at once.
+Formulas cannot run code, open files or reach outside the table.
+
+### Random Numbers
+
+Data ▸ Utilities ▸ Random ▸ Random Numbers… fills a column with random values:
+
+| Distribution | Settings |
+|---|---|
+| Uniform | Low, high, decimals |
+| Whole numbers | Low and high, both included (a dice roll is 1 to 6) |
+| Normal | Mean, standard deviation, decimals; optionally kept within low and high |
+| Log-normal | Median and spread factor (about two thirds of values fall between median ÷ factor and median × factor); optionally kept within low and high |
+| Random order | 1 to the number of rows, each once: sort by it to shuffle the table |
+
+A **seed** makes the draw repeatable: the same seed and settings give the same numbers again.
+Leave it empty for a new draw each time.
+
+### Random Rows
+
+Data ▸ Utilities ▸ Random ▸ Random Rows… picks a random sample from all, the shown or the
+selected rows, either a number of rows or a percentage. It then **selects them**, **adds them
+to the selection**, or saves them as a **new list** (for example a test set). A seed picks the
+same rows again.
+
 ## 12. Similarity
 
 All three tools compare compounds either by **fingerprints** or by **number columns** (scaled
