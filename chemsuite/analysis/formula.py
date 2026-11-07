@@ -362,6 +362,7 @@ _CHEM = (
     ("Fsp3", "FractionCSP3", "Fraction of sp3 carbons"),
     ("Charge", "NET_CHARGE", "Net formal charge"),
     ("QED", "QED", "Quantitative estimate of drug-likeness"),
+    ("SAScore", "SA_SCORE", "Synthetic accessibility, 1 (easy) to 10 (hard)"),
     ("Formula", "FORMULA", "Molecular formula (text)"),
     ("SMILES", "SMILES", "Canonical SMILES (text)"),
     ("InChIKey", "INCHIKEY", "InChIKey (text)"),

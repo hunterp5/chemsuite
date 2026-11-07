@@ -254,6 +254,15 @@ _ITEMS: tuple[Descriptor, ...] = (
         "Quantitative estimate of drug-likeness (Bickerton 2012), 0-1.",
     ),
     Descriptor(
+        "SA_SCORE",
+        "SAScore",
+        "Drug-likeness",
+        medchem.sa_score,
+        2,
+        "Synthetic accessibility score (Ertl & Schuffenhauer 2009): 1 (easy to make) to 10 "
+        "(very hard), from how common the molecule's fragments are and how complex it is.",
+    ),
+    Descriptor(
         "RO5_VIOLATIONS",
         "Ro5 Violations",
         "Drug-likeness",

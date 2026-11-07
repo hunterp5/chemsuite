@@ -992,7 +992,7 @@ are overwritten.
 |---|---|
 | Physicochemical | MW, Exact Mass, cLogP, cLogD 7.4, LogS (ESOL), TPSA, TPSA (N,O,S,P), Molar Refractivity, Labute ASA, Fsp3 |
 | Ionisation | pKa (most acidic), pKa (most basic), Charge @ pH 7.4, % Neutral @ pH 7.4 |
-| Drug-likeness | QED, Ro5 Violations, Ro5 Pass, CNS MPO, BBB Score, AB-MPS |
+| Drug-likeness | QED, SAScore, Ro5 Violations, Ro5 Pass, CNS MPO, BBB Score, AB-MPS |
 | Counts | HBD, HBA, NH/OH Count, N+O Count, Rotatable Bonds, Heavy Atoms, Heteroatoms, Valence Electrons, Net Charge |
 | Rings | Rings, Aromatic Rings, Aliphatic Rings, Saturated Rings, Spiro Atoms, Bridgehead Atoms |
 | Atom Counts | C, N, O, S, P, F, Cl, Br, I |
@@ -1004,6 +1004,10 @@ are overwritten.
 - **pKa-based values.** The Ionisation group, cLogD 7.4, CNS MPO, BBB Score and AB-MPS use
   MolGpKa's predicted pKa values (see [Predict pKa](#predict-pka)). For CNS MPO and BBB Score, a
   compound with no basic site is scored as if its most basic pKa were 2.
+- **SAScore** is the synthetic accessibility score of Ertl and Schuffenhauer (2009): 1 (easy
+  to make) to 10 (very hard), from how common the molecule's fragments are in known compounds
+  and a penalty for size, stereocentres, macrocycles and unusual ring fusions. Most drug-like
+  compounds score 2-4.
 - **3D shape descriptors** use a 3D structure when the cell has conformers.
 - **Cancelling** keeps the rows already calculated.
 
@@ -1271,7 +1275,7 @@ formula is checked as you type, and **Preview** shows the result for the first s
 | Logic | `if isblank ifblank` |
 | Statistics (over the rows calculated) | `mean median std sum count percentile(x, p) rank(x, descending) zscore normalize`; `min(x)` and `max(x)` with one argument |
 | Text | `len upper lower trim contains(t, part) concat(a, b, …) number(t) text(x)` |
-| Chemistry | `MW ExactMW logP TPSA HBD HBA RotB Rings AromaticRings HeavyAtoms Fsp3 Charge QED Formula SMILES InChIKey Scaffold`, each taking a structure column, and `substructure(structure, "SMARTS")`, which counts the matches |
+| Chemistry | `MW ExactMW logP TPSA HBD HBA RotB Rings AromaticRings HeavyAtoms Fsp3 Charge QED SAScore Formula SMILES InChIKey Scaffold`, each taking a structure column, and `substructure(structure, "SMARTS")`, which counts the matches |
 
 Examples: `9 - log10([IC50 (nM)])` gives pIC50 from an IC50 in nM;
 `[pIC50] - logP([Structure])` gives lipophilic efficiency (LipE);

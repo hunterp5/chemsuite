@@ -173,3 +173,33 @@ def bbb_score(mol: Chem.Mol) -> float:
 
 def net_formal_charge(mol: Chem.Mol) -> int:
     return sum(atom.GetFormalCharge() for atom in mol.GetAtoms())
+
+
+# -- synthetic accessibility --------------------------------------------------------------------
+_sascorer = None
+
+
+def _load_sascorer():
+    """RDKit's Contrib SA_Score module (Ertl & Schuffenhauer), loaded once per process."""
+    global _sascorer
+    if _sascorer is None:
+        import importlib.util
+        import os
+
+        from rdkit.Chem import RDConfig
+
+        path = os.path.join(RDConfig.RDContribDir, "SA_Score", "sascorer.py")
+        spec = importlib.util.spec_from_file_location("chemsuite_sascorer", path)
+        if spec is None or spec.loader is None or not os.path.exists(path):
+            raise RuntimeError("RDKit's SA_Score contribution is missing")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.readFragmentScores()
+        _sascorer = module
+    return _sascorer
+
+
+def sa_score(mol: Chem.Mol) -> float:
+    """Synthetic accessibility score (Ertl & Schuffenhauer 2009, J. Cheminf. 1:8): 1 (easy to
+    make) to 10 (very hard), from fragment frequencies in PubChem and a complexity penalty."""
+    return float(_load_sascorer().calculateScore(mol))

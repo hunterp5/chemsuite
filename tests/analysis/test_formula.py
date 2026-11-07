@@ -80,6 +80,7 @@ def calc(text, data):
         ("Formula(Structure)", "text", ["C2H6O", "C6H6O", None, "C2H4O2"]),
         ('substructure(Structure, "[OX2H]")', "number", [1.0, 1.0, None, 1.0]),
         ('substructure(Structure, "c1ccccc1")', "number", [0.0, 1.0, None, 0.0]),
+        ("round(SAScore(Structure), 2)", "number", [1.98, 1.18, None, 1.51]),
     ],
 )
 def test_formulas(text, kind, cells, data):
