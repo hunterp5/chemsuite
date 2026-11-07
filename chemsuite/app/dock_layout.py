@@ -344,6 +344,9 @@ def capture(window: MainWindow) -> dict[str, Any]:
         out["widths"] = widths
     if window.view.frozen_count:
         out["frozen"] = window.view.frozen_count
+    alignments = window.view.alignments()
+    if alignments:
+        out["alignments"] = alignments
     search = window.search
     if search.is_open or search.edit.text() or search.history:
         out["search"] = {
@@ -370,6 +373,12 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
     frozen = saved.get("frozen")
     if isinstance(frozen, int) and not isinstance(frozen, bool) and frozen > 0:
         window.view.set_frozen(frozen)
+    alignments = saved.get("alignments")
+    if isinstance(alignments, dict):
+        table = window.workspace.table
+        for column, core in alignments.items():
+            if isinstance(column, str) and isinstance(core, str) and column in table:
+                window.view.set_alignment(column, core)
     search = saved.get("search")
     if isinstance(search, dict):
         bar = window.search

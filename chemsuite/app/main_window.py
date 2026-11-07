@@ -357,6 +357,9 @@ class MainWindow(QMainWindow):
             join=self.join_columns,
             freeze=lambda count: self.view.set_frozen(count),
             frozen=lambda: self.view.frozen_count,
+            align=self.align_drawings,
+            unalign=lambda name: self.view.set_alignment(name, None),
+            aligned=lambda name: name in self.view.alignments(),
         )
         self._lists = ListActions(
             self,
@@ -1196,6 +1199,28 @@ class MainWindow(QMainWindow):
             self.draw_reaction(oid, name)
         else:
             self.draw_structure(oid, name)
+
+    def align_drawings(self, column: str):
+        """Align Drawings… for *column*: ask for the core, then draw the column aligned."""
+        from .align_drawings import AlignDrawingsDialog
+
+        def current_structure() -> str:
+            index = self.view.currentIndex()
+            if not index.isValid():
+                return ""
+            oid = self.workspace.model.oid_at(index.row())
+            return self.workspace.table.cell(column, oid)
+
+        dialog = AlignDrawingsDialog(
+            self,
+            column,
+            self.view.set_alignment,
+            current_structure,
+            self.view.alignments().get(column, ""),
+        )
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
 
     def _show_cell_menu(self, index: QModelIndex, pos: QPoint) -> None:
         menu = self.cell_menu(index)

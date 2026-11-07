@@ -46,6 +46,9 @@ class ColumnActions:
         join: Callable[[list[str]], object] | None = None,
         freeze: Callable[[int], object] | None = None,
         frozen: Callable[[], int] = lambda: 0,
+        align: Callable[[str], object] | None = None,
+        unalign: Callable[[str], object] | None = None,
+        aligned: Callable[[str], bool] = lambda _name: False,
     ) -> None:
         self._parent = parent
         self._table = table
@@ -55,6 +58,9 @@ class ColumnActions:
         self._join = join
         self._freeze = freeze
         self._frozen = frozen
+        self._align = align
+        self._unalign = unalign
+        self._aligned = aligned
 
     # -- sorting ------------------------------------------------------------------------------
     def sort(self, name: str, ascending: bool) -> None:
@@ -261,6 +267,16 @@ class ColumnActions:
             else "Only Number columns have a number format."
         )
         drawn = table.kind(name) in (STRUCTURE, REACTION)
+        if table.kind(name) == STRUCTURE and self._align is not None:
+            align = self._align
+            aligning = add("Align Drawings…", lambda: align(name))
+            aligning.setToolTip(
+                "Draw every structure that contains a core with the core in the same place "
+                "and orientation; the structures themselves are not changed."
+            )
+            if self._aligned(name) and self._unalign is not None:
+                unalign = self._unalign
+                add("Stop Aligning Drawings", lambda: unalign(name))
         colour = add("Colour Column…", lambda: self.colour(name), not drawn)
         colour.setToolTip(
             "Colour the cells by value (gradient) or by category."

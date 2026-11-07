@@ -175,8 +175,9 @@ modified.
   - Frozen columns (the first columns, up to the one chosen).
   - Column statistics in the header tooltip.
 - **Structures**
-  - Align all drawings to a common core (MolManager's "Align to Substructure").
-  - Larger hover previews.
+  - ✅ Align all drawings to a common core (MolManager's "Align to Substructure"), done
+    2026-11-07.
+  - ✅ Larger hover previews, done 2026-11-07.
   - "Copy as SMILES / image".
 - **Plots**
   - Colour-range controls and marker shapes.

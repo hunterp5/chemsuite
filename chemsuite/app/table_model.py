@@ -42,6 +42,8 @@ from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import REACTION, STRUCTURE, NumberColumn, ParsedColumn
 from chemsuite.core.table.summary import column_summary, format_title
 
+from .structure_preview import preview_html
+
 OID_ROLE = Qt.ItemDataRole.UserRole + 1
 KIND_ROLE = Qt.ItemDataRole.UserRole + 2
 #: ``(StructureColumn or ReactionColumn, slot)`` for the delegate that draws them.
@@ -171,8 +173,14 @@ class TableModel(QAbstractTableModel):
                 if not text:
                     return None
                 what = "reaction" if column.kind == REACTION else "structure"
-                prefix = f"Invalid {what}:\n" if _status(column, slot) == "invalid" else ""
-                return prefix + text[:_TOOLTIP_CHARS]
+                status = _status(column, slot)
+                if status == "invalid":
+                    return f"Invalid {what}:\n" + text[:_TOOLTIP_CHARS]
+                if column.kind == STRUCTURE and status == "ok":  # parsed: drawn on screen
+                    mol = column.obj(slot)
+                    if mol is not None and mol.GetNumAtoms():
+                        return preview_html(mol, text)
+                return text[:_TOOLTIP_CHARS]
         elif role == Qt.ItemDataRole.ToolTipRole:
             text = column.display(slot)
             return text[:_TOOLTIP_CHARS] if len(text) > 40 or "\n" in text else None

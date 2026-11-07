@@ -263,6 +263,12 @@ Right-click a column header for:
   gradients for numbers, or **One colour per value** for any column (the same value always gets
   the same colour). Range ends left empty follow the data. Choose **None** to remove the
   colours.
+- **Align Drawings…** (Structure columns). Type, draw or take from the current row a core
+  (SMILES or SMARTS); every structure that contains it is drawn with the core in the same place
+  and orientation, so a series lines up down the column. Structures without the core keep
+  their usual drawing. Only the drawings change, not the structures. **Stop Aligning
+  Drawings** brings the usual drawings back. The core is saved with the document's layout.
+- **Hover over a structure cell** for a large drawing of the structure with its SMILES below.
 - **Freeze Columns up to Here** keeps that column and every column left of it in place while
   the rest of the table scrolls sideways; **Unfreeze Columns** lets them scroll again. Drag the
   columns you want to keep in view (ID, Structure) to the front first. Frozen columns are saved

@@ -61,7 +61,13 @@ from PySide6.QtWidgets import (
 from rdkit import Chem
 
 from chemsuite.analysis.structure_search import match_atoms
-from chemsuite.core.depict import depiction_mol, render_png, render_reaction_png
+from chemsuite.core.depict import (
+    aligned_mol,
+    alignment_core,
+    depiction_mol,
+    render_png,
+    render_reaction_png,
+)
 from chemsuite.core.mols import looks_like_molblock
 from chemsuite.core.reactions import looks_like_rxn_block, parse_reaction
 from chemsuite.core.selection import Selection
@@ -99,6 +105,14 @@ class Highlight:
     stereo: bool = False
 
 
+@dataclass(frozen=True)
+class Alignment:
+    """Drawings in a structure column laid out to match *core* (display only)."""
+
+    text: str  # the core as the user gave it (SMILES or SMARTS); also its cache key
+    core: Chem.Mol
+
+
 class StructureImages:
     """Rendered structure pictures, keyed by molecule, size and highlight, within a byte budget."""
 
@@ -115,6 +129,7 @@ class StructureImages:
         dpr: float,
         dark: bool,
         highlight: Highlight | None = None,
+        alignment: Alignment | None = None,
     ):
         mol = column.obj(slot)  # parses a pending cell on first use
         if mol is None:
@@ -127,6 +142,7 @@ class StructureImages:
             round(dpr, 2),
             dark,
             highlight.key if highlight else None,
+            alignment.text if alignment and column.kind != REACTION else None,
         )
         image = self._cache.get(key)
         if image is not None:
@@ -140,6 +156,8 @@ class StructureImages:
         else:
             atoms: list[int] = []
             bonds: list[int] = []
+            if alignment is not None:
+                mol = aligned_mol(mol, alignment.core)
             if highlight is not None:
                 mol = depiction_mol(mol)
                 atoms, bonds = match_atoms(mol, highlight.query, highlight.stereo)
@@ -174,6 +192,8 @@ class CellDelegate(QStyledItemDelegate):
         self._images = images
         #: column name -> atoms to highlight in that column's drawings
         self.highlights: dict[str, Highlight] = {}
+        #: column name -> the core its drawings are aligned to
+        self.alignments: dict[str, Alignment] = {}
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         if index.data(KIND_ROLE) not in DRAWN:
@@ -194,10 +214,12 @@ class CellDelegate(QStyledItemDelegate):
         if status != "invalid":
             dark = option.palette.color(QPalette.ColorRole.Base).lightness() < 128
             dpr = painter.device().devicePixelRatioF() if painter.device() else 1.0
-            highlight = None
-            if self.highlights:
-                highlight = self.highlights.get(index.model().column_name(index.column()))
-            image = self._images.image(column, slot, rect.size(), dpr, dark, highlight)
+            highlight = alignment = None
+            if self.highlights or self.alignments:
+                name = index.model().column_name(index.column())
+                highlight = self.highlights.get(name)
+                alignment = self.alignments.get(name)
+            image = self._images.image(column, slot, rect.size(), dpr, dark, highlight, alignment)
             if image is not None:
                 painter.drawImage(rect.topLeft(), image)
                 return
@@ -367,6 +389,29 @@ class TableView(QTableView):
 
     def highlights(self) -> dict[str, Highlight]:
         return dict(self.itemDelegate().highlights)
+
+    def set_alignment(self, column: str, core_text: str | None) -> bool:
+        """Draw *column*'s structures aligned to the core *core_text* (None: as stored).
+
+        Returns False when the text reads as neither SMILES nor SMARTS.
+        """
+        alignments = self.itemDelegate().alignments
+        if not core_text:
+            if alignments.pop(column, None) is not None:
+                self.viewport().update()
+            return True
+        core = alignment_core(core_text)
+        if core is None:
+            return False
+        alignments[column] = Alignment(core_text, core)
+        self.viewport().update()
+        if self._frozen is not None:
+            self._frozen.viewport().update()
+        return True
+
+    def alignments(self) -> dict[str, str]:
+        """Column name -> the core text its drawings are aligned to."""
+        return {name: a.text for name, a in self.itemDelegate().alignments.items()}
 
     @property
     def table_model(self) -> TableModel:

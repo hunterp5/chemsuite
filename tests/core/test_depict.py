@@ -51,3 +51,25 @@ def test_unkekulizable_structure_still_draws() -> None:
     mol = Chem.MolFromSmiles("c1cccc1", sanitize=False)
     mol.UpdatePropertyCache(strict=False)
     assert render_png(mol, 100, 80).startswith(b"\x89PNG")
+
+
+def test_aligned_drawings_put_the_core_where_the_core_is_drawn() -> None:
+    from chemsuite.core.depict import aligned_mol, alignment_core
+
+    core = alignment_core("c1ccc2ncccc2c1")
+    assert core is not None and core.GetNumConformers() == 1
+    want = core.GetConformer()
+    for smiles in ("Cc1ccc2ncccc2c1", "OCCc1cccc2ncccc12"):
+        mol = Chem.MolFromSmiles(smiles)
+        drawn = aligned_mol(mol, core)
+        assert drawn is not mol and Chem.MolToSmiles(drawn) == Chem.MolToSmiles(mol)
+        got = drawn.GetConformer()
+        for core_atom, atom in enumerate(drawn.GetSubstructMatch(core)):
+            a, b = got.GetAtomPosition(atom), want.GetAtomPosition(core_atom)
+            assert abs(a.x - b.x) < 0.01 and abs(a.y - b.y) < 0.01
+
+    smarts = alignment_core("[#6]1:[#6]:[#6]:[#6]:[#6]:[#6]:1")  # SMARTS works as well
+    assert smarts is not None
+    other = aligned_mol(Chem.MolFromSmiles("CCO"), smarts)  # no core: drawn as usual
+    assert other.GetNumConformers() == 1
+    assert alignment_core("not [[ a structure") is None

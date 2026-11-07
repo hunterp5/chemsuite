@@ -458,3 +458,55 @@ def test_frozen_columns_stay_put_and_follow_the_table(window, qtbot) -> None:
     session.restore(window, extras)
     assert window.view.frozen_count == 2
     assert "Unfreeze Columns" in menu_titles(window.columns.build_menu("ID", [], 0))
+
+
+# -- aligned drawings and previews --------------------------------------------------------------
+
+
+def test_align_drawings_from_the_column_menu_and_saved_with_the_layout(structures) -> None:
+    from chemsuite.app import session
+
+    window = structures
+    view = window.view
+    assert "Align Drawings…" in menu_titles(window.columns.build_menu("SMILES", [], 1))
+    assert "Align Drawings…" not in menu_titles(window.columns.build_menu("IC50", [], 2))
+    assert "Stop Aligning Drawings" not in menu_titles(window.columns.build_menu("SMILES", [], 1))
+
+    dialog = window.align_drawings("SMILES")
+    ok = dialog.buttons.button(dialog.buttons.StandardButton.Ok)
+    assert not ok.isEnabled()  # nothing typed yet
+    dialog.core.set_text("not [[ a structure")
+    assert not ok.isEnabled() and dialog.problem.text().startswith("⚠")
+    dialog.core.set_text("c1ccccc1")
+    assert ok.isEnabled() and dialog.problem.isHidden()
+    ok.click()
+    assert view.alignments() == {"SMILES": "c1ccccc1"}
+    assert "Stop Aligning Drawings" in menu_titles(window.columns.build_menu("SMILES", [], 1))
+
+    images = view.itemDelegate()._images
+    column = window.workspace.table.column("SMILES")
+    alignment = view.itemDelegate().alignments["SMILES"]
+    from PySide6.QtCore import QSize
+
+    plain = images.image(column, 1, QSize(120, 90), 1.0, False)
+    aligned = images.image(column, 1, QSize(120, 90), 1.0, False, None, alignment)
+    assert plain is not aligned  # separate cache entries
+
+    extras = session.capture(window)
+    trigger(window.columns.build_menu("SMILES", [], 1), "Stop Aligning Drawings")
+    assert view.alignments() == {}
+    session.restore(window, extras)
+    assert window.view.alignments() == {"SMILES": "c1ccccc1"}
+    assert not window.view.set_alignment("SMILES", "not [[ a structure")
+
+
+def test_structure_cells_preview_a_large_drawing_on_hover(structures) -> None:
+    model = structures.view.table_model
+    column = structures.workspace.table.column("SMILES")
+    assert model.data(model.index(1, 1), Qt.ItemDataRole.ToolTipRole) == "c1ccccc1"  # unparsed
+    for row in range(3):
+        column.obj(int(model._slots[row]))  # what drawing the cells does
+    tip = model.data(model.index(1, 1), Qt.ItemDataRole.ToolTipRole)
+    assert tip.startswith('<img src="data:image/png;base64,')
+    assert 'width="360" height="270"' in tip and "c1ccccc1" in tip
+    assert model.data(model.index(2, 1), Qt.ItemDataRole.ToolTipRole).startswith("Invalid")
