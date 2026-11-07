@@ -13,4 +13,4 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Analysis ▸ SAR: R-groups, SAR matrix, Free-Wilson, Hansch, matched pairs and activity cliffs."""
+"""Data ▸ SAR: R-groups, SAR matrix, Free-Wilson, Hansch, matched pairs and activity cliffs."""

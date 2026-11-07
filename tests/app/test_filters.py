@@ -57,7 +57,7 @@ def test_card_types_follow_the_column(panel) -> None:
 
 def test_range_card_filters_and_negates(panel) -> None:
     card = panel.add_filter("pIC50")
-    assert "8 numbers" not in card.summary.text() and "7 numbers from 5 to 9" in card.summary.text()
+    assert "8 numbers" not in card.details and "7 numbers from 5 to 9" in card.details
     card.set_bounds(6, 8)
     panel.apply_now()
     assert shown_ids(panel) == ["CPD-2", "CPD-3", "CPD-4", "CPD-5", "CPD-6"]  # blank kept
@@ -68,7 +68,7 @@ def test_range_card_filters_and_negates(panel) -> None:
     panel.apply_now()
     assert shown_ids(panel) == ["CPD-1", "CPD-7", "CPD-8"]
     assert panel.table.history.is_clean  # filtering is not an edit
-    assert panel.summary.text().startswith("Showing 3 of 8 rows")
+    assert panel.summary().startswith("Showing 3 of 8 rows")
 
 
 def test_range_slider_and_edits_stay_in_step(panel) -> None:
@@ -95,7 +95,7 @@ def test_category_card_and_unlisted_values(panel, monkeypatch) -> None:
 
     monkeypatch.setattr(cards, "CATEGORY_LIST_LIMIT", 2)  # list only A and B
     small = panel.add_filter("Series")
-    assert small.listed_values() == ["A", "B"] and small.note.isVisibleTo(small)
+    assert small.listed_values() == ["A", "B"] and "most common" in small.details
     small.set_checked({"A"})  # untick B; C and blank are not listed and stay visible
     panel.apply_now()
     assert "CPD-4" in shown_ids(panel) and "CPD-2" not in shown_ids(panel)
@@ -143,3 +143,22 @@ def test_header_menu_adds_a_filter(window) -> None:
     trigger(window.columns.build_menu("pIC50", [], 1), "Filter This Column")
     assert [c.column for c in window.filters.cards] == ["pIC50"]
     assert window.filter_dock.isVisibleTo(window)
+
+
+def test_panel_tools_sit_in_the_title_bar_and_cards_carry_no_text(window) -> None:
+    from PySide6.QtWidgets import QLabel
+
+    panel = window._filters
+    header = window.filter_dock.titleBarWidget()
+    assert header.toolbar is panel.toolbar  # Add, Sets and Remove All are header icons
+    assert not panel.clear_button.isEnabled()  # nothing to remove yet
+    card = panel.add_filter("pIC50")
+    assert panel.clear_button.isEnabled() and "Showing 3 of 3 rows" in panel.clear_button.toolTip()
+    # no helper or summary text anywhere in the pane: the card's details are in its tooltip
+    labels = [w for w in panel.findChildren(QLabel) if w.isVisibleTo(panel) and w is not card.title]
+    assert [w.text() for w in labels if w.text() not in ("to",)] == []
+    assert "3 numbers from 5 to 7" in card.title.toolTip()
+    old_toolbar = panel.toolbar
+    window._install(type(window.workspace)(window.workspace.table))  # a fresh document
+    assert header.toolbar is window._filters.toolbar is not old_toolbar
+    assert old_toolbar.parent() is None

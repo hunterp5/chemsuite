@@ -152,6 +152,8 @@ class SketchCanvas(QWidget):
     changed = Signal()
     #: The tool changed (its name), so a toolbar can follow keyboard tool picks.
     tool_changed = Signal(str)
+    #: Shift+T: open the template library (the sketcher window owns it)
+    library_requested = Signal()
     #: A short message for the user (why a label could not be used).
     message = Signal(str)
 
@@ -1309,6 +1311,8 @@ class SketchCanvas(QWidget):
             self.set_tool(tools.EraseTool())
         elif text == "t":
             self.set_tool(tools.TemplateTool(_next_ring(self.tool)))
+        elif text == "T":
+            self.library_requested.emit()
         else:
             return False
         return True

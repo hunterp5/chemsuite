@@ -13,4 +13,4 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Plot ▸ Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar and 3D Scatter."""
+"""Data ▸ Plot ▸ Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar and 3D Scatter."""

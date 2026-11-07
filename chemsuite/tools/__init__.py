@@ -29,12 +29,12 @@ TOOL_MODULES: tuple[str, ...] = (
     "chemsuite.tools.reactions.tool",
     "chemsuite.tools.plot.tool",
     "chemsuite.tools.medchem.tool",
+    "chemsuite.tools.binning.tool",
     "chemsuite.tools.statistics.tool",
     "chemsuite.tools.similarity.tool",
     "chemsuite.tools.sar.tool",
     "chemsuite.tools.mpo.tool",
     "chemsuite.tools.selectivity.tool",
     "chemsuite.tools.space.tool",
-    "chemsuite.tools.binning.tool",
     "chemsuite.tools.utilities.tool",
 )

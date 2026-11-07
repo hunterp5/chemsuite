@@ -157,7 +157,55 @@ def _arrange(p: QPainter) -> None:
     p.drawPath(path)
 
 
+def _plus(p: QPainter) -> None:
+    """A plus: add."""
+    path = QPainterPath(QPointF(8, 3))
+    path.lineTo(8, 13)
+    path.moveTo(3, 8)
+    path.lineTo(13, 8)
+    p.drawPath(path)
+
+
+def _sets(p: QPainter) -> None:
+    """Three stacked lines with a bookmark: saved sets."""
+    path = QPainterPath(QPointF(2.5, 4.5))
+    path.lineTo(8.5, 4.5)
+    path.moveTo(2.5, 8)
+    path.lineTo(8.5, 8)
+    path.moveTo(2.5, 11.5)
+    path.lineTo(8.5, 11.5)
+    path.moveTo(10.5, 3)  # the bookmark
+    path.lineTo(13.5, 3)
+    path.lineTo(13.5, 13)
+    path.lineTo(12, 11.2)
+    path.lineTo(10.5, 13)
+    path.closeSubpath()
+    p.drawPath(path)
+
+
+def _trash(p: QPainter) -> None:
+    """A bin: remove all."""
+    path = QPainterPath(QPointF(3, 4.5))
+    path.lineTo(13, 4.5)
+    path.moveTo(6.5, 4.5)
+    path.lineTo(6.5, 2.8)
+    path.lineTo(9.5, 2.8)
+    path.lineTo(9.5, 4.5)
+    path.moveTo(4.3, 4.5)
+    path.lineTo(5.1, 13.2)
+    path.lineTo(10.9, 13.2)
+    path.lineTo(11.7, 4.5)
+    path.moveTo(7, 7)
+    path.lineTo(7, 11)
+    path.moveTo(9, 7)
+    path.lineTo(9, 11)
+    p.drawPath(path)
+
+
 GLYPHS: dict[str, Draw] = {
+    "plus": _plus,
+    "sets": _sets,
+    "trash": _trash,
     "arrange": _arrange,
     "gear": _gear,
     "undock": _undock,

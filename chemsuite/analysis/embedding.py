@@ -89,6 +89,39 @@ class Features:
         n = len(columns[0]) if columns else 0
         return cls(n, rows, matrix=np.ascontiguousarray(x, dtype=np.float64))
 
+    @classmethod
+    def combined(
+        cls,
+        fps: Fingerprints,
+        columns: Sequence[np.ndarray],
+        *,
+        dims: int = REDUCED_DIMS,
+        progress: Progress | None = None,
+        cancel: CancelToken | None = None,
+    ) -> Features:
+        """Fingerprints and number columns together, for rows that have both.
+
+        The fingerprints are reduced to at most *dims* principal components (streamed, so no
+        dense bit matrix), and the columns are z-scored. Each block is then scaled to the same
+        total variance, so a 2048-bit fingerprint does not drown out three property columns,
+        nor the reverse. Distances on the result are Euclidean.
+        """
+        x, column_rows = standardize(columns)
+        rows = np.intersect1d(np.flatnonzero(fps.valid), column_rows)
+        n = len(fps)
+        if not len(rows) or not x.shape[1]:
+            return cls(n, rows, matrix=np.empty((len(rows), 0)))
+        bits = cls(n, rows, fps=fps.take(rows))
+        scores = reduce(bits, dims, progress=progress, cancel=cancel)
+        numbers = x[np.searchsorted(column_rows, rows)]
+
+        def unit(block: np.ndarray) -> np.ndarray:
+            total = float(block.var(axis=0).sum())
+            return block / np.sqrt(total) if total > 1e-12 else block
+
+        matrix = np.column_stack([unit(np.asarray(scores, dtype=np.float64)), unit(numbers)])
+        return cls(n, rows, matrix=np.ascontiguousarray(matrix))
+
     def __len__(self) -> int:
         return len(self.rows)
 

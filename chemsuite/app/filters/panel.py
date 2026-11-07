@@ -30,14 +30,14 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer
 from PySide6.QtWidgets import (
     QFrame,
-    QHBoxLayout,
     QInputDialog,
-    QLabel,
-    QPushButton,
+    QMenu,
     QScrollArea,
+    QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -45,7 +45,8 @@ from PySide6.QtWidgets import (
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 
-from ..pane import menu_button, pane_layout
+from ..glyphs import glyph
+from ..pane import pane_layout
 from .cards import FilterCard, card_for
 
 APPLY_DELAY_MS = 120
@@ -72,22 +73,25 @@ class FilterPanel(QWidget):
         self._refresh_timer.setInterval(250)
         self._refresh_timer.timeout.connect(self._refresh_stale)
 
-        self.add_button, self.add_menu = menu_button("Add Filter")
+        # Add, Sets and Remove All are icon buttons in the pane's title bar (``PanelHeader``
+        # takes ``toolbar``), like a plot's tools, so the pane itself holds only the cards.
+        self.toolbar = QToolBar()
+        self.toolbar.setIconSize(QSize(13, 13))
+        self.toolbar.setMovable(False)
+        self.toolbar.setStyleSheet(
+            "QToolBar { background: transparent; border: none; padding: 0px; spacing: 2px; }"
+            " QToolButton { border: none; border-radius: 4px; padding: 2px; }"
+            " QToolButton:hover { background: palette(midlight); }"
+            " QToolButton::menu-indicator { image: none; }"
+        )
+        self.add_button, self.add_menu = self._tool("plus", "Add Filter: a card for a column")
         self.add_menu.aboutToShow.connect(self._fill_add_menu)
-        self.clear_button = QPushButton("Remove All")
-        self.clear_button.clicked.connect(self.remove_all)
-        self.sets_button, self.sets_menu = menu_button("Sets")
-        self.sets_button.setToolTip("Save these filters under a name, or switch to a saved set")
+        self.sets_button, self.sets_menu = self._tool(
+            "sets", "Filter Sets: save these filters under a name, or switch to a saved set"
+        )
         self.sets_menu.aboutToShow.connect(self._fill_sets_menu)
-        self.summary = QLabel()
-        self.summary.setStyleSheet("color: palette(placeholder-text)")
-
-        bar = QHBoxLayout()
-        bar.setSpacing(6)
-        bar.addWidget(self.add_button)
-        bar.addWidget(self.clear_button)
-        bar.addWidget(self.sets_button)
-        bar.addStretch(1)
+        self.clear_button, _none = self._tool("trash", "Remove All Filters", menu=False)
+        self.clear_button.clicked.connect(self.remove_all)
         self._cards_box = QVBoxLayout()
         self._cards_box.setContentsMargins(0, 0, 0, 0)
         self._cards_box.setSpacing(0)  # sections divide themselves with hairlines
@@ -99,18 +103,13 @@ class FilterPanel(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(host)
-        self.empty_hint = QLabel("No filters. Use Add Filter, or right-click a column header.")
-        self.empty_hint.setWordWrap(True)
-        self.empty_hint.setStyleSheet("color: palette(placeholder-text)")
 
         layout = pane_layout(QVBoxLayout(self))
-        layout.addLayout(bar)
-        layout.addWidget(self.summary)
-        layout.addWidget(self.empty_hint)
         layout.addWidget(scroll, 1)
         self.setMinimumWidth(240)
 
         self._unsubscribe = table.subscribe(self._on_table_event)
+        self._style_tools()
         self._update_summary()
 
     # -- cards --------------------------------------------------------------------------------
@@ -269,14 +268,44 @@ class FilterPanel(QWidget):
                     self.table.set_filter(key, flt)
         self._update_summary()
 
-    def _update_summary(self) -> None:
+    def summary(self) -> str:
+        """ "Showing 3 of 8 rows · 1 active": the Remove All button's tooltip (the status bar
+        shows the row counts too)."""
         total = len(self.table)
         shown = len(self.table.view())
         active = sum(1 for key in self._cards.values() if key in self.table.filters)
-        self.summary.setText(
-            f"Showing {shown:,} of {total:,} rows" + (f" · {active} active" if active else "")
-        )
-        self.empty_hint.setVisible(not self._cards)
+        return f"Showing {shown:,} of {total:,} rows" + (f" · {active} active" if active else "")
+
+    def _update_summary(self) -> None:
+        self.clear_button.setEnabled(bool(self._cards))
+        self.clear_button.setToolTip(f"Remove All Filters ({self.summary()})")
+
+    def _tool(self, icon: str, tip: str, *, menu: bool = True):
+        """An icon button on the toolbar; with *menu*, it opens a menu: ``(button, menu)``."""
+        button = QToolButton()
+        button.setToolTip(tip)
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        button.setProperty("glyph", icon)
+        popup = None
+        if menu:
+            popup = QMenu(button)
+            popup.setToolTipsVisible(True)
+            button.setMenu(popup)
+            button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.toolbar.addWidget(button)
+        return button, popup
+
+    def _style_tools(self) -> None:
+        ink = self.palette().text().color()
+        for button in self.toolbar.findChildren(QToolButton):
+            name = button.property("glyph")
+            if name:
+                button.setIcon(glyph(name, ink))
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange and hasattr(self, "toolbar"):
+            self._style_tools()
 
     # -- following the table ------------------------------------------------------------------
     def _on_table_event(self, event: object) -> None:

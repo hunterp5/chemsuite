@@ -38,7 +38,7 @@ Portable = QKeySequence.SequenceFormat.PortableText
 class Command:
     id: str
     title: str
-    menu: str  # where it lives, e.g. "Analysis ▸ SAR"
+    menu: str  # where it lives, e.g. "Data ▸ SAR"
     defaults: tuple[str, ...] = ()
 
 

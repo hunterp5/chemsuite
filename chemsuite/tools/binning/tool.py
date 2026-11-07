@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Table ▸ Bin Column…"""
+"""Data ▸ Bin Values…"""
 
 from __future__ import annotations
 
@@ -30,8 +30,8 @@ def _open(ctx: ToolContext):
 
 TOOL = Tool(
     id="binning",
-    title="Bin Column…",
-    menu=("Table",),
+    title="Bin Values…",
+    menu=("Data",),
     open=_open,
     tip="Group a number column into ranges and named classes (e.g. Low / Medium / High).",
 )

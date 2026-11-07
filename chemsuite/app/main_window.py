@@ -275,7 +275,7 @@ class MainWindow(QMainWindow):
         self.search_dock.toggleViewAction().toggled.connect(
             lambda on: on and dock_layout.float_search(self)
         )
-        self.browser_dock = QDockWidget("Selection Browser", self)
+        self.browser_dock = QDockWidget("Browser", self)
         self.browser_dock.setObjectName("BrowserDock")
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.browser_dock)
         self.browser_dock.hide()
@@ -339,6 +339,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self._filters = FilterPanel(workspace.table, searcher=self._searcher)
         self.filter_dock.setWidget(self._filters)
+        self.filter_dock.titleBarWidget().add_tools(self._filters.toolbar)
         self._advanced = AdvancedSearchPanel(
             workspace.table,
             workspace.selection,
@@ -634,6 +635,13 @@ class MainWindow(QMainWindow):
         file_menu = bar.addMenu("&File")
         file_menu.addAction(A("file.new", "&New", self.new_window, QKeySequence.StandardKey.New))
         file_menu.addAction(
+            A(
+                "data.copy_shown_rows",
+                "New from Shown Rows",
+                self.copy_shown_rows_to_new_document,
+            )
+        )
+        file_menu.addAction(
             A("file.open", "&Open…", self.open_dialog, QKeySequence.StandardKey.Open)
         )
         self._recent_menu = file_menu.addMenu("Open &Recent")
@@ -738,8 +746,9 @@ class MainWindow(QMainWindow):
         settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)  # the app menu on macOS
         edit.addAction(settings_action)
 
-        self._building = "Search"
-        search = bar.addMenu("&Search")
+        self._building = "Data ▸ Search"
+        search = QMenu("&Search", self)  # placed in the Data menu below
+        search.setToolTipsVisible(True)
         search.addAction(
             A(
                 "edit.search",
@@ -769,53 +778,8 @@ class MainWindow(QMainWindow):
         search.addSeparator()
         search.addAction(A("data.show_all_rows", "Show &All Rows", self.show_all_rows))
 
-        self._building = "Table"
-        table_menu = bar.addMenu("&Table")
-        table_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
-        table_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
-        table_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
-        table_menu.addSeparator()
-        table_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
-        table_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
-        table_menu.addSeparator()
-        table_tools = table_menu.addSeparator()  # Bin Column, Calculator, Random… go here
-        table_tools.setVisible(False)
-        table_menu.addSeparator()
-        table_menu.addAction(
-            A(
-                "data.copy_shown_rows",
-                "New Document from Shown Rows",
-                self.copy_shown_rows_to_new_document,
-            )
-        )
-        table_menu.addAction(
-            A("data.clear_sort", "Clear Sort", lambda: self.workspace.table.set_sort([]))
-        )
-
-        # the tool menus, in order (tools fill them; see chemsuite.tools.TOOL_MODULES)
-        self._tool_actions: dict[str, QAction] = {}
-        menus: dict[tuple[str, ...], Any] = {
-            ("File",): file_menu,
-            ("File", "Export"): export_menu,
-            ("Edit",): edit,
-            ("Search",): search,
-            ("Table",): table_menu,
-        }
-        for name in ("Chemistry", "Analysis", "Plot"):
-            menus[(name,)] = bar.addMenu(f"&{name}")
-            menus[(name,)].setToolTipsVisible(True)
-        #: tools in these menus go before this action instead of at the end
-        self._tool_slots = {("Search",): search_tools, ("Table",): table_tools}
-        for tool in registered_tools():
-            self._add_tool(tool, menus)
-
         self._building = "View"
         view = bar.addMenu("&View")
-        toggle = self.filter_dock.toggleViewAction()
-        toggle.setText("&Filters")
-        register("view.filters", "Filters", "View", ["Ctrl+Shift+F"])
-        self._commands["view.filters"] = toggle
-        view.addAction(toggle)
         self._search_action = QAction("&Search Bar", self, checkable=True)
         self._search_action.toggled.connect(
             lambda on: self.search.focus() if on else self.search.dismiss()
@@ -823,7 +787,6 @@ class MainWindow(QMainWindow):
         register("view.search_bar", "Search Bar", "View")
         self._commands["view.search_bar"] = self._search_action
         view.addAction(self._search_action)
-        view.addAction(A("view.browser", "Selection &Browser", self.toggle_browser, "Ctrl+Shift+B"))
         view.addSeparator()
         arrange = view.addMenu("&Arrange Panes")
         arrange.aboutToShow.connect(lambda: dock_layout.fill_arrange_all_menu(arrange, self))
@@ -837,6 +800,53 @@ class MainWindow(QMainWindow):
         self._commands["view.status_bar"] = status
         self._status_bar_action = status
         view.addAction(status)
+
+        self._building = "Tools ▸ Table"
+        tools_menu = bar.addMenu("&Tools")
+        tools_menu.setToolTipsVisible(True)
+        table_menu = tools_menu.addMenu("&Table")
+        table_menu.setToolTipsVisible(True)
+        table_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
+        table_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
+        table_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
+        table_menu.addSeparator()
+        table_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
+        table_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
+        table_menu.addSeparator()  # Calculator, Random… follow
+
+        # the tool menus, in order (tools fill them; see chemsuite.tools.TOOL_MODULES)
+        self._tool_actions: dict[str, QAction] = {}
+        chemistry = bar.addMenu("&Chemistry")
+        chemistry.setToolTipsVisible(True)
+        self._building = "Data"
+        data = bar.addMenu("&Data")  # Search, Plot and the panes first, then the analysis tools
+        data.setToolTipsVisible(True)
+        data.addMenu(search)
+        plot = data.addMenu("&Plot")
+        plot.setToolTipsVisible(True)
+        toggle = self.filter_dock.toggleViewAction()
+        toggle.setText("&Filters")
+        register("view.filters", "Filters", "Data", ["Ctrl+Shift+F"])
+        self._commands["view.filters"] = toggle
+        data.addAction(toggle)
+        data.addAction(A("view.browser", "&Browser", self.toggle_browser, "Ctrl+Shift+B"))
+        data.addSeparator()
+        menus: dict[tuple[str, ...], Any] = {
+            ("File",): file_menu,
+            ("File", "Export"): export_menu,
+            ("Edit",): edit,
+            ("View",): view,
+            ("Tools",): tools_menu,
+            ("Tools", "Table"): table_menu,
+            ("Chemistry",): chemistry,
+            ("Data",): data,
+            ("Data", "Search"): search,
+            ("Data", "Plot"): plot,
+        }
+        #: tools in these menus go before this action instead of at the end
+        self._tool_slots = {("Data", "Search"): search_tools}
+        for tool in registered_tools():
+            self._add_tool(tool, menus)
 
         self._building = "Help"
         help_menu = bar.addMenu("&Help")

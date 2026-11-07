@@ -257,9 +257,25 @@ def _kekulize_around(change: Change, new_bonds: list[int], aromatic_before: set[
     for bid in system:
         old = trial.bonds[bid]
         trial.bonds[bid] = Bond(old.begin, old.end, Order.AROMATIC, old.stereo)
+    # A nitrogen drawn with two single bonds is N–H (pyrrole-type). Once its bonds are marked
+    # aromatic RDKit can no longer tell, and cannot Kekulé-assign pyrrole, indole or
+    # isoindole, so it is told the hydrogen.
+    pyrrole_n = {
+        aid
+        for aid in {x for bid in system for x in (sketch.bonds[bid].begin, sketch.bonds[bid].end)}
+        if sketch.atoms[aid].symbol == "N"
+        and not sketch.atoms[aid].charge
+        and [b.order for b in sketch.bonds.values() if aid in (b.begin, b.end)]
+        == [Order.SINGLE, Order.SINGLE]
+    }
     try:
-        mol = convert.to_rdkit(trial)
+        mol = convert.to_rdkit(trial, sanitize=False)
+        for aid in pyrrole_n:
+            atom = mol.GetAtomWithIdx(index[aid])
+            atom.SetNumExplicitHs(1)
+            atom.SetNoImplicit(True)
         with rdBase.BlockLogs():
+            mol.UpdatePropertyCache(strict=False)
             Chem.Kekulize(mol, clearAromaticFlags=True)
     except (convert.SketchError, ValueError, RuntimeError):
         return

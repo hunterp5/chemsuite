@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from chemsuite.app.tools import Tool, ToolContext
 
-MENU = ("Table",)
+MENU = ("Tools", "Table")
 
 
 def _calculator(ctx: ToolContext):

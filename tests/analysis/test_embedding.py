@@ -179,3 +179,17 @@ def test_pacmap_on_fingerprints_and_settings() -> None:
         embed(features, "pacmap", distance="jaccard")
     with pytest.raises(ValueError, match="2 or 3"):
         embed(features, "pacmap", dims=4)
+
+
+def test_combined_features_weigh_both_blocks() -> None:
+    smiles = ["CCO", "CCCO", "CCCCO", "c1ccccc1", "Cc1ccccc1", "CCc1ccccc1", "", "CCCCCO"]
+    fps = compute_fingerprints(smiles)
+    logp = np.array([0.1, 0.5, 0.9, 2.0, 2.5, 3.0, 1.0, np.nan])
+    mw = np.array([46, 60, 74, 78, 92, 106, 50, 88], dtype=float)
+    features = Features.combined(fps, [logp, mw], dims=4)
+    assert features.rows.tolist() == [0, 1, 2, 3, 4, 5]  # a fingerprint and both numbers
+    blocks = features.matrix[:, :-2], features.matrix[:, -2:]
+    for block in blocks:  # each block carries the same total variance
+        assert block.var(axis=0).sum() == pytest.approx(1.0)
+    result = embed(features, "pca")
+    assert result.coords.shape == (8, 2) and result.placed == 6

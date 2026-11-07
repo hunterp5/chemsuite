@@ -30,6 +30,23 @@ def features_task(
     ctx: ToolContext, chooser: FeatureChooser, oids: np.ndarray
 ) -> tuple[Callable[[object], Features], Callable[[], None]]:
     """``(build(job) -> Features, remember())``: *remember* caches fingerprints afterwards."""
+    if chooser.both():
+        compute, keep = fingerprint_task(
+            ctx, chooser.structure.currentText(), chooser.kind.currentData(), oids
+        )
+        columns = chooser.number_values(oids)
+        made = {}
+
+        def build_both(job) -> Features:
+            made["fps"] = compute(job)
+            cancel = getattr(job, "cancel_token", None)
+            return Features.combined(made["fps"], columns, cancel=cancel)
+
+        def remember_both() -> None:
+            if "fps" in made:
+                keep(made["fps"])
+
+        return build_both, remember_both
     if chooser.fingerprints():
         compute, keep = fingerprint_task(
             ctx, chooser.structure.currentText(), chooser.kind.currentData(), oids

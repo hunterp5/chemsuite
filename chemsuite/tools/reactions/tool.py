@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Search ▸ Reaction Search, Split Reaction and Enumerate Products."""
+"""Data ▸ Search ▸ Reaction Search, Split Reaction and Enumerate Products."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ TOOLS = (
     Tool(
         id="reaction-search",
         title="Reaction Search…",
-        menu=("Search",),
+        menu=("Data", "Search"),
         open=_search,
         requires=("rdkit",),
         needs_reactions=True,

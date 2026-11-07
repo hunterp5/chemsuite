@@ -13,4 +13,4 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Plot ▸ MedChem: BOILED-Egg, Golden Triangle and LipE plots."""
+"""Data ▸ Plot ▸ MedChem: BOILED-Egg, Golden Triangle and LipE plots."""

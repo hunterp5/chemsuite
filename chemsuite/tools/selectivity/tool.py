@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Analysis ▸ Scoring ▸ Selectivity…"""
+"""Data ▸ Scoring ▸ Selectivity…"""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _open(ctx: ToolContext):
 TOOL = Tool(
     id="selectivity",
     title="Selectivity…",
-    menu=("Analysis", "Scoring"),
+    menu=("Data", "Scoring"),
     open=_open,
     tip="Log selectivity of a primary assay over off-targets, and flag narrow windows.",
 )

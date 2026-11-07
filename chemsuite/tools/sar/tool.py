@@ -13,13 +13,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Analysis ▸ SAR: R-Group Decomposition, SAR Matrix, Free-Wilson, Hansch, Matched Pairs, Cliffs."""
+"""Data ▸ SAR: R-Group Decomposition, SAR Matrix, Free-Wilson, Hansch, Matched Pairs, Cliffs."""
 
 from __future__ import annotations
 
 from chemsuite.app.tools import Tool, ToolContext
 
-MENU = ("Analysis", "SAR")
+MENU = ("Data", "SAR")
 
 
 def _dialog(module: str, name: str):
@@ -56,8 +56,8 @@ def _matrix(ctx: ToolContext, state: dict | None = None):
 TOOLS = (
     Tool(
         id="rgroups",
-        title="R-Groups…",
-        menu=MENU,
+        title="R-Group Decomposition…",
+        menu=("Chemistry",),
         open=_dialog("rgroup_dialog", "RGroupDialog"),
         requires=("rdkit",),
         needs_structures=True,

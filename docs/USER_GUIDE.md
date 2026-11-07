@@ -40,30 +40,30 @@ Each document has its own window. From top to bottom:
 
   | Menu | Holds |
   |---|---|
-  | File | New, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close |
+  | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close |
   | Edit | Undo, Copy and Paste, Edit Structure, selecting rows, Lists, Delete Rows, Settings |
-  | Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
-  | Table | Add compounds, rows and columns; Split, Join and Bin columns; Calculator; random numbers and rows; New Document from Shown Rows; Clear Sort |
-  | Chemistry | Sketcher, Calculate Descriptors, Standardize, Predict pKa, Generate Conformers, Split Reactions, Enumerate Products |
-  | Analysis | Statistics, Similarity Search, Diverse Subset, Cluster, SAR ▸, Scoring ▸, Chemical Space ▸ |
-  | Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
-  | View | Panes (Filters, Search Bar, Selection Browser), Arrange Panes, Jobs, Log, Status Bar |
+  | View | Search Bar, Arrange Panes, Jobs, Log, Status Bar |
+  | Tools ▸ Table | Add compounds, rows and columns; Split and Join columns; Calculator; random numbers and rows |
+  | Chemistry | Sketcher, Calculate Descriptors, Standardize, Predict pKa, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
+  | Data | Search ▸, Plot ▸, Filters, Browser, then Bin Values, Statistics, Similarity Search, Diverse Subset, Cluster, SAR ▸, Scoring ▸, Chemical Space ▸ |
+  | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
+  | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
   | Help | This guide, the log folder, About |
 
   - Every command that a tool adds appears in these menus. If a command is greyed out, its
     tooltip says why: for example, there is no structure column, or an external program is
     missing.
-- **Search bar.** Hidden until you ask for it with Search ▸ Search Rows (Ctrl+F). See
+- **Search bar.** Hidden until you ask for it with Data ▸ Search ▸ Search Rows (Ctrl+F). See
   [Searching](#6-searching).
 - **The table.** One row per compound. Structure columns show drawings.
 - **Docked panels.**
-  - Filters sits at the right edge at a fixed width, and the Selection Browser docks at the
+  - Filters sits at the right edge at a fixed width, and the Browser docks at the
     side. Advanced Search opens as its own floating window.
   - New plots and tool panels open to the right of the table, splitting the window left and
     right. A second plot joins the first as a tab.
   - Panels sit flush against the table, divided by a thin line you can drag to resize them
     (the grab area is a few pixels wider than the line).
-    Every panel (plots, Filters, Advanced Search, Selection Browser) has the same header
+    Every panel (plots, Filters, Advanced Search, Browser) has the same header
     showing its title. Drag the header to move the panel. A plot's
     header also holds the plot toolbar. The buttons at the right are:
 
@@ -106,7 +106,7 @@ Tool dialogs do not block the window. While one is open you can still select row
 filters and scroll the table, and the dialog's row counts follow along. Opening another
 document closes any open tool dialogs.
 
-Tools are moving to one dialog layout. Cluster, Chemical Space Map and Predict pKa use it now,
+Tools are moving to one dialog layout. Cluster, Dimensionality Reduction and Predict pKa use it now,
 and the other tools will follow. The window title names the tool; every dialog on the layout
 reads the same way, top to bottom:
 
@@ -169,7 +169,7 @@ in the background, using every processor core. You can scroll and work while tha
   - the workspace layout: where each panel is docked (beside, stacked, tabbed, left, right or
     below the table, floating), the size of each pane (where you dragged the dividers
     between the table and the panes, and between panes), which panes are open (Filters,
-    Advanced Search, Selection Browser), column widths, and the search bar with its text and
+    Advanced Search, Browser), column widths, and the search bar with its text and
     options.
 - A document reopens exactly as you left it: a pane that was closed stays closed, even when
   its filters or search are hiding rows (the status bar still says how many rows are shown).
@@ -224,7 +224,7 @@ Each column has a type:
 
 **Selecting columns.** Click a column header to select the whole column; Shift-click selects a
 range and Ctrl-click (⌘-click) adds or removes one. Selected columns are not a selection of
-compounds, so plots and the Selection Browser are left alone. **Delete** removes the selected
+compounds, so plots and the Browser are left alone. **Delete** removes the selected
 columns in one step you can undo. Sorting is in the header's right-click menu.
 
 **Moving columns.** Drag a column header left or right to move the column (one undoable
@@ -236,7 +236,7 @@ scrolled to, the moved column stays in view and, if it was selected, stays selec
 Right-click a column header for:
 
 - **Sort Ascending / Descending.** **Then Sort…** adds a second (third…) sort key.
-  **Clear Sort** returns rows to their original order (also Table ▸ Clear Sort).
+  **Clear Sort** returns rows to their original order.
 - **Filter This Column.** Adds a filter card for the column (see [Filters](#7-filters)).
 - **Rename…**, **Duplicate Column** (a copy, with its formatting, to the right),
   **Insert Column Left/Right…**, **Delete Column**. Delete acts on all selected columns when you
@@ -257,7 +257,7 @@ Right-click a column header for:
   some values are not numbers; those cells would be cleared. Converting to Structure or
   Reaction reads each cell's text; cells that do not read are kept and marked invalid.
 
-From the Table menu:
+From Tools ▸ Table:
 
 | Command | What it does |
 |---|---|
@@ -265,13 +265,12 @@ From the Table menu:
 | Add Rows… | Adds empty rows. |
 | Add Column… | Adds a column. |
 | Split Column… / Join Columns… | As above. |
-| Bin Column… | Groups numbers into ranges and named classes; see [Table and analysis tools](#11-table-and-analysis-tools). |
 
 ### Rows
 
 - **Delete Rows (Ctrl+Backspace)** deletes the selected rows. You can undo it.
-- **Search ▸ Show All Rows** clears every filter, search and "show only" at once.
-- **Table ▸ New Document from Shown Rows** puts exactly the rows you can see, in their shown
+- **Data ▸ Search ▸ Show All Rows** clears every filter, search and "show only" at once.
+- **File ▸ New from Shown Rows** puts exactly the rows you can see, in their shown
   order, into a new untitled document. Column types are kept.
 
 ---
@@ -315,6 +314,58 @@ Reaction** on a column of reaction SMILES.
 - The cell shows the reaction SMILES as typed or read. A reaction read from an RXN or RD file,
   or drawn in the sketcher, shows RDKit's reaction SMILES and keeps its drawing.
 - Quick search and plots leave reaction columns out, as they do structure columns.
+
+### Reaction Search
+
+Data ▸ Search ▸ Reaction Search… finds reactions in a reaction column. Type a reaction SMILES
+or SMARTS, or click **Draw…** and draw the query in the sketcher.
+
+| Find | Matches a reaction when |
+|---|---|
+| Reaction contains | each reactant, agent and product you draw is a substructure of one of the reaction's own (draw agents above the arrow) |
+| A reactant contains | the structure is in one of its reactants |
+| A product contains | the structure is in one of its products |
+| An agent contains | the structure is in one of its agents (solvents, catalysts, reagents) |
+| Any component contains | the structure is anywhere in the reaction |
+
+- **Output**: **Select them** selects the matching rows; **Add a column** marks every row Yes
+  or No in a "Reaction Search" column.
+- Search runs in the background and works on all, shown or selected rows.
+
+### Split Reactions
+
+Chemistry ▸ Split Reactions… writes the parts of each reaction as structure columns.
+
+- **One per role**: a Reactants, an Agents and a Products column, each holding all of that
+  role's components.
+- **One per component**: Reactant 1, Reactant 2 … Product 1 …, in the order the reaction
+  lists them.
+- **Keep atom map numbers** is off by default, so the same molecule compares equal across
+  reactions in structure search, duplicates and descriptors.
+
+### Enumerate Products
+
+Chemistry ▸ Enumerate Products… applies a reaction template to building blocks.
+
+- **Template**: an atom-mapped reaction SMARTS, such as
+  `[C:1](=[O:2])[OH].[N;H2,H1;!$(NC=O):3]>>[C:1](=[O:2])[N:3]` (amide coupling), or
+  **Draw…** and map the atoms with the sketcher's Atom Map tool. Up to four reactants.
+- **Reactant 1, 2 …**: a structure column of this table for each, or **From a File…** (SDF,
+  CSV or any table chemsuite opens).
+- **Combine: Row by row** reacts reactant 1 and reactant 2 from the same row and writes the
+  product to a **Product** column, with **Products Found** counting how many products the row
+  gave (a building block with two reactive sites gives two).
+- **Combine: Every combination** reacts every distinct building block with every other and
+  opens the virtual library in a new window, one product per row with its building blocks.
+  Up to 2,000,000 combinations.
+- Cancelling keeps the products already made.
+- Checked against hand-worked products of amide coupling, Suzuki coupling, reductive
+  amination and Boc removal, including that stereocentres away from the reaction are kept.
+
+### Filtering by reaction
+
+**Add Filter** on a reaction column gives a reaction card: the same query and **Find** choices
+as Reaction Search, applied as a filter together with the other cards.
 
 ### The sketcher
 
@@ -361,6 +412,14 @@ C, V, A) and on the drawing's right-click menu.
 
 With nothing under the pointer, the same keys choose the matching tool, and `t` steps through
 the rings. Esc returns to Select.
+
+**Template library.** Shift+T, or the last button of the ring bar, opens 64 ring systems a
+medicinal chemist draws daily: aromatic and saturated heterocycles (pyridine to tetrazole,
+piperazine, morpholine, oxetane…), fused bicycles (indole, 7-azaindole, quinazoline, purine,
+tetrahydroisoquinoline…) and bridged and spiro systems (bicyclo[1.1.1]pentane, quinuclidine,
+2-oxa-6-azaspiro[3.3]heptane…). Pick a group on the left or type part of a name; double-click
+a drawing (or OK) to draw with it. It then places like a ring: on empty canvas, on an atom, or
+fused onto a bond, with aromatic bonds re-drawn across the fused system.
 
 **Other keys:** Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y undo and redo; Ctrl+C, Ctrl+X, Ctrl+V copy,
 cut and paste (molfile and SMILES, so ChemDraw and others can read it); Ctrl+Shift+M copies a
@@ -527,9 +586,9 @@ structure.
   - selecting rows highlights their points.
 - Many tools can run on all rows, the shown rows or just the selected rows.
 
-### Selection Browser
+### Browser
 
-View ▸ Selection Browser (Ctrl+Shift+B) steps through rows one at a time with a large drawing.
+Data ▸ Browser (Ctrl+Shift+B) steps through rows one at a time with a large drawing.
 
 - It browses either the selected rows or every shown row, in the table's order.
 - It keeps the table's current row in step with what it shows.
@@ -560,7 +619,7 @@ with the document.
 
 ### Quick search (Ctrl+F)
 
-Search ▸ Search Rows opens the search bar above the table. As you type, the table shows only the
+Data ▸ Search ▸ Search Rows opens the search bar above the table. As you type, the table shows only the
 rows that have a matching cell.
 
 - The **column menu** at the left of the bar chooses where to look: **All Columns** (every text
@@ -586,7 +645,7 @@ filters or searches are changed too.
 
 ### Advanced Search
 
-Search ▸ Advanced Search… opens a window of conditions. It is always its own floating window, so
+Data ▸ Search ▸ Advanced Search… opens a window of conditions. It is always its own floating window, so
 it never takes room from the table or the Filters panel. Move and resize it as you like; it
 reopens where you left it.
 
@@ -621,7 +680,7 @@ reopens where you left it.
 
 ### Structure Search (Ctrl+Shift+M)
 
-Search ▸ Structure Search… searches a structure column.
+Data ▸ Search ▸ Structure Search… searches a structure column.
 
 - **Query.** Draw (paste) or type the query as SMILES, a molfile or InChI. For substructure
   searches you can also type SMARTS, such as `[C,N]`.
@@ -641,7 +700,7 @@ Search ▸ Structure Search… searches a structure column.
 
 - **Results.** **Show** them alone (as a structure card in the Filters panel), **Select** them,
   or **Add to List**.
-- **Highlighting.** Substructure matches can be highlighted in the table's drawings. Search ▸ Clear
+- **Highlighting.** Substructure matches can be highlighted in the table's drawings. Data ▸ Search ▸ Clear
   Highlighting turns that off.
 - **Speed.** Searches are fast even on 200k rows: a fingerprint screen rules out most rows
   before any atom-by-atom matching.
@@ -650,7 +709,7 @@ Search ▸ Structure Search… searches a structure column.
 
 ## 7. Filters
 
-View ▸ Filters (Ctrl+Shift+F) opens the Filters panel, pinned at the right edge of the window
+Data ▸ Filters (Ctrl+Shift+F) opens the Filters panel, pinned at the right edge of the window
 at a fixed width. Each **card** filters on one column, and
 a row is shown only if it passes every enabled card.
 
@@ -661,9 +720,12 @@ a row is shown only if it passes every enabled card.
 | Text | Other text | Contains / equals / starts / ends / regular expression, with **Not**. |
 | Structure | Structure columns | Substructure, exact or similarity query; searches in the background after you stop typing. |
 
-- Add cards with the panel's **Add Filter** button or a column header's **Filter This Column**.
-- Each card has an on/off tick box and a remove button.
-- **Filter sets.** The panel's **Sets** menu saves the current cards under a name (such as
+- Add cards with the **+** button in the panel's header or a column header's **Filter This
+  Column**. The header's other buttons are **Filter Sets** and **Remove All Filters**; point at
+  Remove All for how many rows are showing.
+- Each card has an on/off tick box and a remove button. Point at a card's title for its column
+  and its values (range, or how many categories are listed).
+- **Filter sets.** The **Filter Sets** menu saves the current cards under a name (such as
   "Actives, MW < 450") so you can switch between groups of filters. Applying a set whose column
   has since been removed restores the cards it can.
 - Filters are a way of *looking* at the table. They are not edits, so they are not undone with
@@ -700,7 +762,7 @@ descriptors, conformers, clustering, maps and searches.
   |---|---|
   | Calculate Descriptors | Clustering |
   | Predict pKa | |
-  | MedChem plots (descriptor step) | Space Map |
+  | MedChem plots (descriptor step) | Dimensionality Reduction |
   | Generate Conformers | Self-Organizing Map |
   | Similarity Search | Free-Wilson |
   | R-Groups (numbered core) | Hansch |
@@ -820,15 +882,15 @@ The toolbar in the plot's header has five buttons:
 
 ### 3D plots
 
-**Plot ▸ 3D Scatter** draws three number columns (X, Y and Z, set with the cog) in a
+**Data ▸ Plot ▸ 3D Scatter** draws three number columns (X, Y and Z, set with the cog) in a
 cube, on a white background. Each axis is scaled to the cube's side, so columns with very
 different ranges share the space; the lowest and highest values are written at the ends of
 each axis. **Color** takes a number or text column, **Size** a number column. **Drop lines**
 draws a line from each point down to the floor, so heights read at a glance (above 20,000
 points, only for the selected ones).
 
-**Plot ▸ 3D Landscape** is an activity landscape (Peltason and Bajorath, 2007). Set **X** and
-**Y** to the plane, usually the two columns of a Chemical Space Map, and **Height** to the
+**Data ▸ Plot ▸ 3D Landscape** is an activity landscape (Peltason and Bajorath, 2007). Set **X** and
+**Y** to the plane, usually the two columns of a Dimensionality Reduction map, and **Height** to the
 activity. The surface at each point of a grid is the weighted mean of the compounds near it,
 coloured by height; where no compound is near, the surface is left open rather than made up.
 Smooth plateaus are regions where structure changes alter activity little; sharp peaks
@@ -851,7 +913,7 @@ The 3D plots use the same toolbar as the 2D ones:
 
 ### MedChem plots
 
-The Plot ▸ MedChem menu has three plots. Each one first calculates any properties it needs that
+The Data ▸ Plot ▸ MedChem menu has three plots. Each one first calculates any properties it needs that
 are not already columns, then plots them.
 
 | Plot | Axes | What it shows |
@@ -981,7 +1043,7 @@ all rows or only the selected ones.
 
 ### Statistics
 
-Analysis ▸ Statistics… opens a panel with five tabs. It works on the shown rows, all rows, or the
+Data ▸ Statistics… opens a panel with five tabs. It works on the shown rows, all rows, or the
 selected rows, and recalculates as the data, filters or selection change.
 
 | Tab | What it gives |
@@ -994,7 +1056,7 @@ selected rows, and recalculates as the data, filters or selection change.
 
 ### MPO Score
 
-Analysis ▸ Scoring ▸ MPO Score… combines several properties into one 0–1 score. Add one row per
+Data ▸ Scoring ▸ MPO Score… combines several properties into one 0–1 score. Add one row per
 property, each with a weight and one of these desirability shapes:
 
 | Shape | Use it when |
@@ -1016,7 +1078,7 @@ Options:
 
 ### Selectivity
 
-Analysis ▸ Scoring ▸ Selectivity… takes a primary assay and its off-target assays, and works out
+Data ▸ Scoring ▸ Selectivity… takes a primary assay and its off-target assays, and works out
 log selectivity (1 = 10-fold).
 
 - Say whether the values are p-values (pIC50, pKi…; higher is more potent) or concentrations
@@ -1024,9 +1086,9 @@ log selectivity (1 = 10-fold).
 - It adds a selectivity column per off-target and a **Min logSel** column.
 - **Flag a narrow window** adds a **Narrow window** column for compounds below a threshold.
 
-### Bin Column
+### Bin Values
 
-Table ▸ Bin Column… groups a number column into bins.
+Data ▸ Bin Values… groups a number column into bins.
 
 - **Methods:** equal width, equal count, or custom edges.
 - **Options:** a fixed width, from/to limits, and open-ended bins below the first edge and above
@@ -1039,7 +1101,7 @@ Table ▸ Bin Column… groups a number column into bins.
 
 ### Calculator
 
-Table ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
+Tools ▸ Table ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
 formula is checked as you type, and **Preview** shows the result for the first shown rows.
 **Insert ▸ Column** and **Insert ▸ Function** put a column name or function at the cursor.
 
@@ -1072,7 +1134,7 @@ Formulas cannot run code, open files or reach outside the table.
 
 ### Random Numbers
 
-Table ▸ Random Numbers… fills a column with random values:
+Tools ▸ Table ▸ Random Numbers… fills a column with random values:
 
 | Distribution | Settings |
 |---|---|
@@ -1087,7 +1149,7 @@ Leave it empty for a new draw each time.
 
 ### Random Rows
 
-Table ▸ Random Rows… picks a random sample from all, the shown or the
+Tools ▸ Table ▸ Random Rows… picks a random sample from all, the shown or the
 selected rows, either a number of rows or a percentage. It then **selects them**, **adds them
 to the selection**, or saves them as a **new list** (for example a test set). A seed picks the
 same rows again.
@@ -1112,7 +1174,7 @@ cached per column, so a second run on the same column is much faster.
 
 ### Similarity Search
 
-Analysis ▸ Similarity Search… scores every row (or the shown or selected rows)
+Data ▸ Similarity Search… scores every row (or the shown or selected rows)
 against one of two references:
 
 - a **structure** you type or paste; or
@@ -1128,7 +1190,7 @@ Cancelling keeps the rows already scored.
 
 ### Diverse Subset
 
-Analysis ▸ Diverse Subset… picks *N* compounds that cover the chemistry, using MaxMin:
+Data ▸ Diverse Subset… picks *N* compounds that cover the chemistry, using MaxMin:
 each pick is the compound farthest from all the earlier picks.
 
 - **Pick from** all, shown or selected rows.
@@ -1140,7 +1202,7 @@ each pick is the compound farthest from all the earlier picks.
 
 ### Cluster
 
-Analysis ▸ Cluster… groups compounds using one of three methods:
+Data ▸ Cluster… groups compounds using one of three methods:
 
 | Method | You set |
 |---|---|
@@ -1162,7 +1224,7 @@ Analysis ▸ Cluster… groups compounds using one of three methods:
 
 ### R-Group Decomposition
 
-Analysis ▸ SAR ▸ R-Groups… splits a series onto a common core.
+Chemistry ▸ R-Group Decomposition… splits a series onto a common core.
 
 - **Core.** Enter it as SMILES or SMARTS, or let the tool suggest one.
   - Label attachment points `[*:1]`, `[*:2]`… to fix which position is R1, R2.
@@ -1176,7 +1238,7 @@ Analysis ▸ SAR ▸ R-Groups… splits a series onto a common core.
 
 ### SAR Matrix
 
-Analysis ▸ SAR ▸ SAR Matrix… pivots activity on two substituent positions (R1 × R2). A third
+Data ▸ SAR ▸ SAR Matrix… pivots activity on two substituent positions (R1 × R2). A third
 position makes pages.
 
 - Each cell holds the compounds with that pair of substituents.
@@ -1185,7 +1247,7 @@ position makes pages.
 
 ### Free-Wilson
 
-Analysis ▸ SAR ▸ Free-Wilson… fits activity as a sum of one contribution per substituent.
+Data ▸ SAR ▸ Free-Wilson… fits activity as a sum of one contribution per substituent.
 
 - **Contributions** tab: each substituent's effect, both as Fujita-Ban (against a reference
   group) and as Free-Wilson (centred).
@@ -1196,7 +1258,7 @@ Analysis ▸ SAR ▸ Free-Wilson… fits activity as a sum of one contribution p
 
 ### Hansch Analysis
 
-Analysis ▸ SAR ▸ Hansch… regresses activity on substituent constants:
+Data ▸ SAR ▸ Hansch… regresses activity on substituent constants:
 
     activity = a·π + b·π² + ρ·σ + c·(steric) + d
 
@@ -1213,7 +1275,7 @@ Analysis ▸ SAR ▸ Hansch… regresses activity on substituent constants:
 
 ### Matched Molecular Pairs
 
-Analysis ▸ SAR ▸ Matched Pairs… finds pairs of compounds that differ by one small change
+Data ▸ SAR ▸ Matched Pairs… finds pairs of compounds that differ by one small change
 at one place. H → X changes are included.
 
 - Set the largest change, in heavy atoms, and the minimum number of pairs a transformation needs
@@ -1222,7 +1284,7 @@ at one place. H → X changes are included.
 
 ### Activity Cliffs (SALI)
 
-Analysis ▸ SAR ▸ Activity Cliffs… lists similar compounds with very different activity.
+Data ▸ SAR ▸ Activity Cliffs… lists similar compounds with very different activity.
 
     SALI = |Δactivity| / (1 − similarity)
 
@@ -1234,10 +1296,13 @@ Analysis ▸ SAR ▸ Activity Cliffs… lists similar compounds with very differ
 
 ## 14. Chemical space
 
-### Chemical Space Map
+### Dimensionality Reduction
 
-Analysis ▸ Chemical Space ▸ Space Map… places compounds on a 2D or 3D map by
-fingerprints or number columns. **Dimensions: 2D** writes two columns and opens a scatter plot;
+Data ▸ Chemical Space ▸ Dimensionality Reduction… places compounds on a 2D or 3D map by
+fingerprints, number columns, or both. **Compare by: Both** uses the fingerprints and the
+ticked number columns together, for rows that have all of them: the fingerprints are reduced to
+their principal components, the columns are z-scored, and the two are weighted equally so
+neither drowns out the other (distances are Euclidean). **Dimensions: 2D** writes two columns and opens a scatter plot;
 **3D** writes three and opens a 3D Scatter (a 3D PCA map is always PC1, PC2 and PC3).
 
 | Method | Options | More Options (folded) |
@@ -1258,15 +1323,16 @@ fingerprints or number columns. **Dimensions: 2D** writes two columns and opens 
   dimensions of the features and is fast on large sets.
 - t-SNE on very large sets (over 50,000 rows) can take many minutes; UMAP and PaCMAP are
   quicker there.
-- **Column names** sets the prefix for the columns ("UMAP 1", "UMAP 2", and "UMAP 3" in 3D). **If they
-  exist: Add a new column** keeps an earlier map.
-- **Colour plot by** any column.
+- The map is written to new columns named after the method: "UMAP 1", "UMAP 2" (and
+  "UMAP 3" in 3D). A map never replaces a column: the next UMAP map writes "UMAP 1 (1)",
+  "UMAP 2 (1)", the one after "(2)", and so on. Rename them in the table if you like.
+- The plot opens coloured by the activity column when there is one; change it with the cog.
 - A map needs at least 3 rows.
 - The job shows as "Calculating UMAP…" (or PCA / t-SNE / PaCMAP) in the status bar.
 
 ### Self-Organizing Map
 
-Analysis ▸ Chemical Space ▸ Self-Organizing Map… trains a grid of cells. Similar compounds land in
+Data ▸ Chemical Space ▸ Self-Organizing Map… trains a grid of cells. Similar compounds land in
 the same or neighbouring cells.
 
 - **Size.** Set rows × columns and the number of training passes, or let the size follow the
@@ -1324,5 +1390,5 @@ You can change any of these in Settings ▸ Keyboard.
 | Calculate Descriptors | Ctrl+Shift+D |
 | Scatter plot | Ctrl+Shift+P |
 | Filters | Ctrl+Shift+F |
-| Selection Browser | Ctrl+Shift+B |
+| Browser | Ctrl+Shift+B |
 | Settings | Ctrl+, |

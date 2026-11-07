@@ -69,7 +69,7 @@ def test_pca_map_of_number_columns(chem, qtbot) -> None:
     table = chem.workspace.table
     dialog = chem.open_tool("space_map")
     dialog.method.setCurrentIndex(dialog.method.findData("pca"))
-    assert dialog.output.text() == "PCA" and dialog.color.currentText() == "pIC50"
+    assert dialog.windowTitle() == "Dimensionality Reduction"
     dialog.features.use_numbers.setChecked(True)
     assert dialog.problem()  # no columns ticked yet
     dialog.features.set_number_columns(["A", "B"])
@@ -164,7 +164,7 @@ def test_pacmap_map_in_3d(chem, qtbot) -> None:
     assert dialog._more_section.is_row_visible(dialog.mn_ratio)
     dialog.dims.set_value("3")
     dialog.neighbours.setValue(5)
-    assert dialog.output.text() == "PaCMAP" and dialog.options()["dims"] == 3
+    assert dialog.options()["dims"] == 3
     _run(qtbot, dialog)
     x = _numbers(table, "PaCMAP 3")
     assert np.isnan(x[-1]) and np.isfinite(x[:-1]).all()
@@ -177,3 +177,30 @@ def test_pacmap_map_in_3d(chem, qtbot) -> None:
     dialog2.dims.set_value("3")
     dialog2.method.setCurrentIndex(dialog2.method.findData("pca"))
     assert not dialog2._method_section.is_row_visible(dialog2.components)  # 3D: PC1-3
+
+
+def test_maps_never_overwrite_and_combine_features(chem, qtbot) -> None:
+    from chemsuite.tools.space.map_dialog import map_columns
+
+    assert map_columns(["ID"], "UMAP", 2) == ["UMAP 1", "UMAP 2"]
+    assert map_columns(["UMAP 2"], "UMAP", 2) == ["UMAP 1 (1)", "UMAP 2 (1)"]
+    assert map_columns(["UMAP 1", "UMAP 1 (1)"], "UMAP", 3) == [
+        "UMAP 1 (2)",
+        "UMAP 2 (2)",
+        "UMAP 3 (2)",
+    ]
+    table = chem.workspace.table
+    for _run_number in range(2):
+        dialog = chem.open_tool("space_map")
+        dialog.method.setCurrentIndex(dialog.method.findData("pca"))
+        dialog.features.compare.set_value("both")
+        assert dialog.features.both() and dialog.problem() == "Tick at least one number column."
+        dialog.features.set_number_columns(["A", "B"])
+        assert not dialog.problem()
+        _run(qtbot, dialog)
+    assert {"PCA 1", "PCA 2", "PCA 1 (1)", "PCA 2 (1)"} <= set(table.column_names)
+    assert np.allclose(_numbers(table, "PCA 1"), _numbers(table, "PCA 1 (1)"), equal_nan=True)
+    x = _numbers(table, "PCA 1")
+    assert np.isnan(x[-1])  # the blank structure has no fingerprint
+    assert np.sign(x[:10].mean()) != np.sign(x[10:20].mean())  # both blocks split the groups
+    assert dialog.plot.spec().color == "pIC50"  # opens coloured by the activity column

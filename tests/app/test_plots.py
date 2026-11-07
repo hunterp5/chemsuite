@@ -158,8 +158,8 @@ def test_export_png(data, tmp_path) -> None:
 
 
 def test_plot_menu(data) -> None:
-    titles = [a.text() for a in data.menuBar().actions()]
-    assert "&Plot" in titles
+    menus = {a.text(): a.menu() for a in data.menuBar().actions()}
+    assert "&Plot" in [a.text() for a in menus["&Data"].actions()]
     assert data.tool_action("scatter").isEnabled()
 
 

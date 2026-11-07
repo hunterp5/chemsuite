@@ -13,26 +13,24 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Chemical Space Map…: PCA, UMAP or t-SNE coordinates as columns, shown as a scatter plot."""
+"""Dimensionality Reduction…: PCA, UMAP, t-SNE or PaCMAP coordinates as columns, plotted."""
 
 from __future__ import annotations
 
 import importlib.util
 
 import numpy as np
-from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox
+from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QSpinBox
 
 from chemsuite.analysis import embedding as em
-from chemsuite.app.dialogs import OutputChoice, RowsChoice, Segmented, ToolDialog
+from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn
-from chemsuite.plotting.data import colorable_columns
 from chemsuite.tools.sar.common import activity_combo
 from chemsuite.tools.similarity.common import FeatureChooser
 
 from .common import features_task
 
-NONE = "(none)"
 #: the PCA axes offered: (first, second) component, 1-based
 COMPONENT_PAIRS = ((1, 2), (1, 3), (2, 3), (3, 4))
 HELP = {
@@ -52,14 +50,14 @@ class SpaceMapDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
         super().__init__(
             ctx.parent,
-            "Chemical Space Map",
-            guide="chemical-space-map",
+            "Dimensionality Reduction",
+            guide="dimensionality-reduction",
         )
         self.ctx = ctx
         self.plot = None
 
         inputs = self.section("Input")
-        self.features = FeatureChooser(ctx, metric=False, section=inputs)
+        self.features = FeatureChooser(ctx, metric=False, section=inputs, both=True)
         self.rows = inputs.row("Rows", RowsChoice(ctx))
 
         method = self.section("Method")
@@ -237,25 +235,10 @@ class SpaceMapDialog(ToolDialog):
         )
         self._more_section = more
 
-        output = self.section("Output")
-        self.output = QLineEdit()
-        output.row("Column names", self.output)
-        self.if_exists = output.row("If they exist", OutputChoice())
-        self.color = QComboBox()
-        self.color.addItems([NONE, *colorable_columns(ctx.table)])
-        guess = activity_combo(ctx).currentText()
-        if guess:
-            self.color.setCurrentText(guess)
-        output.row("Colour plot by", self.color)
-        self._output_section = output
-
-        self._auto_name = ""
         for signal in (
             self.method.currentIndexChanged,
             self.rows.changed,
             self.features.changed,
-            self.output.textChanged,
-            self.color.currentIndexChanged,
             self.dims.changed,
             self.distance.currentIndexChanged,
             self.min_dist.valueChanged,
@@ -311,12 +294,6 @@ class SpaceMapDialog(ToolDialog):
         for widget in (self.mn_ratio, self.fp_ratio, self.pacmap_distance):
             more.set_row_visible(widget, method == "pacmap")
         more.setVisible(method != "pca")
-        name = em.METHODS[method]
-        if self.output.text() in ("", self._auto_name):
-            self.output.blockSignals(True)
-            self.output.setText(name)
-            self.output.blockSignals(False)
-        self._auto_name = name
         self.refresh()
 
     def run(self):
@@ -348,11 +325,9 @@ class SpaceMapDialog(ToolDialog):
         ctx = self.ctx
         oids = self.rows.oids()
         method = self.method.currentData()
-        overwrite = self.if_exists.overwrite()
         options = self.options()
         build, remember = features_task(ctx, self.features, oids)
-        prefix = self.output.text().strip() or em.METHODS[method]
-        color = self.color.currentText()
+        color = activity_combo(ctx).currentText() or None  # the plot opens coloured by activity
 
         def work(job):
             features = build(job)
@@ -362,30 +337,24 @@ class SpaceMapDialog(ToolDialog):
 
         def done(result: em.Embedding) -> None:
             remember()
-            self.finish(oids, result, prefix, None if color == NONE else color, overwrite)
+            self.finish(oids, result, color)
 
         return ctx.run(f"Calculating {em.METHODS[method]}…", work, done)
 
-    def finish(
-        self,
-        oids: np.ndarray,
-        result: em.Embedding,
-        prefix: str,
-        color: str | None,
-        overwrite: bool = True,
-    ):
+    def finish(self, oids: np.ndarray, result: em.Embedding, color: str | None = None):
         ctx = self.ctx
         dims = result.coords.shape[1]
-        axes = [f"{prefix} {i + 1}" for i in range(dims)]
+        columns = map_columns(ctx.table.column_names, em.METHODS[result.method], dims)
         names = ctx.apply_results(
             {
-                axis: (oids, NumberColumn.from_floats(result.coords[:, i], 3))
-                for i, axis in enumerate(axes)
+                name: (oids, NumberColumn.from_floats(result.coords[:, i], 3))
+                for i, name in enumerate(columns)
             },
             label=f"{em.METHODS[result.method]} map",
-            overwrite=overwrite,
         )
-        columns = [names[a] for a in axes]
+        columns = [names[c] for c in columns]
+        if color is not None and color not in ctx.table:
+            color = None
         if dims == 3:
             self.plot = ctx.open_tool("scatter3d")
             self.plot.set_spec(x=columns[0], y=columns[1], z=columns[2], color=color)
@@ -397,3 +366,17 @@ class SpaceMapDialog(ToolDialog):
             message += "; " + "; ".join(result.notes)
         ctx.show_message(message, 10_000)
         return self.plot
+
+
+def map_columns(existing, method: str, dims: int) -> list[str]:
+    """New column names for one map, never an existing column: "UMAP 1", "UMAP 2"; the next
+    map "UMAP 1 (1)", "UMAP 2 (1)"; then "(2)" and so on. A map's columns share one number,
+    so they stay recognisably together (rename them in the table afterwards)."""
+    taken = set(existing)
+    run = 0
+    while True:
+        suffix = f" ({run})" if run else ""
+        names = [f"{method} {i + 1}{suffix}" for i in range(dims)]
+        if not taken.intersection(names):
+            return names
+        run += 1

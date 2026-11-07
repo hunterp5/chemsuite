@@ -40,9 +40,11 @@ def chem(window):
 
 def test_menu_bar_order(window) -> None:
     titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
-    assert titles == [
-        "File", "Edit", "Search", "Table", "Chemistry", "Analysis", "Plot", "View", "Help"
-    ]  # fmt: skip
+    assert titles == ["File", "Edit", "View", "Tools", "Chemistry", "Data", "Help"]
+    data = window.menuBar().actions()[5].menu()
+    entries = [a.text().replace("&", "") for a in data.actions() if not a.isSeparator()]
+    # Search, Plot and the panes lead the Data menu
+    assert entries[:6] == ["Search", "Plot", "Filters", "Browser", "Bin Values…", "Statistics…"]
 
 
 def test_tools_fill_slots_among_menu_commands(window) -> None:
@@ -50,14 +52,18 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
         return [a.text().replace("&", "") for a in menu.actions() if a.isVisible()]
 
     menus = {a.text().replace("&", ""): a.menu() for a in window.menuBar().actions()}
-    assert visible(menus["Search"])[4:7] == [
+    search = next(a.menu() for a in menus["Data"].actions() if a.text() == "&Search")
+    assert visible(search)[4:7] == [
         "Structure Search…",
         "Reaction Search…",
         "Clear Highlighting",
     ]
-    table = visible(menus["Table"])
-    assert table.index("Bin Column…") < table.index("New Document from Shown Rows")
-    assert table[-1] == "Clear Sort"
+    assert visible(menus["Tools"]) == ["Table"]
+    table = visible(menus["Tools"].actions()[0].menu())
+    assert table.index("Join Columns…") < table.index("Calculator…")
+    assert "Clear Sort" not in table and "New Document from Shown Rows" not in table
+    assert "R-Group Decomposition…" in visible(menus["Chemistry"])
+    assert "View" not in [a.text() for a in menus["Data"].actions()]
 
 
 def test_registry_builds_the_chemistry_menu(window) -> None:

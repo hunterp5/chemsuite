@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The Bin Column dialog, with a live preview of the bins and their counts."""
+"""The Bin Values dialog, with a live preview of the bins and their counts."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def _spin(value: float = 0.0) -> QDoubleSpinBox:
 class BinningDialog(QDialog):
     def __init__(self, ctx: ToolContext) -> None:
         super().__init__(ctx.parent)
-        self.setWindowTitle("Bin Column")
+        self.setWindowTitle("Bin Values")
         self.ctx = ctx
         self.result: Binned | None = None
 

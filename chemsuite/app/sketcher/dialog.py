@@ -104,6 +104,8 @@ class SketcherDialog(QDialog):
         self.resize(760, 560)
 
         self.toolbar.picked.connect(self.canvas.set_tool)
+        self.toolbar.library_requested.connect(self.open_library)
+        self.canvas.library_requested.connect(self.open_library)
         self.canvas.tool_changed.connect(lambda _n: self.toolbar.show_tool(self.canvas.tool))
         self.canvas.changed.connect(self._update)
         self.canvas.message.connect(self._show_message)
@@ -118,6 +120,21 @@ class SketcherDialog(QDialog):
     def clear(self) -> None:
         if not self.canvas.sketch.is_empty():
             self.canvas.set_sketch(Sketch(), "Clear")
+
+    def open_library(self):
+        """The template library; the template picked becomes the drawing tool."""
+        from chemsuite.app.sketcher.library import TemplateLibrary
+        from chemsuite.app.sketcher.tools import TemplateTool
+        from chemsuite.sketch import library
+
+        window = TemplateLibrary(self)
+        window.chosen.connect(
+            lambda name: self.canvas.set_tool(TemplateTool(library.template(name)))
+        )
+        window.rejected.connect(lambda: self.toolbar.show_tool(self.canvas.tool))
+        window.finished.connect(lambda _r: window.deleteLater())
+        window.open()
+        return window
 
     def _update(self) -> None:
         report = self.canvas.report

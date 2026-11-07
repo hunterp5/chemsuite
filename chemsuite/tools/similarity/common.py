@@ -94,7 +94,8 @@ def fingerprint_task(
 
 
 class FeatureChooser(QWidget):
-    """Fingerprints of a structure column, or a set of number columns.
+    """Fingerprints of a structure column, a set of number columns, or (with *both*) the two
+    together.
 
     Given a dialog *section* (see ``chemsuite.app.dialogs``), its rows go into that section,
     sharing the dialog's label column, and "Compare by" is a segmented choice. Without one it
@@ -110,6 +111,7 @@ class FeatureChooser(QWidget):
         metric: bool = True,
         numbers_allowed: bool = True,
         section=None,
+        both: bool = False,
     ):
         super().__init__()
         self.ctx = ctx
@@ -117,13 +119,19 @@ class FeatureChooser(QWidget):
         if section is not None:
             from chemsuite.app.dialogs import Segmented
 
-            self.compare = Segmented(
-                (("fingerprints", "Fingerprints"), ("numbers", "Number columns"))
-            )
+            choices = [
+                ("fingerprints", "Fingerprints"),
+                ("numbers", "Numbers" if both else "Number columns"),
+            ]
+            if both:
+                choices.append(("both", "Both"))
+            self.compare = Segmented(tuple(choices))
             self.use_fingerprints = self.compare.buttons["fingerprints"]
             self.use_numbers = self.compare.buttons["numbers"]
+            self.use_both = self.compare.buttons.get("both")
         else:
             self.compare = None
+            self.use_both = None
             self.use_fingerprints = QRadioButton("Fingerprints")
             self.use_numbers = QRadioButton("Number columns")
             group = QButtonGroup(self)
@@ -175,8 +183,13 @@ class FeatureChooser(QWidget):
         if not ctx.structure_columns():
             self.use_numbers.setChecked(True)
             self.use_fingerprints.setEnabled(False)
+            if self.use_both is not None:
+                self.use_both.setEnabled(False)
+        toggles = [self.use_fingerprints.toggled, self.use_numbers.toggled]
+        if self.use_both is not None:
+            toggles.append(self.use_both.toggled)
         for signal in (
-            self.use_fingerprints.toggled,
+            *toggles,
             self.structure.currentIndexChanged,
             self.kind.currentIndexChanged,
             self.metric.currentIndexChanged,
@@ -186,11 +199,11 @@ class FeatureChooser(QWidget):
         self._changed()
 
     def _changed(self) -> None:
-        fingerprints = self.fingerprints()
-        self._show(self.structure, fingerprints)
-        self._show(self.kind, fingerprints)
-        self._show(self.metric, fingerprints and self._show_metric)
-        self._show(self.columns, not fingerprints)
+        bits = self.fingerprints() or self.both()
+        self._show(self.structure, bits)
+        self._show(self.kind, bits)
+        self._show(self.metric, self.fingerprints() and self._show_metric)
+        self._show(self.columns, not self.fingerprints())
         if self.section is not None:
             kind = KINDS.get(self.kind.currentData())
             self.section.set_help(self.kind, kind.help if kind is not None else "")
@@ -203,7 +216,11 @@ class FeatureChooser(QWidget):
             self.form.setRowVisible(field, visible)
 
     def fingerprints(self) -> bool:
+        """Fingerprints alone (not with number columns: see ``both``)."""
         return self.use_fingerprints.isChecked()
+
+    def both(self) -> bool:
+        return self.use_both is not None and self.use_both.isChecked()
 
     def set_number_columns(self, names) -> None:
         wanted = set(names)
@@ -219,14 +236,20 @@ class FeatureChooser(QWidget):
 
     def problem(self) -> str:
         """Why the features cannot be used yet ("" when they can)."""
-        if self.fingerprints():
-            return "" if self.structure.currentText() else "There is no structure column."
+        if self.fingerprints() or self.both():
+            if not self.structure.currentText():
+                return "There is no structure column."
+            if self.fingerprints():
+                return ""
         return "" if self.number_columns() else "Tick at least one number column."
 
     def describe(self) -> str:
+        kind = self.kind.currentText().split(",")[0]
+        bits = f"{kind} fingerprints of {self.structure.currentText()}"
         if self.fingerprints():
-            kind = self.kind.currentText().split(",")[0]
-            return f"{kind} fingerprints of {self.structure.currentText()}"
+            return bits
+        if self.both():
+            return f"{bits} and {', '.join(self.number_columns())}"
         return ", ".join(self.number_columns())
 
     def number_values(self, oids: np.ndarray) -> list[np.ndarray]:

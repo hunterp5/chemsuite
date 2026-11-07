@@ -174,9 +174,18 @@ class FilterCard(QFrame):
         self.column = new
         self._update_title()
 
+    #: what the card covers ("7 numbers from 5 to 9"), shown in the title's tooltip: cards
+    #: carry no text of their own under the controls
+    details = ""
+
+    def set_details(self, text: str) -> None:
+        self.details = text
+        self._update_title()
+
     def _update_title(self) -> None:
         self.title.setText(self.column)
-        self.title.setToolTip(f"{self.column} ({self.kind})")
+        tip = f"{self.column} ({self.kind})"
+        self.title.setToolTip(f"{tip}\n{self.details}" if self.details else tip)
 
     def _on_enabled(self, on: bool) -> None:
         for i in range(self.body.count()):
@@ -208,9 +217,6 @@ class RangeCard(FilterCard):
             edit.setMinimumWidth(48)  # shrink with the pane rather than clip
         self.blanks = QCheckBox("Include blanks")
         self.blanks.setChecked(True)
-        self.summary = QLabel()
-        self.summary.setWordWrap(True)
-        self.summary.setStyleSheet("color: palette(placeholder-text)")
         bounds = QHBoxLayout()
         bounds.addWidget(self.low_edit)
         bounds.addWidget(QLabel("to"))
@@ -218,7 +224,7 @@ class RangeCard(FilterCard):
         holder = QWidget()
         holder.setLayout(bounds)
         bounds.setContentsMargins(0, 0, 0, 0)
-        for widget in (self.slider, holder, self.blanks, self.summary):
+        for widget in (self.slider, holder, self.blanks):
             self.body.addWidget(widget)
 
         self.slider.rangeChanged.connect(self._from_slider)
@@ -235,14 +241,14 @@ class RangeCard(FilterCard):
             self._lo = self._hi = 0.0
             self.slider.set_histogram(None)
             self.slider.setEnabled(False)
-            self.summary.setText("No numbers in this column")
+            self.set_details("No numbers in this column")
         else:
             self._lo, self._hi = float(finite.min()), float(finite.max())
             span = (self._lo, self._hi) if self._hi > self._lo else (self._lo - 0.5, self._lo + 0.5)
             counts, _edges = np.histogram(finite, bins=HISTOGRAM_BINS, range=span)
             self.slider.set_histogram(counts)
             self.slider.setEnabled(self.is_enabled)
-            self.summary.setText(
+            self.set_details(
                 f"{len(finite):,} numbers from {format_general(self._lo)} to "
                 f"{format_general(self._hi)}" + (f" · {blanks:,} blank" if blanks else "")
             )
@@ -392,8 +398,6 @@ class CategoryCard(FilterCard):
         self.values = QListWidget()
         self.values.setUniformItemSizes(True)
         self.values.setMaximumHeight(180)
-        self.note = QLabel()
-        self.note.setStyleSheet("color: palette(placeholder-text)")
         all_button = QPushButton("All")
         none_button = QPushButton("None")
         buttons = QHBoxLayout()
@@ -403,7 +407,7 @@ class CategoryCard(FilterCard):
         buttons.addStretch(1)
         holder = QWidget()
         holder.setLayout(buttons)
-        for widget in (self.search, self.values, holder, self.note):
+        for widget in (self.search, self.values, holder):
             self.body.addWidget(widget)
 
         self.search.textChanged.connect(self._apply_search)
@@ -428,12 +432,11 @@ class CategoryCard(FilterCard):
                 self.values.addItem(item)
         finally:
             self.values.blockSignals(False)
-        self.note.setText(
-            f"Showing the {len(shown):,} most common of {len(counts):,} values"
+        self.set_details(
+            f"Listing the {len(shown):,} most common of {len(counts):,} values"
             if self._hidden_values
-            else ""
+            else f"{len(counts):,} values"
         )
-        self.note.setVisible(bool(self._hidden_values))
         self._apply_search(self.search.text())
 
     def listed_values(self) -> list[str]:
