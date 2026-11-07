@@ -21,7 +21,7 @@ read Ctrl as ⌘.
 7. [Filters](#7-filters)
 8. [Background jobs](#8-background-jobs)
 9. [Plots](#9-plots)
-10. [Chemistry: descriptors, pKa, standardizing and conformers](#10-chemistry-descriptors-pka-standardizing-and-conformers)
+10. [Chemistry: descriptors, pKa, standardizing, conformers and retrosynthesis](#10-chemistry-descriptors-pka-standardizing-conformers-and-retrosynthesis)
 11. [Table and analysis tools](#11-table-and-analysis-tools)
 12. [Similarity](#12-similarity)
 13. [SAR](#13-sar)
@@ -924,7 +924,7 @@ are not already columns, then plots them.
 
 ---
 
-## 10. Chemistry: descriptors, pKa, standardizing and conformers
+## 10. Chemistry: descriptors, pKa, standardizing, conformers and retrosynthesis
 
 ### Calculate Descriptors (Ctrl+Shift+D)
 
@@ -1036,6 +1036,98 @@ parameters).
 
 Writes every conformer as its own SD record, carrying the row's other columns. You can export
 all rows or only the selected ones.
+
+### Retrosynthesis
+
+Chemistry ▸ Retrosynthesis plans synthetic routes to each structure with
+[AiZynthFinder](https://github.com/MolecularAI/aizynthfinder) (AstraZeneca, MIT). A
+neural-network policy proposes reactions, a tree search takes the molecule apart, and a route
+counts as **solved** when every precursor it ends on is in a stock file you supply.
+
+Everything runs on your own machine: the policy models, the reaction templates and the stock
+file all come from the `config.yml` you point chemsuite at. A config that would send
+predictions to a model server (`use_remote_models: true`) or query a stock database on another
+host is refused, and nothing about your structures is sent anywhere.
+
+**Setting it up.** AiZynthFinder needs an older RDKit than chemsuite, so it gets its own Python
+environment:
+
+1. Create an environment with Python 3.10–3.12, for example
+   `conda create -n aizynth python=3.12`.
+2. In it, run `python -m pip install aizynthfinder "pyarrow>=19,<26"`.
+3. In **Settings ▸ External Tools**, set **AiZynthFinder Python** to that environment's
+   `python` and press **Test**: it reports the AiZynthFinder version it found.
+4. Press **Download…** on the **AiZynthFinder config** row and choose a folder. chemsuite
+   fetches AiZynthFinder's public USPTO policies, ring-breaker policy, filter and the ZINC stock
+   (about 1.5 GB, from Zenodo and figshare) in the background (follow it in View ▸ Jobs), writes
+   a `config.yml` beside them, and sets the config path when it is done. Files already in the
+   folder are not fetched again, and a cancelled or interrupted download resumes where it
+   stopped. A `config.yml` of your own in that folder is left alone; the new one is then
+   `chemsuite_config.yml`. If you already have the data, choose your own `config.yml` with
+   **Browse…** instead. Press **Test** on the config row to check it.
+
+Downloading is the only time this feature uses the network, and only to fetch these public
+files. When IT turns network use off (policy `network_allowed: false`), Download… is greyed
+out and the data has to be put in place by hand.
+
+Until both are set, Retrosynthesis says what is missing and will not run.
+
+- **Input.** A structure column and the rows. The search starts on the selected rows when you
+  have a selection, because it costs a minute or more per structure: run a handful of rows, not
+  a whole library. The same structure is searched once however many rows hold it.
+- **Policies** and **Stocks** list what your `config.yml` offers. Every one is used unless you
+  clear some; `ringbreaker` is trained on ring-forming reactions. A route is solved when its
+  precursors are in one of the ticked stocks.
+- **Time limit**, **Iterations** and **Routes to keep** bound one structure's search: it stops
+  at whichever limit comes first, and keeps that many of the best routes.
+- **More Options** holds the search **Algorithm** (Monte Carlo by default; Retro\*,
+  breadth-first and proof-number search explore the same templates in a different order),
+  **Exploration (C)**, the filter policies, the **Longest route** allowed, **Stop at the first
+  solved route**, whether a buyable target is still taken apart, and route clustering.
+- **Skip rows already searched** leaves rows that have AiZynth values alone. Clear those cells,
+  or turn it off, to search them again.
+- **Columns.** Each searched row gets the search's statistics:
+
+  | Column | Meaning |
+  |---|---|
+  | AiZynth Solved | Yes when the best route ends entirely in the stock. |
+  | AiZynth Score | The state score of the best route (0–1; 1 is a fully solved, short route). |
+  | AiZynth Steps | Reactions in the best route. |
+  | AiZynth Routes, AiZynth Solved Routes | How many routes were kept, and how many of those are solved. |
+  | AiZynth Time (s), AiZynth First Solution (s) | How long the search took, and when its first solved route appeared. |
+  | AiZynth Precursors in Stock / not in Stock | The precursor SMILES of the best route, by availability. |
+  | AiZynth Nodes, AiZynth Precursors, AiZynth Policies, AiZynth Stock | The size of the search, and which policies and stocks it used. |
+
+  Anything else your config reports (an extra scorer, a post-processing job) gets its own
+  `AiZynth …` column too.
+- **Cancelling** keeps the structures already searched.
+- **The routes** go to the **Routes** pane (below), which opens with the first result.
+
+#### The Routes pane
+
+Chemistry ▸ Routes shows the routes found in this document. It saves with the document, so a
+reopened file still has its routes.
+
+- **Target** picks which searched structure to look at, with its number of routes.
+- The **route table** lists each route: solved or not, its score, how many steps it has, and
+  how many of its ending molecules are in stock. Extra scores from your config appear as
+  further columns. Pick a row to draw that route.
+- **The tree** puts the target on the right with its precursors branching to the left, the way
+  a retrosynthetic scheme is read. A molecule's card is framed **green** when it is in stock
+  and **amber** when it still needs a route of its own; its tooltip names the stock it was
+  found in.
+- **Step 1** is the earliest reaction and the highest number makes the target. Click a step to
+  see its reaction SMILES, the policy that proposed it, that policy's probability, the reaction
+  template and its classification underneath; click empty space to close it again. Right-click
+  a step to copy the reaction SMILES or draw it in the sketcher.
+- **Right-click a molecule** to copy it (SMILES, molfile, InChI, InChIKey or an image) or to
+  add it to the table as a new row — handy for turning in-stock precursors into a
+  building-block list.
+- **Drag** or **scroll** to pan. **⌘-scroll** (Ctrl-scroll on Windows and Linux) or a
+  trackpad **pinch** zooms around the pointer, from 20% to 400%. Structures are redrawn for the
+  zoom they are shown at, so they stay sharp close up. A route is fitted to the pane when you
+  open it and whenever the pane is resized, until you pan or zoom; **double-click empty space**
+  to fit it again.
 
 ---
 

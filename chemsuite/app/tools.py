@@ -219,6 +219,20 @@ class ToolContext:
         """
         return self._window.add_panel(widget, title)
 
+    def find_panel(self, tool_id: str) -> QWidget | None:
+        """The open panel of *tool_id*, if there is one (raised to the front).
+
+        A tool that produces more results of the same kind (further retrosynthetic routes,
+        say) fills the panel it already has instead of opening a second one.
+        """
+        for dock in self._window._panels:
+            widget = dock.widget()
+            if getattr(widget, "tool_id", None) == tool_id:
+                dock.show()
+                dock.raise_()
+                return widget
+        return None
+
     def show_dialog(self, dialog: QDialog) -> QDialog:
         """Show a tool's dialog without blocking the window.
 

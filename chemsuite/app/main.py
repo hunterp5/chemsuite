@@ -62,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     runner = JobRunner(app, keep_awake=True)
     images = StructureImages()
     app.aboutToQuit.connect(runner.shutdown)
+    app.aboutToQuit.connect(_close_external_workers)
 
     window = MainWindow(runner, images)
     window.show()
@@ -69,6 +70,13 @@ def main(argv: list[str] | None = None) -> int:
         if not arg.startswith("-"):
             window.open_path(Path(arg))
     return app.exec()
+
+
+def _close_external_workers() -> None:
+    """Stop the long-lived helper processes (the warm AiZynthFinder worker) on the way out."""
+    from chemsuite.retro.runner import close_workers
+
+    close_workers()
 
 
 def _version() -> str:
