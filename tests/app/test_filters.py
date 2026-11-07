@@ -180,3 +180,30 @@ def test_cards_are_striped_compact_and_use_glyphs(panel) -> None:
     assert series.checked_values() == set()
     series.all_button.click()
     assert len(series.checked_values()) == 4
+
+
+def test_add_by_type_then_choose_the_column(panel) -> None:
+    from chemsuite.app.filters.cards import CategoryCard, RangeCard, TextCard, sources_for
+
+    panel._fill_add_menu()
+    titles = [a.text() for a in panel.add_menu.actions()]
+    assert titles == ["Number Range", "Category", "Text Match"]  # no searcher: no structures
+    assert sources_for(panel.table, "range") == ["pIC50"]
+    card = panel.add_filter_of_type("category")
+    assert isinstance(card, CategoryCard) and card.column == "Series"  # not the ID column
+    card = panel.change_source(card, "ID")
+    assert [card.title.itemText(i) for i in range(card.title.count())] == ["ID", "pIC50", "Series"]
+    card.not_button.setChecked(True)
+    other = panel.add_filter_of_type("text")
+    new = panel.change_source(card, "Series")
+    assert isinstance(new, CategoryCard) and new.column == "Series" and new.negated
+    assert panel.cards == [new, other] and new.title.currentText() == "Series"
+    assert [c._alternate for c in panel.cards] == [False, True]
+    new.set_checked({"A"})
+    panel.apply_now()
+    assert "CPD-1" not in shown_ids(panel) and "CPD-2" in shown_ids(panel)  # Not A
+    new.title.activated.emit(new.title.findText("pIC50"))  # picked in the card itself
+    assert isinstance(panel.cards[0], CategoryCard) and panel.cards[0].column == "pIC50"
+    assert isinstance(other, TextCard) and not isinstance(panel.cards[0], RangeCard)
+    panel.table.add_column("Notes", ["x"] * len(panel.table))
+    assert "Notes" in [other.title.itemText(i) for i in range(other.title.count())]

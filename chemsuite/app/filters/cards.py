@@ -28,7 +28,7 @@ import re
 
 import numpy as np
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -83,6 +83,8 @@ class FilterCard(QFrame):
     kind = ""
     changed = Signal()
     removeRequested = Signal()
+    #: another column was chosen as the card's source (the panel swaps in a new card)
+    sourceRequested = Signal(str)
 
     def __init__(self, table: Table, column: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -97,8 +99,13 @@ class FilterCard(QFrame):
         self.enabled_box = QCheckBox()
         self.enabled_box.setChecked(True)
         self.enabled_box.setToolTip("Apply this filter")
-        self.title = QLabel()
-        self.title.setStyleSheet("font-weight: 600")
+        #: the card's source column, chosen here (the card is rebuilt for another column)
+        self.title = QComboBox()
+        self.title.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.title.setMinimumContentsLength(6)
+        font = self.title.font()
+        font.setWeight(QFont.Weight.DemiBold)
+        self.title.setFont(font)
         self.not_button = self.glyph_button("not", "Not: keep the rows this filter would hide")
         self.not_button.setCheckable(True)
         self.remove_button = self.glyph_button("close", "Remove filter")
@@ -108,7 +115,8 @@ class FilterCard(QFrame):
         header.setSpacing(4)
         header.addWidget(self.enabled_box)
         header.addSpacing(4)  # the check box reports no gap after its indicator
-        header.addWidget(self.title, 1)
+        header.addWidget(self.title)
+        header.addStretch(1)
         header.addWidget(self.not_button)
         header.addWidget(self.remove_button)
         self.body = QVBoxLayout()
@@ -123,7 +131,8 @@ class FilterCard(QFrame):
         self.enabled_box.toggled.connect(self._on_enabled)
         self.not_button.toggled.connect(lambda _on: self.changed.emit())
         self.remove_button.clicked.connect(self.removeRequested.emit)
-        self._update_title()
+        self.update_sources()
+        self.title.activated.connect(self._source_chosen)
         self._restyle()
 
     # -- look ---------------------------------------------------------------------------------
@@ -225,7 +234,25 @@ class FilterCard(QFrame):
 
     def rename(self, new: str) -> None:
         self.column = new
+        self.update_sources()
+
+    def update_sources(self) -> None:
+        """List the columns this kind of card can filter (the table's columns changed)."""
+        names = sources_for(self.table, self.kind)
+        if self.column not in names:
+            names = [self.column, *names]
+        if names != [self.title.itemText(i) for i in range(self.title.count())]:
+            self.title.blockSignals(True)
+            self.title.clear()
+            self.title.addItems(names)
+            self.title.blockSignals(False)
+        self.title.setCurrentText(self.column)
         self._update_title()
+
+    def _source_chosen(self, index: int) -> None:
+        name = self.title.itemText(index)
+        if name and name != self.column:
+            self.sourceRequested.emit(name)
 
     #: what the card covers ("7 numbers from 5 to 9"), shown in the title's tooltip: cards
     #: carry no text of their own under the controls
@@ -236,8 +263,7 @@ class FilterCard(QFrame):
         self._update_title()
 
     def _update_title(self) -> None:
-        self.title.setText(self.column)
-        tip = f"{self.column} ({self.kind})"
+        tip = f"{FILTER_TYPES.get(self.kind, self.kind)} filter on {self.column}"
         self.title.setToolTip(f"{tip}\n{self.details}" if self.details else tip)
 
     def _on_enabled(self, on: bool) -> None:
@@ -555,6 +581,51 @@ class CategoryCard(FilterCard):
             item = self.values.item(i)
             value = item.data(Qt.ItemDataRole.UserRole) or BLANK_LABEL
             item.setHidden(bool(needle) and needle not in value.casefold())
+
+
+#: the kinds of filter card, as the panel's Add menu offers them
+FILTER_TYPES = {
+    "range": "Number Range",
+    "category": "Category",
+    "text": "Text Match",
+    "structure": "Structure",
+    "reaction": "Reaction",
+}
+
+
+def sources_for(table: Table, kind: str) -> list[str]:
+    """The columns a *kind* card can filter: numbers for a range, structures for a structure
+    card, reactions for a reaction card, text and numbers for categories, any column for a
+    text match."""
+
+    def fits(name: str) -> bool:
+        column_kind = table.kind(name)
+        if kind == "range":
+            return column_kind == NUMBER
+        if kind in ("structure", "reaction"):
+            return column_kind == kind
+        if kind == "category":
+            return column_kind not in ("structure", "reaction")
+        return True
+
+    return [name for name in table.column_names if fits(name)]
+
+
+def default_source(table: Table, kind: str) -> str | None:
+    """The column a new *kind* card starts on: for categories, the first column with a short
+    list of values (not an ID column); for text, the first text column; else the first that
+    fits."""
+    names = sources_for(table, kind)
+    if kind == "category":
+        for name in names:
+            distinct = len(value_counts(table.column(name)))
+            if 2 <= distinct <= CATEGORY_LIMIT and distinct < len(table):  # not an ID column
+                return name
+    if kind == "text":
+        text = [n for n in names if table.kind(n) == "text"]
+        if text:
+            return text[0]
+    return names[0] if names else None
 
 
 def card_for(table: Table, column: str, kind: str | None = None, searcher=None) -> FilterCard:

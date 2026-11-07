@@ -46,7 +46,7 @@ from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 
 from ..glyphs import glyph
-from .cards import FilterCard, card_for
+from .cards import FILTER_TYPES, FilterCard, card_for, default_source, sources_for
 
 APPLY_DELAY_MS = 120
 EXTRAS_KEY = "filters"
@@ -122,10 +122,46 @@ class FilterPanel(QWidget):
         self._cards[card] = f"panel:{next(_keys)}"
         self._cards_box.insertWidget(self._cards_box.count() - 1, card)
         self._stripe()
-        card.changed.connect(lambda: self._mark_dirty(card))
-        card.removeRequested.connect(lambda: self.remove_filter(card))
+        self._connect(card)
         self._update_summary()
         return card
+
+    def _connect(self, card: FilterCard) -> None:
+        card.changed.connect(lambda: self._mark_dirty(card))
+        card.removeRequested.connect(lambda: self.remove_filter(card))
+        card.sourceRequested.connect(lambda name: self.change_source(card, name))
+
+    def add_filter_of_type(self, kind: str) -> FilterCard | None:
+        """A *kind* card on its first suitable column (choose another in the card)."""
+        column = default_source(self.table, kind)
+        if column is None:
+            return None
+        return self.add_filter(column, kind)
+
+    def change_source(self, card: FilterCard, column: str) -> FilterCard:
+        """Rebuild *card* (same kind, place, on/off and Not) for *column*."""
+        if card not in self._cards:
+            return card
+        new = card_for(self.table, column, card.kind, self.searcher)
+        new.set_enabled(card.is_enabled)
+        new.not_button.setChecked(card.negated)
+        position = self._cards_box.indexOf(card)
+        key = self._cards[card]
+        # Keep the card's filter key and place: rebuild the order with the new card.
+        self._cards = {(new if c is card else c): k for c, k in self._cards.items()}
+        self._dirty.discard(card)
+        self._stale.discard(card)
+        card.dispose()
+        self._cards_box.insertWidget(position, new)
+        card.setParent(None)
+        card.deleteLater()
+        self._connect(new)
+        if key in self.table.filters:
+            self.table.set_filter(key, None)
+        self._stripe()
+        self._mark_dirty(new)
+        self._update_summary()
+        return new
 
     def remove_filter(self, card: FilterCard) -> None:
         key = self._cards.pop(card, None)
@@ -329,6 +365,9 @@ class FilterPanel(QWidget):
                     if touched is None or card.column == touched:
                         self._stale.add(card)
                 self._refresh_timer.start()
+        if event.structural:
+            for card in self._cards:
+                card.update_sources()  # columns added, removed, renamed or converted
         self._update_summary()
 
     def _drop_cards(self, predicate: Callable[[FilterCard], bool]) -> None:
@@ -352,17 +391,14 @@ class FilterPanel(QWidget):
         self._stale.clear()
 
     def _fill_add_menu(self) -> None:
+        """One entry per kind of filter; the card then picks its column."""
         menu = self.add_menu
         menu.clear()
-        names = self.table.column_names
-        if not names:
-            menu.addAction("No columns").setEnabled(False)
-            return
-        for name in names:
-            action = menu.addAction(name)
-            action.triggered.connect(lambda _c=False, n=name: self.add_filter(n))
-        menu.addSeparator()
-        text = menu.addMenu("Text Match On")
-        for name in names:
-            action = text.addAction(name)
-            action.triggered.connect(lambda _c=False, n=name: self.add_filter(n, "text"))
+        for kind, title in FILTER_TYPES.items():
+            if kind in ("structure", "reaction") and self.searcher is None:
+                continue
+            action = menu.addAction(title)
+            action.triggered.connect(lambda _c=False, k=kind: self.add_filter_of_type(k))
+            if not sources_for(self.table, kind):
+                action.setEnabled(False)
+                action.setToolTip(f"No column suits a {title} filter")

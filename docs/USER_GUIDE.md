@@ -782,17 +782,22 @@ a row is shown only if it passes every enabled card.
 
 | Card | For | Controls |
 |---|---|---|
-| Range | Number columns | A two-handle slider over a histogram of the values, plus min/max boxes. Choose whether blanks are kept. |
-| Category | Text columns with few distinct values | Tick boxes, one per value, with counts. |
-| Text | Other text | Contains / equals / starts / ends / regular expression, with **Not**. |
+| Number Range | Number columns | A two-handle slider over a histogram of the values, plus min/max boxes. Choose whether blanks are kept. |
+| Category | Text or number columns (best with few distinct values) | Tick boxes, one per value, with counts. |
+| Text Match | Any column | Contains / equals / starts / ends / regular expression, with **Not**. |
 | Structure | Structure columns | Substructure, exact or similarity query; searches in the background after you stop typing. |
+| Reaction | Reaction columns | A reaction query (see [Filtering by reaction](#filtering-by-reaction)). |
 
-- Add cards with the **+** button in the panel's header or a column header's **Filter This
-  Column**. The header's other buttons are **Filter Sets** and **Remove All Filters**; point at
-  Remove All for how many rows are showing.
+- **Adding a card.** The **+** button in the panel's header lists the kinds of card. Pick one
+  and it starts on a suitable column (for Category, the first column with a short list of
+  values); choose its column in the box at the top of the card. Switching the column keeps the
+  card's place, on/off and Not. A kind with no suitable column is greyed out. A column
+  header's **Filter This Column** adds the best kind of card for that column directly. The
+  panel header's other buttons are **Filter Sets** and **Remove All Filters**; point at Remove
+  All for how many rows are showing.
 - Each card has an on/off tick box, a **¬** (Not) toggle that keeps the rows the card would
   hide, and **×** to remove it. Cards alternate in shade, like table rows. Point at a card's
-  title for its column and its values (range, or how many categories are listed).
+  column box for its kind and its values (range, or how many categories are listed).
 - A category card's list is as tall as its values (up to eight, then it scrolls); the two tick
   boxes beside **Find a value** tick or untick every value. The Structure card's pencil opens
   the sketcher.
