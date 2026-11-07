@@ -44,10 +44,10 @@ def test_predict_pka_writes_the_chosen_columns(chem, qtbot) -> None:
     table = chem.workspace.table
     dialog = chem.open_tool("predict_pka")
     assert dialog.primary.text() == "Predict pKa for 5 Rows"
-    assert "cLogD 7.4" in dialog.status.text()
+    assert not dialog.status.text().strip()
     dialog.ph.setValue(7.0)
     dialog.outputs["species"].setChecked(True)
-    assert "Major Species @ pH 7" in dialog.status.text()
+    assert not dialog.status.text().strip()
     for box in dialog.outputs.values():
         box.setChecked(False)
     assert "Choose at least one" in dialog.status.text() and not dialog.primary.isEnabled()

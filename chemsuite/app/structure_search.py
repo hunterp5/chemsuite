@@ -154,6 +154,45 @@ class StructureSearcher:
             f"Structure search: {query.describe()}", work, done, lane=QUICK, guard=True
         )
 
+    def start_reactions(
+        self,
+        column: str,
+        query,
+        on_done: Callable[[np.ndarray, np.ndarray], None],
+    ) -> Job:
+        """Search reaction column *column* for a
+        :class:`~chemsuite.analysis.reactions.ReactionQuery`; *on_done* gets ``(oids, hits)``.
+        Raises :class:`QueryError` before starting."""
+        from chemsuite.analysis.reactions import (
+            POOL_MIN_ROWS,
+            parse_reaction_query,
+            search_reactions,
+        )
+
+        parse_reaction_query(query)
+        table = self.table
+        oids = table.oids.copy()
+        data = table.column(column)
+        slots = table.slots_of(oids)
+        cells = [
+            blob if blob is not None else (text or None)
+            for blob, text in zip(data.blobs(slots), data.displays(slots), strict=True)
+        ]
+        pool = self._pool if len(oids) >= POOL_MIN_ROWS else (lambda: None)
+
+        def work(job: Job) -> np.ndarray:
+            return search_reactions(
+                query, cells, executor=pool(), progress=job.report, cancel=job.cancel_token
+            )
+
+        return self._run(
+            f"Reaction search: {query.describe()}",
+            work,
+            lambda hits: on_done(oids, hits),
+            lane=QUICK,
+            guard=True,
+        )
+
 
 class QueryInput(QWidget):
     """A query structure: typed SMILES or SMARTS, drawn, or taken from the current row."""

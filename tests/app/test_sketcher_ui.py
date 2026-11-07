@@ -284,23 +284,7 @@ def test_escape_cancels_a_drag_preview(dialog):
     assert canvas.sketch.is_empty() and not canvas.history.can_undo
 
 
-def test_ok_returns_a_molfile_and_the_structure_editor_uses_it(qapp, monkeypatch):
-    from chemsuite.app.structure_editor import StructureEditor
-
-    def fake_exec(self):
-        self.canvas.history.replace(from_text("c1ccccc1O"))
-        self.accept()
-        return True
-
-    monkeypatch.setattr(SketcherDialog, "exec", fake_exec)
-    editor = StructureEditor("CCO")
-    editor.draw()
-    assert editor.current.kind == "molfile"
-    assert Chem.MolToSmiles(editor.current.mol) == "Oc1ccccc1"
-    editor.close()
-
-
-def test_sketcher_opens_on_the_editor_structure(qapp):
+def test_sketcher_opens_on_a_structure(qapp):
     dlg = SketcherDialog("CC(=O)Oc1ccccc1C(=O)O")
     assert to_smiles(dlg.canvas.sketch) == "CC(=O)Oc1ccccc1C(=O)O"
     assert not dlg.canvas.history.can_undo  # opening is not an edit

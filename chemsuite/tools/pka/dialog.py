@@ -123,14 +123,6 @@ class PkaDialog(ToolDialog):
             return "Choose at least one kind of column to write."
         return ""
 
-    def summary(self) -> str:
-        return f"MolGpKa at pH {self.ph.value():g} → " + ", ".join(self._columns())
-
-    def note(self) -> str:
-        if self._rows() > 50_000:
-            return f"{self._rows():,} rows may take a few minutes (you can cancel)."
-        return ""
-
     def verb(self) -> str:
         return f"Predict pKa for {self._rows():,} Rows"
 

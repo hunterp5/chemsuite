@@ -36,10 +36,20 @@ from .fingerprints import Fingerprints
 Progress = Callable[[int, int], None]
 
 METHODS = {"pca": "PCA", "umap": "UMAP", "tsne": "t-SNE"}
+#: UMAP distances: metric name -> title. The bit metrics need fingerprints.
+UMAP_METRICS = {
+    "jaccard": "Jaccard (Tanimoto)",
+    "dice": "Dice",
+    "rogerstanimoto": "Rogers-Tanimoto",
+    "euclidean": "Euclidean",
+    "manhattan": "Manhattan",
+    "cosine": "Cosine",
+    "correlation": "Correlation",
+}
+BIT_METRICS = frozenset({"jaccard", "dice", "rogerstanimoto"})
 REDUCED_DIMS = 50  # PCA dimensions handed to t-SNE and the SOM
 TILE_ROWS = 4096
 UMAP_FIT_MAX = 50_000  # larger sets: fit on a sample, then place the rest onto that map
-TSNE_WARN_ROWS = 50_000
 
 
 @dataclass
@@ -179,14 +189,21 @@ def reduce(
     return pca(features, dims, progress=progress, cancel=cancel)[0]
 
 
-def pca_map(features: Features, **kw) -> Embedding:
+def pca_map(features: Features, *, components: tuple[int, int] = (1, 2), **kw) -> Embedding:
+    """PCA scores on two components (1-based, e.g. ``(1, 3)`` for PC1 against PC3)."""
     _need(features, 3)
-    scores, ratio = pca(features, 2, **kw)
-    if scores.shape[1] < 2:
-        scores = np.column_stack([scores, np.zeros(len(scores))])
-    explained = tuple(float(r) for r in ratio[:2])
-    note = f"PC1 {explained[0]:.0%} and PC2 {explained[-1]:.0%} of the variance"
-    return _scatter(features, scores, "pca", explained=explained, notes=[note])
+    first, second = components
+    if not 1 <= first < second:
+        raise ValueError(f"components must be two increasing numbers from 1, not {components}")
+    scores, ratio = pca(features, second, **kw)
+    if scores.shape[1] < second:  # fewer components than asked: the missing axes are flat
+        pad = second - scores.shape[1]
+        scores = np.column_stack([scores, np.zeros((len(scores), pad))])
+        ratio = np.concatenate([np.asarray(ratio, dtype=float), np.zeros(pad)])
+    picked = [first - 1, second - 1]
+    explained = tuple(float(ratio[i]) for i in picked)
+    note = f"PC{first} {explained[0]:.0%} and PC{second} {explained[1]:.0%} of the variance"
+    return _scatter(features, scores[:, picked], "pca", explained=explained, notes=[note])
 
 
 def umap_map(
@@ -194,22 +211,31 @@ def umap_map(
     *,
     neighbours: int = 15,
     min_dist: float = 0.1,
+    spread: float = 1.0,
+    metric: str | None = None,
+    epochs: int | None = None,
     seed: int | None = 42,
     fit_max: int = UMAP_FIT_MAX,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> Embedding:
-    """UMAP: Jaccard distance on fingerprint bits, Euclidean on z-scored columns.
+    """UMAP. The distance (*metric*) defaults to Jaccard on fingerprint bits and Euclidean on
+    z-scored columns; a fingerprint metric needs fingerprints (see ``UMAP_METRICS``).
 
     Above *fit_max* rows the map is fitted on a random sample and the rest are placed onto it.
-    A *seed* makes the map repeatable, at the cost of running on one core.
+    A *seed* makes the map repeatable, at the cost of running on one core. *epochs* None lets
+    UMAP choose (200 for large sets, 500 for small).
     """
     _need(features, 5)
     import umap  # slow to import (numba): only when a map is made
 
     n = len(features)
     neighbours = max(2, min(neighbours, n - 1))
-    metric = "jaccard" if features.fps is not None else "euclidean"
+    metric = metric or ("jaccard" if features.fps is not None else "euclidean")
+    if metric in BIT_METRICS and features.fps is None:
+        raise ValueError(f"{UMAP_METRICS[metric]} distance needs fingerprints")
+    if min_dist > spread:
+        raise ValueError("Min. distance must not be larger than the spread")
     rng = np.random.default_rng(seed if seed is not None else 0)
     fit_rows = np.sort(rng.choice(n, fit_max, replace=False)) if n > fit_max else np.arange(n)
 
@@ -219,7 +245,9 @@ def umap_map(
     model = umap.UMAP(
         n_neighbors=neighbours,
         min_dist=min_dist,
+        spread=spread,
         metric=metric,
+        n_epochs=epochs,
         random_state=seed,
         n_jobs=1 if seed is not None else -1,
     )
@@ -251,26 +279,66 @@ def tsne_map(
     features: Features,
     *,
     perplexity: float = 30.0,
+    learning_rate: float | None = None,
+    iterations: int = 1000,
+    exaggeration: float = 12.0,
+    reduce_to: int = REDUCED_DIMS,
+    init: str = "pca",
     seed: int | None = 42,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> Embedding:
-    """t-SNE (Barnes-Hut) on up to 50 PCA dimensions."""
+    """t-SNE (Barnes-Hut) on up to *reduce_to* PCA dimensions.
+
+    *learning_rate* None is scikit-learn's "auto" (rows / exaggeration / 4); *init* is
+    "pca" (stable layouts) or "random".
+    """
     _need(features, 5)
     from sklearn.manifold import TSNE
 
-    x = reduce(features, progress=progress, cancel=cancel)
+    if init not in ("pca", "random"):
+        raise ValueError(f"unknown t-SNE start {init!r}")
+    x = reduce(features, max(2, reduce_to), progress=progress, cancel=cancel)
     check(cancel)
     perplexity = min(perplexity, (len(features) - 1) / 3)
-    model = TSNE(n_components=2, perplexity=perplexity, init="pca", random_state=seed, n_jobs=-1)
+    model = TSNE(
+        n_components=2,
+        perplexity=perplexity,
+        learning_rate="auto" if learning_rate is None else learning_rate,
+        max_iter=max(250, iterations),
+        early_exaggeration=exaggeration,
+        init=init,
+        random_state=seed,
+        n_jobs=-1,
+    )
     coords = model.fit_transform(np.asarray(x, dtype=np.float32))
     return _scatter(features, coords, "tsne")
 
 
 OPTIONS = {
-    "pca": ("progress", "cancel"),
-    "umap": ("neighbours", "min_dist", "seed", "fit_max", "progress", "cancel"),
-    "tsne": ("perplexity", "seed", "progress", "cancel"),
+    "pca": ("components", "progress", "cancel"),
+    "umap": (
+        "neighbours",
+        "min_dist",
+        "spread",
+        "metric",
+        "epochs",
+        "seed",
+        "fit_max",
+        "progress",
+        "cancel",
+    ),
+    "tsne": (
+        "perplexity",
+        "learning_rate",
+        "iterations",
+        "exaggeration",
+        "reduce_to",
+        "init",
+        "seed",
+        "progress",
+        "cancel",
+    ),
 }
 
 

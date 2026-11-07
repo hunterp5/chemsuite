@@ -45,7 +45,8 @@ Each document has its own window. From top to bottom:
   [Searching](#6-searching).
 - **The table.** One row per compound. Structure columns show drawings.
 - **Docked panels.**
-  - Filters, Advanced Search and the Selection Browser dock at the side.
+  - Filters sits at the right edge at a fixed width, and the Selection Browser docks at the
+    side. Advanced Search opens as its own floating window.
   - New plots and tool panels open to the right of the table, splitting the window left and
     right. A second plot joins the first as a tab.
   - Panels sit flush against the table, divided by a thin line you can drag to resize them
@@ -73,6 +74,9 @@ Each document has its own window. From top to bottom:
     panel by its header onto the top, bottom or side of another panel to split its space, or
     onto its middle to tab them. **View ▸ Arrange Panes** lays out every docked panel at once:
     **As Tabs**, **Side by Side**, **Stacked** or as a **Grid**.
+  - **The Filters panel stays put.** It always sits at the right edge of the window at a fixed
+    width, whatever you do with the other panels: new panels, arrangements and moves all go
+    to its left. It has no Arrange or Undock button and cannot be dragged elsewhere.
 
 - **Status bar**, on one line:
   - At the left: what the current background job is doing, such as "Generating conformers…
@@ -97,18 +101,17 @@ reads the same way, top to bottom:
 - **Input.** What to work on: structures or number columns, and **Rows**.
   - Rows is **All · Shown · Selected**, with each option's count. The counts update as you
     select rows or change filters.
-  - If you choose **Selected** with nothing selected, the footer says so. Select rows in the
+  - If you choose **Selected** with nothing selected, the dialog says so above its buttons. Select rows in the
     table and the dialog is ready to run.
 - **Method.** The tool's settings. Settings that only apply to one method appear when you
   choose that method. Hover over a field or its label for an explanation.
+- **More Options.** Optional settings whose defaults suit most runs sit in a folded section.
+  Click its arrow or title to open it.
 - **Output.** The name of the result column, and **If it exists: Replace it · Add a new
   column**. Adding a new column keeps the earlier result and names the new one "Cluster (2)",
   and so on.
-- **Footer.** A sentence saying what will happen, for example "Butina at 0.60 by Morgan r=2
-  fingerprints of SMILES → Cluster, Cluster Size, Cluster Centre".
-  - If something has to be fixed first, the sentence becomes the problem, marked ⚠, and the
-    main button is greyed out.
-  - Heads-ups that do not stop the run, such as "may take minutes", appear in grey below it.
+- **Problems.** If something has to be fixed first, the problem appears above the buttons,
+  marked ⚠, and the main button is greyed out. Otherwise there is no text there.
 - **Main button.** It names the action and how many rows it covers, such as **Cluster 1,204
   Rows**.
 - **Guide.** The button at the bottom left opens the tool's section of this guide.
@@ -176,8 +179,8 @@ in the background, using every processor core. You can scroll and work while tha
 
 - Double-click a cell to edit it, or start typing. Double-clicking a structure opens the
   sketcher (see [Structures](#4-structures)).
-- Right-click a cell for Copy, Paste and Clear Cells. Structure cells also offer **Edit in
-  Sketcher…**, **Edit as Text…** and **Copy As ▸ Molfile / SMILES / InChI / InChIKey / Image**.
+- Right-click a cell for Copy, Paste and Clear Cells. Structure cells offer **Edit in
+  Sketcher…** and **Copy As ▸ Molfile / SMILES / InChI / InChIKey / Image** instead of Copy.
   Copy As takes every selected structure in that column, in the order shown: text formats one
   per line, molfiles as an SD file. A single molfile also pastes into ChemDraw as a drawing.
   Reaction cells offer **Edit in Sketcher…** and **Copy As ▸ RXN File / Reaction SMILES /
@@ -257,15 +260,16 @@ From the Data ▸ Table menu:
 
 ## 4. Structures
 
-- **Double-click a structure** to draw it in the sketcher. OK writes the drawing back as one
-  step you can undo. A cell whose text is not a valid structure opens in the text editor
-  instead, so you can fix it.
-- **Edit ▸ Edit Structure… (Ctrl+E)** or **F2** opens the sketcher on the current structure
-  cell. The drawing is stored as a molfile, which keeps your layout and wedges. To bring in
-  SMILES, InChI or a molfile, paste it onto the drawing (Ctrl+V).
-- **Typing** in a structure cell opens the text editor with what you typed, for entering
-  SMILES or InChI directly. **Edit as Text…** (right-click a structure cell) opens the same
-  editor on the stored text, for example to fix a SMILES with a typo.
+- Structures are edited in the **sketcher** only. **Double-click** a structure, press **F2**
+  or start typing in the cell, choose **Edit ▸ Edit Structure… (Ctrl+E)**, or right-click and
+  choose **Edit in Sketcher…**. OK writes the drawing back as one step you can undo. The
+  drawing is stored as a molfile, which keeps your layout and wedges.
+- To bring in SMILES, InChI or a molfile, paste it onto the drawing (Ctrl+V), or paste it
+  straight into the cell from the table.
+- A cell whose text is not a valid structure opens an empty sketcher. Its text stays in the
+  cell until you draw a replacement.
+- The right-click menu of a structure or reaction cell has **Copy As** (Molfile, SMILES,
+  InChI, InChIKey, Image) rather than a plain Copy, so you choose what is copied.
 - **Edit ▸ Copy Structure As ▸ Molfile / SMILES / InChI / InChIKey / Image** copies the current
   structure (or the selected structures in its column). A molfile pastes into drawing programs.
 - A structure that cannot be read is shown as **invalid**. Its original text is kept, so you
@@ -539,9 +543,19 @@ with the document.
 ### Quick search (Ctrl+F)
 
 Edit ▸ Search Rows opens the search bar above the table. As you type, the table shows only the
-rows that have a matching cell in any column.
+rows that have a matching cell.
 
-- The **Options** button sets **Match Case**, **Whole Cell** or **Regular Expression**.
+- The **column menu** at the left of the bar chooses where to look: **All Columns** (every text
+  and number column) or one column.
+- **Substructure search.** Choose a structure column and type a substructure as SMILES or
+  SMARTS (for example `c1ccccc1` or `[OH]a`). The table shows the rows that contain it, and
+  the matching atoms are highlighted in the drawings. The search runs in the background
+  shortly after you stop typing. A query that cannot be read turns the box red; hover over it
+  to see why.
+- The **Options** button sets **Match Case**, **Whole Cell** or **Regular Expression** (text
+  searches only).
+- If the chosen column is removed, the bar goes back to All Columns. A renamed column stays
+  chosen. The column is saved with the document, with the search text and options.
 - Escape clears the search. A second Escape, or the ✕ button, hides the bar.
 - Hiding the bar always clears its search, so you never have rows hidden by a search you cannot
   see.
@@ -554,7 +568,9 @@ filters or searches are changed too.
 
 ### Advanced Search
 
-Edit ▸ Advanced Search… opens a panel of conditions.
+Edit ▸ Advanced Search… opens a window of conditions. It is always its own floating window, so
+it never takes room from the table or the Filters panel. Move and resize it as you like; it
+reopens where you left it.
 
 - Each condition picks a column (or **any column**), an operator and a value.
 - Click **Not** to negate a condition.
@@ -564,7 +580,16 @@ Edit ▸ Advanced Search… opens a panel of conditions.
   - **Number:** =, ≠, <, ≤, >, ≥, between (either order), is blank. A blank cell never
     counts as "≠ 6".
   - **Structure:** contains a substructure, is exactly, is blank.
-- **Match all / any** combines the conditions.
+- **Match all / any** combines the conditions: all means every condition must match (and),
+  any means one is enough (or).
+- **Groups.** **Add Group** adds a group of conditions with its own **Match all / any** and
+  **Not**, and groups can hold groups. For example, *Series equals A* and a group set to
+  **Not**, **any** of *pIC50 ≥ 8* and *ID equals C4* finds Series A compounds that are neither
+  potent nor C4: `Series equals A and not (pIC50 ≥ 8 or ID equals C4)`. The ✕ at a group's
+  right removes it with its conditions. A group with no conditions keeps the search buttons
+  disabled.
+- To exclude values from several columns, tick **Not** on each condition: *not (Series
+  equals A)* and *not (ID contains 5)*.
 - A condition with a problem (for example, "between 6 and lots") is marked, and the search
   buttons stay disabled until it is fixed.
 - Use the result in one of three ways:
@@ -573,7 +598,8 @@ Edit ▸ Advanced Search… opens a panel of conditions.
   - **Add to List** adds them to a named list.
 - While a search is showing, text and number conditions follow your edits immediately, and
   structure conditions search again when a structure changes.
-- The search, whether it is showing, and your recent searches are saved with the document.
+- The search (with its groups), whether it is showing, and your recent searches are saved
+  with the document.
 
 ### Structure Search (Ctrl+Shift+M)
 
@@ -606,7 +632,8 @@ Edit ▸ Structure Search… searches a structure column.
 
 ## 7. Filters
 
-View ▸ Filters (Ctrl+Shift+F) opens the Filters panel. Each **card** filters on one column, and
+View ▸ Filters (Ctrl+Shift+F) opens the Filters panel, pinned at the right edge of the window
+at a fixed width. Each **card** filters on one column, and
 a row is shown only if it passes every enabled card.
 
 | Card | For | Controls |
@@ -706,10 +733,25 @@ Click the **cog** in the plot's header for its settings. Changes apply immediate
 | Guide | BOILED-Egg, Golden Triangle or LipE lines drawn behind the points | — | — |
 | Fit line | Least-squares line; one per category when coloured by text | — | — |
 
-The settings popup also shows a summary of what was drawn:
+Hover over **Fit line** (or **Curve**) to see what was drawn: how many points there are, how
+many rows were left out for missing values, and the fit's equation and R² (or μ and σ for a
+fitted curve).
 
-- how many points there are, and how many rows were left out for missing values;
-- for fits, the equation and R², or μ and σ for a fitted curve.
+**Point cards** show a point's structure and values. Their settings are at the bottom of the
+popup:
+
+| Setting | Choices |
+|---|---|
+| Point cards | **On Hover** (the default): a card follows the mouse. **On Hover and Selected**: as well, each selected point keeps a card beside it. **Selected Points Only**: only the kept cards. **Off**. |
+| Show | **Structure** (the drawing), **Label** (the row's first text column, such as its ID) and **Values** (the plotted columns: X, Y, colour and size). |
+| More columns | Tick any other columns to show on the cards. |
+| Drawing size | Small, Medium or Large. |
+
+- Kept cards sit beside their points, never on top of each other, and move with the plot when
+  you pan or zoom. A card disappears when its point is deselected, filtered out or out of view.
+- Cards are kept for up to 12 selected points; select more and none are kept (they would
+  cover the plot). Hover still works.
+- The card settings are saved with the plot.
 
 ### Working with a plot
 
@@ -725,7 +767,7 @@ The toolbar in the plot's header has five buttons:
 
 - The first three are modes, and the active one is highlighted. In Box and Lasso, Shift adds to
   the selection and Ctrl toggles points in or out of it.
-- **Hover** over a point to see its structure and values.
+- **Hover** over a point to see its structure and values (see Point cards above).
 - The plot shows only the rows the table shows, and redraws when the data, filters or columns
   change.
 - Plots are saved with the document and reopen with it.
@@ -814,9 +856,9 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 | Step | Default | What it does |
 |---|---|---|
 | Clean up | On | Removes explicit hydrogens, disconnects metals bonded to N, O or F, draws functional groups one way (for example a charge-separated pyridone becomes the pyridone), and puts charges on the strongest acid. |
-| Strip salts and solvents | On | Keeps the largest organic fragment: a hydrochloride gives the free base, a hydrate the parent. |
-| Neutralise charges | On | Adds or removes hydrogens so that charges cancel. Quaternary nitrogens stay charged. |
-| Remove isotope labels | Off | Deuterium becomes hydrogen, ¹³C becomes carbon. |
+| Strip salts | On | Keeps the largest organic fragment: a hydrochloride gives the free base, a hydrate the parent. |
+| Neutralise | On | Adds or removes hydrogens so that charges cancel. Quaternary nitrogens stay charged. |
+| Remove isotopes | Off | Deuterium becomes hydrogen, ¹³C becomes carbon. |
 | Canonical tautomer | Off | One consistent tautomer per molecule (RDKit), so duplicates collapse. It is not necessarily the most stable or the bioactive form. If the canonical tautomer would lose any drawn stereo, the drawn tautomer is kept. |
 | Protonate at pH | Off | Each ionisable site in its majority form at the pH (default 7.4), from MolGpKa's predicted pKa values (see [Predict pKa](#predict-pka) and its limits). Carbon acids are ignored, so no carbanions are made. Kept counter-ions stay as they are. |
 
@@ -825,11 +867,12 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
   lost. Undefined stereocentres and double bonds are listed in the notes, so you can
   enumerate or fix them before docking.
 - **Output.**
-  - **Write to.** **New column** (the default) adds "*column* (Standardized)".
-    **Replace the structures** overwrites the source column. A row that cannot be
-    standardized keeps its structure.
-  - **Standardization Notes** says what changed in each row, for example "salts stripped;
-    neutralised; protonated at pH 7.4; net charge +1; 1 undefined stereocentre".
+  - **Write to.** **New Column** (the default) writes "*column* (Standardized)", replacing
+    it if it is already there, so running again updates it. **Source** overwrites the
+    structures in the source column; a row that cannot be standardized keeps its structure.
+  - A **Standardization Notes** column is always written (replaced on a rerun). It says what
+    changed in each row, for example "salts stripped; neutralised; protonated at pH 7.4; net
+    charge +1; 1 undefined stereocentre".
   - Undo restores the table in one step.
 - **Next steps.** For docking, follow with [Generate Conformers](#generate-conformers) for 3D
   coordinates. Standardized structures carry no explicit hydrogens; docking programs add them.
@@ -1033,7 +1076,7 @@ Data ▸ Similarity ▸ Cluster… groups compounds using one of three methods:
   each cluster's representative compound.
 - Rows that cannot be clustered (no structure, a missing number) get no cluster.
 - Butina works on fingerprints only. Ward linkage needs number columns. Hierarchical clustering
-  has a row limit. The dialog's footer explains each of these when it applies.
+  has a row limit. The dialog says so, above its buttons, when one of these applies.
 - **If it exists: Add a new column** keeps an earlier clustering beside the new one.
 
 ---
@@ -1119,14 +1162,19 @@ Data ▸ SAR ▸ Activity Cliffs (SALI)… lists similar compounds with very dif
 Data ▸ Chemical Space ▸ Chemical Space Map… places compounds on a 2D map by fingerprints or
 number columns. It writes the coordinates as two columns and opens a scatter plot.
 
-| Method | Options | Notes |
+| Method | Options | More Options (folded) |
 |---|---|---|
-| PCA | — | Fast and linear. |
-| UMAP | Neighbours, minimum distance | Fits on up to 50,000 compounds, then places the rest. |
-| t-SNE | Perplexity | Warns above 50,000 rows. |
+| PCA | **Components**: PC1 and PC2 (the default), PC1 and PC3, PC2 and PC3, or PC3 and PC4 | — |
+| UMAP | Neighbours, Min. distance | **Distance** (Automatic, Jaccard, Dice, Rogers-Tanimoto, Euclidean, Manhattan, Cosine, Correlation), **Spread**, **Epochs**, **Fit on up to** (rows; larger sets are fitted on a sample of this size and the rest placed onto that map; default 50,000), **Seed** |
+| t-SNE | Perplexity | **Learning rate** (Automatic or a number), **Iterations**, **Exaggeration** (early exaggeration), **PCA dimensions** (t-SNE runs on this many principal components; default 50), **Start from** (PCA or Random), **Seed** |
 
-- **Same map every run** makes UMAP and t-SNE repeatable, but slower: it runs on one processor
-  core.
+- **Distance: Automatic** is Jaccard (Tanimoto) on fingerprints and Euclidean on number
+  columns. Jaccard, Dice and Rogers-Tanimoto need fingerprints.
+- **Min. distance** must not be larger than **Spread**.
+- **Seed**: the same seed gives the same map every run (UMAP then runs on one processor core).
+  Set it to **Random** for a faster map that differs each time.
+- PCA's note in the status bar gives the share of the variance on each chosen component.
+- t-SNE on very large sets (over 50,000 rows) can take many minutes; UMAP is quicker there.
 - **Column names** sets the prefix for the two columns ("UMAP 1", "UMAP 2"). **If they
   exist: Add a new column** keeps an earlier map.
 - **Colour plot by** any column.

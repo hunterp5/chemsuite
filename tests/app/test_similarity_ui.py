@@ -166,7 +166,7 @@ def test_cluster_dialog_uses_the_dialog_kit(chem, qtbot) -> None:
     assert rows.buttons["selected"].text() == "Selected (4)"
     assert dialog.primary.text() == "Cluster 4 Rows" and dialog.primary.isEnabled()
     # The footer says what will happen, then turns into the problem and blocks the button.
-    assert "Butina at 0.60" in dialog.status.text() and dialog.primary.isEnabled()
+    assert not dialog.status.text().strip() and dialog.primary.isEnabled()
     assert not dialog.warning_mark.isVisibleTo(dialog)
     dialog.features.use_numbers.setChecked(True)
     assert dialog.features.problem() == dialog.status.text()  # no columns ticked

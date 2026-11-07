@@ -20,7 +20,7 @@ from __future__ import annotations
 import importlib.util
 
 import numpy as np
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox
+from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox
 
 from chemsuite.analysis import embedding as em
 from chemsuite.app.dialogs import OutputChoice, RowsChoice, ToolDialog
@@ -33,6 +33,8 @@ from chemsuite.tools.similarity.common import FeatureChooser
 from .common import features_task
 
 NONE = "(none)"
+#: the PCA axes offered: (first, second) component, 1-based
+COMPONENT_PAIRS = ((1, 2), (1, 3), (2, 3), (3, 4))
 HELP = {
     "pca": "Fast and exact; distances along the axes mean something, but two components "
     "often cannot separate every group.",
@@ -88,10 +90,108 @@ class SpaceMapDialog(ToolDialog):
             self.perplexity,
             help="Roughly how many neighbours each point attends to.",
         )
-        self.repeatable = QCheckBox("Same map every run (slower: one processor core)")
-        self.repeatable.setChecked(True)
-        method.row("", self.repeatable)
+        self.components = QComboBox()
+        for first, second in COMPONENT_PAIRS:
+            self.components.addItem(f"PC{first} and PC{second}")
+        method.row(
+            "Components",
+            self.components,
+            help="Which principal components make the two axes. Later components show "
+            "differences the first two miss.",
+        )
         self._method_section = method
+
+        more = self.section("More Options", collapsed=True)
+        self.distance = QComboBox()
+        self.distance.addItem("Automatic", None)
+        for key, title in em.UMAP_METRICS.items():
+            self.distance.addItem(title, key)
+        more.row(
+            "Distance",
+            self.distance,
+            help="How unlike two compounds are. Automatic: Jaccard (Tanimoto) on fingerprint "
+            "bits, Euclidean on z-scored columns. Jaccard, Dice and Rogers-Tanimoto need "
+            "fingerprints.",
+        )
+        self.spread = QDoubleSpinBox()
+        self.spread.setRange(0.1, 10.0)
+        self.spread.setSingleStep(0.1)
+        self.spread.setValue(1.0)
+        more.row(
+            "Spread",
+            self.spread,
+            help="The overall scale of the map; with Min. distance, how clumped the islands are.",
+        )
+        self.epochs = QSpinBox()
+        self.epochs.setRange(0, 5000)
+        self.epochs.setSingleStep(50)
+        self.epochs.setSpecialValueText("Automatic")
+        more.row(
+            "Epochs",
+            self.epochs,
+            help="Optimisation rounds. Automatic: 500 for small sets, 200 for large ones.",
+        )
+        self.fit_max = QSpinBox()
+        self.fit_max.setRange(1_000, 1_000_000)
+        self.fit_max.setSingleStep(10_000)
+        self.fit_max.setGroupSeparatorShown(True)
+        self.fit_max.setValue(em.UMAP_FIT_MAX)
+        more.row(
+            "Fit on up to",
+            self.fit_max,
+            help="Larger sets are fitted on a random sample of this many rows and the rest "
+            "placed onto that map: faster, and nearly the same picture.",
+        )
+        self.learning_rate = QDoubleSpinBox()
+        self.learning_rate.setRange(0, 5000)
+        self.learning_rate.setSingleStep(50)
+        self.learning_rate.setSpecialValueText("Automatic")
+        more.row(
+            "Learning rate",
+            self.learning_rate,
+            help="Step size. Automatic scales it with the number of rows; raise it if the map "
+            "looks like a compressed ball.",
+        )
+        self.iterations = QSpinBox()
+        self.iterations.setRange(250, 10_000)
+        self.iterations.setSingleStep(250)
+        self.iterations.setValue(1000)
+        more.row("Iterations", self.iterations, help="More can settle a large map further.")
+        self.exaggeration = QDoubleSpinBox()
+        self.exaggeration.setRange(1.0, 100.0)
+        self.exaggeration.setValue(12.0)
+        more.row(
+            "Exaggeration",
+            self.exaggeration,
+            help="Early exaggeration: higher pushes the groups further apart at the start.",
+        )
+        self.reduce_to = QSpinBox()
+        self.reduce_to.setRange(2, 500)
+        self.reduce_to.setValue(em.REDUCED_DIMS)
+        more.row(
+            "PCA dimensions",
+            self.reduce_to,
+            help="t-SNE runs on this many principal components of the features.",
+        )
+        self.init = QComboBox()
+        self.init.addItem("PCA", "pca")
+        self.init.addItem("Random", "random")
+        more.row(
+            "Start from",
+            self.init,
+            help="PCA keeps the overall layout more stable; Random is the classic t-SNE.",
+        )
+        self.seed = QSpinBox()
+        self.seed.setRange(-1, 2_147_483_647)
+        self.seed.setSpecialValueText("Random")
+        self.seed.setValue(42)
+        more.row(
+            "Seed",
+            self.seed,
+            help="The same seed gives the same map every run (UMAP then uses one processor "
+            "core). Random is faster but differs each time.",
+        )
+        self._more_section = more
 
         output = self.section("Output")
         self.output = QLineEdit()
@@ -112,6 +212,9 @@ class SpaceMapDialog(ToolDialog):
             self.features.changed,
             self.output.textChanged,
             self.color.currentIndexChanged,
+            self.distance.currentIndexChanged,
+            self.min_dist.valueChanged,
+            self.spread.valueChanged,
         ):
             signal.connect(lambda *_: self._update())
         self._update()
@@ -119,32 +222,19 @@ class SpaceMapDialog(ToolDialog):
     def _count(self) -> int:
         return len(self.rows.oids())
 
-    def _prefix(self) -> str:
-        return self.output.text().strip() or em.METHODS[self.method.currentData()]
-
     def problem(self) -> str:
         problem = self.features.problem()
         if problem:
             return problem
         if self._count() < 3:
             return "A map needs at least 3 rows."
+        if self.method.currentData() == "umap":
+            metric = self.distance.currentData()
+            if metric in em.BIT_METRICS and not self.features.fingerprints():
+                return f"{em.UMAP_METRICS[metric]} distance needs fingerprints."
+            if self.min_dist.value() > self.spread.value():
+                return "Min. distance must not be larger than the spread."
         return ""
-
-    def note(self) -> str:
-        method = self.method.currentData()
-        rows = self._count()
-        if method == "tsne" and rows > em.TSNE_WARN_ROWS:
-            return f"t-SNE on {rows:,} rows may take many minutes; UMAP is quicker at this size."
-        if method == "umap":
-            return "The first UMAP run in a session takes longer while it compiles."
-        return ""
-
-    def summary(self) -> str:
-        method = em.METHODS[self.method.currentData()]
-        prefix = self._prefix()
-        color = self.color.currentText()
-        plot = "a scatter plot" + (f" coloured by {color}" if color != NONE else "")
-        return f"{method} of {self.features.describe()} → {prefix} 1, {prefix} 2, and {plot}"
 
     def verb(self) -> str:
         return f"Map {self._count():,} Rows"
@@ -156,7 +246,19 @@ class SpaceMapDialog(ToolDialog):
         section.set_row_visible(self.neighbours, method == "umap")
         section.set_row_visible(self.min_dist, method == "umap")
         section.set_row_visible(self.perplexity, method == "tsne")
-        section.set_row_visible(self.repeatable, method != "pca")
+        section.set_row_visible(self.components, method == "pca")
+        more = self._more_section
+        for widget in (self.distance, self.spread, self.epochs, self.fit_max):
+            more.set_row_visible(widget, method == "umap")
+        for widget in (
+            self.learning_rate,
+            self.iterations,
+            self.exaggeration,
+            self.reduce_to,
+            self.init,
+        ):
+            more.set_row_visible(widget, method == "tsne")
+        more.setVisible(method != "pca")
         name = em.METHODS[method]
         if self.output.text() in ("", self._auto_name):
             self.output.blockSignals(True)
@@ -170,10 +272,20 @@ class SpaceMapDialog(ToolDialog):
 
     def options(self) -> dict:
         return {
+            "components": COMPONENT_PAIRS[self.components.currentIndex()],
             "neighbours": self.neighbours.value(),
             "min_dist": self.min_dist.value(),
+            "spread": self.spread.value(),
+            "metric": self.distance.currentData(),
+            "epochs": self.epochs.value() or None,
+            "fit_max": self.fit_max.value(),
             "perplexity": self.perplexity.value(),
-            "seed": 42 if self.repeatable.isChecked() else None,
+            "learning_rate": self.learning_rate.value() or None,
+            "iterations": self.iterations.value(),
+            "exaggeration": self.exaggeration.value(),
+            "reduce_to": self.reduce_to.value(),
+            "init": self.init.currentData(),
+            "seed": None if self.seed.value() < 0 else self.seed.value(),
         }
 
     def make_map(self):

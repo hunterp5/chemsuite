@@ -73,7 +73,7 @@ def test_context_skips_rows_deleted_while_running(chem) -> None:
 def test_descriptor_dialog_end_to_end(chem, qtbot) -> None:
     dialog = chem.open_tool("descriptors")
     dialog.set_checked(["MolWt", "FORMULA"])
-    assert dialog.summary.text() == "2 descriptor(s) for 3 row(s)"
+    assert len(dialog.chosen_keys()) == 2
     dialog.accept()
     table = chem.workspace.table
     qtbot.waitUntil(lambda: "MW" in table and "Formula" in table, timeout=20_000)

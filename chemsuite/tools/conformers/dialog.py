@@ -35,15 +35,11 @@ from PySide6.QtWidgets import (
 from chemsuite.app.dialogs import selected_only
 from chemsuite.app.tools import ToolContext
 from chemsuite.conformers.etkdg import ConformerSettings, generate_conformers
-from chemsuite.core.jobs.parallel import default_workers
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 
 #: Below this many rows the work runs on the job's thread: starting worker processes costs more.
 POOL_MIN_ROWS = 50
 #: Past this many conformers in total, warn about memory and time.
-WARN_CONFORMERS = 250_000
-BYTES_PER_CONFORMER = 600  # measured on drug-like molecules, hydrogens included
-MOLECULES_PER_SECOND = 2  # per worker process, ten conformers each
 SUFFIX = " 3D"
 COUNT_COLUMN = "Conformers"
 SPAN_COLUMN = "Conformer Energy Range"
@@ -96,8 +92,6 @@ class ConformerDialog(QDialog):
         self.selected_only = selected_only(ctx)
         self.overwrite = QCheckBox("Replace an existing 3D column of the same name")
         self.overwrite.setChecked(True)
-        self.summary = QLabel()
-        self.summary.setWordWrap(True)
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -114,7 +108,6 @@ class ConformerDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(self.selected_only)
         layout.addWidget(self.overwrite)
-        layout.addWidget(self.summary)
         layout.addStretch(1)
         layout.addWidget(self.buttons)
 
@@ -159,17 +152,6 @@ class ConformerDialog(QDialog):
         self.window.setEnabled(optimize and self.use_window.isChecked())
         rows = self._rows()
         structure = self.structure.currentText()
-        text = f"Up to {self.count.value() * rows:,} conformers for {rows:,} row(s), "
-        text += f"stored in “{output_name(structure)}”." if structure else ""
-        total = self.count.value() * rows
-        if total > WARN_CONFORMERS:
-            megabytes = total * BYTES_PER_CONFORMER / 1e6
-            hours = rows / (MOLECULES_PER_SECOND * default_workers()) / 3600
-            text += (
-                f"<br><b>That is a lot of 3D data</b>: up to about {megabytes:,.0f} MB of memory "
-                f"and roughly {hours:.1f} hour(s). Consider fewer conformers or selected rows."
-            )
-        self.summary.setText(text)
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
             rows > 0 and bool(structure)
         )

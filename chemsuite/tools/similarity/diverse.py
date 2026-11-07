@@ -81,11 +81,7 @@ class DiverseSubsetDialog(QDialog):
 
     def _update(self) -> None:
         problem = self.features.problem()
-        self.status.setText(
-            problem
-            or "Each pick is the compound least like everything picked so far (MaxMin). "
-            "Rank 1 is picked first."
-        )
+        self.status.setText(problem)
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
 
     def accept(self) -> None:

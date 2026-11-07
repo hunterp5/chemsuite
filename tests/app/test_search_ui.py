@@ -120,3 +120,47 @@ def test_search_bar_starts_hidden_and_closing_clears_it(window, qtbot) -> None:
     table.add_rows({"ID": ["X"]}, undoable=False)
     window._install(Workspace(table))
     assert not window.search.is_open and not action.isChecked()
+
+
+def test_search_bar_searches_one_column(window) -> None:
+    table = window.workspace.table
+    table.add_column("Notes", ["", "a note", ""])
+    bar = window.search
+    assert bar.column.itemText(0) == "All Columns" and bar.column_name() is None
+    bar.edit.setText("a")
+    bar.apply_now()
+    assert ids_shown(window) == ["A", "B"]  # "A" in ID, "a note" in Notes
+    bar.set_column("Notes")
+    assert ids_shown(window) == ["B"] and "Notes" in bar.edit.placeholderText()
+    table.rename_column("Notes", "Remarks")
+    assert bar.column_name() == "Remarks" and ids_shown(window) == ["B"]
+    table.remove_column("Remarks")  # the column goes: back to every column
+    assert bar.column_name() is None and ids_shown(window) == ["A"]
+
+
+def test_search_bar_substructure_search(window, qtbot) -> None:
+    from chemsuite.app.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    table = Table()
+    table.add_rows(
+        {"ID": ["A", "B", "C"], "SMILES": ["c1ccccc1O", "CCO", "Oc1ccncc1"]}, undoable=False
+    )
+    table.convert_column("SMILES", "structure")
+    window._install(Workspace(table))
+    bar = window.search
+    bar.set_column("SMILES")
+    assert bar.structure_mode() and not bar.options_button.isEnabled()
+    bar.edit.setText("c1ccccc1")
+    bar.apply_now()
+    qtbot.waitUntil(lambda: ids_shown(window) == ["A"], timeout=20_000)
+    bar.edit.setText("[OH]a")  # SMARTS: an aromatic hydroxyl
+    bar.apply_now()
+    qtbot.waitUntil(lambda: ids_shown(window) == ["A", "C"], timeout=20_000)
+    bar.edit.setText("C(")
+    bar.apply_now()
+    assert bar.edit.toolTip()  # not a valid query: says why, keeps the last result
+    bar.set_column(None)  # back to text: the structure filter goes
+    bar.edit.setText("B")
+    bar.apply_now()
+    assert ids_shown(window) == ["B"]

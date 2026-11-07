@@ -198,16 +198,6 @@ class ColumnColourDialog(ToolDialog):
             return "Middle must lie between low and high."
         return ""
 
-    def summary(self) -> str:
-        mode = self.chosen_mode()
-        if mode == OFF:
-            return f"Removes the colours from {self.name}."
-        if mode == CATEGORIES:
-            return f"Gives each distinct value in {self.name} its own colour."
-        lo, mid, hi = self.rule().bounds(self.data_range)
-        middle = f", through {mid:g}" if mode == GRADIENT3 else ""
-        return f"Colours {self.name} from {lo:g} (low){middle} to {hi:g} (high)."
-
     def verb(self) -> str:
         return "Remove Colours" if self.chosen_mode() == OFF else "Apply Colours"
 

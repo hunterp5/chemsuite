@@ -414,7 +414,7 @@ class SketchCanvas(QWidget):
             self.erase_selection("Cut")
 
     def paste(self) -> bool:
-        from chemsuite.app.structure_editor import clipboard_structure_text
+        from chemsuite.app.structure_clipboard import clipboard_structure_text
 
         text = clipboard_structure_text()
         incoming = reaction.from_text(text) if reaction.looks_like_reaction(text) else None

@@ -19,17 +19,13 @@ from __future__ import annotations
 
 from chemsuite.app.tools import Tool, ToolContext
 
-HOVER_IMAGE = (220, 160)
-
 
 def _open(ctx: ToolContext, kind: str, state: dict | None = None):
-    from PySide6.QtCore import QSize
-
     from chemsuite.app.plots.panel import PlotPanel
 
-    def image(oid: int):
+    def image(oid: int, size):
         column = ctx.default_structure_column()
-        return ctx.structure_image(column, oid, QSize(*HOVER_IMAGE)) if column else None
+        return ctx.structure_image(column, oid, size) if column else None
 
     panel = PlotPanel(ctx.table, ctx.selection, image, kind=kind)
     panel.tool_id = "scatter"  # any plot tool restores any plot kind

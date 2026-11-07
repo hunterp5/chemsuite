@@ -219,3 +219,39 @@ def test_splitter_positions_are_saved_with_the_document(data, qtbot, tmp_path):
     first, second = data._panels
     assert abs(data.view.width() - table_width) <= 4
     assert abs(first.height() - top_height) <= 4
+
+
+def right_edge(dock):
+    left, size = geometry(dock)
+    return left.x() + size.width()
+
+
+def test_filters_stay_pinned_right_at_a_fixed_width(data, qtbot):
+    from chemsuite.app import dock_layout
+
+    data.filter_column("MW")
+    first, second = two_plots(data)  # opened after Filters
+    qtbot.wait(50)
+    filters = data.filter_dock
+    assert filters.width() == dock_layout.FILTER_WIDTH
+    assert geometry(filters)[0].x() > right_edge(first) - 5  # the new panels went left of it
+    assert not filters.titleBarWidget().float_button.isVisibleTo(filters)
+    assert not filters.titleBarWidget().arrange_button.isVisibleTo(filters)
+    assert data.dockWidgetArea(filters) == RIGHT and filters.allowedAreas() == RIGHT
+    for how in (dock_layout.SIDE, dock_layout.STACKED, dock_layout.GRID, dock_layout.TABS):
+        assert dock_layout.arrange(data, how) == 2  # Filters is not one of the arranged panes
+        qtbot.wait(50)
+        assert geometry(filters)[0].x() >= max(right_edge(first), right_edge(second)) - 5
+        assert filters.width() == dock_layout.FILTER_WIDTH
+    dock_layout.move_to_area(data, second, RIGHT)
+    qtbot.wait(50)
+    assert geometry(filters)[0].x() >= right_edge(second) - 5
+    menu = QMenu()
+    dock_layout.fill_arrange_menu(menu, data, second)
+    tab_with = menu.actions()[2].menu()
+    assert filters.windowTitle() not in [a.text() for a in tab_with.actions()]
+    filters.close()
+    data.open_tool("scatter")  # added while Filters is closed, so at the right edge
+    filters.show()
+    qtbot.wait(50)
+    assert geometry(filters)[0].x() >= right_edge(data._panels[-1]) - 5

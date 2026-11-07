@@ -112,3 +112,39 @@ def test_fingerprint_pca_matches_sklearn() -> None:
     assert np.allclose(ratio, reference.explained_variance_ratio_, atol=1e-9)
     for k in range(3):  # equal up to the sign of each axis
         assert np.allclose(np.abs(scores[:, k]), np.abs(expected[:, k]), atol=1e-6)
+
+
+def test_pca_on_other_components() -> None:
+    columns, _ = _blobs()
+    features = Features.from_columns(columns)
+    full, ratio = pca(features, 3)
+    result = embed(features, "pca", components=(1, 3))
+    assert np.allclose(result.coords[:-1], full[:, [0, 2]])
+    assert result.explained == pytest.approx((ratio[0], ratio[2]))
+    assert "PC1" in result.notes[0] and "PC3" in result.notes[0]
+    with pytest.raises(ValueError, match="increasing"):
+        embed(features, "pca", components=(2, 1))
+
+
+def test_umap_and_tsne_settings() -> None:
+    columns, labels = _blobs()
+    features = Features.from_columns(columns)
+    result = embed(
+        features, "umap", neighbours=10, metric="manhattan", spread=2.0, min_dist=0.5, epochs=100
+    )
+    assert _separated(result.coords[:-1], labels)
+    with pytest.raises(ValueError, match="needs fingerprints"):
+        embed(features, "umap", metric="dice")
+    with pytest.raises(ValueError, match="spread"):
+        embed(features, "umap", min_dist=0.9, spread=0.5)
+    result = embed(
+        features,
+        "tsne",
+        perplexity=15,
+        learning_rate=100.0,
+        iterations=500,
+        exaggeration=8.0,
+        reduce_to=4,
+        init="random",
+    )
+    assert _separated(result.coords[:-1], labels)

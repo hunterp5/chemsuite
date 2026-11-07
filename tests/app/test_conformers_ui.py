@@ -42,7 +42,6 @@ def test_generate_dialog_end_to_end(window, qtbot) -> None:
     assert chem.tool_action("conformers").isEnabled()
     dialog = chem.open_tool("conformers")
     assert dialog.structure.currentText() == "SMILES"
-    assert "“SMILES 3D”" in dialog.summary.text()
     dialog.count.setValue(3)
     dialog.accept()
     table = chem.workspace.table
@@ -63,19 +62,12 @@ def test_generate_dialog_end_to_end(window, qtbot) -> None:
     assert "SMILES 3D (2)" not in table and "Conformers (2)" not in table
 
 
-def test_window_needs_optimisation_and_large_runs_warn(window, monkeypatch) -> None:
-    from chemsuite.tools.conformers import dialog as module
-
-    monkeypatch.setattr(module, "WARN_CONFORMERS", 500)
+def test_window_needs_optimisation(window) -> None:
     chem = _chem(window)
     dialog = chem.open_tool("conformers")
     dialog.force_field.setCurrentIndex(dialog.force_field.findData(None))
     assert not dialog.use_window.isEnabled()
     assert dialog.settings().energy_window is None and dialog.settings().optimize is None
-    dialog.count.setValue(100)
-    assert "a lot of 3D data" not in dialog.summary.text()
-    dialog.count.setValue(200)  # 600 conformers in all
-    assert "a lot of 3D data" in dialog.summary.text()
     dialog.reject()
 
 

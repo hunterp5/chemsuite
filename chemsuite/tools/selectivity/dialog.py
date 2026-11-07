@@ -155,12 +155,7 @@ class SelectivityDialog(QDialog):
         elif not targets:
             self.status.setText("Tick at least one off-target.")
         else:
-            outputs = [selectivity_name(t) for t in targets] + (
-                [MIN_NAME] if len(targets) > 1 else []
-            )
-            if self.flag.isChecked():
-                outputs.append(WINDOW_NAME)
-            self.status.setText("Adds: " + ", ".join(outputs) + ". 1 log unit is 10-fold.")
+            self.status.setText("")
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(ok)
 
     def accept(self) -> None:

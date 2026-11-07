@@ -492,16 +492,18 @@ class CategoryCard(FilterCard):
 
 
 def card_for(table: Table, column: str, kind: str | None = None, searcher=None) -> FilterCard:
-    """A card for *column*: *kind* ("range", "category", "text", "structure") or the best fit.
+    """A card for *column*: *kind* ("range", "category", "text", "structure", "reaction") or
+    the best fit.
 
-    Structure cards need a :class:`~chemsuite.app.structure_search.StructureSearcher`; without
-    one, a structure column gets a text card.
+    Structure and reaction cards need a
+    :class:`~chemsuite.app.structure_search.StructureSearcher`; without one, those columns get
+    a text card.
     """
     if kind is None:
         if table.kind(column) == NUMBER:
             kind = "range"
-        elif table.kind(column) == "structure":
-            kind = "structure" if searcher is not None else "text"
+        elif table.kind(column) in ("structure", "reaction"):
+            kind = table.kind(column) if searcher is not None else "text"
         else:
             distinct = len(value_counts(table.column(column)))
             kind = "category" if distinct <= CATEGORY_LIMIT else "text"
@@ -511,5 +513,11 @@ def card_for(table: Table, column: str, kind: str | None = None, searcher=None) 
         from .structure_card import StructureCard
 
         return StructureCard(table, column, searcher)
+    if kind == "reaction":
+        if searcher is None:
+            raise ValueError("a reaction card needs a searcher")
+        from .reaction_card import ReactionCard
+
+        return ReactionCard(table, column, searcher)
     cls = {"range": RangeCard, "category": CategoryCard, "text": TextCard}[kind]
     return cls(table, column)

@@ -142,11 +142,7 @@ class MedChemPlotDialog(QDialog):
 
     def _update(self) -> None:
         problem = self.problem()
-        missing = self.missing()
-        note = problem or (
-            f"Calculates {', '.join(title_of(k) for k in missing)} first." if missing else ""
-        )
-        self.status.setText(note)
+        self.status.setText(problem)
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
 
     def accept(self) -> None:

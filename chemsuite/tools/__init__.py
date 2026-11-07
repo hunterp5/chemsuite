@@ -24,6 +24,7 @@ TOOL_MODULES: tuple[str, ...] = (
     "chemsuite.tools.sketcher.tool",
     "chemsuite.tools.descriptors.tool",
     "chemsuite.tools.standardize.tool",
+    "chemsuite.tools.reactions.tool",
     "chemsuite.tools.pka.tool",
     "chemsuite.tools.plot.tool",
     "chemsuite.tools.conformers.tool",

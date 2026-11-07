@@ -21,7 +21,6 @@ from PySide6.QtCore import QMimeData
 from PySide6.QtGui import QGuiApplication
 from rdkit import Chem
 
-from chemsuite.app.structure_editor import StructureEditor
 from chemsuite.core.structure_input import molblock_of
 from chemsuite.sketch import convert
 
@@ -54,34 +53,15 @@ def set_clipboard_molfile(smiles: str) -> str:
     return block
 
 
-def test_editor_preview_and_ok_state(qapp) -> None:
-    dialog = StructureEditor("CCO")
-    assert "C2H6O" in dialog.info.text()
-    assert not dialog.preview.pixmap().isNull()
-    dialog.set_text("C1CC")
-    ok = dialog.buttons.button(dialog.buttons.StandardButton.Ok)
-    assert not ok.isEnabled() and "syntax" in dialog.info.text()
-    dialog.accept()  # refused while invalid
-    assert dialog.result_input is None
-    dialog.set_text("OCC")
-    dialog.canonicalize()
-    assert dialog.text == "CCO"
-    dialog.set_text("")
-    assert ok.isEnabled()  # blank clears the cell
-    dialog.deleteLater()
+def test_clipboard_reads_a_molfile_before_plain_text(qapp) -> None:
+    from chemsuite.app.structure_clipboard import clipboard_structure_text
 
-
-def test_editor_paste_reads_molfile_from_clipboard(qapp) -> None:
-    set_clipboard_molfile(ASPIRIN_SMILES)
-    dialog = StructureEditor()
-    dialog.paste()
-    assert "M  END" in dialog.text
-    assert dialog.current.formula == "C9H8O4"
-    dialog.deleteLater()
+    block = set_clipboard_molfile(ASPIRIN_SMILES)
+    assert clipboard_structure_text() == block
 
 
 def test_mdlct_clipboard_format() -> None:
-    from chemsuite.app.structure_editor import _mdlct_to_text
+    from chemsuite.app.structure_clipboard import _mdlct_to_text
 
     lines = ["", "  ChemDraw", "", "  0  0  0  0  0  0  0  0  0  0999 V2000", "M  END"]
     data = b"".join(bytes([len(line)]) + line.encode() for line in lines)
@@ -115,7 +95,7 @@ def test_f2_opens_sketcher_and_ok_writes_undoable_edit(structures) -> None:
     assert table.cell("SMILES", model.oid_at(0)) == "CCO"
 
 
-def test_typing_in_a_structure_cell_starts_with_the_key(structures, qtbot) -> None:
+def test_typing_in_a_structure_cell_opens_the_sketcher(structures, qtbot) -> None:
     window = structures
     model = window.workspace.model
     window.show()
@@ -123,20 +103,9 @@ def test_typing_in_a_structure_cell_starts_with_the_key(structures, qtbot) -> No
     window.view.setFocus()
     window.view.setCurrentIndex(model.index(1, model.column_index("SMILES")))
     qtbot.keyClicks(window.view, "N")
-    assert _sketcher(window) is None
-    editor = window.findChild(StructureEditor)
-    assert editor is not None and editor.text == "N"
-    editor.reject()
-
-
-def test_invalid_cell_text_opens_the_text_editor(structures) -> None:
-    window = structures
-    table = window.workspace.table
-    oid = window.workspace.model.oid_at(0)
-    table.set_cells("SMILES", [oid], ["C1CC"], label="Typo")
-    editor = window.draw_structure(oid, "SMILES")
-    assert isinstance(editor, StructureEditor) and editor.text == "C1CC"
-    editor.reject()
+    sketcher = _sketcher(window)
+    assert sketcher is not None and convert.to_smiles(sketcher.canvas.sketch) == "c1ccccc1"
+    sketcher.reject()
 
 
 def test_cancel_changes_nothing(structures) -> None:

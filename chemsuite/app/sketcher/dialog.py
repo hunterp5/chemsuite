@@ -21,8 +21,8 @@ Undo, redo, cut, copy, paste and clear are on the keyboard and the canvas's righ
 so the window holds only the drawing. The line under the canvas appears only to explain a
 problem (an atom with a bad valence, a label that could not be read).
 
-SMILES, InChI or a molfile pastes straight onto the canvas (Ctrl+V); typing text goes to the
-structure editor (``chemsuite.app.structure_editor``), not here.
+SMILES, InChI or a molfile pastes straight onto the canvas (Ctrl+V). The sketcher is the only
+way to edit a structure in the app; there is no text editor.
 """
 
 from __future__ import annotations

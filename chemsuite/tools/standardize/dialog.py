@@ -22,7 +22,7 @@ import numpy as np
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, QWidget
 
 from chemsuite.analysis.standardize import Options, StandardizeResults, standardize_cells
-from chemsuite.app.dialogs import OutputChoice, RowsChoice, Segmented, ToolDialog
+from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import StructureColumn
 
@@ -36,25 +36,27 @@ STEPS = {
         "Remove explicit hydrogens, disconnect metals bonded to N, O or F, draw functional "
         "groups one way (nitro, N-oxides, azides…) and put charges on the strongest acid.",
     ),
-    "strip_salts": ("Strip salts and solvents", "Keep the largest organic fragment."),
+    "strip_salts": ("Strip salts", "Keep the largest organic fragment."),
     "neutralise": (
-        "Neutralise charges",
+        "Neutralise",
         "Add or remove hydrogens so charges cancel. Quaternary nitrogens stay charged.",
     ),
-    "remove_isotopes": ("Remove isotope labels", "Deuterium becomes hydrogen, ¹³C carbon, …"),
-}
-OPTIONAL = {
+    "remove_isotopes": ("Remove isotopes", "Deuterium becomes hydrogen, ¹³C carbon, …"),
     "tautomer": (
         "Canonical tautomer",
         "One consistent tautomer per molecule (RDKit), so duplicates collapse. It is not "
         "necessarily the most stable or the bioactive form. Drawn stereocentres are kept.",
     ),
-    "protonate": (
-        "Protonate at pH",
-        "Each ionisable site in its majority form at the pH, from MolGpKa's predicted pKa "
-        "values (as the Major Species of Predict pKa).",
-    ),
 }
+PROTONATE = (
+    "Protonate at pH",
+    "Each ionisable site in its majority form at the pH, from MolGpKa's predicted pKa "
+    "values (as the Major Species of Predict pKa).",
+)
+NOTES_HELP = (
+    f"A “{NOTES_COLUMN}” column is always added: what changed in each structure, and any "
+    "undefined stereo to resolve before docking."
+)
 
 
 def output_name(source: str) -> str:
@@ -82,15 +84,11 @@ class StandardizeDialog(ToolDialog):
             box = QCheckBox(label)
             box.setChecked(getattr(defaults, key))
             self.steps[key] = steps.row("", box, help=tip)
-
-        optional = self.section("Optional")
-        self.tautomer = QCheckBox(OPTIONAL["tautomer"][0])
-        optional.row("", self.tautomer, help=OPTIONAL["tautomer"][1])
         protonation = QWidget()
         line = QHBoxLayout(protonation)
         line.setContentsMargins(0, 0, 0, 0)
         line.setSpacing(8)
-        self.protonate = QCheckBox(OPTIONAL["protonate"][0])
+        self.protonate = QCheckBox(PROTONATE[0])
         self.ph = QDoubleSpinBox()
         self.ph.setRange(0.0, 14.0)
         self.ph.setDecimals(1)
@@ -100,30 +98,22 @@ class StandardizeDialog(ToolDialog):
         line.addWidget(self.protonate)
         line.addWidget(self.ph)
         line.addStretch(1)
-        optional.row("", protonation, help=OPTIONAL["protonate"][1])
+        steps.row("", protonation, help=PROTONATE[1])
         self.protonate.toggled.connect(self.ph.setEnabled)
 
         output = self.section("Output")
         self.target = output.row(
             "Write to",
-            Segmented((("new", "New column"), ("source", "Replace the structures")), "new"),
-            help="Replacing keeps a row's structure when it cannot be standardized. "
-            "Either way, Undo restores the table.",
+            Segmented((("source", "Source"), ("new", "New Column")), "new"),
+            help="Source replaces the structures (a row keeps its structure when it cannot be "
+            "standardized). New Column writes “<column> (Standardized)”, replacing it if it "
+            "exists. Either way, Undo restores the table. " + NOTES_HELP,
         )
-        self.notes = QCheckBox(f"Add a “{NOTES_COLUMN}” column")
-        self.notes.setChecked(True)
-        output.row(
-            "",
-            self.notes,
-            help="What changed in each structure, and any undefined stereo to resolve "
-            "before docking.",
-        )
-        self.if_exists = output.row("If they exist", OutputChoice())
 
         self.structure.currentTextChanged.connect(lambda *_: self.refresh())
         for signal in (self.ph.valueChanged, self.rows.changed, self.target.changed):
             signal.connect(lambda *_: self.refresh())
-        for box in (*self.steps.values(), self.tautomer, self.protonate, self.notes):
+        for box in (*self.steps.values(), self.protonate):
             box.toggled.connect(lambda *_: self.refresh())
         self.refresh()
 
@@ -131,20 +121,12 @@ class StandardizeDialog(ToolDialog):
     def options(self) -> Options:
         return Options(
             **{key: box.isChecked() for key, box in self.steps.items()},
-            tautomer=self.tautomer.isChecked(),
             protonate=self.protonate.isChecked(),
             ph=self.ph.value(),
         )
 
     def _replacing(self) -> bool:
         return self.target.value() == "source"
-
-    def _columns(self) -> list[str]:
-        source = self.structure.currentText()
-        names = [source if self._replacing() else output_name(source)]
-        if self.notes.isChecked():
-            names.append(NOTES_COLUMN)
-        return names
 
     def _rows(self) -> int:
         return len(self.rows.oids())
@@ -156,15 +138,6 @@ class StandardizeDialog(ToolDialog):
             return "There are no rows to standardize."
         if not self.options().steps():
             return "Choose at least one step."
-        return ""
-
-    def summary(self) -> str:
-        steps = ", ".join(self.options().steps())
-        return f"{steps[:1].upper()}{steps[1:]} → " + ", ".join(self._columns())
-
-    def note(self) -> str:
-        if self.protonate.isChecked() and self._rows() > 50_000:
-            return f"{self._rows():,} rows may take a few minutes (you can cancel)."
         return ""
 
     def verb(self) -> str:
@@ -184,8 +157,6 @@ class StandardizeDialog(ToolDialog):
         ]
         options = self.options()
         replace = self._replacing()
-        notes = self.notes.isChecked()
-        overwrite = self.if_exists.overwrite()
         use_pool = len(cells) >= POOL_MIN_ROWS
 
         def work(job):
@@ -198,7 +169,7 @@ class StandardizeDialog(ToolDialog):
             )
 
         def done(results: StandardizeResults) -> None:
-            finish(ctx, oids[: len(results)], results, source, replace, notes, overwrite)
+            finish(ctx, oids[: len(results)], results, source, replace)
 
         return ctx.run("Standardizing structures…", work, done, keep_partial=True)
 
@@ -209,10 +180,11 @@ def finish(
     results: StandardizeResults,
     source: str,
     replace: bool,
-    notes: bool,
-    overwrite: bool,
 ) -> dict[str, str]:
-    """Write the results for *oids* (the rows *results* covers)."""
+    """Write the results for *oids* (the rows *results* covers), with the notes column.
+
+    Existing result columns are replaced, so running again updates them.
+    """
     blobs, texts = results.blobs, results.texts
     target_oids = oids
     if replace:  # a row that could not be standardized keeps its structure
@@ -224,13 +196,10 @@ def finish(
         source if replace else output_name(source): (
             target_oids,
             StructureColumn.from_parsed(blobs, texts),
-        )
+        ),
+        NOTES_COLUMN: (oids, results.notes),
     }
-    if notes:
-        columns[NOTES_COLUMN] = (oids, results.notes)
-    written = ctx.apply_results(
-        columns, label="Standardize Structures", overwrite=overwrite or replace
-    )
+    written = ctx.apply_results(columns, label="Standardize Structures", overwrite=True)
     message = f"Standardized {len(oids):,} row(s); {results.changed:,} changed"
     if results.failed:
         message += f"; {results.failed:,} could not be standardized"

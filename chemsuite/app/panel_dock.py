@@ -431,6 +431,12 @@ class PanelHeader(QWidget):
             self.close_button: "close",
         }
         self.float_button.clicked.connect(lambda: dock.setFloating(not dock.isFloating()))
+        # a pinned pane (Filters) is neither floated nor arranged; an always-floating one
+        # (Advanced Search) cannot be docked
+        pinned = not dock.features() & QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        undockable = dock.allowedAreas() == Qt.DockWidgetArea.NoDockWidgetArea
+        self.float_button.setVisible(not pinned and not undockable)
+        self.arrange_button.setVisible(not pinned and not undockable)
         self.close_button.clicked.connect(dock.close)
 
         self.tabs = HeaderTabs(dock)

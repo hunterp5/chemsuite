@@ -148,11 +148,6 @@ class RandomNumbersDialog(ToolDialog):
             return "Name the new column."
         return self.spec().problem()
 
-    def summary(self) -> str:
-        n = len(self.rows.oids())
-        what = self.distribution.currentText().split(" (")[0].lower()
-        return f"Fills {self.name.text().strip()} with {what} random numbers for {n:,} rows."
-
     def verb(self) -> str:
         return f"Fill {len(self.rows.oids()):,} Rows"
 
@@ -238,16 +233,6 @@ class RandomRowsDialog(ToolDialog):
             if name in self.ctx.lists:
                 return f"A list named “{name}” already exists."
         return ""
-
-    def summary(self) -> str:
-        total = len(self.rows.oids())
-        then = {
-            SELECT: "selects them",
-            ADD_SELECT: "adds them to the selection",
-            LIST: f"saves them as the list “{self.list_name.text().strip()}”",
-        }[self.action.value()]
-        rows = f"{self.count():,} of {total:,} {self.rows.describe()}rows"
-        return f"Picks {rows} at random and {then}."
 
     def verb(self) -> str:
         return f"Pick {self.count():,} Rows"

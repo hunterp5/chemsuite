@@ -122,3 +122,34 @@ def test_self_organising_map(chem, qtbot) -> None:
     assert [s["tool"] for s in saved] == ["som"] and saved[0]["state"]["value"] == "Count"
     chem._restore_panels(saved)
     assert [d.widget().tool_id for d in chem._panels].count("som") == 2
+
+
+def test_map_options_follow_the_method(chem) -> None:
+    dialog = chem.open_tool("space_map")
+    more = dialog._more_section
+    assert not more.is_open()  # optional settings start folded
+    more.set_open(True)
+    dialog.method.setCurrentIndex(dialog.method.findData("tsne"))
+    assert more.is_row_visible(dialog.iterations) and not more.is_row_visible(dialog.spread)
+    dialog.method.setCurrentIndex(dialog.method.findData("pca"))
+    assert not more.isVisibleTo(dialog)  # PCA has no optional settings
+    assert dialog._method_section.is_row_visible(dialog.components)
+    dialog.method.setCurrentIndex(dialog.method.findData("umap"))
+    dialog.features.use_numbers.setChecked(True)
+    dialog.features.set_number_columns(["A", "B"])
+    dialog.distance.setCurrentIndex(dialog.distance.findData("dice"))
+    assert "needs fingerprints" in dialog.status.text() and not dialog.primary.isEnabled()
+    dialog.distance.setCurrentIndex(dialog.distance.findData("manhattan"))
+    dialog.seed.setValue(-1)
+    options = dialog.options()
+    assert options["metric"] == "manhattan" and options["seed"] is None
+    assert options["epochs"] is None and options["learning_rate"] is None
+
+
+def test_pca_map_on_other_components(chem, qtbot) -> None:
+    table = chem.workspace.table
+    dialog = chem.open_tool("space_map")
+    dialog.method.setCurrentIndex(dialog.method.findData("pca"))
+    dialog.components.setCurrentText("PC2 and PC3")
+    _run(qtbot, dialog)
+    assert "PCA 1" in table.column_names  # the columns are named by axis, not component

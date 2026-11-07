@@ -89,9 +89,9 @@ from .selection_browser import SelectionBrowser
 from .settings_hub import settings_hub
 from .split_join import JoinColumnsDialog, SplitColumnDialog
 from .status_bar import StatusBar
+from .structure_clipboard import copy_structure
 from .structure_copy import FORMATS as COPY_FORMATS
 from .structure_copy import REACTION_FORMATS, copy_reactions, copy_structures
-from .structure_editor import StructureEditor, copy_structure
 from .structure_search import StructureSearchDialog, StructureSearcher
 from .table_model import TableModel
 from .table_view import StructureImages, TableView
@@ -261,19 +261,32 @@ class MainWindow(QMainWindow):
         self._dialogs: list[QDialog] = []  # open tool dialogs (they do not block the table)
         self.filter_dock = QDockWidget("Filters", self)
         self.filter_dock.setObjectName("FilterDock")
-        self.filter_dock.setAllowedAreas(
-            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
-        )
+        # Filters is pinned to the window's right edge at a fixed width: it cannot be dragged,
+        # floated or arranged elsewhere (dock_layout.pin_filters keeps it there).
+        self.filter_dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
+        self.filter_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        self.filter_dock.setFixedWidth(dock_layout.FILTER_WIDTH)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.filter_dock)
         self.filter_dock.hide()
+        # panes added while Filters was closed went right of it; opening it moves it back
+        self.filter_dock.toggleViewAction().toggled.connect(
+            lambda on: on and dock_layout.pin_filters(self)
+        )
         self.search_dock = QDockWidget("Advanced Search", self)
         self.search_dock.setObjectName("AdvancedSearchDock")
-        self.search_dock.setAllowedAreas(
-            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        # Advanced Search is always its own floating window, so it never crowds the Filters
+        # pane: it cannot be docked (dock_layout.float_search keeps it floating).
+        self.search_dock.setAllowedAreas(Qt.DockWidgetArea.NoDockWidgetArea)
+        self.search_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
         )
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.search_dock)
-        self.tabifyDockWidget(self.filter_dock, self.search_dock)
         self.search_dock.hide()
+        self.search_dock.setFloating(True)
+        self.search_dock.toggleViewAction().toggled.connect(
+            lambda on: on and dock_layout.float_search(self)
+        )
         self.browser_dock = QDockWidget("Selection Browser", self)
         self.browser_dock.setObjectName("BrowserDock")
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.browser_dock)
@@ -319,7 +332,14 @@ class MainWindow(QMainWindow):
         self._teardown()
         self._workspace = workspace
         self._view = TableView(workspace.model, workspace.selection, self._images)
-        self._search = SearchBar(workspace.table)  # hidden until Search Rows opens it
+        self._searcher = StructureSearcher(
+            workspace.table,
+            self._run_with_progress,
+            self._runner.process_pool,
+            lambda column, highlight: self.view.set_highlight(column, highlight),
+        )
+        # hidden until Search Rows opens it
+        self._search = SearchBar(workspace.table, searcher=self._searcher)
         self._search.openChanged.connect(self._sync_search_action)
         self._sync_search_action(False)
         central = QWidget()
@@ -329,12 +349,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._search)
         layout.addWidget(self._view, 1)
         self.setCentralWidget(central)
-        self._searcher = StructureSearcher(
-            workspace.table,
-            self._run_with_progress,
-            self._runner.process_pool,
-            lambda column, highlight: self.view.set_highlight(column, highlight),
-        )
         self._filters = FilterPanel(workspace.table, searcher=self._searcher)
         self.filter_dock.setWidget(self._filters)
         self._filters.load_state(workspace.saved_filters)
@@ -350,7 +364,7 @@ class MainWindow(QMainWindow):
         )
         self.search_dock.setWidget(self._advanced)
         if workspace.saved_search.get("showing"):
-            self.search_dock.show()  # say why rows are hidden
+            dock_layout.float_search(self)  # say why rows are hidden
         self._columns = ColumnActions(
             self,
             workspace.table,
@@ -400,7 +414,7 @@ class MainWindow(QMainWindow):
         if self._filters.cards:
             self.filter_dock.show()
         if self.workspace.saved_search.get("showing"):
-            self.search_dock.show()
+            dock_layout.float_search(self)
 
     def show_dialog(self, dialog: QDialog) -> QDialog:
         """Show a tool dialog without blocking the window (see ``ToolContext.show_dialog``)."""
@@ -433,6 +447,8 @@ class MainWindow(QMainWindow):
             self._browser.close_browser()
             self._browser.deleteLater()
             self._browser = None
+        if self._search is not None:
+            self._search.close_bar()
         if self._advanced is not None:
             self._advanced.close_panel()
             self._advanced.deleteLater()
@@ -561,9 +577,8 @@ class MainWindow(QMainWindow):
         return self._advanced
 
     def show_advanced_search(self) -> AdvancedSearchPanel:
-        """Edit ▸ Advanced Search…"""
-        self.search_dock.show()
-        self.search_dock.raise_()
+        """Edit ▸ Advanced Search…: its own window, over the table."""
+        dock_layout.float_search(self)
         return self.advanced_search
 
     @property
@@ -977,6 +992,7 @@ class MainWindow(QMainWindow):
         self._panels.append(dock)
         dock.destroyed.connect(lambda _o=None, d=dock: self._forget_panel(d))
         dock.show()
+        dock_layout.pin_filters(self)  # the new panel goes left of Filters
         dock.raise_()
         return dock
 
@@ -1031,8 +1047,13 @@ class MainWindow(QMainWindow):
             return
         table = self.workspace.table
         has_structures = any(table.kind(n) == STRUCTURE for n in table.column_names)
+        has_reactions = any(table.kind(n) == REACTION for n in table.column_names)
         for tool in registered_tools():
-            ready = not tool.missing() and (has_structures or not tool.needs_structures)
+            ready = (
+                not tool.missing()
+                and (has_structures or not tool.needs_structures)
+                and (has_reactions or not tool.needs_reactions)
+            )
             self._tool_actions[tool.id].setEnabled(ready)
         history = table.history
         self._undo.setEnabled(history.can_undo)
@@ -1148,14 +1169,13 @@ class MainWindow(QMainWindow):
             name = next((n for n in table.column_names if table.kind(n) == STRUCTURE), "")
         return (model.oid_at(current.row()), name) if name else None
 
-    def _on_structure_edit_requested(self, index: QModelIndex, typed: str) -> None:
-        """F2 opens the sketcher; typing a character starts the text editor with it."""
+    def _on_structure_edit_requested(self, index: QModelIndex, _typed: str) -> None:
+        """F2, or typing in a structure cell, opens the sketcher (structures are only edited by
+        drawing)."""
         model = self.workspace.model
         oid, name = model.oid_at(index.row()), model.column_name(index.column())
         if self.workspace.table.kind(name) == REACTION:
             self.draw_reaction(oid, name)
-        elif typed:
-            self.edit_structure(oid, name, typed)
         else:
             self.draw_structure(oid, name)
 
@@ -1173,7 +1193,8 @@ class MainWindow(QMainWindow):
         menu.deleteLater()
 
     def cell_menu(self, index: QModelIndex) -> QMenu:
-        """The right-click menu of a cell: editing and Copy As for structures, then copy/paste."""
+        """The right-click menu of a cell. Structure and reaction cells: the sketcher and Copy
+        As (no plain Copy: Copy As says what you get); other cells: Copy."""
         model = self.workspace.model
         table = self.workspace.table
         name = model.column_name(index.column())
@@ -1182,12 +1203,12 @@ class MainWindow(QMainWindow):
         kind = table.kind(name)
         if kind == STRUCTURE:
             menu.addAction("Edit in Sketcher…", lambda: self.draw_structure(oid, name))
-            menu.addAction("Edit as Text…", lambda: self.edit_structure(oid, name))
             menu.addSeparator()
         elif kind == REACTION:
             menu.addAction("Edit in Sketcher…", lambda: self.draw_reaction(oid, name))
             menu.addSeparator()
-        menu.addAction("Copy", self.view.copy_selection)
+        else:
+            menu.addAction("Copy", self.view.copy_selection)
         if kind == STRUCTURE:
             copy_as = menu.addMenu("Copy As")
             for fmt, title in COPY_FORMATS:
@@ -1231,16 +1252,14 @@ class MainWindow(QMainWindow):
     def draw_structure(self, oid: int, name: str):
         """Open the sketcher on one structure cell; OK writes it back (one undo step).
 
-        A cell whose text is not a valid structure opens in the text editor instead, so the
-        text can be fixed rather than lost.
+        A cell whose text is not a valid structure opens an empty sketcher; its text stays in the
+        cell until a drawing replaces it.
         """
         from chemsuite.app.sketcher import SketcherDialog
 
         table = self.workspace.table
         column = table.column(name)
         mol = column.mol(int(table.slots_of([oid])[0]))
-        if mol is None and table.cell(name, oid).strip():
-            return self.edit_structure(oid, name)
         row = int(self.workspace.model.rows_of_oids([oid])[0])
         title = f"Draw Structure — {name}" + (f", row {row + 1}" if row >= 0 else "")
         # open from the stored molecule: it keeps drawn coordinates and query atoms the cell
@@ -1312,30 +1331,6 @@ class MainWindow(QMainWindow):
             return None
         return self.draw_structure(*cell)
 
-    def edit_structure(self, oid: int, name: str, typed: str = "") -> StructureEditor:
-        """Open the text editor on one cell (Edit as Text…, and cells whose text is not a
-        structure); OK writes it back as one undoable edit."""
-        table = self.workspace.table
-        row = int(self.workspace.model.rows_of_oids([oid])[0])
-        title = f"Edit Structure — {name}" + (f", row {row + 1}" if row >= 0 else "")
-        dialog = StructureEditor(typed or table.cell(name, oid), title, self)
-        if typed:  # typing into the cell starts a new structure; keep the cursor at the end
-            cursor = dialog.edit.textCursor()
-            cursor.movePosition(cursor.MoveOperation.End)
-            dialog.edit.setTextCursor(cursor)
-
-        def accepted() -> None:
-            parsed = dialog.result_input
-            if parsed is None or name not in table or oid not in table.oids:
-                return
-            if parsed.display != table.cell(name, oid) or parsed.kind == "molfile":
-                table.set_cells(name, [oid], parsed.as_column(), label=f"Edit {name}")
-
-        dialog.accepted.connect(accepted)
-        dialog.finished.connect(lambda _r: dialog.deleteLater())
-        dialog.open()
-        return dialog
-
     def add_compound(self):
         """Draw a structure in the sketcher and append it as a new row."""
         from chemsuite.app.sketcher import SketcherDialog
@@ -1406,6 +1401,14 @@ class MainWindow(QMainWindow):
         window = MainWindow(self._runner, self._images, Workspace(copy, unsaved=True))
         window.show()
         window.show_message(f"{len(shown):,} of {len(table):,} rows from {self.document_name}")
+        return window
+
+    def open_table(self, table: Table, message: str = "") -> MainWindow:
+        """A new, unsaved document window holding *table* (a tool's results)."""
+        window = MainWindow(self._runner, self._images, Workspace(table, unsaved=True))
+        window.show()
+        if message:
+            window.show_message(message)
         return window
 
     def new_window(self) -> MainWindow:
