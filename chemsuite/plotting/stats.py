@@ -157,3 +157,167 @@ def fit_distribution(values: np.ndarray, kind: str) -> DistributionFit | None:
     if len(sample) < 3 or sigma <= 1e-12:
         return None
     return DistributionFit(kind, float(sample.mean()), sigma, len(finite))
+
+
+# -- bar charts ---------------------------------------------------------------------------------
+#: how a bar chart sums up each group: key -> title
+AGGREGATES = {
+    "mean": "Mean",
+    "median": "Median",
+    "sum": "Sum",
+    "min": "Minimum",
+    "max": "Maximum",
+    "count": "Count",
+}
+
+
+@dataclass(frozen=True)
+class GroupValues:
+    value: np.ndarray  # one per group (NaN: no numbers in the group)
+    spread: np.ndarray  # standard deviation for "mean", else NaN
+    count: np.ndarray  # numbers per group (rows per group for "count")
+
+
+def aggregate(values: np.ndarray | None, codes: np.ndarray, groups: int, how: str) -> GroupValues:
+    """Sum up *values* per group (*codes* index the groups; -1 is left out). For "count",
+    *values* may be None and every row counts."""
+    if how not in AGGREGATES:
+        raise ValueError(f"unknown aggregate {how!r}")
+    value = np.full(groups, np.nan)
+    spread = np.full(groups, np.nan)
+    count = np.zeros(groups, dtype=np.int64)
+    for group in range(groups):
+        member = codes == group
+        if how == "count":
+            count[group] = int(member.sum())
+            value[group] = float(count[group])
+            continue
+        sample = values[member]
+        sample = sample[np.isfinite(sample)]
+        count[group] = len(sample)
+        if not len(sample):
+            continue
+        value[group] = {
+            "mean": np.mean,
+            "median": np.median,
+            "sum": np.sum,
+            "min": np.min,
+            "max": np.max,
+        }[how](sample)
+        if how == "mean" and len(sample) > 1:
+            spread[group] = float(np.std(sample, ddof=1))
+    return GroupValues(value, spread, count)
+
+
+def mean_by_x(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The mean Y at each distinct X, in X order (finite pairs only)."""
+    ok = np.isfinite(x) & np.isfinite(y)
+    xs, inverse = np.unique(x[ok], return_inverse=True)
+    if not len(xs):
+        return xs, xs
+    sums = np.bincount(inverse, weights=y[ok], minlength=len(xs))
+    return xs, sums / np.bincount(inverse, minlength=len(xs))
+
+
+# -- density ------------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Grid:
+    counts: np.ndarray  # (x bins, y bins)
+    x_edges: np.ndarray
+    y_edges: np.ndarray
+    cell: np.ndarray  # (x bin, y bin) per point; -1 where the point has no finite value
+
+    def cell_at(self, x: float, y: float) -> tuple[int, int] | None:
+        i = int(np.searchsorted(self.x_edges, x, side="right")) - 1
+        j = int(np.searchsorted(self.y_edges, y, side="right")) - 1
+        nx, ny = self.counts.shape
+        if x == self.x_edges[-1]:
+            i = nx - 1
+        if y == self.y_edges[-1]:
+            j = ny - 1
+        return (i, j) if 0 <= i < nx and 0 <= j < ny else None
+
+
+def density_grid(x: np.ndarray, y: np.ndarray, bins: int | None = None) -> Grid | None:
+    """Points counted on a regular grid (a 2D histogram); None without finite points."""
+    ok = np.isfinite(x) & np.isfinite(y)
+    if not ok.any():
+        return None
+    n = bins or int(np.clip(np.sqrt(ok.sum() / 4), 10, 80))
+    x_edges = _edges(x[ok], n)
+    y_edges = _edges(y[ok], n)
+    counts, _, _ = np.histogram2d(x[ok], y[ok], bins=[x_edges, y_edges])
+    cell = np.full((len(x), 2), -1, dtype=np.int64)
+    cell[ok, 0] = np.clip(np.searchsorted(x_edges, x[ok], side="right") - 1, 0, n - 1)
+    cell[ok, 1] = np.clip(np.searchsorted(y_edges, y[ok], side="right") - 1, 0, n - 1)
+    return Grid(counts, x_edges, y_edges, cell)
+
+
+def _edges(values: np.ndarray, n: int) -> np.ndarray:
+    lo, hi = float(values.min()), float(values.max())
+    if hi - lo < 1e-12:
+        lo, hi = lo - 0.5, hi + 0.5
+    return np.linspace(lo, hi, n + 1)
+
+
+# -- radar --------------------------------------------------------------------------------------
+def unit_scale(columns: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Each column scaled to 0..1 by its own range: ``(scaled (rows, columns), lows, highs)``.
+    A constant column sits at 0.5; blanks stay NaN."""
+    data = np.column_stack(columns) if columns else np.empty((0, 0))
+    lows = np.full(data.shape[1], np.nan)
+    highs = np.full(data.shape[1], np.nan)
+    scaled = np.full(data.shape, np.nan)
+    for k in range(data.shape[1]):
+        values = data[:, k]
+        finite = values[np.isfinite(values)]
+        if not len(finite):
+            continue
+        lows[k], highs[k] = float(finite.min()), float(finite.max())
+        span = highs[k] - lows[k]
+        scaled[:, k] = (values - lows[k]) / span if span > 1e-12 else 0.5
+    return scaled, lows, highs
+
+
+# -- activity landscape -------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Surface:
+    """A smooth height over a regular grid: ``heights[i, j]`` at ``(xs[i], ys[j])``; NaN where
+    no point is near enough to say."""
+
+    xs: np.ndarray
+    ys: np.ndarray
+    heights: np.ndarray
+
+
+LANDSCAPE_REACH = 0.02  # cells whose kernel weight is below this share of the peak are empty
+
+
+def landscape(
+    x: np.ndarray, y: np.ndarray, z: np.ndarray, bins: int | None = None, smooth: float = 1.2
+) -> Surface | None:
+    """The activity landscape of *z* over the plane of *x* and *y* (e.g. a chemical-space map):
+    each grid node is the Gaussian-weighted mean of the points round it (Nadaraya-Watson
+    kernel regression, width *smooth* grid cells), computed on binned sums so 200k points
+    cost no more than a few hundred. Rough regions are activity cliffs; smooth plateaus are
+    regions where structure changes little alter activity (Peltason & Bajorath 2007).
+
+    Returns None with fewer than three complete points.
+    """
+    from scipy.ndimage import gaussian_filter
+
+    ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(z)
+    if ok.sum() < 3:
+        return None
+    x, y, z = x[ok], y[ok], z[ok]
+    n = bins or int(np.clip(np.sqrt(len(x)) * 1.5, 16, 64))
+    x_edges, y_edges = _edges(x, n), _edges(y, n)
+    counts, _, _ = np.histogram2d(x, y, bins=[x_edges, y_edges])
+    sums, _, _ = np.histogram2d(x, y, bins=[x_edges, y_edges], weights=z)
+    weight = gaussian_filter(counts, smooth, mode="constant")
+    total = gaussian_filter(sums, smooth, mode="constant")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        heights = total / weight
+    reach = LANDSCAPE_REACH * gaussian_filter(np.pad([[1.0]], 3), smooth).max()
+    heights[weight < reach] = np.nan
+    return Surface((x_edges[:-1] + x_edges[1:]) / 2, (y_edges[:-1] + y_edges[1:]) / 2, heights)

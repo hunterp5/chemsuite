@@ -22,7 +22,7 @@ from __future__ import annotations
 import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QInputDialog, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 from rdkit import Chem
 
 from chemsuite.core.table.style import CATEGORIES, GRADIENT
@@ -252,7 +252,7 @@ def test_copy_as_reports_an_invalid_structure(structures) -> None:
 
 def test_menu_has_the_new_column_items(window) -> None:
     titles = menu_titles(window.columns.build_menu("pIC50", [], 1))
-    for title in ("Duplicate Column", "Logarithmic (log₁₀)", "Precision…", "Colour Column…"):
+    for title in ("Duplicate Column", "Logarithmic (log₁₀)", "Number Format…", "Colour Column…"):
         assert title in titles
 
 
@@ -294,19 +294,44 @@ def test_logarithmic_is_disabled_with_a_reason(window, monkeypatch) -> None:
     assert warned
 
 
-def test_precision_is_display_only_and_undoable(window, monkeypatch) -> None:
+def test_number_format_is_display_only_and_undoable(window) -> None:
     table = window.workspace.table
     model = window.workspace.model
-    monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("2", True))
-    trigger(window.columns.build_menu("pIC50", [], 1), "Precision…")
-    assert [table.cell("pIC50", oid) for oid in model.visible_oids] == ["5.00", "6.00", "7.00"]
-    assert model.data(model.index(0, 1)) == "5.00"
-    assert table.column("pIC50").values().tolist() == [5.0, 6.0, 7.0]
-    monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("As typed", True))
-    window.columns.set_precision("pIC50")
-    assert model.data(model.index(0, 1)) == "5"
+    table.set_cells("pIC50", [int(model.visible_oids[0])], ["1234.5678"])
+    shown = lambda: [model.data(model.index(r, 1)) for r in range(3)]  # noqa: E731
+    dialog = window.columns.number_format("pIC50")
+    dialog.digits.setValue(2)  # Fixed decimals
+    dialog.format.setCurrentIndex(dialog.format.findData("fixed"))
+    dialog.digits.setValue(2)
+    dialog.accept()
+    assert shown() == ["1234.57", "6.00", "7.00"]
+    assert table.column("pIC50").values().tolist() == [1234.5678, 6.0, 7.0]
+
+    dialog = window.columns.number_format("pIC50")
+    assert dialog.chosen() == "fixed" and dialog.digits.value() == 2
+    dialog.format.setCurrentIndex(dialog.format.findData("significant"))
+    assert dialog.digits_label.text() == "Significant figures:" and dialog.digits.value() == 3
+    dialog.accept()
+    assert shown() == ["1230", "6.00", "7.00"]
+    # editing starts from the number as typed, not the formatted text
+    assert model.data(model.index(0, 1), Qt.ItemDataRole.EditRole) == "1234.5678"
+
+    dialog = window.columns.number_format("pIC50")
+    dialog.format.setCurrentIndex(dialog.format.findData("thousands"))
+    dialog.digits.setValue(1)
+    dialog.accept()
+    assert shown() == ["1,234.6", "6.0", "7.0"]
+    header = model.headerData(1, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole)
+    assert "Shown as Thousands separator (1 decimals)" in header
+    assert "3 filled · 0 blank" in header and "Median 7" in header
+
+    dialog = window.columns.number_format("pIC50")
+    dialog.format.setCurrentIndex(dialog.format.findData("as_typed"))
+    assert not dialog.digits.isEnabled()
+    dialog.accept()
+    assert shown() == ["1234.5678", "6", "7"]
     table.undo()
-    assert model.data(model.index(0, 1)) == "5.00"
+    assert shown() == ["1,234.6", "6.0", "7.0"]
 
 
 def test_colour_dialog_gradient(window) -> None:
@@ -379,3 +404,185 @@ def test_chemistry_sketcher_adds_the_drawing_as_a_row(window) -> None:
     assert "Structure" in table.column_names
     assert Chem.MolToSmiles(table.column("Structure").mol(3)) == "Oc1ccccc1"
     assert window.workspace.selection.oids == {int(table.oids[3])}
+
+
+def test_frozen_columns_stay_put_and_follow_the_table(window, qtbot) -> None:
+    from chemsuite.app import session
+
+    table = window.workspace.table
+    table.add_rows({"ID": [f"X{i}" for i in range(60)], "pIC50": ["1"] * 60}, undoable=False)
+    for i in range(6):
+        table.add_column(f"Wide {i}", ["text"] * len(table))
+    window.resize(700, 400)
+    window.show()
+    qtbot.waitExposed(window)
+    view = window.view
+    for col in range(view.table_model.columnCount()):
+        view.setColumnWidth(col, 300)
+    qtbot.waitUntil(lambda: view.horizontalScrollBar().maximum() > 600)
+    titles = menu_titles(window.columns.build_menu("pIC50", [], 1))
+    assert "Freeze Columns up to Here" in titles and "Unfreeze Columns" not in titles
+    trigger(window.columns.build_menu("pIC50", [], 1), "Freeze Columns up to Here")
+    frozen = view._frozen
+    assert view.frozen_count == 2 and frozen.isVisible()
+    assert frozen.width() == 2 * 300 + 1
+    assert [frozen.isColumnHidden(c) for c in range(4)] == [False, False, True, True]
+
+    view.verticalScrollBar().setValue(20)  # up and down: both move
+    assert frozen.verticalScrollBar().value() == 20
+    view.setColumnWidth(0, 120)  # a frozen column resized on the table
+    assert frozen.columnWidth(0) == 120 and frozen.width() == 120 + 300 + 1
+    last = view.table_model.columnCount() - 1
+    view.scrollTo(view.table_model.index(25, last))
+    view.scrollTo(view.table_model.index(25, 2))  # back left: not hidden under the frozen part
+    assert view.columnViewportPosition(2) >= frozen.frozen_width()
+    view.horizontalScrollBar().setValue(view.horizontalScrollBar().maximum())
+    sideways = view.horizontalScrollBar().value()
+    assert sideways > 0
+    view.scrollTo(view.table_model.index(30, 0))  # a frozen cell: no sideways jump
+    assert view.horizontalScrollBar().value() == sideways
+
+    menus = []
+    view.cellMenuRequested.disconnect()  # listen instead of showing the window's menu
+    view.cellMenuRequested.connect(lambda index, _pos: menus.append(index.column()))
+    from PySide6.QtGui import QContextMenuEvent
+
+    at = frozen.visualRect(frozen.model().index(21, 0)).center()
+    event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, at, frozen.mapToGlobal(at))
+    frozen.contextMenuEvent(event)
+    assert menus == [0]
+
+    extras = session.capture(window)
+    view.set_frozen(0)
+    assert not frozen.isVisible()
+    session.restore(window, extras)
+    assert window.view.frozen_count == 2
+    assert "Unfreeze Columns" in menu_titles(window.columns.build_menu("ID", [], 0))
+
+
+# -- aligned drawings and previews --------------------------------------------------------------
+
+
+def test_align_drawings_from_the_column_menu_and_saved_with_the_layout(structures) -> None:
+    from chemsuite.app import session
+
+    window = structures
+    view = window.view
+    assert "Align Drawings…" in menu_titles(window.columns.build_menu("SMILES", [], 1))
+    assert "Align Drawings…" not in menu_titles(window.columns.build_menu("IC50", [], 2))
+    assert "Stop Aligning Drawings" not in menu_titles(window.columns.build_menu("SMILES", [], 1))
+
+    dialog = window.align_drawings("SMILES")
+    ok = dialog.buttons.button(dialog.buttons.StandardButton.Ok)
+    assert not ok.isEnabled()  # nothing typed yet
+    dialog.core.set_text("not [[ a structure")
+    assert not ok.isEnabled() and dialog.problem.text().startswith("⚠")
+    dialog.core.set_text("c1ccccc1")
+    assert ok.isEnabled() and dialog.problem.isHidden()
+    ok.click()
+    assert view.alignments() == {"SMILES": "c1ccccc1"}
+    assert "Stop Aligning Drawings" in menu_titles(window.columns.build_menu("SMILES", [], 1))
+
+    images = view.itemDelegate()._images
+    column = window.workspace.table.column("SMILES")
+    alignment = view.itemDelegate().alignments["SMILES"]
+    from PySide6.QtCore import QSize
+
+    plain = images.image(column, 1, QSize(120, 90), 1.0, False)
+    aligned = images.image(column, 1, QSize(120, 90), 1.0, False, None, alignment)
+    assert plain is not aligned  # separate cache entries
+
+    extras = session.capture(window)
+    trigger(window.columns.build_menu("SMILES", [], 1), "Stop Aligning Drawings")
+    assert view.alignments() == {}
+    session.restore(window, extras)
+    assert window.view.alignments() == {"SMILES": "c1ccccc1"}
+    assert not window.view.set_alignment("SMILES", "not [[ a structure")
+
+
+def test_structure_cells_preview_a_large_drawing_on_hover(structures) -> None:
+    model = structures.view.table_model
+    column = structures.workspace.table.column("SMILES")
+    assert model.data(model.index(1, 1), Qt.ItemDataRole.ToolTipRole) == "c1ccccc1"  # unparsed
+    for row in range(3):
+        column.obj(int(model._slots[row]))  # what drawing the cells does
+    tip = model.data(model.index(1, 1), Qt.ItemDataRole.ToolTipRole)
+    assert tip.startswith('<img src="data:image/png;base64,')
+    assert 'width="360" height="270"' in tip and "c1ccccc1" in tip
+    assert model.data(model.index(2, 1), Qt.ItemDataRole.ToolTipRole).startswith("Invalid")
+
+
+# -- the row header -----------------------------------------------------------------------------
+
+
+def test_short_row_numbers() -> None:
+    from chemsuite.app.table_model import short_row_number
+
+    assert [short_row_number(n) for n in (7, 999, 1000, 1234, 12_345, 123_456, 2_500_000)] == [
+        "7",
+        "999",
+        "1k",
+        "1.2k",
+        "12k",
+        "123k",
+        "2.5M",
+    ]
+
+
+def test_cell_selection_survives_sorting_and_row_header_selects_rows(window, qtbot) -> None:
+    table = window.workspace.table
+    view = window.view
+    window.show()
+    qtbot.waitExposed(window)
+    model = view.table_model
+    qtbot.mouseClick(
+        view.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=view.visualRect(model.index(0, 1)).center(),  # A's pIC50
+    )
+    table.set_sort([("pIC50", False)])  # A moves to the bottom
+    ranges = [(r.top(), r.left(), r.bottom(), r.right()) for r in view.selectionModel().selection()]
+    assert ranges == [(2, 1, 2, 1)]  # still that one cell, not the whole row
+    header = view.verticalHeader()
+    qtbot.mouseClick(
+        header.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(header.width() // 2, header.sectionViewportPosition(0) + 4),
+    )
+    assert view.selected_whole_rows().tolist() == [0]
+    assert window.workspace.selection.oids == {int(table.oids[2])}  # C, now first
+
+
+def test_row_menu_deletes_duplicates_and_freezes(window, qtbot) -> None:
+    from chemsuite.app import session
+
+    table = window.workspace.table
+    view = window.view
+    table.add_rows({"ID": [f"X{i}" for i in range(40)], "pIC50": ["1"] * 40}, undoable=False)
+    view.selectRow(1)
+    titles = menu_titles(window.row_menu(1))
+    assert titles[:2] == ["Delete Row", "Duplicate Row"] and "Unfreeze Rows" not in titles
+    trigger(window.row_menu(1), "Duplicate Row")
+    assert len(table) == 44 and table.cell("ID", int(table.oids[-1])) == "B"
+    assert window.workspace.selection.oids == {int(table.oids[-1])}  # the copy is selected
+    table.undo()
+    assert len(table) == 43
+
+    window.resize(700, 400)
+    window.show()
+    qtbot.waitExposed(window)
+    trigger(window.row_menu(1), "Freeze Rows up to Here")
+    rows = view._frozen_rows
+    assert view.frozen_row_count == 2 and rows.isVisible()
+    assert rows.height() == 2 * view.rowHeight(0) + 1
+    view.scrollTo(model_index := view.table_model.index(30, 0))
+    assert view.rowViewportPosition(model_index.row()) >= rows.frozen_height()
+    view.set_frozen(1)  # columns too: the corner appears
+    assert view._frozen_corner is not None and view._frozen_corner.isVisible()
+
+    extras = session.capture(window)
+    trigger(window.row_menu(0), "Unfreeze Rows")
+    assert view.frozen_row_count == 0 and not rows.isVisible()
+    assert not view._frozen_corner.isVisible()
+    session.restore(window, extras)
+    assert window.view.frozen_row_count == 2

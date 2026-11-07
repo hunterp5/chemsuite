@@ -138,7 +138,6 @@ class SaliDialog(QDialog):
                 PARTNER_COLUMN: (oids, partners),
             },
             label="Activity cliffs",
-            overwrite=True,
         )
         self.panel = SaliPanel(ctx, oids, activity, name, cliffs, names, recipe)
         ctx.add_panel(self.panel, self.panel.title())

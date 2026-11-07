@@ -108,7 +108,8 @@ def test_diverse_subset(chem, qtbot) -> None:
     dialog.count.setValue(1)
     job = dialog.pick()
     qtbot.waitUntil(lambda: not job.running, timeout=20_000)
-    assert _cells(table, "Diversity Rank")[8] == "1"  # MW 80: farthest from MW 0
+    assert _cells(table, "Diversity Rank (2)")[8] == "1"  # MW 80: farthest from MW 0
+    assert sorted(r for r in _cells(table, "Diversity Rank") if r) == ["1", "2", "3"]
 
 
 def test_cluster(chem, qtbot) -> None:
@@ -130,10 +131,10 @@ def test_cluster(chem, qtbot) -> None:
     dialog.k.setValue(2)
     job = dialog.cluster()
     qtbot.waitUntil(
-        lambda: table.cell("Cluster Size", int(table.oids[0])) != "" and not job.running,
+        lambda: "Cluster Size (2)" in table and not job.running,
         timeout=20_000,
     )
-    sizes = [int(s) for s in _cells(table, "Cluster Size")]
+    sizes = [int(s) for s in _cells(table, "Cluster Size (2)")]
     assert sum(1 for s in sizes if s) == 9 and set(sizes) <= {1, 2, 3, 4, 5, 6, 7, 8}
 
 
@@ -176,12 +177,11 @@ def test_cluster_dialog_uses_the_dialog_kit(chem, qtbot) -> None:
     dialog.method.setCurrentIndex(dialog.method.findData("kmeans"))
     assert dialog._method_section.is_row_visible(dialog.k)
     assert not dialog._method_section.is_row_visible(dialog.cutoff)
-    # "Add a new column" keeps an earlier result.
+    # A rerun keeps the earlier result and adds a new column.
     dialog.method.setCurrentIndex(dialog.method.findData("butina"))
     job = dialog.cluster()
     qtbot.waitUntil(lambda: not job.running, timeout=20_000)
     dialog = chem.open_tool("cluster")
-    dialog.if_exists.set_value("new")
     job = dialog.cluster()
     qtbot.waitUntil(lambda: "Cluster (2)" in table.column_names, timeout=20_000)
     assert "Cluster" in table.column_names

@@ -16,7 +16,7 @@
 
 """Arranging panes around the table, and saving that arrangement with the document.
 
-Panes (plots, the Selection Browser) dock left of, right of or below the table, side by side,
+Panes (plots, the Browser) dock left of, right of or below the table, side by side,
 stacked or as tabs. Two are exceptions: Filters is pinned at the right edge of the window at a
 fixed width (``FILTER_WIDTH``), and every arrangement keeps it there; Advanced Search is always
 its own floating window (``float_search``).
@@ -342,8 +342,15 @@ def capture(window: MainWindow) -> dict[str, Any]:
     widths = window.view.column_widths()
     if widths:
         out["widths"] = widths
+    if window.view.frozen_count:
+        out["frozen"] = window.view.frozen_count
+    if window.view.frozen_row_count:
+        out["frozen_rows"] = window.view.frozen_row_count
+    alignments = window.view.alignments()
+    if alignments:
+        out["alignments"] = alignments
     search = window.search
-    if search.is_open or search.edit.text():
+    if search.is_open or search.edit.text() or search.history:
         out["search"] = {
             "open": search.is_open,
             "text": search.edit.text(),
@@ -351,6 +358,7 @@ def capture(window: MainWindow) -> dict[str, Any]:
             "whole": search.whole.isChecked(),
             "regex": search.regex.isChecked(),
             "column": search.column_name(),
+            "history": list(search.history),
         }
     return out
 
@@ -364,6 +372,18 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
         window.view.set_column_widths(
             {str(k): int(v) for k, v in widths.items() if isinstance(v, int | float) and v > 0}
         )
+    frozen = saved.get("frozen")
+    if isinstance(frozen, int) and not isinstance(frozen, bool) and frozen > 0:
+        window.view.set_frozen(frozen)
+    frozen_rows = saved.get("frozen_rows")
+    if isinstance(frozen_rows, int) and not isinstance(frozen_rows, bool) and frozen_rows > 0:
+        window.view.set_frozen_rows(frozen_rows)
+    alignments = saved.get("alignments")
+    if isinstance(alignments, dict):
+        table = window.workspace.table
+        for column, core in alignments.items():
+            if isinstance(column, str) and isinstance(core, str) and column in table:
+                window.view.set_alignment(column, core)
     search = saved.get("search")
     if isinstance(search, dict):
         bar = window.search
@@ -371,6 +391,9 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
             action.setChecked(bool(search.get(key)))
         column = search.get("column")
         bar.set_column(column if isinstance(column, str) else None)
+        history = search.get("history")
+        if isinstance(history, list):
+            bar.history = [str(item) for item in history if isinstance(item, str) and item][:10]
         text = str(search.get("text") or "")
         if search.get("open") or text:
             bar.open()

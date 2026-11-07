@@ -39,28 +39,78 @@ def _restore(ctx: ToolContext, state: dict):
     return _open(ctx, str(state.get("kind", "scatter")), state)
 
 
+def _restore_3d(ctx: ToolContext, state: dict):
+    """Documents saved while 3D Scatter was a panel of its own."""
+    return _open(ctx, "scatter3d", {"kind": "scatter3d", **state})
+
+
 TOOLS = [
     Tool(
         id="scatter",
-        title="New Scatter Plot",
-        menu=("Plot",),
+        title="Scatter",
+        menu=("Data", "Plot"),
         open=lambda ctx: _open(ctx, "scatter"),
         restore=_restore,
         shortcut="Ctrl+Shift+P",
         tip="Plot one number column against another; select points to select rows.",
     ),
     Tool(
+        id="line",
+        title="Line",
+        menu=("Data", "Plot"),
+        open=lambda ctx: _open(ctx, "line"),
+        tip="Points joined in X order, one line per category (e.g. a time course per series).",
+    ),
+    Tool(
+        id="bar",
+        title="Bar Chart",
+        menu=("Data", "Plot"),
+        open=lambda ctx: _open(ctx, "bar"),
+        tip="The mean, median, sum or count of a column per group, with error bars.",
+    ),
+    Tool(
         id="histogram",
-        title="New Histogram",
-        menu=("Plot",),
+        title="Histogram",
+        menu=("Data", "Plot"),
         open=lambda ctx: _open(ctx, "histogram"),
         tip="Count rows per value range (numbers) or per value (text).",
     ),
     Tool(
         id="box",
-        title="New Box Plot",
-        menu=("Plot",),
+        title="Box Plot",
+        menu=("Data", "Plot"),
         open=lambda ctx: _open(ctx, "box"),
         tip="Compare the spread of a number column across groups (e.g. pIC50 by series).",
+    ),
+    Tool(
+        id="density",
+        title="Density",
+        menu=("Data", "Plot"),
+        open=lambda ctx: _open(ctx, "density"),
+        tip="Where tens of thousands of points crowd together: a 2D histogram of X and Y.",
+    ),
+    Tool(
+        id="radar",
+        title="Radar",
+        menu=("Data", "Plot"),
+        open=lambda ctx: _open(ctx, "radar"),
+        tip="Several properties at once on spokes: the selected compounds against the mean.",
+    ),
+    Tool(
+        id="scatter3d",
+        title="3D Scatter",
+        menu=("Data", "Plot"),
+        open=lambda ctx: _open(ctx, "scatter3d"),
+        restore=_restore_3d,
+        tip="Three number columns in a cube you can turn, coloured and sized by others.",
+    ),
+    Tool(
+        id="landscape",
+        title="3D Landscape",
+        menu=("Data", "Plot"),
+        open=lambda ctx: _open(ctx, "landscape"),
+        tip="An activity landscape: a surface of one column (pIC50) over two others, such as "
+        "a chemical-space map. Peaks next to valleys are activity cliffs.",
+        separator_after=True,
     ),
 ]

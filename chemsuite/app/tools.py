@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import Executor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -188,7 +188,7 @@ class ToolContext:
         results: Mapping[str, tuple[np.ndarray, Sequence[object] | Column]],
         *,
         label: str,
-        overwrite: bool = False,
+        overwrite: bool | Collection[str] = False,
     ) -> dict[str, str]:
         """Write result columns as one undoable step, skipping rows deleted meanwhile.
 
@@ -218,6 +218,20 @@ class ToolContext:
         with a ``titleChanged(str)`` signal keeps the dock's title up to date.
         """
         return self._window.add_panel(widget, title)
+
+    def find_panel(self, tool_id: str) -> QWidget | None:
+        """The open panel of *tool_id*, if there is one (raised to the front).
+
+        A tool that produces more results of the same kind (further retrosynthetic routes,
+        say) fills the panel it already has instead of opening a second one.
+        """
+        for dock in self._window._panels:
+            widget = dock.widget()
+            if getattr(widget, "tool_id", None) == tool_id:
+                dock.show()
+                dock.raise_()
+                return widget
+        return None
 
     def show_dialog(self, dialog: QDialog) -> QDialog:
         """Show a tool's dialog without blocking the window.

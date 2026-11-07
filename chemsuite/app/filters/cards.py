@@ -27,7 +27,8 @@ import math
 import re
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -37,7 +38,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QPushButton,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -54,7 +54,7 @@ from chemsuite.core.table.filters import (
 )
 from chemsuite.core.table.numbers import format_general
 
-from ..pane import section
+from ..glyphs import flat_buttons, glyph
 from .range_slider import RangeSlider
 
 #: Text columns with at most this many distinct values get a category card by default.
@@ -62,6 +62,10 @@ CATEGORY_LIMIT = 200
 #: A category list shows at most this many values (the most frequent).
 CATEGORY_LIST_LIMIT = 1000
 HISTOGRAM_BINS = 40
+#: how far a striped card's background moves from the base colour toward the text colour
+STRIPE = 0.055
+#: a category list grows to this many rows before it scrolls
+LIST_ROWS = 8
 BLANK_LABEL = "(blank)"
 
 TEXT_MODES = {
@@ -79,39 +83,47 @@ class FilterCard(QFrame):
     kind = ""
     changed = Signal()
     removeRequested = Signal()
+    #: another column was chosen as the card's source (the panel swaps in a new card)
+    sourceRequested = Signal(str)
 
     def __init__(self, table: Table, column: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.table = table
         self.column = column
-        section(self, "FilterCard")
+        self.setObjectName("FilterCard")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self._alternate = False  # striped like table rows (the panel sets it)
+        self._glyphs: dict[QToolButton, str] = {}
+        self._restyling = False
 
         self.enabled_box = QCheckBox()
         self.enabled_box.setChecked(True)
         self.enabled_box.setToolTip("Apply this filter")
-        self.title = QLabel()
-        self.title.setStyleSheet("font-weight: 600")
-        self.not_button = QToolButton()
-        self.not_button.setText("Not")
+        #: the card's source column, chosen here (the card is rebuilt for another column)
+        self.title = QComboBox()
+        self.title.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.title.setMinimumContentsLength(6)
+        font = self.title.font()
+        font.setWeight(QFont.Weight.DemiBold)
+        self.title.setFont(font)
+        self.not_button = self.glyph_button("not", "Not: keep the rows this filter would hide")
         self.not_button.setCheckable(True)
-        self.not_button.setToolTip("Keep the rows this filter would hide instead")
-        self.remove_button = QToolButton()
-        self.remove_button.setText("✕")
-        self.remove_button.setAutoRaise(True)
-        self.remove_button.setToolTip("Remove filter")
+        self.remove_button = self.glyph_button("close", "Remove filter")
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(6)
+        header.setSpacing(4)
         header.addWidget(self.enabled_box)
-        header.addSpacing(2)  # the check box reports no gap after its indicator
-        header.addWidget(self.title, 1)
+        header.addSpacing(4)  # the check box reports no gap after its indicator
+        header.addWidget(self.title)
+        header.addStretch(1)
         header.addWidget(self.not_button)
         header.addWidget(self.remove_button)
         self.body = QVBoxLayout()
         self.body.setContentsMargins(0, 0, 0, 0)
+        self.body.setSpacing(6)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 8, 0, 10)
+        outer.setContentsMargins(12, 6, 8, 10)
         outer.setSpacing(6)
         outer.addLayout(header)
         outer.addLayout(self.body)
@@ -119,7 +131,57 @@ class FilterCard(QFrame):
         self.enabled_box.toggled.connect(self._on_enabled)
         self.not_button.toggled.connect(lambda _on: self.changed.emit())
         self.remove_button.clicked.connect(self.removeRequested.emit)
-        self._update_title()
+        self.update_sources()
+        self.title.activated.connect(self._source_chosen)
+        self._restyle()
+
+    # -- look ---------------------------------------------------------------------------------
+    def glyph_button(self, name: str, tip: str) -> QToolButton:
+        """A flat glyph button, drawn in the palette's colours."""
+        button = QToolButton()
+        button.setAutoRaise(True)
+        button.setIconSize(QSize(14, 14))
+        button.setFixedSize(22, 22)
+        button.setToolTip(tip)
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._glyphs[button] = name
+        return button
+
+    def set_alternate(self, on: bool) -> None:
+        """Use the alternate background, like every other table row."""
+        if on != self._alternate:
+            self._alternate = on
+            self._restyle()
+
+    def _restyle(self) -> None:
+        palette = self.palette()
+        ink = palette.text().color()
+        for button, name in self._glyphs.items():
+            button.setIcon(glyph(name, ink))
+        background = palette.base().color()
+        if self._alternate:  # base a shade toward the text, as the native table stripes rows
+            ink_rgb, base_rgb = ink.getRgbF()[:3], background.getRgbF()[:3]
+            background = QColor.fromRgbF(
+                *(b + (i - b) * STRIPE for b, i in zip(base_rgb, ink_rgb, strict=True))
+            )
+        line = palette.mid().color().name()
+        sheet = (
+            f"QFrame#FilterCard {{ background: {background.name()}; border: none;"
+            f" border-bottom: 1px solid {line}; }} "
+            + flat_buttons(palette, "QFrame#FilterCard QToolButton")
+        )
+        if sheet != self.styleSheet():  # a new sheet changes the palette: no loop
+            self.setStyleSheet(sheet)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        palette = event.type() == QEvent.Type.PaletteChange
+        if palette and hasattr(self, "_glyphs") and not self._restyling:
+            self._restyling = True
+            try:
+                self._restyle()
+            finally:
+                self._restyling = False
 
     # -- state --------------------------------------------------------------------------------
     @property
@@ -172,11 +234,37 @@ class FilterCard(QFrame):
 
     def rename(self, new: str) -> None:
         self.column = new
+        self.update_sources()
+
+    def update_sources(self) -> None:
+        """List the columns this kind of card can filter (the table's columns changed)."""
+        names = sources_for(self.table, self.kind)
+        if self.column not in names:
+            names = [self.column, *names]
+        if names != [self.title.itemText(i) for i in range(self.title.count())]:
+            self.title.blockSignals(True)
+            self.title.clear()
+            self.title.addItems(names)
+            self.title.blockSignals(False)
+        self.title.setCurrentText(self.column)
+        self._update_title()
+
+    def _source_chosen(self, index: int) -> None:
+        name = self.title.itemText(index)
+        if name and name != self.column:
+            self.sourceRequested.emit(name)
+
+    #: what the card covers ("7 numbers from 5 to 9"), shown in the title's tooltip: cards
+    #: carry no text of their own under the controls
+    details = ""
+
+    def set_details(self, text: str) -> None:
+        self.details = text
         self._update_title()
 
     def _update_title(self) -> None:
-        self.title.setText(self.column)
-        self.title.setToolTip(f"{self.column} ({self.kind})")
+        tip = f"{FILTER_TYPES.get(self.kind, self.kind)} filter on {self.column}"
+        self.title.setToolTip(f"{tip}\n{self.details}" if self.details else tip)
 
     def _on_enabled(self, on: bool) -> None:
         for i in range(self.body.count()):
@@ -208,9 +296,6 @@ class RangeCard(FilterCard):
             edit.setMinimumWidth(48)  # shrink with the pane rather than clip
         self.blanks = QCheckBox("Include blanks")
         self.blanks.setChecked(True)
-        self.summary = QLabel()
-        self.summary.setWordWrap(True)
-        self.summary.setStyleSheet("color: palette(placeholder-text)")
         bounds = QHBoxLayout()
         bounds.addWidget(self.low_edit)
         bounds.addWidget(QLabel("to"))
@@ -218,7 +303,7 @@ class RangeCard(FilterCard):
         holder = QWidget()
         holder.setLayout(bounds)
         bounds.setContentsMargins(0, 0, 0, 0)
-        for widget in (self.slider, holder, self.blanks, self.summary):
+        for widget in (self.slider, holder, self.blanks):
             self.body.addWidget(widget)
 
         self.slider.rangeChanged.connect(self._from_slider)
@@ -235,14 +320,14 @@ class RangeCard(FilterCard):
             self._lo = self._hi = 0.0
             self.slider.set_histogram(None)
             self.slider.setEnabled(False)
-            self.summary.setText("No numbers in this column")
+            self.set_details("No numbers in this column")
         else:
             self._lo, self._hi = float(finite.min()), float(finite.max())
             span = (self._lo, self._hi) if self._hi > self._lo else (self._lo - 0.5, self._lo + 0.5)
             counts, _edges = np.histogram(finite, bins=HISTOGRAM_BINS, range=span)
             self.slider.set_histogram(counts)
             self.slider.setEnabled(self.is_enabled)
-            self.summary.setText(
+            self.set_details(
                 f"{len(finite):,} numbers from {format_general(self._lo)} to "
                 f"{format_general(self._hi)}" + (f" · {blanks:,} blank" if blanks else "")
             )
@@ -391,19 +476,19 @@ class CategoryCard(FilterCard):
         self.search.setClearButtonEnabled(True)
         self.values = QListWidget()
         self.values.setUniformItemSizes(True)
-        self.values.setMaximumHeight(180)
-        self.note = QLabel()
-        self.note.setStyleSheet("color: palette(placeholder-text)")
-        all_button = QPushButton("All")
-        none_button = QPushButton("None")
-        buttons = QHBoxLayout()
-        buttons.setContentsMargins(0, 0, 0, 0)
-        buttons.addWidget(all_button)
-        buttons.addWidget(none_button)
-        buttons.addStretch(1)
+        self.all_button = self.glyph_button("tick_all", "Tick every value")
+        self.none_button = self.glyph_button("tick_none", "Untick every value")
+        all_button, none_button = self.all_button, self.none_button
+        find = QHBoxLayout()
+        find.setContentsMargins(0, 0, 0, 0)
+        find.setSpacing(2)
+        find.addWidget(self.search, 1)
+        find.addSpacing(4)
+        find.addWidget(all_button)
+        find.addWidget(none_button)
         holder = QWidget()
-        holder.setLayout(buttons)
-        for widget in (self.search, self.values, holder, self.note):
+        holder.setLayout(find)
+        for widget in (holder, self.values):
             self.body.addWidget(widget)
 
         self.search.textChanged.connect(self._apply_search)
@@ -428,13 +513,20 @@ class CategoryCard(FilterCard):
                 self.values.addItem(item)
         finally:
             self.values.blockSignals(False)
-        self.note.setText(
-            f"Showing the {len(shown):,} most common of {len(counts):,} values"
+        self._fit_list()
+        self.set_details(
+            f"Listing the {len(shown):,} most common of {len(counts):,} values"
             if self._hidden_values
-            else ""
+            else f"{len(counts):,} values"
         )
-        self.note.setVisible(bool(self._hidden_values))
         self._apply_search(self.search.text())
+
+    def _fit_list(self) -> None:
+        """As tall as its values, up to LIST_ROWS rows (then it scrolls)."""
+        rows = min(max(self.values.count(), 1), LIST_ROWS)
+        row = self.values.sizeHintForRow(0) if self.values.count() else 0
+        row = row if row > 0 else self.fontMetrics().height() + 4
+        self.values.setFixedHeight(rows * row + 2 * self.values.frameWidth() + 2)
 
     def listed_values(self) -> list[str]:
         return [
@@ -489,6 +581,51 @@ class CategoryCard(FilterCard):
             item = self.values.item(i)
             value = item.data(Qt.ItemDataRole.UserRole) or BLANK_LABEL
             item.setHidden(bool(needle) and needle not in value.casefold())
+
+
+#: the kinds of filter card, as the panel's Add menu offers them
+FILTER_TYPES = {
+    "range": "Number Range",
+    "category": "Category",
+    "text": "Text Match",
+    "structure": "Structure",
+    "reaction": "Reaction",
+}
+
+
+def sources_for(table: Table, kind: str) -> list[str]:
+    """The columns a *kind* card can filter: numbers for a range, structures for a structure
+    card, reactions for a reaction card, text and numbers for categories, any column for a
+    text match."""
+
+    def fits(name: str) -> bool:
+        column_kind = table.kind(name)
+        if kind == "range":
+            return column_kind == NUMBER
+        if kind in ("structure", "reaction"):
+            return column_kind == kind
+        if kind == "category":
+            return column_kind not in ("structure", "reaction")
+        return True
+
+    return [name for name in table.column_names if fits(name)]
+
+
+def default_source(table: Table, kind: str) -> str | None:
+    """The column a new *kind* card starts on: for categories, the first column with a short
+    list of values (not an ID column); for text, the first text column; else the first that
+    fits."""
+    names = sources_for(table, kind)
+    if kind == "category":
+        for name in names:
+            distinct = len(value_counts(table.column(name)))
+            if 2 <= distinct <= CATEGORY_LIMIT and distinct < len(table):  # not an ID column
+                return name
+    if kind == "text":
+        text = [n for n in names if table.kind(n) == "text"]
+        if text:
+            return text[0]
+    return names[0] if names else None
 
 
 def card_for(table: Table, column: str, kind: str | None = None, searcher=None) -> FilterCard:

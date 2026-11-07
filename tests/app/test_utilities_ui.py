@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Data ▸ Utilities: the Calculator, random numbers and rows."""
+"""Table (utilities): the Calculator, random numbers and rows."""
 
 from __future__ import annotations
 
@@ -133,7 +133,6 @@ def test_random_numbers_fill_a_column_reproducibly(data):
     dialog.low.setValue(1)
     dialog.high.setValue(6)
     dialog.seed.setText("7")
-    dialog.output.set_value("new")
     dialog.accept()
     assert cells(table, "Random (2)") == first
 

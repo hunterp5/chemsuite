@@ -78,7 +78,7 @@ from .filters.cards import FilterCard
 from .filters.panel import FilterPanel
 from .find_replace import FindReplaceDialog
 from .jobs import QUEUE, QUICK, Job, JobRunner
-from .jobs_ui import JobsIndicator, JobsWindow
+from .jobs_ui import JobsIndicator, JobsWindow, duration
 from .list_actions import ListActions
 from .log_ui import LogWindow
 from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader, schedule_header_refresh
@@ -275,7 +275,7 @@ class MainWindow(QMainWindow):
         self.search_dock.toggleViewAction().toggled.connect(
             lambda on: on and dock_layout.float_search(self)
         )
-        self.browser_dock = QDockWidget("Selection Browser", self)
+        self.browser_dock = QDockWidget("Browser", self)
         self.browser_dock.setObjectName("BrowserDock")
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.browser_dock)
         self.browser_dock.hide()
@@ -339,6 +339,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self._filters = FilterPanel(workspace.table, searcher=self._searcher)
         self.filter_dock.setWidget(self._filters)
+        self.filter_dock.titleBarWidget().add_tools(self._filters.toolbar)
         self._advanced = AdvancedSearchPanel(
             workspace.table,
             workspace.selection,
@@ -354,6 +355,11 @@ class MainWindow(QMainWindow):
             add_filter=self.filter_column,
             split=self.split_column,
             join=self.join_columns,
+            freeze=lambda count: self.view.set_frozen(count),
+            frozen=lambda: self.view.frozen_count,
+            align=self.align_drawings,
+            unalign=lambda name: self.view.set_alignment(name, None),
+            aligned=lambda name: name in self.view.alignments(),
         )
         self._lists = ListActions(
             self,
@@ -370,6 +376,7 @@ class MainWindow(QMainWindow):
         self._view.structureEditRequested.connect(self._on_structure_edit_requested)
         self._view.structureDrawRequested.connect(self._on_structure_draw_requested)
         self._view.cellMenuRequested.connect(self._show_cell_menu)
+        self._view.rowHeaderMenuRequested.connect(self._show_row_menu)
         self._view.deleteColumnsRequested.connect(lambda names: self.columns.delete(names))
         self._unsubscribe = workspace.table.subscribe(self._on_table_event)
         workspace.selection.subscribe(lambda *_: self._update_status())
@@ -488,6 +495,7 @@ class MainWindow(QMainWindow):
     def show_find_replace(self) -> FindReplaceDialog:
         if self._find is None:
             self._find = FindReplaceDialog(self.view, self)
+        self._find.rescope()  # the selection may have changed since it was last used
         self._find.show()
         self._find.raise_()
         self._find.activateWindow()
@@ -634,6 +642,13 @@ class MainWindow(QMainWindow):
         file_menu = bar.addMenu("&File")
         file_menu.addAction(A("file.new", "&New", self.new_window, QKeySequence.StandardKey.New))
         file_menu.addAction(
+            A(
+                "data.copy_shown_rows",
+                "New from Shown Rows",
+                self.copy_shown_rows_to_new_document,
+            )
+        )
+        file_menu.addAction(
             A("file.open", "&Open…", self.open_dialog, QKeySequence.StandardKey.Open)
         )
         self._recent_menu = file_menu.addMenu("Open &Recent")
@@ -643,9 +658,11 @@ class MainWindow(QMainWindow):
         file_menu.addAction(
             A("file.save_as", "Save &As…", self.save_as, QKeySequence.StandardKey.SaveAs)
         )
-        file_menu.addAction(A("file.export", "&Export…", lambda: self.export_dialog(False)))
-        file_menu.addAction(
-            A("file.export_selected", "Export Selected…", lambda: self.export_dialog(True))
+        export_menu = file_menu.addMenu("&Export")
+        export_menu.setToolTipsVisible(True)
+        export_menu.addAction(A("file.export", "&Table…", lambda: self.export_dialog(False)))
+        export_menu.addAction(
+            A("file.export_selected", "&Selected Rows…", lambda: self.export_dialog(True))
         )
         file_menu.addSeparator()
         file_menu.addAction(A("file.close", "&Close", self.close, QKeySequence.StandardKey.Close))
@@ -668,44 +685,15 @@ class MainWindow(QMainWindow):
             )
         )
         edit.addAction(A("edit.paste", "&Paste", self.paste, QKeySequence.StandardKey.Paste))
-        edit.addAction(
-            A("edit.clear_cells", "Clear Cells", lambda: self.view.clear_selected_cells())
-        )
         copy_as = edit.addMenu("Copy Structure As")
         for fmt, title in COPY_FORMATS:
             command = "edit.copy_molfile" if fmt == "molfile" else f"edit.copy_{fmt}"
             copy_as.addAction(A(command, title, lambda f=fmt: self.copy_current_structure_as(f)))
-        edit.addSeparator()
+        edit.addAction(
+            A("edit.clear_cells", "Clear Cells", lambda: self.view.clear_selected_cells())
+        )
         edit.addAction(
             A("edit.structure", "Edit &Structure…", self.edit_current_structure, "Ctrl+E")
-        )
-        edit.addSeparator()
-        edit.addAction(
-            A(
-                "edit.search",
-                "&Search Rows",
-                lambda: self.search.focus(),
-                QKeySequence.StandardKey.Find,
-            )
-        )
-        edit.addAction(
-            A(
-                "edit.find_replace",
-                "Find and &Replace…",
-                self.show_find_replace,
-                [QKeySequence.StandardKey.Replace, "Ctrl+Alt+F"],
-            )
-        )
-        edit.addAction(A("edit.advanced_search", "Ad&vanced Search…", self.show_advanced_search))
-        edit.addAction(
-            A("edit.structure_search", "Structure Searc&h…", self.structure_search, "Ctrl+Shift+M")
-        )
-        edit.addAction(
-            A(
-                "edit.clear_highlight",
-                "Clear Structure Highlighting",
-                self.clear_structure_highlights,
-            )
         )
         edit.addSeparator()
         edit.addAction(
@@ -732,34 +720,8 @@ class MainWindow(QMainWindow):
                 "Ctrl+Shift+A",
             )
         )
-        edit.addSeparator()
-        edit.addAction(A("edit.delete_rows", "&Delete Rows", self.delete_rows, "Ctrl+Backspace"))
-        edit.addSeparator()
-        settings_action = A(
-            "app.settings",
-            "Settings…",
-            self.open_settings,
-            [QKeySequence.StandardKey.Preferences, "Ctrl+,"],
-        )
-        settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)  # the app menu on macOS
-        edit.addAction(settings_action)
-
-        self._building = "Data"
-        data = bar.addMenu("&Data")
-        table_menu = data.addMenu("&Table")
-        self._building = "Data ▸ Table"
-        table_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
-        table_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
-        table_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
-        table_menu.addSeparator()
-        table_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
-        table_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
-        table_menu.addSeparator()
-        table_menu.addAction(
-            A("data.clear_sort", "Clear Sort", lambda: self.workspace.table.set_sort([]))
-        )
-        self._building = "Data ▸ Lists"
-        self._lists_menu = data.addMenu("&Lists")
+        self._building = "Edit ▸ Lists"
+        self._lists_menu = edit.addMenu("&Lists")
         self._add_to_list = A(
             "lists.add_selected",
             "&Add Selected to List…",
@@ -778,35 +740,53 @@ class MainWindow(QMainWindow):
         )
         self._lists_menu.addAction(self._add_to_list)  # so the shortcut works before first show
         self.addAction(self._add_to_list)
-        self._building = "Data"
-        data.addSeparator()
-        data.addAction(A("data.show_all_rows", "Show All Rows", self.show_all_rows))
-        data.addAction(
+        self._building = "Edit"
+        edit.addSeparator()
+        edit.addAction(A("edit.delete_rows", "&Delete Rows", self.delete_rows, "Ctrl+Backspace"))
+        edit.addSeparator()
+        settings_action = A(
+            "app.settings",
+            "Settings…",
+            self.open_settings,
+            [QKeySequence.StandardKey.Preferences, "Ctrl+,"],
+        )
+        settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)  # the app menu on macOS
+        edit.addAction(settings_action)
+
+        self._building = "Data ▸ Search"
+        search = QMenu("&Search", self)  # placed in the Data menu below
+        search.setToolTipsVisible(True)
+        search.addAction(
             A(
-                "data.copy_shown_rows",
-                "Copy Shown Rows to New Document",
-                self.copy_shown_rows_to_new_document,
+                "edit.search",
+                "&Search Rows",
+                lambda: self.search.focus(),
+                QKeySequence.StandardKey.Find,
             )
         )
-        data.addSeparator()  # the analysis tools follow
-
-        self._tool_actions: dict[str, QAction] = {}
-        menus = {
-            ("File",): file_menu,
-            ("Edit",): edit,
-            ("Data",): data,
-            ("Data", "Table"): table_menu,
-        }
-        for tool in registered_tools():
-            self._add_tool(tool, menus)
+        search.addAction(
+            A(
+                "edit.find_replace",
+                "Find and &Replace…",
+                self.show_find_replace,
+                [QKeySequence.StandardKey.Replace, "Ctrl+Alt+F"],
+            )
+        )
+        search.addAction(A("edit.advanced_search", "Ad&vanced Search…", self.show_advanced_search))
+        search.addSeparator()
+        search.addAction(
+            A("edit.structure_search", "Structure Searc&h…", self.structure_search, "Ctrl+Shift+M")
+        )
+        search_tools = search.addSeparator()  # Reaction Search goes here
+        search_tools.setVisible(False)
+        search.addAction(
+            A("edit.clear_highlight", "Clear Highlighting", self.clear_structure_highlights)
+        )
+        search.addSeparator()
+        search.addAction(A("data.show_all_rows", "Show &All Rows", self.show_all_rows))
 
         self._building = "View"
         view = bar.addMenu("&View")
-        toggle = self.filter_dock.toggleViewAction()
-        toggle.setText("&Filters")
-        register("view.filters", "Filters", "View", ["Ctrl+Shift+F"])
-        self._commands["view.filters"] = toggle
-        view.addAction(toggle)
         self._search_action = QAction("&Search Bar", self, checkable=True)
         self._search_action.toggled.connect(
             lambda on: self.search.focus() if on else self.search.dismiss()
@@ -814,7 +794,6 @@ class MainWindow(QMainWindow):
         register("view.search_bar", "Search Bar", "View")
         self._commands["view.search_bar"] = self._search_action
         view.addAction(self._search_action)
-        view.addAction(A("view.browser", "Selection &Browser", self.toggle_browser, "Ctrl+Shift+B"))
         view.addSeparator()
         arrange = view.addMenu("&Arrange Panes")
         arrange.aboutToShow.connect(lambda: dock_layout.fill_arrange_all_menu(arrange, self))
@@ -828,6 +807,53 @@ class MainWindow(QMainWindow):
         self._commands["view.status_bar"] = status
         self._status_bar_action = status
         view.addAction(status)
+
+        self._building = "Tools ▸ Table"
+        tools_menu = bar.addMenu("&Tools")
+        tools_menu.setToolTipsVisible(True)
+        table_menu = tools_menu.addMenu("&Table")
+        table_menu.setToolTipsVisible(True)
+        table_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
+        table_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
+        table_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
+        table_menu.addSeparator()
+        table_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
+        table_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
+        table_menu.addSeparator()  # Calculator, Random… follow
+
+        # the tool menus, in order (tools fill them; see chemsuite.tools.TOOL_MODULES)
+        self._tool_actions: dict[str, QAction] = {}
+        chemistry = bar.addMenu("&Chemistry")
+        chemistry.setToolTipsVisible(True)
+        self._building = "Data"
+        data = bar.addMenu("&Data")  # Search, Plot and the panes first, then the analysis tools
+        data.setToolTipsVisible(True)
+        data.addMenu(search)
+        plot = data.addMenu("&Plot")
+        plot.setToolTipsVisible(True)
+        toggle = self.filter_dock.toggleViewAction()
+        toggle.setText("&Filters")
+        register("view.filters", "Filters", "Data", ["Ctrl+Shift+F"])
+        self._commands["view.filters"] = toggle
+        data.addAction(toggle)
+        data.addAction(A("view.browser", "&Browser", self.toggle_browser, "Ctrl+Shift+B"))
+        data.addSeparator()
+        menus: dict[tuple[str, ...], Any] = {
+            ("File",): file_menu,
+            ("File", "Export"): export_menu,
+            ("Edit",): edit,
+            ("View",): view,
+            ("Tools",): tools_menu,
+            ("Tools", "Table"): table_menu,
+            ("Chemistry",): chemistry,
+            ("Data",): data,
+            ("Data", "Search"): search,
+            ("Data", "Plot"): plot,
+        }
+        #: tools in these menus go before this action instead of at the end
+        self._tool_slots = {("Data", "Search"): search_tools}
+        for tool in registered_tools():
+            self._add_tool(tool, menus)
 
         self._building = "Help"
         help_menu = bar.addMenu("&Help")
@@ -879,9 +905,16 @@ class MainWindow(QMainWindow):
         )
         action.setEnabled(not missing)
         action.triggered.connect(lambda _checked=False, t=tool: self.open_tool(t))
-        menus[tool.menu].addAction(action)
-        if tool.separator_after:
-            menus[tool.menu].addSeparator()
+        menu = menus[tool.menu]
+        slot = self._tool_slots.get(tool.menu)
+        if slot is not None:  # among the menu's own commands
+            menu.insertAction(slot, action)
+            if tool.separator_after:
+                menu.insertSeparator(slot)
+        else:
+            menu.addAction(action)
+            if tool.separator_after:
+                menu.addSeparator()
         self._tool_actions[tool.id] = action
         self._commands[f"tool.{tool.id}"] = action
 
@@ -1168,10 +1201,63 @@ class MainWindow(QMainWindow):
         else:
             self.draw_structure(oid, name)
 
+    def align_drawings(self, column: str):
+        """Align Drawings… for *column*: ask for the core, then draw the column aligned."""
+        from .align_drawings import AlignDrawingsDialog
+
+        def current_structure() -> str:
+            index = self.view.currentIndex()
+            if not index.isValid():
+                return ""
+            oid = self.workspace.model.oid_at(index.row())
+            return self.workspace.table.cell(column, oid)
+
+        dialog = AlignDrawingsDialog(
+            self,
+            column,
+            self.view.set_alignment,
+            current_structure,
+            self.view.alignments().get(column, ""),
+        )
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
+
     def _show_cell_menu(self, index: QModelIndex, pos: QPoint) -> None:
         menu = self.cell_menu(index)
         menu.exec(pos)
         menu.deleteLater()
+
+    def _show_row_menu(self, row: int, pos: QPoint) -> None:
+        menu = self.row_menu(row)
+        menu.exec(pos)
+        menu.deleteLater()
+
+    def row_menu(self, row: int) -> QMenu:
+        """The right-click menu of the row numbers: for the selected rows, and freezing."""
+        view = self.view
+        count = len(view.selected_oids())
+        rows = "Row" if count == 1 else f"{count:,} Rows"
+        menu = QMenu(self)
+        menu.addAction(f"Delete {rows}", self.delete_rows).setEnabled(count > 0)
+        menu.addAction(f"Duplicate {rows}", self.duplicate_rows).setEnabled(count > 0)
+        menu.addSeparator()
+        freeze = menu.addAction("Freeze Rows up to Here", lambda: view.set_frozen_rows(row + 1))
+        freeze.setToolTip("Keep this row and the ones above it in place while the rest scroll")
+        freeze.setEnabled(view.frozen_row_count != row + 1)
+        if view.frozen_row_count:
+            menu.addAction("Unfreeze Rows", lambda: view.set_frozen_rows(0))
+        menu.setToolTipsVisible(True)
+        return menu
+
+    def duplicate_rows(self) -> None:
+        """Add a copy of each selected row (new rows go at the end, or by the sort) and select
+        the copies."""
+        oids = self.view.selected_oids()
+        if not len(oids):
+            return
+        copies = self.workspace.table.duplicate_rows(oids, label=f"Duplicate {len(oids)} row(s)")
+        self.workspace.selection.set(copies.tolist(), "menu")
 
     def cell_menu(self, index: QModelIndex) -> QMenu:
         """The right-click menu of a cell. Structure and reaction cells: the sketcher and Copy
@@ -1537,8 +1623,7 @@ class MainWindow(QMainWindow):
             on_done(result)
             if job.lane == QUEUE and job.elapsed > NOTIFY_AFTER_S:
                 self.statusBar().showMessage(f"{label.rstrip('…')}: done", 8000)
-                if not self.isActiveWindow():
-                    QApplication.alert(self)
+                self._notify_unseen(job, job.summary or "Done")
 
         job.finished.connect(finished)
         if lane == QUEUE:
@@ -1590,8 +1675,22 @@ class MainWindow(QMainWindow):
             loop.exec()
         dialog.deleteLater()
 
+    def _notify_unseen(self, job: Job, outcome: str) -> None:
+        """A long job ended while this window was not in front: alert the dock or taskbar and,
+        unless Settings ▸ General turns it off, post a desktop notification."""
+        if self.isActiveWindow():
+            return
+        QApplication.alert(self)
+        if settings_hub().settings.jobs.notify:
+            from .notify import notify
+
+            where = f" ({job.document})" if job.document else ""
+            notify(f"{job.name}{where}", f"{outcome} after {duration(job.elapsed)}")
+
     def _report_failure(self, job: Job, error: BaseException) -> None:
         """A background job failed: say so without blocking; details are one click away."""
+        if job.elapsed > NOTIFY_AFTER_S:
+            self._notify_unseen(job, f"Failed: {error}" if str(error) else "Failed")
         self.statusBar().showMessage(f"{job.title.rstrip('…')} failed: {error}", 10000)
         self._failure_box = show_error(
             self,

@@ -71,3 +71,19 @@ def jitter(oids: np.ndarray, width: float) -> np.ndarray:
     """A stable offset in ``[-width/2, width/2]`` per row, so points do not jump on redraw."""
     mixed = (np.asarray(oids, dtype=np.uint64) * np.uint64(2654435761)) % np.uint64(2**32)
     return (mixed.astype(np.float64) / 2**32 - 0.5) * width
+
+
+def project(points: np.ndarray, matrix: np.ndarray, width: float, height: float):
+    """Screen positions of 3D *points* (n x 3) under a 4 x 4 model-view-projection *matrix*
+    (row-major, OpenGL conventions): ``(xy (n x 2) in pixels from the top left, in_front)``.
+    Points behind the camera are not ``in_front``."""
+    if not len(points):
+        return np.empty((0, 2)), np.zeros(0, dtype=np.bool_)
+    homogeneous = np.column_stack([points, np.ones(len(points))])
+    clip = homogeneous @ matrix.T
+    w = clip[:, 3]
+    in_front = w > 1e-9
+    safe = np.where(in_front, w, 1.0)
+    ndc_x, ndc_y = clip[:, 0] / safe, clip[:, 1] / safe
+    xy = np.column_stack([(ndc_x + 1) / 2 * width, (1 - ndc_y) / 2 * height])
+    return xy, in_front

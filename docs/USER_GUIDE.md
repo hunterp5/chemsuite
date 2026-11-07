@@ -21,8 +21,8 @@ read Ctrl as ⌘.
 7. [Filters](#7-filters)
 8. [Background jobs](#8-background-jobs)
 9. [Plots](#9-plots)
-10. [Chemistry: descriptors, pKa, standardizing and conformers](#10-chemistry-descriptors-pka-standardizing-and-conformers)
-11. [Data tools](#11-data-tools)
+10. [Chemistry: descriptors, pKa, standardizing, conformers and retrosynthesis](#10-chemistry-descriptors-pka-standardizing-conformers-and-retrosynthesis)
+11. [Table and analysis tools](#11-table-and-analysis-tools)
 12. [Similarity](#12-similarity)
 13. [SAR](#13-sar)
 14. [Chemical space](#14-chemical-space)
@@ -37,21 +37,33 @@ read Ctrl as ⌘.
 Each document has its own window. From top to bottom:
 
 - **Menu bar.**
-  - File, Edit, Data, Chemistry, Plot, View, Help.
+
+  | Menu | Holds |
+  |---|---|
+  | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close |
+  | Edit | Undo, Copy and Paste, Edit Structure, selecting rows, Lists, Delete Rows, Settings |
+  | View | Search Bar, Arrange Panes, Jobs, Log, Status Bar |
+  | Tools ▸ Table | Add compounds, rows and columns; Split and Join columns; Calculator; random numbers and rows |
+  | Chemistry | Sketcher, Calculate Descriptors, Standardize, Predict pKa, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
+  | Data | Search ▸, Plot ▸, Filters, Browser, then Bin Values, Statistics, Similarity Search, Diverse Subset, Cluster, SAR ▸, Scoring ▸, Chemical Space ▸ |
+  | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
+  | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
+  | Help | This guide, the log folder, About |
+
   - Every command that a tool adds appears in these menus. If a command is greyed out, its
     tooltip says why: for example, there is no structure column, or an external program is
     missing.
-- **Search bar.** Hidden until you ask for it with Edit ▸ Search Rows (Ctrl+F). See
+- **Search bar.** Hidden until you ask for it with Data ▸ Search ▸ Search Rows (Ctrl+F). See
   [Searching](#6-searching).
 - **The table.** One row per compound. Structure columns show drawings.
 - **Docked panels.**
-  - Filters sits at the right edge at a fixed width, and the Selection Browser docks at the
+  - Filters sits at the right edge at a fixed width, and the Browser docks at the
     side. Advanced Search opens as its own floating window.
   - New plots and tool panels open to the right of the table, splitting the window left and
     right. A second plot joins the first as a tab.
   - Panels sit flush against the table, divided by a thin line you can drag to resize them
     (the grab area is a few pixels wider than the line).
-    Every panel (plots, Filters, Advanced Search, Selection Browser) has the same header
+    Every panel (plots, Filters, Advanced Search, Browser) has the same header
     showing its title. Drag the header to move the panel. A plot's
     header also holds the plot toolbar. The buttons at the right are:
 
@@ -94,7 +106,7 @@ Tool dialogs do not block the window. While one is open you can still select row
 filters and scroll the table, and the dialog's row counts follow along. Opening another
 document closes any open tool dialogs.
 
-Tools are moving to one dialog layout. Cluster, Chemical Space Map and Predict pKa use it now,
+Tools are moving to one dialog layout. Cluster, Dimensionality Reduction and Predict pKa use it now,
 and the other tools will follow. The window title names the tool; every dialog on the layout
 reads the same way, top to bottom:
 
@@ -107,9 +119,9 @@ reads the same way, top to bottom:
   choose that method. Hover over a field or its label for an explanation.
 - **More Options.** Optional settings whose defaults suit most runs sit in a folded section.
   Click its arrow or title to open it.
-- **Output.** The name of the result column, and **If it exists: Replace it · Add a new
-  column**. Adding a new column keeps the earlier result and names the new one "Cluster (2)",
-  and so on.
+- **Output.** The name of the result column. A tool never replaces an existing column: when
+  the name is taken, the result goes to a new column named "Cluster (2)", "Cluster (3)" and so
+  on, so earlier results are kept.
 - **Problems.** If something has to be fixed first, the problem appears above the buttons,
   marked ⚠, and the main button is greyed out. Otherwise there is no text there.
 - **Main button.** It names the action and how many rows it covers, such as **Cluster 1,204
@@ -157,14 +169,14 @@ in the background, using every processor core. You can scroll and work while tha
   - the workspace layout: where each panel is docked (beside, stacked, tabbed, left, right or
     below the table, floating), the size of each pane (where you dragged the dividers
     between the table and the panes, and between panes), which panes are open (Filters,
-    Advanced Search, Selection Browser), column widths, and the search bar with its text and
+    Advanced Search, Browser), column widths, and the search bar with its text and
     options.
 - A document reopens exactly as you left it: a pane that was closed stays closed, even when
   its filters or search are hiding rows (the status bar still says how many rows are shown).
 - Saving is safe. The new file is written next to the old one and swapped in only once it is
   complete, so a crash or a full disk never damages your previous version.
-- **File ▸ Export…** writes SDF, CSV/TSV, SMILES, Excel, an RD file or an RXN file.
-  **Export Selected…** writes only the selected rows.
+- **File ▸ Export ▸ Table…** writes SDF, CSV/TSV, SMILES, Excel, an RD file or an RXN file.
+  **File ▸ Export ▸ Selected Rows…** writes only the selected rows.
   - An **RD file** holds the first reaction column as RXN blocks and every other column as
     data. Reactions read from SMILES have no drawing, so they are laid out as the sketcher lays
     them out (using every processor core). Blank values are left out.
@@ -212,7 +224,7 @@ Each column has a type:
 
 **Selecting columns.** Click a column header to select the whole column; Shift-click selects a
 range and Ctrl-click (⌘-click) adds or removes one. Selected columns are not a selection of
-compounds, so plots and the Selection Browser are left alone. **Delete** removes the selected
+compounds, so plots and the Browser are left alone. **Delete** removes the selected
 columns in one step you can undo. Sorting is in the header's right-click menu.
 
 **Moving columns.** Drag a column header left or right to move the column (one undoable
@@ -224,7 +236,7 @@ scrolled to, the moved column stays in view and, if it was selected, stays selec
 Right-click a column header for:
 
 - **Sort Ascending / Descending.** **Then Sort…** adds a second (third…) sort key.
-  **Clear Sort** returns rows to their original order (also Data ▸ Table ▸ Clear Sort).
+  **Clear Sort** returns rows to their original order.
 - **Filter This Column.** Adds a filter card for the column (see [Filters](#7-filters)).
 - **Rename…**, **Duplicate Column** (a copy, with its formatting, to the right),
   **Insert Column Left/Right…**, **Delete Column**. Delete acts on all selected columns when you
@@ -233,19 +245,43 @@ Right-click a column header for:
 - **Logarithmic (log₁₀)** (Number columns). Converts the values to log₁₀; choose it again to
   convert them back (10ˣ). The header shows "(log₁₀)". It needs every value above zero. One
   step you can undo.
-- **Precision…** (Number columns). The number of decimals shown for every value. The stored
-  values are not rounded, so sorting, filters and tools still use the full numbers. "As typed"
-  goes back to each cell's own format.
+- **Number Format…** (Number columns). How every value is shown:
+
+  | Format | 1234.5678 (or 0.4567 for Percent) with 2 digits |
+  |---|---|
+  | As typed | each cell as it was entered |
+  | Fixed decimals | 1234.57 |
+  | Thousands separator | 1,234.57 |
+  | Scientific | 1.23e+03 |
+  | Significant figures | 1200 |
+  | Percent | 45.67% |
+
+  The stored values are not rounded, so sorting, filters and tools still use the full numbers,
+  and editing a cell starts from the number as typed. The quick search and Find match what the
+  cells show.
 - **Colour Column…** Colours cell backgrounds: **Low → high** or **Low → middle → high**
   gradients for numbers, or **One colour per value** for any column (the same value always gets
   the same colour). Range ends left empty follow the data. Choose **None** to remove the
   colours.
-- Precision, Logarithmic and colours are saved in the document and can be undone.
+- **Align Drawings…** (Structure columns). Type, draw or take from the current row a core
+  (SMILES or SMARTS); every structure that contains it is drawn with the core in the same place
+  and orientation, so a series lines up down the column. Structures without the core keep
+  their usual drawing. Only the drawings change, not the structures. **Stop Aligning
+  Drawings** brings the usual drawings back. The core is saved with the document's layout.
+- **Hover over a structure cell** for a large drawing of the structure with its SMILES below.
+- **Freeze Columns up to Here** keeps that column and every column left of it in place while
+  the rest of the table scrolls sideways; **Unfreeze Columns** lets them scroll again. Drag the
+  columns you want to keep in view (ID, Structure) to the front first. Frozen columns are saved
+  with the document.
+- Number formats, Logarithmic and colours are saved in the document and can be undone.
+- **Hover over a column's header** for a summary of the column: how many cells are filled and
+  blank, and for numbers the range, mean ± standard deviation and median, or for text the
+  number of distinct values and the commonest one.
 - **Column Type ▸ Text / Number / Structure / Reaction.** Converting to Number warns you if
   some values are not numbers; those cells would be cleared. Converting to Structure or
   Reaction reads each cell's text; cells that do not read are kept and marked invalid.
 
-From the Data ▸ Table menu:
+From Tools ▸ Table:
 
 | Command | What it does |
 |---|---|
@@ -253,13 +289,22 @@ From the Data ▸ Table menu:
 | Add Rows… | Adds empty rows. |
 | Add Column… | Adds a column. |
 | Split Column… / Join Columns… | As above. |
-| Bin Column… | Groups numbers into ranges and named classes; see [Data tools](#11-data-tools). |
 
 ### Rows
 
 - **Delete Rows (Ctrl+Backspace)** deletes the selected rows. You can undo it.
-- **Data ▸ Show All Rows** clears every filter, search and "show only" at once.
-- **Data ▸ Copy Shown Rows to New Document** puts exactly the rows you can see, in their shown
+- **The row numbers** on the left are kept narrow: past 999 they are shortened (1.2k, 12k,
+  1.2M); point at one for the full number. Click a row number to select the row; drag down the
+  numbers for several.
+- **Right-click a row number** for:
+  - **Delete Rows** and **Duplicate Rows** (for the selected rows; the copies are added at the
+    end, or where the sort puts them, and are selected);
+  - **Freeze Rows up to Here**: that row and the ones above it stay in place while the rest
+    scroll up and down (with frozen columns as well, the corner stays put). It freezes the
+    rows as they are shown, so re-sorting changes which rows those are. **Unfreeze Rows** lets
+    them scroll again. Frozen rows are saved with the document.
+- **Data ▸ Search ▸ Show All Rows** clears every filter, search and "show only" at once.
+- **File ▸ New from Shown Rows** puts exactly the rows you can see, in their shown
   order, into a new untitled document. Column types are kept.
 
 ---
@@ -304,10 +349,62 @@ Reaction** on a column of reaction SMILES.
   or drawn in the sketcher, shows RDKit's reaction SMILES and keeps its drawing.
 - Quick search and plots leave reaction columns out, as they do structure columns.
 
+### Reaction Search
+
+Data ▸ Search ▸ Reaction Search… finds reactions in a reaction column. Type a reaction SMILES
+or SMARTS, or click **Draw…** and draw the query in the sketcher.
+
+| Find | Matches a reaction when |
+|---|---|
+| Reaction contains | each reactant, agent and product you draw is a substructure of one of the reaction's own (draw agents above the arrow) |
+| A reactant contains | the structure is in one of its reactants |
+| A product contains | the structure is in one of its products |
+| An agent contains | the structure is in one of its agents (solvents, catalysts, reagents) |
+| Any component contains | the structure is anywhere in the reaction |
+
+- **Output**: **Select them** selects the matching rows; **Add a column** marks every row Yes
+  or No in a "Reaction Search" column.
+- Search runs in the background and works on all, shown or selected rows.
+
+### Split Reactions
+
+Chemistry ▸ Split Reactions… writes the parts of each reaction as structure columns.
+
+- **One per role**: a Reactants, an Agents and a Products column, each holding all of that
+  role's components.
+- **One per component**: Reactant 1, Reactant 2 … Product 1 …, in the order the reaction
+  lists them.
+- **Keep atom map numbers** is off by default, so the same molecule compares equal across
+  reactions in structure search, duplicates and descriptors.
+
+### Enumerate Products
+
+Chemistry ▸ Enumerate Products… applies a reaction template to building blocks.
+
+- **Template**: an atom-mapped reaction SMARTS, such as
+  `[C:1](=[O:2])[OH].[N;H2,H1;!$(NC=O):3]>>[C:1](=[O:2])[N:3]` (amide coupling), or
+  **Draw…** and map the atoms with the sketcher's Atom Map tool. Up to four reactants.
+- **Reactant 1, 2 …**: a structure column of this table for each, or **From a File…** (SDF,
+  CSV or any table chemsuite opens).
+- **Combine: Row by row** reacts reactant 1 and reactant 2 from the same row and writes the
+  product to a **Product** column, with **Products Found** counting how many products the row
+  gave (a building block with two reactive sites gives two).
+- **Combine: Every combination** reacts every distinct building block with every other and
+  opens the virtual library in a new window, one product per row with its building blocks.
+  Up to 2,000,000 combinations.
+- Cancelling keeps the products already made.
+- Checked against hand-worked products of amide coupling, Suzuki coupling, reductive
+  amination and Boc removal, including that stereocentres away from the reaction are kept.
+
+### Filtering by reaction
+
+**Add Filter** on a reaction column gives a reaction card: the same query and **Find** choices
+as Reaction Search, applied as a filter together with the other cards.
+
 ### The sketcher
 
 Opened by double-clicking a structure cell, Ctrl+E, F2, **Add Compound…**,
-**Draw…** in the structure fields of Structure Search and Fingerprint Similarity, or
+**Draw…** in the structure fields of Structure Search and Similarity Search, or
 blank with **Chemistry ▸ Sketcher…**, whose **Add to Table** adds the drawing as a new,
 selected row.
 
@@ -349,6 +446,14 @@ C, V, A) and on the drawing's right-click menu.
 
 With nothing under the pointer, the same keys choose the matching tool, and `t` steps through
 the rings. Esc returns to Select.
+
+**Template library.** Shift+T, or the last button of the ring bar, opens 64 ring systems a
+medicinal chemist draws daily: aromatic and saturated heterocycles (pyridine to tetrazole,
+piperazine, morpholine, oxetane…), fused bicycles (indole, 7-azaindole, quinazoline, purine,
+tetrahydroisoquinoline…) and bridged and spiro systems (bicyclo[1.1.1]pentane, quinuclidine,
+2-oxa-6-azaspiro[3.3]heptane…). Pick a group on the left or type part of a name; double-click
+a drawing (or OK) to draw with it. It then places like a ring: on empty canvas, on an atom, or
+fused onto a bond, with aromatic bonds re-drawn across the fused system.
 
 **Other keys:** Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y undo and redo; Ctrl+C, Ctrl+X, Ctrl+V copy,
 cut and paste (molfile and SMILES, so ChemDraw and others can read it); Ctrl+Shift+M copies a
@@ -507,7 +612,9 @@ structure.
 
 ### Selection
 
-- Click, Shift-click and Ctrl-click rows in the table.
+- Click, Shift-click and Ctrl-click cells, or click the row numbers for whole rows. Every row
+  with a selected cell counts as selected; a selection of cells stays a selection of cells
+  when the table is sorted or filtered.
   - **Select All (Ctrl+A)**, **Invert Selection (Ctrl+I)**, **Clear Selection
     (Ctrl+Shift+A)**.
 - The selection is shared by the table, the plots and the tools:
@@ -515,11 +622,14 @@ structure.
   - selecting rows highlights their points.
 - Many tools can run on all rows, the shown rows or just the selected rows.
 
-### Selection Browser
+### Browser
 
-View ▸ Selection Browser (Ctrl+Shift+B) steps through rows one at a time with a large drawing.
+Data ▸ Browser (Ctrl+Shift+B) steps through rows one at a time with a large drawing.
 
-- It browses either the selected rows or every shown row, in the table's order.
+- **Selected rows only** (on by default) browses the selected rows; untick it to browse every
+  shown row, in the table's order.
+- The arrows and the row number under the drawing move through the rows (or use the arrow
+  keys, Home and End).
 - It keeps the table's current row in step with what it shows.
 - Its tick box adds or removes the compound from the selection.
 
@@ -528,7 +638,7 @@ View ▸ Selection Browser (Ctrl+Shift+B) steps through rows one at a time with 
 Lists are saved sets of rows, such as "actives", "to make" or "sent for assay". They are saved
 with the document.
 
-- **Data ▸ Lists ▸ Add Selected to List… (Ctrl+L)** adds the selected rows to a new or existing
+- **Edit ▸ Lists ▸ Add Selected to List… (Ctrl+L)** adds the selected rows to a new or existing
   list.
 - Each list has its own submenu:
 
@@ -548,18 +658,36 @@ with the document.
 
 ### Quick search (Ctrl+F)
 
-Edit ▸ Search Rows opens the search bar above the table. As you type, the table shows only the
-rows that have a matching cell.
+Data ▸ Search ▸ Search Rows opens the search bar above the table. As you type, the table shows only the
+rows that match, and the count of matching rows appears beside the box.
 
 - The **column menu** at the left of the bar chooses where to look: **All Columns** (every text
   and number column) or one column.
+- **Field syntax.** Several words must all be found, anywhere in the row. Beyond that:
+
+  | Type | Finds rows where |
+  |---|---|
+  | `kinase "cell line"` | some cell contains *kinase* and some cell contains the phrase *cell line* |
+  | `ID:CPD-12` | the ID column contains CPD-12 (`ID:"two words"` for spaces) |
+  | `pIC50>7` | pIC50 is above 7; also `>=`, `<`, `<=`, `=` and `!=` |
+  | `Series=A` | Series is exactly A (any case); `Series!=A` for anything else |
+  | `-Series:B` | Series does not contain B; a `-` excludes any term |
+  | `"Mol Wt"<400` | quote a column name that has spaces |
+
+  Column names ignore case. A word before a colon that is not a column name is searched for
+  as text, so `10:30` or `http://` still work. Whole Cell and Regular Expression take the text
+  exactly as typed. Hover over the box for a reminder.
+- **Recent searches.** The clock button left of the box lists the last ten searches; pick one to run it again. A
+  search goes on the list when you press Return or leave it in place for a moment. The list is
+  saved with the document.
 - **Substructure search.** Choose a structure column and type a substructure as SMILES or
   SMARTS (for example `c1ccccc1` or `[OH]a`). The table shows the rows that contain it, and
   the matching atoms are highlighted in the drawings. The search runs in the background
   shortly after you stop typing. A query that cannot be read turns the box red; hover over it
   to see why.
-- The **Options** button sets **Match Case**, **Whole Cell** or **Regular Expression** (text
-  searches only).
+- The three toggles right of the box are **Match Case** (Aa), **Whole Cell** (ab) and
+  **Regular Expression** (.*), for text searches only. Whole Cell and Regular Expression turn
+  each other off.
 - If the chosen column is removed, the bar goes back to All Columns. A renamed column stays
   chosen. The column is saved with the document, with the search text and options.
 - Escape clears the search. A second Escape, or the ✕ button, hides the bar.
@@ -572,9 +700,19 @@ A window that steps through matching cells, with **Replace** and **Replace All**
 is one step you can undo. **Replace All includes hidden rows** controls whether rows hidden by
 filters or searches are changed too.
 
+- **In** chooses where to look: **All columns**, **Selected columns** (the columns of the
+  selected cells), **Selected cells**, or **Chosen columns** (tick them under **Columns…**).
+  The selection is read when you choose the scope or open the window, so stepping from match
+  to match, which moves the cursor, does not shrink it.
+- **Groups.** With **Regular expression**, the replacement can reuse what the groups matched:
+  `$1` or `\1` for the first group, `${name}` or `\g<name>` for a named one, and `$$` for a
+  dollar sign. Finding `(\w+)-(\d+)` and replacing with `$2-$1` turns `CPD-12` into
+  `12-CPD`. A reference to a group the expression does not have is reported, and nothing is
+  replaced.
+
 ### Advanced Search
 
-Edit ▸ Advanced Search… opens a window of conditions. It is always its own floating window, so
+Data ▸ Search ▸ Advanced Search… opens a window of conditions. It is always its own floating window, so
 it never takes room from the table or the Filters panel. Move and resize it as you like; it
 reopens where you left it.
 
@@ -609,7 +747,7 @@ reopens where you left it.
 
 ### Structure Search (Ctrl+Shift+M)
 
-Edit ▸ Structure Search… searches a structure column.
+Data ▸ Search ▸ Structure Search… searches a structure column.
 
 - **Query.** Draw (paste) or type the query as SMILES, a molfile or InChI. For substructure
   searches you can also type SMARTS, such as `[C,N]`.
@@ -629,8 +767,8 @@ Edit ▸ Structure Search… searches a structure column.
 
 - **Results.** **Show** them alone (as a structure card in the Filters panel), **Select** them,
   or **Add to List**.
-- **Highlighting.** Substructure matches can be highlighted in the table's drawings. Edit ▸ Clear
-  Structure Highlighting turns that off.
+- **Highlighting.** Substructure matches can be highlighted in the table's drawings. Data ▸ Search ▸ Clear
+  Highlighting turns that off.
 - **Speed.** Searches are fast even on 200k rows: a fingerprint screen rules out most rows
   before any atom-by-atom matching.
 
@@ -638,20 +776,32 @@ Edit ▸ Structure Search… searches a structure column.
 
 ## 7. Filters
 
-View ▸ Filters (Ctrl+Shift+F) opens the Filters panel, pinned at the right edge of the window
+Data ▸ Filters (Ctrl+Shift+F) opens the Filters panel, pinned at the right edge of the window
 at a fixed width. Each **card** filters on one column, and
 a row is shown only if it passes every enabled card.
 
 | Card | For | Controls |
 |---|---|---|
-| Range | Number columns | A two-handle slider over a histogram of the values, plus min/max boxes. Choose whether blanks are kept. |
-| Category | Text columns with few distinct values | Tick boxes, one per value, with counts. |
-| Text | Other text | Contains / equals / starts / ends / regular expression, with **Not**. |
+| Number Range | Number columns | A two-handle slider over a histogram of the values, plus min/max boxes. Choose whether blanks are kept. |
+| Category | Text or number columns (best with few distinct values) | Tick boxes, one per value, with counts. |
+| Text Match | Any column | Contains / equals / starts / ends / regular expression, with **Not**. |
 | Structure | Structure columns | Substructure, exact or similarity query; searches in the background after you stop typing. |
+| Reaction | Reaction columns | A reaction query (see [Filtering by reaction](#filtering-by-reaction)). |
 
-- Add cards with the panel's **Add Filter** button or a column header's **Filter This Column**.
-- Each card has an on/off tick box and a remove button.
-- **Filter sets.** The panel's **Sets** menu saves the current cards under a name (such as
+- **Adding a card.** The **+** button in the panel's header lists the kinds of card. Pick one
+  and it starts on a suitable column (for Category, the first column with a short list of
+  values); choose its column in the box at the top of the card. Switching the column keeps the
+  card's place, on/off and Not. A kind with no suitable column is greyed out. A column
+  header's **Filter This Column** adds the best kind of card for that column directly. The
+  panel header's other buttons are **Filter Sets** and **Remove All Filters**; point at Remove
+  All for how many rows are showing.
+- Each card has an on/off tick box, a **¬** (Not) toggle that keeps the rows the card would
+  hide, and **×** to remove it. Cards alternate in shade, like table rows. Point at a card's
+  column box for its kind and its values (range, or how many categories are listed).
+- A category card's list is as tall as its values (up to eight, then it scrolls); the two tick
+  boxes beside **Find a value** tick or untick every value. The Structure card's pencil opens
+  the sketcher.
+- **Filter sets.** The **Filter Sets** menu saves the current cards under a name (such as
   "Actives, MW < 450") so you can switch between groups of filters. Applying a set whose column
   has since been removed restores the cards it can.
 - Filters are a way of *looking* at the table. They are not edits, so they are not undone with
@@ -675,8 +825,11 @@ descriptors, conformers, clustering, maps and searches.
   From there you can:
   - cancel a job;
   - remove a queued job, or move it up or down;
-  - clear finished jobs;
+  - **Remove** finished, failed or cancelled jobs from the list (select one or several, or
+    press Delete); **Clear Finished** removes them all;
   - copy an error.
+
+  Right-click a job for the same commands.
 - **Cancelling.** A job stops within about a tenth of a second. While it stops, the status bar
   says "Cancelling …".
 - **Partial results.** Tools that work row by row keep what they finished when you cancel:
@@ -688,11 +841,11 @@ descriptors, conformers, clustering, maps and searches.
   |---|---|
   | Calculate Descriptors | Clustering |
   | Predict pKa | |
-  | MedChem plots (descriptor step) | Chemical Space Map |
+  | MedChem plots (descriptor step) | Dimensionality Reduction |
   | Generate Conformers | Self-Organizing Map |
-  | Fingerprint Similarity | Free-Wilson |
-  | R-Group Decomposition (numbered core) | Hansch |
-  | Diverse Subset (the picks made so far) | Matched Molecular Pairs |
+  | Similarity Search | Free-Wilson |
+  | R-Groups (numbered core) | Hansch |
+  | Diverse Subset (the picks made so far) | Matched Pairs |
   | | Activity Cliffs |
 
   The tools in the right-hand column have no meaningful result until the whole run is complete.
@@ -702,15 +855,34 @@ descriptors, conformers, clustering, maps and searches.
   - Results from a job are never written into a different document.
 - **Long runs.**
   - The computer is kept awake while jobs run.
-  - A job that takes more than 30 seconds and finishes while you are elsewhere shows a
-    notification.
+  - When a job that took more than 30 seconds finishes or fails while chemsuite is not in
+    front, the dock icon (taskbar on Windows) asks for attention and a desktop notification
+    names the job and its result. Settings ▸ General ▸ **Notify when a long job finishes** turns
+    the notification off.
 
 ---
 
 ## 9. Plots
 
-Open a plot from the **Plot** menu: **New Scatter Plot (Ctrl+Shift+P)**, **New Histogram** or
-**New Box Plot**. It opens to the right of the table.
+Open a plot from the **Plot** menu. It opens to the right of the table.
+
+| Plot | Shows |
+|---|---|
+| **Scatter** (Ctrl+Shift+P) | One number column against another, coloured and sized by others. |
+| **Line** | Points joined in X order, one line per category. Rows sharing an X value (replicates, a time point) are joined through their mean. |
+| **Histogram** | Rows per value range (numbers) or per value (text). |
+| **Bar Chart** | The mean, median, sum, minimum or maximum of a number column per group, or the row count, with optional ± SD error bars. |
+| **Box Plot** | The spread of a number column per group. |
+| **Density** | Where crowded points sit: a 2D histogram of X and Y, shaded by count. Box, lasso and click still select the rows beneath. |
+| **Radar** | Three or more number columns as spokes, each scaled to its own range (centre: lowest, rim: highest). Shows the mean of the plotted rows in grey, and each selected row (up to 12) in its own colour. |
+| **3D Scatter** | Three number columns in a cube you can turn, coloured and sized by others (see below). |
+| **3D Landscape** | An activity landscape: a smooth surface of one column (the height, e.g. pIC50) over two others, usually a chemical-space map, with the compounds standing on it (see below). |
+
+**Switching plots.** The cog's **Plot** list holds every kind, 2D and 3D. Changing it redraws
+in the same pane: the columns you chose, the title, the point cards and the selection carry
+over, and the toolbar keeps the same buttons. Its first button is **Pan and Zoom** on a 2D
+plot and **Turn** on a 3D one. A plot fits its pane until you pan or zoom, so a plot drawn
+while its pane was still opening never stays small.
 
 ### Naming a plot
 
@@ -727,9 +899,12 @@ The plot's title in its header starts as an automatic title, such as "pIC50 vs M
 
 Click the **cog** in the plot's header for its settings. Changes apply immediately.
 
+The table lists the main kinds; Line and Density take X and Y like a scatter plot (Line also
+takes Color, Density also takes Bins).
+
 | Setting | Scatter | Histogram | Box plot |
 |---|---|---|---|
-| Plot | Switch between scatter, histogram and box plot | | |
+| Plot | Switch to any 2D kind | | |
 | X | Number column | Number or text column | **Group by** (an optional text column) |
 | Y | Number column | — | **Values** (a number column) |
 | Color | Number (gradient) or text (one colour per category, with a legend) | — | — |
@@ -738,6 +913,10 @@ Click the **cog** in the plot's header for its settings. Changes apply immediate
 | Curve | — | Overlay a Normal or Log-normal fit | — |
 | Guide | BOILED-Egg, Golden Triangle or LipE lines drawn behind the points | — | — |
 | Fit line | Least-squares line; one per category when coloured by text | — | — |
+
+A **bar chart** has **Group by** (a text column), **Values** (a number column, or (none) to
+count rows), **Summary** (Mean, Median, Sum, Minimum, Maximum or Count) and **Error bars**.
+A **radar plot** has **Axes**: tick the number columns to draw as spokes.
 
 Hover over **Fit line** (or **Curve**) to see what was drawn: how many points there are, how
 many rows were left out for missing values, and the fit's equation and R² (or μ and σ for a
@@ -779,10 +958,43 @@ The toolbar in the plot's header has five buttons:
 - The plot shows only the rows the table shows, and redraws when the data, filters or columns
   change.
 - Plots are saved with the document and reopen with it.
+- Click a bar (bar chart) or a cell (density) to select its rows. On a radar plot, click a
+  corner of a selected row's outline to select only that row.
+
+### 3D plots
+
+**Data ▸ Plot ▸ 3D Scatter** draws three number columns (X, Y and Z, set with the cog) in a
+cube, on a white background. Each axis is scaled to the cube's side, so columns with very
+different ranges share the space; the lowest and highest values are written at the ends of
+each axis. **Color** takes a number or text column, **Size** a number column. **Drop lines**
+draws a line from each point down to the floor, so heights read at a glance (above 20,000
+points, only for the selected ones).
+
+**Data ▸ Plot ▸ 3D Landscape** is an activity landscape (Peltason and Bajorath, 2007). Set **X** and
+**Y** to the plane, usually the two columns of a Dimensionality Reduction map, and **Height** to the
+activity. The surface at each point of a grid is the weighted mean of the compounds near it,
+coloured by height; where no compound is near, the surface is left open rather than made up.
+Smooth plateaus are regions where structure changes alter activity little; sharp peaks
+beside valleys are activity cliffs. **Grid** sets the cells along each side (Auto picks from
+the number of compounds). The compounds stand on the surface and select as on any plot.
+
+The 3D plots use the same toolbar as the 2D ones:
+
+| Button | Name | What it does |
+|---|---|---|
+| Arrow round a circle | Turn | Drag to turn the cube, scroll to zoom, click a point to select it. |
+| Dashed box | Box Select | Drag a rectangle to select the points inside it, as seen from where you look. |
+| Loop | Lasso Select | Draw round points to select them, as seen from where you look. |
+| Four corners | Reset View | Looks at the cube from the start position again. |
+| Arrow into a tray | Export | Saves the view as a PNG image. |
+
+- Shift adds to the selection; ⌘/Ctrl toggles. Hover over a point to see its card; point
+  cards beside selected points follow them as you turn the cube.
+- The plot is saved with the document, with the direction you were looking from.
 
 ### MedChem plots
 
-The Plot ▸ MedChem menu has three plots. Each one first calculates any properties it needs that
+The Data ▸ Plot ▸ MedChem menu has three plots. Each one first calculates any properties it needs that
 are not already columns, then plots them.
 
 | Plot | Axes | What it shows |
@@ -793,19 +1005,20 @@ are not already columns, then plots them.
 
 ---
 
-## 10. Chemistry: descriptors, pKa, standardizing and conformers
+## 10. Chemistry: descriptors, pKa, standardizing, conformers and retrosynthesis
 
 ### Calculate Descriptors (Ctrl+Shift+D)
 
-Pick a structure column and the properties you want. Each property becomes a number (or text)
-column. **Recalculate descriptors that are already columns** controls whether existing results
-are overwritten.
+Pick a structure column, the rows (All, Shown or Selected), and the properties you want.
+**Find** narrows the list; **Common Set**, **All** and **None** tick or untick many at once.
+Each property becomes a number (or text) column. An existing column is never replaced:
+calculating MW again adds "MW (2)".
 
 | Group | Descriptors |
 |---|---|
 | Physicochemical | MW, Exact Mass, cLogP, cLogD 7.4, LogS (ESOL), TPSA, TPSA (N,O,S,P), Molar Refractivity, Labute ASA, Fsp3 |
 | Ionisation | pKa (most acidic), pKa (most basic), Charge @ pH 7.4, % Neutral @ pH 7.4 |
-| Drug-likeness | QED, Ro5 Violations, Ro5 Pass, CNS MPO, BBB Score, AB-MPS |
+| Drug-likeness | QED, SAScore, Ro5 Violations, Ro5 Pass, CNS MPO, BBB Score, AB-MPS |
 | Counts | HBD, HBA, NH/OH Count, N+O Count, Rotatable Bonds, Heavy Atoms, Heteroatoms, Valence Electrons, Net Charge |
 | Rings | Rings, Aromatic Rings, Aliphatic Rings, Saturated Rings, Spiro Atoms, Bridgehead Atoms |
 | Atom Counts | C, N, O, S, P, F, Cl, Br, I |
@@ -817,8 +1030,17 @@ are overwritten.
 - **pKa-based values.** The Ionisation group, cLogD 7.4, CNS MPO, BBB Score and AB-MPS use
   MolGpKa's predicted pKa values (see [Predict pKa](#predict-pka)). For CNS MPO and BBB Score, a
   compound with no basic site is scored as if its most basic pKa were 2.
+- **SAScore** is the synthetic accessibility score of Ertl and Schuffenhauer (2009): 1 (easy
+  to make) to 10 (very hard), from how common the molecule's fragments are in known compounds
+  and a penalty for size, stereocentres, macrocycles and unusual ring fusions. Most drug-like
+  compounds score 2-4.
 - **3D shape descriptors** use a 3D structure when the cell has conformers.
-- **Cancelling** keeps the rows already calculated.
+- **Fingerprints.** Tick any of the fingerprints the similarity tools use (ECFP4, ECFP6, FCFP4,
+  RDKit paths, atom pairs, topological torsions, MACCS keys). Each becomes a text column
+  ("ECFP4", "MACCS Keys"…) holding the bits in hexadecimal, bit 0 first (the high bit of the
+  first byte), ready to export for modelling. A row with no valid structure is left blank.
+- **Cancelling** keeps the rows already calculated; a fingerprint is written only when every
+  row has one.
 
 ### Predict pKa
 
@@ -842,6 +1064,10 @@ chemsuite and runs on the CPU, at roughly 2 ms per molecule.
   | cLogD *pH* | Crippen cLogP of the neutral parent plus log10(fraction neutral). |
   | Major Species @ pH | The dominant protonation state, as a structure column. |
 
+  Each run writes new columns and never changes an earlier run's. When a name is already
+  taken, all the columns of the run get the same suffix, (2), (3)…, so they read as a set:
+  `pKa (most acidic) (2)` and `cLogD 7.4 (2)` come from the same run.
+
 - **How sites combine.** Each site is predicted, and ionised, independently (Henderson–
   Hasselbalch per site). This is a good approximation when sites are far apart and a rough one
   when they interact.
@@ -855,9 +1081,9 @@ chemsuite and runs on the CPU, at roughly 2 ms per molecule.
   - Treat the values as screening estimates, not measurements.
 - **Cancelling** keeps the rows already predicted.
 
-### Standardize Structures
+### Standardize
 
-Chemistry ▸ Standardize Structures prepares structures for docking, or for any work that needs
+Chemistry ▸ Standardize prepares structures for docking, or for any work that needs
 one consistent form of each molecule. It runs the usual preparation steps in this order, the
 order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 
@@ -901,14 +1127,106 @@ parameters).
     overwritten.
 - **Cancelling** keeps the molecules already done.
 
-### Export Conformers to SDF
+### Export conformers (SDF)
 
 Writes every conformer as its own SD record, carrying the row's other columns. You can export
 all rows or only the selected ones.
 
+### Retrosynthesis
+
+Chemistry ▸ Retrosynthesis plans synthetic routes to each structure with
+[AiZynthFinder](https://github.com/MolecularAI/aizynthfinder) (AstraZeneca, MIT). A
+neural-network policy proposes reactions, a tree search takes the molecule apart, and a route
+counts as **solved** when every precursor it ends on is in a stock file you supply.
+
+Everything runs on your own machine: the policy models, the reaction templates and the stock
+file all come from the `config.yml` you point chemsuite at. A config that would send
+predictions to a model server (`use_remote_models: true`) or query a stock database on another
+host is refused, and nothing about your structures is sent anywhere.
+
+**Setting it up.** AiZynthFinder needs an older RDKit than chemsuite, so it gets its own Python
+environment:
+
+1. Create an environment with Python 3.10–3.12, for example
+   `conda create -n aizynth python=3.12`.
+2. In it, run `python -m pip install aizynthfinder "pyarrow>=19,<26"`.
+3. In **Settings ▸ External Tools**, set **AiZynthFinder Python** to that environment's
+   `python` and press **Test**: it reports the AiZynthFinder version it found.
+4. Press **Download…** on the **AiZynthFinder config** row and choose a folder. chemsuite
+   fetches AiZynthFinder's public USPTO policies, ring-breaker policy, filter and the ZINC stock
+   (about 1.5 GB, from Zenodo and figshare) in the background (follow it in View ▸ Jobs), writes
+   a `config.yml` beside them, and sets the config path when it is done. Files already in the
+   folder are not fetched again, and a cancelled or interrupted download resumes where it
+   stopped. A `config.yml` of your own in that folder is left alone; the new one is then
+   `chemsuite_config.yml`. If you already have the data, choose your own `config.yml` with
+   **Browse…** instead. Press **Test** on the config row to check it.
+
+Downloading is the only time this feature uses the network, and only to fetch these public
+files. When IT turns network use off (policy `network_allowed: false`), Download… is greyed
+out and the data has to be put in place by hand.
+
+Until both are set, Retrosynthesis says what is missing and will not run.
+
+- **Input.** A structure column and the rows. The search starts on the selected rows when you
+  have a selection, because it costs a minute or more per structure: run a handful of rows, not
+  a whole library. The same structure is searched once however many rows hold it.
+- **Policies** and **Stocks** list what your `config.yml` offers. Every one is used unless you
+  clear some; `ringbreaker` is trained on ring-forming reactions. A route is solved when its
+  precursors are in one of the ticked stocks.
+- **Time limit**, **Iterations** and **Routes to keep** bound one structure's search: it stops
+  at whichever limit comes first, and keeps that many of the best routes.
+- **More Options** holds the search **Algorithm** (Monte Carlo by default; Retro\*,
+  breadth-first and proof-number search explore the same templates in a different order),
+  **Exploration (C)**, the filter policies, the **Longest route** allowed, **Stop at the first
+  solved route**, whether a buyable target is still taken apart, and route clustering.
+- **Skip rows already searched** leaves rows that have AiZynth values alone. Clear those cells,
+  or turn it off, to search them again.
+- **Columns.** Each searched row gets the search's statistics:
+
+  | Column | Meaning |
+  |---|---|
+  | AiZynth Solved | Yes when the best route ends entirely in the stock. |
+  | AiZynth Score | The state score of the best route (0–1; 1 is a fully solved, short route). |
+  | AiZynth Steps | Reactions in the best route. |
+  | AiZynth Routes, AiZynth Solved Routes | How many routes were kept, and how many of those are solved. |
+  | AiZynth Time (s), AiZynth First Solution (s) | How long the search took, and when its first solved route appeared. |
+  | AiZynth Precursors in Stock / not in Stock | The precursor SMILES of the best route, by availability. |
+  | AiZynth Nodes, AiZynth Precursors, AiZynth Policies, AiZynth Stock | The size of the search, and which policies and stocks it used. |
+
+  Anything else your config reports (an extra scorer, a post-processing job) gets its own
+  `AiZynth …` column too.
+- **Cancelling** keeps the structures already searched.
+- **The routes** go to the **Routes** pane (below), which opens with the first result.
+
+#### The Routes pane
+
+Chemistry ▸ Routes shows the routes found in this document. It saves with the document, so a
+reopened file still has its routes.
+
+- **Target** picks which searched structure to look at, with its number of routes.
+- The **route table** lists each route: solved or not, its score, how many steps it has, and
+  how many of its ending molecules are in stock. Extra scores from your config appear as
+  further columns. Pick a row to draw that route.
+- **The tree** puts the target on the right with its precursors branching to the left, the way
+  a retrosynthetic scheme is read. A molecule's card is framed **green** when it is in stock
+  and **amber** when it still needs a route of its own; its tooltip names the stock it was
+  found in.
+- **Step 1** is the earliest reaction and the highest number makes the target. Click a step to
+  see its reaction SMILES, the policy that proposed it, that policy's probability, the reaction
+  template and its classification underneath; click empty space to close it again. Right-click
+  a step to copy the reaction SMILES or draw it in the sketcher.
+- **Right-click a molecule** to copy it (SMILES, molfile, InChI, InChIKey or an image) or to
+  add it to the table as a new row — handy for turning in-stock precursors into a
+  building-block list.
+- **Drag** or **scroll** to pan. **⌘-scroll** (Ctrl-scroll on Windows and Linux) or a
+  trackpad **pinch** zooms around the pointer, from 20% to 400%. Structures are redrawn for the
+  zoom they are shown at, so they stay sharp close up. A route is fitted to the pane when you
+  open it and whenever the pane is resized, until you pan or zoom; **double-click empty space**
+  to fit it again.
+
 ---
 
-## 11. Data tools
+## 11. Table and analysis tools
 
 ### Statistics
 
@@ -955,22 +1273,23 @@ log selectivity (1 = 10-fold).
 - It adds a selectivity column per off-target and a **Min logSel** column.
 - **Flag a narrow window** adds a **Narrow window** column for compounds below a threshold.
 
-### Bin Column
+### Bin Values
 
-Data ▸ Table ▸ Bin Column… groups a number column into bins.
+Data ▸ Bin Values… groups a number column into bins.
 
 - **Methods:** equal width, equal count, or custom edges.
 - **Options:** a fixed width, from/to limits, and open-ended bins below the first edge and above
   the last.
 - **Output:** a **range column** ("[5, 6)") and a **class column** with names you choose. Low /
   Medium / High is filled in for you.
+- **Rows:** all, shown or selected rows; other rows stay blank.
 - A live preview shows each bin's count.
 
 ---
 
 ### Calculator
 
-Data ▸ Utilities ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
+Tools ▸ Table ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
 formula is checked as you type, and **Preview** shows the result for the first shown rows.
 **Insert ▸ Column** and **Insert ▸ Function** put a column name or function at the cursor.
 
@@ -988,7 +1307,7 @@ formula is checked as you type, and **Preview** shows the result for the first s
 | Logic | `if isblank ifblank` |
 | Statistics (over the rows calculated) | `mean median std sum count percentile(x, p) rank(x, descending) zscore normalize`; `min(x)` and `max(x)` with one argument |
 | Text | `len upper lower trim contains(t, part) concat(a, b, …) number(t) text(x)` |
-| Chemistry | `MW ExactMW logP TPSA HBD HBA RotB Rings AromaticRings HeavyAtoms Fsp3 Charge QED Formula SMILES InChIKey Scaffold`, each taking a structure column, and `substructure(structure, "SMARTS")`, which counts the matches |
+| Chemistry | `MW ExactMW logP TPSA HBD HBA RotB Rings AromaticRings HeavyAtoms Fsp3 Charge QED SAScore Formula SMILES InChIKey Scaffold`, each taking a structure column, and `substructure(structure, "SMARTS")`, which counts the matches |
 
 Examples: `9 - log10([IC50 (nM)])` gives pIC50 from an IC50 in nM;
 `[pIC50] - logP([Structure])` gives lipophilic efficiency (LipE);
@@ -1003,7 +1322,7 @@ Formulas cannot run code, open files or reach outside the table.
 
 ### Random Numbers
 
-Data ▸ Utilities ▸ Random ▸ Random Numbers… fills a column with random values:
+Tools ▸ Table ▸ Random Numbers… fills a column with random values:
 
 | Distribution | Settings |
 |---|---|
@@ -1018,7 +1337,7 @@ Leave it empty for a new draw each time.
 
 ### Random Rows
 
-Data ▸ Utilities ▸ Random ▸ Random Rows… picks a random sample from all, the shown or the
+Tools ▸ Table ▸ Random Rows… picks a random sample from all, the shown or the
 selected rows, either a number of rows or a percentage. It then **selects them**, **adds them
 to the selection**, or saves them as a **new list** (for example a test set). A seed picks the
 same rows again.
@@ -1041,9 +1360,9 @@ Euclidean distance). The fingerprint options are:
 Similarity is Tanimoto by default; Dice and Cosine can be chosen instead. Fingerprints are
 cached per column, so a second run on the same column is much faster.
 
-### Fingerprint Similarity
+### Similarity Search
 
-Data ▸ Similarity ▸ Fingerprint Similarity… scores every row (or the shown or selected rows)
+Data ▸ Similarity Search… scores every row (or the shown or selected rows)
 against one of two references:
 
 - a **structure** you type or paste; or
@@ -1059,7 +1378,7 @@ Cancelling keeps the rows already scored.
 
 ### Diverse Subset
 
-Data ▸ Similarity ▸ Diverse Subset… picks *N* compounds that cover the chemistry, using MaxMin:
+Data ▸ Diverse Subset… picks *N* compounds that cover the chemistry, using MaxMin:
 each pick is the compound farthest from all the earlier picks.
 
 - **Pick from** all, shown or selected rows.
@@ -1071,7 +1390,7 @@ each pick is the compound farthest from all the earlier picks.
 
 ### Cluster
 
-Data ▸ Similarity ▸ Cluster… groups compounds using one of three methods:
+Data ▸ Cluster… groups compounds using one of three methods:
 
 | Method | You set |
 |---|---|
@@ -1085,7 +1404,7 @@ Data ▸ Similarity ▸ Cluster… groups compounds using one of three methods:
 - Rows that cannot be clustered (no structure, a missing number) get no cluster.
 - Butina works on fingerprints only. Ward linkage needs number columns. Hierarchical clustering
   has a row limit. The dialog says so, above its buttons, when one of these applies.
-- **If it exists: Add a new column** keeps an earlier clustering beside the new one.
+- Clustering again keeps the earlier clustering beside the new one ("Cluster (2)").
 
 ---
 
@@ -1093,7 +1412,7 @@ Data ▸ Similarity ▸ Cluster… groups compounds using one of three methods:
 
 ### R-Group Decomposition
 
-Data ▸ SAR ▸ R-Group Decomposition… splits a series onto a common core.
+Chemistry ▸ R-Group Decomposition… splits a series onto a common core.
 
 - **Core.** Enter it as SMILES or SMARTS, or let the tool suggest one.
   - Label attachment points `[*:1]`, `[*:2]`… to fix which position is R1, R2.
@@ -1127,7 +1446,7 @@ Data ▸ SAR ▸ Free-Wilson… fits activity as a sum of one contribution per s
 
 ### Hansch Analysis
 
-Data ▸ SAR ▸ Hansch Analysis… regresses activity on substituent constants:
+Data ▸ SAR ▸ Hansch… regresses activity on substituent constants:
 
     activity = a·π + b·π² + ρ·σ + c·(steric) + d
 
@@ -1144,7 +1463,7 @@ Data ▸ SAR ▸ Hansch Analysis… regresses activity on substituent constants:
 
 ### Matched Molecular Pairs
 
-Data ▸ SAR ▸ Matched Molecular Pairs… finds pairs of compounds that differ by one small change
+Data ▸ SAR ▸ Matched Pairs… finds pairs of compounds that differ by one small change
 at one place. H → X changes are included.
 
 - Set the largest change, in heavy atoms, and the minimum number of pairs a transformation needs
@@ -1153,7 +1472,7 @@ at one place. H → X changes are included.
 
 ### Activity Cliffs (SALI)
 
-Data ▸ SAR ▸ Activity Cliffs (SALI)… lists similar compounds with very different activity.
+Data ▸ SAR ▸ Activity Cliffs… lists similar compounds with very different activity.
 
     SALI = |Δactivity| / (1 − similarity)
 
@@ -1165,29 +1484,46 @@ Data ▸ SAR ▸ Activity Cliffs (SALI)… lists similar compounds with very dif
 
 ## 14. Chemical space
 
-### Chemical Space Map
+### Dimensionality Reduction
 
-Data ▸ Chemical Space ▸ Chemical Space Map… places compounds on a 2D map by fingerprints or
-number columns. It writes the coordinates as two columns and opens a scatter plot.
+Data ▸ Chemical Space ▸ Dimensionality Reduction… places compounds on a 2D or 3D map by
+fingerprints, number columns, or both. Choose a **Fingerprint** (or **None**) and tick any
+**Columns**: a fingerprint alone maps by its bits, columns alone by their z-scores, and a
+fingerprint with ticked columns uses the two together, for rows that have all of them: the
+fingerprints are reduced to their principal components, the columns are z-scored, and the two
+are weighted equally so neither drowns out the other (distances are Euclidean).
+**Dimensions: 2D** writes two columns and opens a scatter plot;
+**3D** writes three and opens a 3D Scatter (a 3D PCA map is always PC1, PC2 and PC3).
 
 | Method | Options | More Options (folded) |
 |---|---|---|
 | PCA | **Components**: PC1 and PC2 (the default), PC1 and PC3, PC2 and PC3, or PC3 and PC4 | — |
-| UMAP | Neighbours, Min. distance | **Distance** (Automatic, Jaccard, Dice, Rogers-Tanimoto, Euclidean, Manhattan, Cosine, Correlation), **Spread**, **Epochs**, **Fit on up to** (rows; larger sets are fitted on a sample of this size and the rest placed onto that map; default 50,000), **Seed** |
-| t-SNE | Perplexity | **Learning rate** (Automatic or a number), **Iterations**, **Exaggeration** (early exaggeration), **PCA dimensions** (t-SNE runs on this many principal components; default 50), **Start from** (PCA or Random), **Seed** |
+| UMAP | Neighbours, Min. distance | **Distance** (Jaccard, the default, Dice, Rogers-Tanimoto, Hamming, Euclidean, Manhattan, Cosine, Correlation), **Spread**, **Epochs**, **Fit on up to** (rows; larger sets are fitted on a sample of this size and the rest placed onto that map; default 50,000), **Seed** |
+| PaCMAP | Neighbours (default 10) | **Mid-near pairs** (per neighbour pair; default 0.5), **Further pairs** (default 2), **PaCMAP distance** (Jaccard, the default, Hamming, Euclidean, Manhattan, Angular), **PCA dimensions** (default Off), **Seed** |
+| t-SNE | Perplexity | **Learning rate** (Automatic or a number), **Iterations**, **Exaggeration** (early exaggeration), **PCA dimensions** (default Off: Jaccard on fingerprint bits; a number runs t-SNE on that many principal components), **Start from** (Random, the default, or PCA), **Seed** |
 
-- **Distance: Automatic** is Jaccard (Tanimoto) on fingerprints and Euclidean on number
-  columns. Jaccard, Dice and Rogers-Tanimoto need fingerprints.
+- **Jaccard** (Tanimoto), **Dice**, **Rogers-Tanimoto** and **Hamming** compare fingerprint
+  bits, so they need a fingerprint with no columns ticked (and, for PaCMAP, **PCA dimensions**
+  Off). When they don't apply the distance switches to Euclidean, and back once they do.
+- **PCA dimensions** is Off by default, so t-SNE and PaCMAP map the features themselves.
+  Setting a number first reduces the features to that many principal components, which is
+  faster on large sets (bit distances are then not available).
 - **Min. distance** must not be larger than **Spread**.
 - **Seed**: the same seed gives the same map every run (UMAP then runs on one processor core).
   Set it to **Random** for a faster map that differs each time.
 - PCA's note in the status bar gives the share of the variance on each chosen component.
-- t-SNE on very large sets (over 50,000 rows) can take many minutes; UMAP is quicker there.
-- **Column names** sets the prefix for the two columns ("UMAP 1", "UMAP 2"). **If they
-  exist: Add a new column** keeps an earlier map.
-- **Colour plot by** any column.
+- **PaCMAP** (Wang et al., 2021) balances neighbour, mid-near and further pairs, so it keeps
+  local groups like UMAP while distances between groups mean more. With Jaccard or Hamming its
+  neighbours are found exactly on the fingerprint bits, which takes longer on very large sets
+  than a few PCA dimensions do.
+- t-SNE on very large sets (over 50,000 rows) can take many minutes; UMAP and PaCMAP are
+  quicker there.
+- The map is written to new columns named after the method: "UMAP 1", "UMAP 2" (and
+  "UMAP 3" in 3D). A map never replaces a column: the next UMAP map writes "UMAP 1 (1)",
+  "UMAP 2 (1)", the one after "(2)", and so on. Rename them in the table if you like.
+- The plot opens coloured by the activity column when there is one; change it with the cog.
 - A map needs at least 3 rows.
-- The job shows as "Calculating UMAP…" (or PCA / t-SNE) in the status bar.
+- The job shows as "Calculating UMAP…" (or PCA / t-SNE / PaCMAP) in the status bar.
 
 ### Self-Organizing Map
 
@@ -1210,8 +1546,8 @@ keeps them and **Cancel** puts everything back.
 |---|---|
 | Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colourful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
 | Keyboard | Change any command's shortcut. |
-| External Tools | Paths to optional programs (Open Babel, CONFORGE, Gnina, AmberTools, MAFFT, Java/BioTransformer, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
-| General | Processor cores to use (0 = automatic), recent files to keep. |
+| External Tools | Paths to optional programs (Open Babel, CONFORGE, Gnina, AmberTools, MAFFT, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
+| General | Processor cores to use (0 = automatic), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. |
 
 Your IT department can fix some settings for everyone. Those are shown greyed out with a
 padlock.
@@ -1247,7 +1583,7 @@ You can change any of these in Settings ▸ Keyboard.
 | Delete Rows | Ctrl+Backspace |
 | Add Selected to List | Ctrl+L |
 | Calculate Descriptors | Ctrl+Shift+D |
-| New Scatter Plot | Ctrl+Shift+P |
+| Scatter plot | Ctrl+Shift+P |
 | Filters | Ctrl+Shift+F |
-| Selection Browser | Ctrl+Shift+B |
+| Browser | Ctrl+Shift+B |
 | Settings | Ctrl+, |

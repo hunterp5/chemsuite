@@ -81,11 +81,11 @@ def test_replacing_keeps_structures_that_fail(chem, qtbot) -> None:
     assert "Standardization Notes" in table.column_names  # the notes are always written
 
 
-def test_running_again_replaces_the_results(chem, qtbot) -> None:
+def test_running_again_keeps_the_earlier_results(chem, qtbot) -> None:
     table = chem.workspace.table
     for _ in range(2):
         chem.open_tool("standardize").run()
         qtbot.waitUntil(lambda: not chem._runner.active_jobs, timeout=20_000)
     assert "SMILES (Standardized)" in table.column_names
-    assert "SMILES (Standardized) (2)" not in table.column_names
-    assert "Standardization Notes (2)" not in table.column_names
+    assert "SMILES (Standardized) (2)" in table.column_names
+    assert "Standardization Notes (2)" in table.column_names

@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Data ▸ Utilities ▸ Random Numbers… and Random Rows…"""
+"""Tools ▸ Table ▸ Random Numbers… and Random Rows…"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from chemsuite.analysis.random_values import (
     random_sample,
     sample_size,
 )
-from chemsuite.app.dialogs import OutputChoice, RowsChoice, Segmented, ToolDialog
+from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.lists import ListError
 
@@ -92,8 +92,6 @@ class RandomNumbersDialog(ToolDialog):
         output = self.section("Output")
         self.name = QLineEdit("Random")
         output.row("Column", self.name)
-        self.output = OutputChoice()
-        output.row("If it exists", self.output)
         self.method = method
 
         self.distribution.currentIndexChanged.connect(self.refresh)
@@ -158,7 +156,6 @@ class RandomNumbersDialog(ToolDialog):
         names = self.ctx.apply_results(
             {name: (oids, [float(v) for v in values])},
             label=f"Random numbers in {name}",
-            overwrite=self.output.overwrite(),
         )
         self.ctx.show_message(f"Filled {names.get(name, name)} with random numbers")
         return None

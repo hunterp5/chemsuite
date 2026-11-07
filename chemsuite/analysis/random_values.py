@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Random numbers for a column, and random samples of rows (Data ▸ Utilities ▸ Random).
+"""Random numbers for a column, and random samples of rows (Tools ▸ Table ▸ Random).
 
 Every draw takes an optional seed: the same seed and settings give the same numbers or rows
 again, so a split into training and test sets can be reproduced. Without a seed each draw is

@@ -817,3 +817,29 @@ def test_dialog_accepts_reactions_only_when_asked(qapp):
     assert allowed.rxn.startswith("$RXN") and allowed.molblock == ""
     for dlg in (plain, allowed):
         dlg.deleteLater()
+
+
+def test_template_library_picks_a_drawing_tool(dialog, qapp) -> None:
+    from chemsuite.app.sketcher.library import TemplateLibrary
+
+    opened: list = []
+    dialog.canvas.library_requested.disconnect()
+    dialog.canvas.library_requested.connect(lambda: opened.append(dialog.open_library()))
+    key(dialog.canvas, "T", Qt.Key.Key_T, Qt.KeyboardModifier.ShiftModifier)  # Shift+T
+    assert opened and isinstance(opened[0], TemplateLibrary)
+    window = opened[0]
+    assert len(window.names()) == window.tiles.count() >= 60
+    window.search.setText("morph")
+    assert window.names() == ["Morpholine", "Thiomorpholine"]
+    window.search.clear()
+    window.groups.setCurrentRow(window.groups.count() - 1)  # the last group: bridged and spiro
+    assert "Adamantane" in window.names() and "Pyridine" not in window.names()
+    window.tiles.setCurrentRow(window.names().index("Adamantane"))
+    window.accept()
+    assert isinstance(dialog.canvas.tool, sk_tools.TemplateTool)
+    assert dialog.canvas.tool.template.name == "Adamantane"
+    assert dialog.toolbar.buttons["library"].isChecked()  # the ring bar shows it in use
+    click(dialog.canvas, (0.0, 0.0))
+    assert Chem.MolToSmiles(convert.to_rdkit(dialog.canvas.sketch)) == Chem.MolToSmiles(
+        Chem.MolFromSmiles("C1C2CC3CC1CC(C2)C3")
+    )

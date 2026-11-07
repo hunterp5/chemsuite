@@ -22,9 +22,11 @@ IT policy fixes are shown disabled with a padlock.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
+import shiboken6
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence
+from PySide6.QtGui import QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -39,6 +41,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QStackedWidget,
@@ -62,6 +65,8 @@ from chemsuite.core.settings import (
     custom_theme_id,
     custom_theme_name,
 )
+from chemsuite.retro.config import CONFIG_TOOL as RETRO_CONFIG_TOOL
+from chemsuite.retro.config import PYTHON_TOOL as RETRO_PYTHON_TOOL
 
 from .commands import Portable, all_shortcuts, commands, conflicts
 from .settings_hub import settings_hub
@@ -425,6 +430,12 @@ class KeyboardPage(QWidget):
             self.fill()
 
 
+RETRO_TOOLS = frozenset({RETRO_PYTHON_TOOL, RETRO_CONFIG_TOOL})
+NETWORK_OFF_TIP = "Downloads are turned off by your IT department (machine policy)."
+#: the AiZynthFinder data download in progress, so a reopened Settings cannot start a second
+_retro_download = None
+
+
 class ToolsPage(QWidget):
     def __init__(self, dialog: SettingsDialog) -> None:
         super().__init__()
@@ -432,12 +443,6 @@ class ToolsPage(QWidget):
         self.edits: dict[str, QLineEdit] = {}
         self.results: dict[str, QLabel] = {}
         form = QFormLayout(self)
-        form.addRow(
-            QLabel(
-                "Programs chemsuite can call. Leave a path blank to look the program up on "
-                "PATH. Features using most of these arrive in later versions."
-            )
-        )
         for tool in et.visible_tools():
             edit = QLineEdit(dialog.user.tool_paths.get(tool.id, ""))
             found = et.resolve(tool.id, type(dialog.user)()) if tool.names else None
@@ -453,6 +458,8 @@ class ToolsPage(QWidget):
             row = QHBoxLayout()
             row.addWidget(edit, 1)
             row.addWidget(browse)
+            if tool.id == RETRO_CONFIG_TOOL:
+                row.addWidget(self._download_button())
             row.addWidget(test)
             box = QVBoxLayout()
             box.addLayout(row)
@@ -484,10 +491,119 @@ class ToolsPage(QWidget):
 
     def test(self, tool_id: str) -> tuple[bool, str]:
         path = self.edits[tool_id].text().strip() or et.resolve(tool_id, self.dialog.user) or ""
-        ok, message = et.test_tool(tool_id, path) if path else (False, "Not found.")
+        if tool_id in RETRO_TOOLS:
+            ok, message = self._test_retro(tool_id)
+        else:
+            ok, message = et.test_tool(tool_id, path) if path else (False, "Not found.")
         self.results[tool_id].setText(("✓ " if ok else "✗ ") + message)
         self.results[tool_id].show()
         return ok, message
+
+    def _test_retro(self, tool_id: str) -> tuple[bool, str]:
+        """Test AiZynthFinder itself: the interpreter must have it, the config must be local.
+
+        A plain ``--version`` would only prove the interpreter runs, so the worker is asked
+        for AiZynthFinder's version instead; testing the config checks it alongside.
+        """
+        from chemsuite.retro.runner import probe
+
+        python = self.edits[RETRO_PYTHON_TOOL].text().strip()
+        config = self.edits[RETRO_CONFIG_TOOL].text().strip()
+        if tool_id == RETRO_CONFIG_TOOL and not config:
+            return False, "Not found."
+        if not python:
+            return False, "Set the AiZynthFinder Python interpreter as well."
+        guard = QGuiApplication.setOverrideCursor, QGuiApplication.restoreOverrideCursor
+        guard[0](Qt.CursorShape.WaitCursor)  # importing AiZynthFinder takes a few seconds
+        try:
+            return probe(python, config if tool_id == RETRO_CONFIG_TOOL and config else None)
+        finally:
+            guard[1]()
+
+    # -- AiZynthFinder's public data -------------------------------------------------------------
+    def _download_button(self) -> QPushButton:
+        self.download_button = QPushButton("Download…")
+        self.download_button.setToolTip(
+            "Download AiZynthFinder's public USPTO policies and ZINC stock (about 1.5 GB) "
+            "into a folder, and use the config.yml written beside them."
+        )
+        self.download_button.clicked.connect(self.download)
+        if self.dialog.hub.store.policy.get("network_allowed", True) is False:
+            self.download_button.setEnabled(False)
+            self.download_button.setToolTip(NETWORK_OFF_TIP)
+        elif self.dialog.hub.locked(f"tool_paths.{RETRO_CONFIG_TOOL}"):
+            self.download_button.setEnabled(False)
+            self.download_button.setToolTip(LOCKED_TIP)
+        elif _retro_download is not None:
+            self.download_button.setEnabled(False)
+        return self.download_button
+
+    def download(self) -> None:
+        current = self.edits[RETRO_CONFIG_TOOL].text().strip()
+        start = str(Path(current).expanduser().parent) if current else os.path.expanduser("~")
+        folder = QFileDialog.getExistingDirectory(self, "Download AiZynthFinder Data To", start)
+        if not folder:
+            return
+        from chemsuite.retro.download import missing
+
+        if missing(Path(folder)):
+            answer = QMessageBox.question(
+                self,
+                "Download AiZynthFinder Data",
+                f"Download about 1.5 GB of AiZynthFinder models and stock to {folder}?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.start_download(Path(folder))
+
+    def start_download(self, folder: Path):
+        """Fetch the data in the background; the config path is set when it is written."""
+        global _retro_download
+        from chemsuite.retro.download import download_public_data
+
+        from .jobs import CANCELLED, FAILED, QUEUE
+
+        window = self.dialog.parentWidget()
+        result = self.results[RETRO_CONFIG_TOOL]
+        if not hasattr(window, "_run_with_progress"):
+            result.setText("✗ Open Settings from a document window to download.")
+            result.show()
+            return None
+
+        def work(job):
+            return download_public_data(folder, cancel=job.cancel_token, progress=job.report)
+
+        def done(path: Path) -> None:
+            def store(settings) -> None:
+                settings.tool_paths[RETRO_CONFIG_TOOL] = str(path)
+
+            settings_hub().update(store)
+            job.set_summary(f"Wrote {path}")
+            if shiboken6.isValid(self) and self.dialog.isVisible():
+                self.edits[RETRO_CONFIG_TOOL].setText(str(path))
+                result.setText(f"✓ Downloaded; config {path}")
+                result.show()
+            window.show_message(f"AiZynthFinder data downloaded; config set to {path}", 8000)
+
+        def ended() -> None:
+            global _retro_download
+            _retro_download = None
+            if not shiboken6.isValid(self):
+                return
+            self.download_button.setEnabled(True)
+            if job.state == FAILED:
+                last = (job.error_text or "").strip().splitlines()[-1:] or ["Download failed."]
+                result.setText("✗ " + (last[0].partition(": ")[2] or last[0]))
+            elif job.state == CANCELLED:
+                result.setText("✗ Cancelled; Download again resumes where it stopped.")
+
+        job = window._run_with_progress("Downloading AiZynthFinder data…", work, done, lane=QUEUE)
+        _retro_download = job
+        job.done.connect(ended)
+        self.download_button.setEnabled(False)
+        result.setText("Downloading…")
+        result.show()
+        return job
 
     def reset(self) -> None:
         for tool_id, edit in self.edits.items():
@@ -511,26 +627,36 @@ class GeneralPage(QWidget):
         self.recent_limit.setRange(0, 50)
         clear = QPushButton("Clear Recent Files")
         clear.clicked.connect(self.clear_recent)
+        self.notify = QCheckBox("Notify when a long job finishes")
+        self.notify.setToolTip(
+            "A desktop notification when a background job of more than 30 seconds ends "
+            "while chemsuite is not in front."
+        )
         form = QFormLayout(self)
         form.addRow("Processor cores:", self.workers)
         form.addRow("Recent files to keep:", self.recent_limit)
         form.addRow("", clear)
+        form.addRow("Jobs:", self.notify)
         self.load()
         dialog.lock(self.workers, "performance.max_workers")
         dialog.lock(self.recent_limit, "files.recent_limit")
+        dialog.lock(self.notify, "jobs.notify")
         self.workers.valueChanged.connect(self._store)
         self.recent_limit.valueChanged.connect(self._store)
+        self.notify.toggled.connect(self._store)
 
     def load(self) -> None:
         user = self.dialog.user
         self.workers.setValue(user.performance.max_workers)
         self.recent_limit.setValue(user.files.recent_limit)
+        self.notify.setChecked(user.jobs.notify)
 
     def _store(self, *_args) -> None:
         user = self.dialog.user
         user.performance.max_workers = self.workers.value()
         user.files.recent_limit = self.recent_limit.value()
         user.files.recent = user.files.recent[: user.files.recent_limit]
+        user.jobs.notify = self.notify.isChecked()
 
     def clear_recent(self) -> None:
         self.dialog.user.files.recent = []
@@ -538,3 +664,4 @@ class GeneralPage(QWidget):
     def reset(self) -> None:
         self.workers.setValue(0)
         self.recent_limit.setValue(10)
+        self.notify.setChecked(True)

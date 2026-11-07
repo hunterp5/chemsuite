@@ -158,7 +158,6 @@ class SomDialog(QDialog):
                 COLUMN_COLUMN: (oids, NumberColumn.from_floats(c, 0)),
             },
             label="Self-organising map",
-            overwrite=True,
         )
         counts = result.counts()
         from .tool import _som_panel

@@ -20,9 +20,11 @@ A :class:`ColumnStyle` belongs to its column object, so it moves with renames, c
 an undone delete and is saved in the document. Changing it is an undoable table edit
 (:meth:`Table.set_style <chemsuite.core.table.table.Table.set_style>`).
 
-* ``precision``: every number in the column is shown with this many decimals. The stored
-  values keep their full precision, so sorting, filtering and tools are unaffected, and
-  ``None`` brings back each cell's own format.
+* ``precision`` and ``number_format``: how every number in the column is shown. ``fixed``
+  gives *precision* decimals (``None``: each cell's own format); ``thousands`` adds digit
+  grouping; ``scientific`` is a mantissa with *precision* decimals; ``significant`` rounds
+  to *precision* significant figures; ``percent`` shows the value × 100 with a ``%``. The
+  stored values keep their full precision, so sorting, filtering and tools are unaffected.
 * ``log10``: the values were converted with "Logarithmic" (``log10(x)``) and converting back
   gives ``10**x``; the header says so.
 * ``colour``: a :class:`ColourRule` for cell backgrounds.
@@ -39,6 +41,17 @@ GRADIENT = "gradient"  # low -> high
 GRADIENT3 = "gradient3"  # low -> mid -> high
 CATEGORIES = "categories"  # one colour per distinct value
 COLOUR_MODES = (GRADIENT, GRADIENT3, CATEGORIES)
+
+FIXED, THOUSANDS, SCIENTIFIC, SIGNIFICANT, PERCENT = (
+    "fixed",
+    "thousands",
+    "scientific",
+    "significant",
+    "percent",
+)
+NUMBER_FORMATS = (FIXED, THOUSANDS, SCIENTIFIC, SIGNIFICANT, PERCENT)
+#: the digits a format uses when the column has no precision of its own
+DEFAULT_DIGITS = {THOUSANDS: 0, SCIENTIFIC: 2, SIGNIFICANT: 3, PERCENT: 1}
 
 #: blue, amber, red: the low/mid/high default; reads on light and dark backgrounds
 LOW, MID, HIGH = 0x3077F2, 0xF5D154, 0xEC4949
@@ -105,10 +118,31 @@ class ColumnStyle:
     precision: int | None = None
     log10: bool = False
     colour: ColourRule | None = None
+    number_format: str = FIXED
 
     def __post_init__(self) -> None:
         if self.precision is not None and not 0 <= self.precision <= MAX_PRECISION:
             raise ValueError(f"precision must be 0-{MAX_PRECISION}")
+        if self.number_format not in NUMBER_FORMATS:
+            raise ValueError(f"unknown number format {self.number_format!r}")
+        if self.number_format == SIGNIFICANT and self.precision == 0:
+            raise ValueError("significant figures must be at least 1")
+
+    @property
+    def formats_numbers(self) -> bool:
+        """Every number is shown the column's way (not each cell's own format)."""
+        return self.precision is not None or self.number_format != FIXED
+
+    @property
+    def digits(self) -> int:
+        """The decimals (or significant figures) the format shows."""
+        if self.precision is not None:
+            return self.precision
+        return DEFAULT_DIGITS.get(self.number_format, 0)
+
+    def format_value(self, value: float) -> str:
+        """*value* as this column shows it (only meaningful with :attr:`formats_numbers`)."""
+        return format_with(value, self.number_format, self.digits)
 
     @property
     def is_default(self) -> bool:
@@ -132,6 +166,8 @@ class ColumnStyle:
             out["log10"] = True
         if self.colour is not None:
             out["colour"] = self.colour.to_json()
+        if self.number_format != FIXED:
+            out["number_format"] = self.number_format
         return out
 
     @classmethod
@@ -141,6 +177,9 @@ class ColumnStyle:
             precision=data.get("precision"),
             log10=bool(data.get("log10", False)),
             colour=ColourRule.from_json(colour) if isinstance(colour, dict) else None,
+            number_format=(
+                data["number_format"] if data.get("number_format") in NUMBER_FORMATS else FIXED
+            ),
         )
 
 
@@ -152,6 +191,35 @@ def format_fixed(value: float, decimals: int) -> str:
     """*value* with exactly *decimals* decimals; never ``-0.00``."""
     text = f"{value:.{decimals}f}"
     if text.startswith("-") and not text.strip("-0."):
+        return text[1:]
+    return text
+
+
+def format_with(value: float, number_format: str, digits: int) -> str:
+    """*value* in *number_format* with *digits* decimals (significant figures for
+    ``significant``)."""
+    if not math.isfinite(value):
+        return ""
+    if number_format == THOUSANDS:
+        return _no_negative_zero(f"{value:,.{digits}f}")
+    if number_format == SCIENTIFIC:
+        return f"{value:.{digits}e}"
+    if number_format == SIGNIFICANT:
+        if value == 0:
+            return "0"
+        magnitude = math.floor(math.log10(abs(value)))
+        decimals = max(0, digits - 1 - magnitude)
+        rounded = round(value, digits - 1 - magnitude)
+        if abs(rounded) >= 1e15 or (rounded != 0 and abs(rounded) < 1e-6):
+            return f"{value:.{max(digits - 1, 0)}e}"
+        return _no_negative_zero(f"{rounded:.{decimals}f}")
+    if number_format == PERCENT:
+        return _no_negative_zero(f"{value * 100:.{digits}f}") + "%"
+    return format_fixed(value, digits)
+
+
+def _no_negative_zero(text: str) -> str:
+    if text.startswith("-") and not text.strip("-0.,"):
         return text[1:]
     return text
 

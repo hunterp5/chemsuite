@@ -48,7 +48,7 @@ from typing import ClassVar
 import numpy as np
 
 from .numbers import GENERAL, classify_number, decimals_for_value, format_number
-from .style import DEFAULT_STYLE, ColumnStyle, format_fixed
+from .style import DEFAULT_STYLE, ColumnStyle
 
 NUMBER = "number"
 TEXT = "text"
@@ -169,9 +169,14 @@ class NumberColumn(Column):
     def display(self, slot: int) -> str:
         if not self._valid[slot]:
             return ""
-        precision = self.style.precision
-        if precision is not None:
-            return format_fixed(float(self._values[slot]), precision)
+        if self.style.formats_numbers:
+            return self.style.format_value(float(self._values[slot]))
+        return format_number(float(self._values[slot]), int(self._decimals[slot]))
+
+    def plain(self, slot: int) -> str:
+        """The cell as typed, whatever the column's format: what editing it starts from."""
+        if not self._valid[slot]:
+            return ""
         return format_number(float(self._values[slot]), int(self._decimals[slot]))
 
     def value(self, slot: int) -> float | None:
@@ -196,13 +201,13 @@ class NumberColumn(Column):
         if len(valid_slots):
             values, value_index = np.unique(self._values[valid_slots], return_inverse=True)
             decimals = self._decimals[valid_slots].astype(np.int64) + 128  # 0..255
-            precision = self.style.precision
-            if precision is not None:  # every cell shows the column's precision
+            style = self.style
+            if style.formats_numbers:  # every cell shows the column's format
                 decimals[:] = 128
 
             def text(value: float, code: int) -> str:
-                if precision is not None:
-                    return format_fixed(value, precision)
+                if style.formats_numbers:
+                    return style.format_value(value)
                 return format_number(value, code)
 
             pairs, pair_index = np.unique(value_index * 256 + decimals, return_inverse=True)

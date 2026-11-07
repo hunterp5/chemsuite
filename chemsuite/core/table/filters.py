@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from .columns import Column, NumberColumn, TextColumn, to_number
-from .search import Query, match_mask
+from .search import Query, Term, match_mask, terms_mask
 
 if TYPE_CHECKING:
     from .table import Table
@@ -170,24 +170,42 @@ class OidFilter(Filter):
 class SearchFilter(Filter):
     """Keep rows where a text or number column matches *query* (the quick search box).
 
-    *column* limits the search to one column; None searches every searchable column.
+    *column* limits the search to one column; None searches every searchable column. With
+    *terms* (the bar's field syntax, see :func:`~.search.parse_terms`) the row must meet every
+    term instead, and *query* only supplies the case setting.
     """
 
     query: Query
     negate: bool = False
     column: str | None = None
+    terms: tuple[Term, ...] | None = None
 
     @property
     def columns(self) -> tuple[str, ...]:
         # all columns: whatever is searchable at evaluation time, never dropped with a column;
-        # one column: dropped (and the bar told) when that column goes
+        # one column: dropped (and the bar told) when that column goes. A term's own field is
+        # not listed: a term on a removed column simply matches nothing.
         return () if self.column is None else (self.column,)
 
     def mask(self, table: Table) -> np.ndarray:
+        if self.terms is not None:
+            return terms_mask(
+                table, self.terms, column=self.column, case_sensitive=self.query.case_sensitive
+            )
         if not self.query.text:
             return np.ones(len(table), dtype=np.bool_)
         columns = None if self.column is None else [self.column]
         return match_mask(table, self.query, columns).any(axis=1)
+
+    def renamed(self, old: str, new: str) -> Filter:
+        out = super().renamed(old, new)
+        if self.terms is None or not any(term.column == old for term in self.terms):
+            return out
+        terms = tuple(
+            dataclasses.replace(term, column=new) if term.column == old else term
+            for term in self.terms
+        )
+        return dataclasses.replace(out, terms=terms)  # type: ignore[type-var]
 
 
 # -- summaries for filter widgets ------------------------------------------------------------

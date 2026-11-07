@@ -149,3 +149,41 @@ def render_reaction_png(
             return None
     drawer.FinishDrawing()
     return drawer.GetDrawingText()
+
+
+def alignment_core(text: str) -> Chem.Mol | None:
+    """The core that drawings are aligned to, from SMILES (or SMARTS), with 2D coordinates.
+
+    None when *text* reads as neither.
+    """
+    text = text.strip()
+    if not text:
+        return None
+    with rdBase.BlockLogs():
+        core = Chem.MolFromSmiles(text) or Chem.MolFromSmarts(text)
+        if core is None:
+            return None
+        core.UpdatePropertyCache(strict=False)
+        try:
+            rdDepictor.Compute2DCoords(core)
+        except (RuntimeError, ValueError):
+            return None
+    return core
+
+
+def aligned_mol(mol: Chem.Mol, core: Chem.Mol) -> Chem.Mol:
+    """A copy of *mol* laid out so the atoms matching *core* sit where they do in *core*.
+
+    Molecules without the core keep their usual drawing, so a column can be aligned even when
+    only some rows share it. The molecule itself (and its saved coordinates) is not changed.
+    """
+    shown = depiction_mol(mol)
+    with rdBase.BlockLogs():
+        if not shown.HasSubstructMatch(core):
+            return shown
+        copy = Chem.Mol(shown)
+        try:
+            rdDepictor.GenerateDepictionMatching2DStructure(copy, core, acceptFailure=True)
+        except (RuntimeError, ValueError):
+            return shown
+    return copy

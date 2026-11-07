@@ -203,3 +203,74 @@ def test_cancel_without_keep_partial_discards(window, qtbot) -> None:
     job.cancel()
     qtbot.waitUntil(lambda: not job.running, timeout=5000)
     assert applied == [] and window.statusBar().currentMessage() == "Cancelled: Clustering"
+
+
+def test_jobs_window_removes_ended_jobs_one_by_one(window, qtbot) -> None:
+    ctx = ToolContext(window)
+    first = ctx.run("First…", lambda job: None, lambda r: None)
+    second = ctx.run("Second…", lambda job: None, lambda r: None)
+    qtbot.waitUntil(lambda: not first.running and not second.running, timeout=5000)
+    work, release = _gate()
+    running = ctx.run("Running…", work, lambda r: None)
+    try:
+        qtbot.waitUntil(lambda: running.state == RUNNING, timeout=5000)
+        jobs = window.show_jobs()
+        jobs.select(first)
+        assert jobs.remove_button.isEnabled()
+        jobs.remove_button.click()
+        assert first not in window._runner.jobs and second in window._runner.jobs
+        jobs.select(running)
+        assert not jobs.remove_button.isEnabled()  # a running job is cancelled, not removed
+        assert jobs.remove_selected() == 0 and running in window._runner.jobs
+        jobs.table.selectAll()  # several at once: only the ended ones go
+        assert jobs.remove_selected() == 1
+        assert window._runner.jobs == [running]
+    finally:
+        release.set()
+    qtbot.waitUntil(lambda: not running.running, timeout=5000)
+    jobs.close()
+
+
+def test_notification_commands_pass_text_as_arguments(monkeypatch) -> None:
+    from chemsuite.app import notify
+
+    title, message = 'Conformers "x" (a.csd)', 'Done" & do shell script "rm -rf ~'
+    argv = notify.command(title, message, "darwin")
+    assert argv[0] == "osascript" and argv[-2:] == [title, message]
+    assert all(title not in part and message not in part for part in argv[:-2])
+    monkeypatch.setattr(notify.shutil, "which", lambda name: "/usr/bin/notify-send")
+    assert notify.command(title, message, "linux") == [
+        "/usr/bin/notify-send",
+        "--app-name",
+        "chemsuite",
+        title,
+        message,
+    ]
+    monkeypatch.setattr(notify.shutil, "which", lambda name: None)
+    assert notify.command(title, message, "linux") is None  # falls back to the tray
+    assert notify.command(title, message, "win32") is None
+
+
+def test_a_long_job_ending_unseen_notifies_unless_turned_off(window, monkeypatch) -> None:
+    from chemsuite.app import notify
+    from chemsuite.app.jobs import Job
+    from chemsuite.app.settings_hub import settings_hub
+
+    posted = []
+    monkeypatch.setattr(notify, "notify", lambda title, text: posted.append((title, text)))
+    monkeypatch.setattr(window, "isActiveWindow", lambda: False)
+    job = Job("Generating conformers…", document="a.csd")
+    job.started_at, job.ended_at = 0.0, 75.0
+    window._notify_unseen(job, "500 conformers")
+    assert posted == [("Generating conformers (a.csd)", "500 conformers after 1:15")]
+
+    def off(settings) -> None:
+        settings.jobs.notify = False
+
+    settings_hub().update(off)
+    window._notify_unseen(job, "again")
+    assert len(posted) == 1
+    monkeypatch.setattr(window, "isActiveWindow", lambda: True)
+    settings_hub().update(lambda s: setattr(s.jobs, "notify", True))
+    window._notify_unseen(job, "seen")
+    assert len(posted) == 1  # the window is in front: nothing to tell

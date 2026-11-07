@@ -74,6 +74,18 @@ def test_known_values() -> None:
     assert medchem.clogd74(amine) < Crippen.MolLogP(amine)
 
 
+def test_sa_score() -> None:
+    assert medchem.sa_score(mol(ASPIRIN)) == pytest.approx(1.58, abs=0.01)  # Ertl's paper: 1.58
+    assert medchem.sa_score(mol("c1ccccc1")) == pytest.approx(1.0)
+    erythromycin = (
+        "CC[C@H]1OC(=O)[C@H](C)[C@@H](O[C@H]2C[C@@](C)(OC)[C@@H](O)[C@H](C)O2)[C@H](C)"
+        "[C@@H](O[C@@H]2O[C@H](C)C[C@H](N(C)C)[C@H]2O)[C@](C)(O)C[C@@H](C)C(=O)[C@H](C)"
+        "[C@@H](O)[C@]1(C)O"
+    )
+    assert medchem.sa_score(mol(erythromycin)) > 5  # a complex natural product
+    assert CATALOG["SA_SCORE"].title == "SAScore" and CATALOG["SA_SCORE"].group == "Drug-likeness"
+
+
 def test_bbb_score_terms() -> None:
     # Outside every polynomial window only the aromatic-ring term is left.
     assert medchem.bbb_score_from_descriptors(2, 0, 100, 0, 0, 200, 1) == pytest.approx(1.0)

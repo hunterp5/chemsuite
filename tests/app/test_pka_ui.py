@@ -63,3 +63,28 @@ def test_predict_pka_writes_the_chosen_columns(chem, qtbot) -> None:
     assert table.cell("Major Species @ pH 7", glycine) == "[NH3+]CC(=O)[O-]"
     assert table.kind("Major Species @ pH 7") == "structure"
     assert table.cell("Major Species @ pH 7", blank) == ""
+
+
+def test_every_run_writes_new_columns_with_one_suffix(chem, qtbot) -> None:
+    table = chem.workspace.table
+    dialog = chem.open_tool("predict_pka")
+    assert not hasattr(dialog, "if_exists")
+    for key, box in dialog.outputs.items():
+        box.setChecked(key in ("pka", "logd"))
+    dialog.run()
+    qtbot.waitUntil(lambda: "cLogD 7.4" in table.column_names, timeout=20_000)
+    first = int(table.oids[0])
+    # an all-blank column from the first run is still not reused...
+    table.set_cells("pKa (most acidic)", table.oids, [""] * len(table.oids))
+    # ...and a free name still takes the run's shared suffix
+    table.remove_column("pKa (most basic)")
+    dialog = chem.open_tool("predict_pka")
+    for key, box in dialog.outputs.items():
+        box.setChecked(key in ("pka", "logd"))
+    dialog.run()
+    qtbot.waitUntil(lambda: "cLogD 7.4 (2)" in table.column_names, timeout=20_000)
+    assert "pKa (most acidic) (2)" in table.column_names
+    assert "pKa (most basic) (2)" in table.column_names
+    assert "pKa (most basic)" not in table.column_names
+    assert table.cell("pKa (most acidic)", first) == ""  # the first run's column is untouched
+    assert float(table.cell("pKa (most acidic) (2)", first)) == pytest.approx(4.47, abs=0.01)

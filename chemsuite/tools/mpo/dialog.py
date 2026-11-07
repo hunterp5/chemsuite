@@ -115,8 +115,6 @@ class MpoDialog(QDialog):
         self.output = QLineEdit(_last_output)
         self.per_property = QCheckBox("Also add a desirability column per property")
         self.selected_only = selected_only(ctx)
-        self.overwrite = QCheckBox("Replace an existing column of the same name")
-        self.overwrite.setChecked(True)
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.buttons = QDialogButtonBox(
@@ -135,7 +133,6 @@ class MpoDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(self.per_property)
         layout.addWidget(self.selected_only)
-        layout.addWidget(self.overwrite)
         layout.addWidget(self.status)
         layout.addWidget(self.buttons)
         self.resize(960, 520)
@@ -346,7 +343,7 @@ class MpoDialog(QDialog):
         if self.per_property.isChecked():
             for spec, part in zip(profile.properties, parts, strict=True):
                 results[f"{name}: {spec.column}"] = (oids, NumberColumn.from_floats(part, 3))
-        names = ctx.apply_results(results, label="MPO score", overwrite=self.overwrite.isChecked())
+        names = ctx.apply_results(results, label="MPO score")
         scored = int(np.isfinite(overall).sum())
         ctx.show_message(f"Scored {scored:,} of {len(oids):,} row(s) in “{names[name]}”")
         return names

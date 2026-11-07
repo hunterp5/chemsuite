@@ -53,13 +53,14 @@ def test_generate_dialog_end_to_end(window, qtbot) -> None:
     assert "Conformer Energy Range (kcal/mol)" in table
     mol = table.column("SMILES 3D").mol(table.slots_of(table.oids[:1])[0])
     assert mol.GetConformer().Is3D()
-    # Run again from the 3D column's source: the same columns update, no "(2)".
+    # Running again keeps the earlier results and adds new columns.
     dialog = chem.open_tool("conformers")
     assert dialog.count.value() == 3  # remembered
     dialog.accept()
     qtbot.waitUntil(lambda: table.history.undo_label == "Generate conformers", timeout=30_000)
     qtbot.wait(50)
-    assert "SMILES 3D (2)" not in table and "Conformers (2)" not in table
+    assert "SMILES 3D (2)" in table and "Conformers (2)" in table
+    assert table.cell("SMILES 3D", int(table.oids[0])) == "CCCCO"
 
 
 def test_window_needs_optimisation(window) -> None:

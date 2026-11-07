@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Data ▸ Chemical Space ▸ Chemical Space Map…, Self-Organizing Map…"""
+"""Data ▸ Chemical Space ▸ Dimensionality Reduction…, Self-Organizing Map…"""
 
 from __future__ import annotations
 
@@ -51,11 +51,12 @@ def _som_panel(ctx: ToolContext, state: dict | None = None):
 TOOLS = (
     Tool(
         id="space_map",
-        title="Chemical Space Map…",
+        title="Dimensionality Reduction…",
         menu=MENU,
         open=_map,
         requires=("sklearn",),
-        tip="Place compounds on a 2D map (PCA, UMAP or t-SNE) by fingerprints or properties.",
+        tip="Map compounds to 2D or 3D (PCA, UMAP, t-SNE or PaCMAP) by fingerprints, properties "
+        "or both.",
     ),
     Tool(
         id="som",

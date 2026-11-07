@@ -17,12 +17,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QGuiApplication
+from PySide6.QtCore import QItemSelectionModel, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -157,7 +158,9 @@ class JobsWindow(QWidget):
         self.table.setHorizontalHeaderLabels(list(self.COLUMNS))
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._menu)
         self.table.verticalHeader().hide()
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -169,8 +172,15 @@ class JobsWindow(QWidget):
         self.up_button = QPushButton("Move Up")
         self.down_button = QPushButton("Move Down")
         self.copy_button = QPushButton("Copy Details")
+        self.remove_button = QPushButton("Remove")
+        self.remove_button.setToolTip("Remove the selected ended jobs from the list (Delete)")
         clear = QPushButton("Clear Finished")
-        self.cancel_button.clicked.connect(lambda: self._with_current(lambda j: j.cancel()))
+        self.cancel_button.clicked.connect(self.cancel_selected)
+        self.remove_button.clicked.connect(self.remove_selected)
+        for key in (QKeySequence.StandardKey.Delete, QKeySequence(Qt.Key.Key_Backspace)):
+            shortcut = QShortcut(key, self.table)
+            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+            shortcut.activated.connect(self.remove_selected)
         self.up_button.clicked.connect(lambda: self._with_current(lambda j: runner.move(j, -1)))
         self.down_button.clicked.connect(lambda: self._with_current(lambda j: runner.move(j, 1)))
         self.copy_button.clicked.connect(lambda: self._with_current(self.copy_details))
@@ -183,6 +193,7 @@ class JobsWindow(QWidget):
         for button in (self.cancel_button, self.up_button, self.down_button, self.copy_button):
             buttons.addWidget(button)
         buttons.addStretch(1)
+        buttons.addWidget(self.remove_button)
         buttons.addWidget(clear)
         layout = QVBoxLayout(self)
         layout.addWidget(self.table, 1)
@@ -208,7 +219,7 @@ class JobsWindow(QWidget):
         if not self.isVisible():
             self._timer.stop()
             return
-        current = self.current()
+        chosen = {job.id for job in self.selected()}
         jobs = self.ordered()
         self.table.setRowCount(len(jobs))
         for row, job in enumerate(jobs):
@@ -228,20 +239,65 @@ class JobsWindow(QWidget):
                 item.setData(Qt.ItemDataRole.UserRole, job.id)
                 item.setForeground(FAILED_COLOUR if job.state == FAILED else self.palette().text())
                 item.setToolTip(job.error_text if job.state == FAILED else value)
-            if current is not None and job is current:
-                self.table.selectRow(row)
+        selection = self.table.selectionModel()
+        flags = QItemSelectionModel.SelectionFlag
+        selection.clearSelection()
+        for row, job in enumerate(jobs):  # rows move as jobs start and end: follow the jobs
+            if job.id in chosen:
+                selection.select(self.table.model().index(row, 0), flags.Select | flags.Rows)
         if any(j.running for j in jobs):
             self._timer.start()
         else:
             self._timer.stop()
         self._update_buttons()
 
+    def selected(self) -> list[Job]:
+        """The selected jobs, top to bottom."""
+        rows = sorted(index.row() for index in self.table.selectionModel().selectedRows())
+        ids = [self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) for row in rows]
+        by_id = {job.id: job for job in self.runner.jobs}
+        return [by_id[i] for i in ids if i in by_id]
+
     def current(self) -> Job | None:
-        rows = self.table.selectionModel().selectedRows()
-        if not rows:
-            return None
-        job_id = self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole)
-        return next((j for j in self.runner.jobs if j.id == job_id), None)
+        """The selected job when exactly one is selected."""
+        chosen = self.selected()
+        return chosen[0] if len(chosen) == 1 else None
+
+    def cancel_selected(self) -> None:
+        for job in self.selected():
+            if job.running:
+                job.cancel()
+        self.refresh()
+
+    def remove_selected(self) -> int:
+        """Remove the selected ended jobs from the list; running and queued ones stay."""
+        ended = [job for job in self.selected() if not job.running]
+        for job in ended:
+            self.runner.remove(job)
+        self.refresh()
+        return len(ended)
+
+    def _menu(self, pos) -> None:
+        row = self.table.rowAt(pos.y())
+        if row >= 0 and row not in {i.row() for i in self.table.selectionModel().selectedRows()}:
+            self.table.selectRow(row)
+        jobs = self.selected()
+        if not jobs:
+            return
+        menu = QMenu(self)
+        cancel = menu.addAction("Cancel Job")
+        cancel.setEnabled(any(job.running for job in jobs))
+        remove = menu.addAction("Remove")
+        remove.setEnabled(any(not job.running for job in jobs))
+        copy = menu.addAction("Copy Details")
+        copy.setEnabled(len(jobs) == 1)
+        chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
+        if chosen is cancel:
+            self.cancel_selected()
+        elif chosen is remove:
+            self.remove_selected()
+        elif chosen is copy:
+            self.copy_details(jobs[0])
 
     def select(self, job: Job) -> None:
         for row in range(self.table.rowCount()):
@@ -257,8 +313,10 @@ class JobsWindow(QWidget):
 
     def _update_buttons(self) -> None:
         job = self.current()
+        chosen = self.selected()
         queue = self.runner.queued_jobs
-        self.cancel_button.setEnabled(job is not None and job.running)
+        self.cancel_button.setEnabled(any(j.running for j in chosen))
+        self.remove_button.setEnabled(any(not j.running for j in chosen))
         self.up_button.setEnabled(job in queue and queue.index(job) > 0)
         self.down_button.setEnabled(job in queue and queue.index(job) < len(queue) - 1)
         self.copy_button.setEnabled(job is not None)

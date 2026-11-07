@@ -158,8 +158,8 @@ def test_export_png(data, tmp_path) -> None:
 
 
 def test_plot_menu(data) -> None:
-    titles = [a.text() for a in data.menuBar().actions()]
-    assert "&Plot" in titles
+    menus = {a.text(): a.menu() for a in data.menuBar().actions()}
+    assert "&Plot" in [a.text() for a in menus["&Data"].actions()]
     assert data.tool_action("scatter").isEnabled()
 
 
@@ -233,6 +233,12 @@ def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -
         "fit": True,
         "curve": None,
         "guide": None,
+        "aggregate": "mean",
+        "errors": False,
+        "columns": ["MW", "pIC50"],
+        "z": None,
+        "drop": False,
+        "camera": None,
         "title": None,
         "cards": cards.state(),
     }
@@ -436,3 +442,197 @@ def test_many_pinned_cards_get_smaller_drawings() -> None:
     assert shrunk is not None and shrunk.width() < large.width()
     assert pinned_size(large, 12, QSize(300, 300)) is None  # text only
     assert pinned_size(SIZES["small"][1], 12, QSize(700, 500)) in (SIZES["small"][1], TINY)
+
+
+def test_bar_chart_sums_up_groups(data) -> None:
+    panel = data.open_tool("bar")
+    panel.set_spec(x="Series", y="pIC50", aggregate="mean", errors=True)
+    renderer = panel.renderer
+    assert renderer.labels == ["x", "y", "z"]
+    assert renderer.counts.tolist() == [7.0, 6.0, 8.0]  # x: mean of 5, 7, 9
+    assert renderer.spread[0] == pytest.approx(2.0) and renderer._errors is not None
+    assert panel.title() == "Mean pIC50 by Series"
+    assert ids(data, renderer.hit_point(0, 3, 1, 1)) == ["A", "C", "E"]
+    hover = renderer.hover(data.workspace.table, 0, 3, 1, 1)
+    assert hover.title == "x" and hover.lines[0] == "Mean: 7 ± 2 (SD)"
+    panel.set_spec(y=None)  # (none): a row count
+    assert renderer.counts.tolist() == [3.0, 1.0, 1.0] and panel.title() == "Rows by Series"
+    data.workspace.selection.set([int(data.workspace.table.oids[1])], "test")
+    assert renderer._overlay is not None
+
+
+def test_line_plot_joins_points_in_x_order(data) -> None:
+    panel = data.open_tool("line")
+    panel.set_spec(x="MW", y="pIC50", color="Series")
+    lines = panel.renderer._lines
+    assert len(lines) == 1  # only series x has two or more points
+    xs, ys = lines[0].getData()
+    assert xs.tolist() == [100.0, 300.0] and ys.tolist() == [5.0, 7.0]
+    assert ids(data, panel.renderer.hit_box(0, 0, 250, 10)) == ["A", "B"]
+
+
+def test_density_selects_the_rows_beneath(data) -> None:
+    panel = data.open_tool("density")
+    panel.set_spec(x="MW", y="pIC50", bins=2)
+    renderer = panel.renderer
+    assert renderer.grid.counts.sum() == 4  # E has no MW
+    assert ids(data, renderer.hit_point(120, 5.2, 1, 1)) == ["A", "B"]
+    assert renderer.hover(data.workspace.table, 120, 5.2, 1, 1).title == "2 rows"
+    assert ids(data, renderer.hit_box(250, 0, 450, 10)) == ["C", "D"]
+    assert panel.title() == "Density: pIC50 vs MW"
+
+
+def test_radar_draws_selected_rows(data) -> None:
+    table = data.workspace.table
+    table.add_column("LogP", ["1", "2", "3", "4", "5"])
+    panel = data.open_tool("radar")
+    panel.set_spec(columns=["MW", "pIC50"])
+    assert "at least three" in panel.summary.text()
+    panel.set_spec(columns=["MW", "pIC50", "LogP"])
+    renderer = panel.renderer
+    assert renderer.columns == ["MW", "pIC50", "LogP"]
+    first = int(table.oids[3])
+    data.workspace.selection.set([first], "test")
+    assert set(renderer._voids.tolist()) == {-1, first}
+    # D is the highest on every axis: its first corner is at the top of the first spoke
+    corner = (renderer._voids == first) & (renderer._vaxis == 0)
+    assert renderer._vy[corner][0] == pytest.approx(1.0)
+    assert renderer.hit_point(0, 1, 0.01, 0.01).tolist() == [first]
+    assert panel.state()["columns"] == ["MW", "pIC50", "LogP"]
+    panel.set_spec(kind="scatter")  # leaving the radar brings the axes back
+    assert panel.plot.getAxis("left").isVisible()
+
+
+@pytest.fixture
+def cube(window):
+    from chemsuite.app.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    table = Table()
+    table.add_rows(
+        {
+            "ID": ["A", "B", "C", "D"],
+            "MW": ["100", "200", "300", ""],
+            "LogP": ["1", "2", "3", "4"],
+            "pIC50": ["5", "6", "7", "8"],
+            "Series": ["x", "y", "x", "y"],
+        },
+        undoable=False,
+    )
+    window._install(Workspace(table))
+    window.resize(900, 600)
+    window.show()
+    return window
+
+
+def test_3d_scatter_selects_what_you_see(cube, qtbot) -> None:
+    from PySide6.QtCore import QPoint, QRect
+
+    panel = cube.open_tool("scatter3d")
+    spec = panel.spec()
+    assert (spec.kind, spec.x, spec.y, spec.z) == ("scatter3d", "MW", "LogP", "pIC50")
+    assert spec.color is None
+    assert panel.title() == "3D: MW, LogP, pIC50"
+    assert "1 rows without" in panel.summary.text()
+    scene = panel.scene3d
+    assert panel.stack.currentWidget() is panel.view3d
+    assert scene.pos.min() == -1 and scene.pos.max() == 1  # each axis fills the cube
+    qtbot.waitUntil(lambda: panel.view3d.width() > 50)
+    xy, front = scene.screen_points()
+    assert front.all() and len(xy) == 3
+    first = QPoint(round(xy[0, 0]), round(xy[0, 1]))
+    assert scene.hit_index(first) == 0
+    panel.view3d.clicked.emit(first, NONE)
+    assert ids(cube, cube.workspace.selection.oids) == ["A"]
+    everything = QRect(0, 0, panel.view3d.width(), panel.view3d.height())
+    panel.view3d.boxed.emit(everything, NONE)
+    assert ids(cube, cube.workspace.selection.oids) == ["A", "B", "C"]
+    around_first = xy[0] + np.array([[-5, -5], [5, -5], [5, 5], [-5, 5]])
+    panel.view3d.lassoed.emit(around_first, NONE)
+    assert ids(cube, cube.workspace.selection.oids) == ["A"]
+    card = panel.card_content(int(cube.workspace.table.oids[1]))
+    assert card.title == "B" and card.lines == ["MW: 200", "LogP: 2", "pIC50: 6"]
+
+
+def test_3d_scatter_is_saved_with_its_camera(cube) -> None:
+    panel = cube.open_tool("scatter3d")
+    panel.set_spec(color="Series", size="pIC50", drop=True)
+    scene = panel.scene3d
+    assert scene.colors.shape == (3, 4)
+    assert not np.allclose(scene.colors[0], scene.colors[1])  # x and y differ
+    assert len(set(np.round(scene.sizes, 3))) == 3  # sized by pIC50
+    panel.set_camera({"distance": 6.0, "azimuth": 30.0, "elevation": 10.0})
+    state = panel.state()
+    assert state["color"] == "Series" and state["camera"]["azimuth"] == 30.0 and state["drop"]
+    cube._restore_panels([{"tool": "scatter", "state": state}])
+    reopened = cube.panels[-1]
+    assert reopened.state() == state
+    reopened.set_state({"x": "gone", "camera": "junk"})  # damaged values are skipped
+    assert reopened.spec().x == "MW"
+    # a document saved while 3D Scatter was a panel of its own
+    cube._restore_panels([{"tool": "scatter3d", "state": {"x": "LogP", "y": "MW", "z": "pIC50"}}])
+    old = cube.panels[-1]
+    assert old.spec().kind == "scatter3d" and old.spec().x == "LogP"
+
+
+def test_switching_between_2d_and_3d_keeps_the_pane(cube) -> None:
+    panel = cube.open_tool("scatter")
+    docks = len(cube.panels)
+    selection = cube.workspace.selection
+    selection.set([int(cube.workspace.table.oids[1])], "test")
+    move = panel.mode_buttons["zoom"]
+    assert move.text() == "Pan and Zoom"
+    panel.set_mode("box")
+    panel.set_spec(kind="scatter3d")
+    assert len(cube.panels) == docks and panel.stack.currentWidget() is panel.view3d
+    assert move.text() == "Turn"  # the same toolbar, its first button now turns the cube
+    assert panel.view3d.mode == "box"  # the chosen mode carries over
+    assert panel.spec().x == "MW" and panel.spec().y == "LogP" and panel.spec().z == "pIC50"
+    assert panel.scene3d.selected_mask(selection.oids).sum() == 1
+    assert panel.renderer is None and not panel.plot.listDataItems()  # nothing 2D left behind
+    panel.set_spec(kind="landscape")
+    assert panel.title() == "Landscape: pIC50 over MW, LogP"
+    assert panel.options.form.isRowVisible(panel.bins) and not panel.options.form.isRowVisible(
+        panel.color
+    )
+    panel.set_spec(kind="histogram")
+    assert panel.stack.currentWidget() is panel.plot_widget and move.text() == "Pan and Zoom"
+    assert panel.spec().z is None and panel.state()["z"] is None
+
+
+def test_landscape_draws_a_surface(cube) -> None:
+    from chemsuite.core.table import Table
+
+    rng = np.random.default_rng(0)
+    table = cube.workspace.table
+    n = 60
+    table.add_rows(
+        {
+            "ID": [f"N{i}" for i in range(n)],
+            "MW": [f"{v:.2f}" for v in rng.uniform(100, 300, n)],
+            "LogP": [f"{v:.2f}" for v in rng.uniform(1, 3, n)],
+            "pIC50": [f"{v:.2f}" for v in rng.uniform(5, 8, n)],
+        },
+        undoable=False,
+    )
+    assert isinstance(table, Table)
+    panel = cube.open_tool("landscape")
+    panel.set_spec(bins=12)
+    assert "surface on a 12×12 grid" in panel.summary.text()
+    assert panel.scene3d._surface.visible()
+    assert panel.state()["bins"] == 12 and panel.state()["kind"] == "landscape"
+
+
+def test_radar_fits_its_pane_once_laid_out(data, qtbot) -> None:
+    """A radar drawn while its pane is still tiny used to keep that tiny view."""
+    table = data.workspace.table
+    table.add_column("LogP", ["1", "2", "3", "4", "5"])
+    panel = data.open_tool("radar")
+    panel.set_spec(columns=["MW", "pIC50", "LogP"])
+    panel.plot_widget.resize(60, 40)
+    panel.reset_view()
+    qtbot.wait(20)
+    panel.plot_widget.resize(800, 600)
+    qtbot.wait(20)
+    (x0, x1), (y0, y1) = panel.view_box.viewRange()
+    assert x1 - x0 < 6 and y1 - y0 < 6  # the radar (±1.6 × ±1.25) fills the pane

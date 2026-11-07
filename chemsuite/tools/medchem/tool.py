@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Plot ▸ MedChem ▸ BOILED-Egg…, Golden Triangle…, LipE…"""
+"""Data ▸ Plot ▸ MedChem ▸ BOILED-Egg…, Golden Triangle…, LipE…"""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ TOOLS = (
     Tool(
         id="boiled_egg",
         title="BOILED-Egg…",
-        menu=("Plot", "MedChem"),
+        menu=("Data", "Plot", "MedChem"),
         open=_dialog("boiled_egg"),
         requires=("rdkit",),
         needs_structures=True,
@@ -44,7 +44,7 @@ TOOLS = (
     Tool(
         id="golden_triangle",
         title="Golden Triangle…",
-        menu=("Plot", "MedChem"),
+        menu=("Data", "Plot", "MedChem"),
         open=_dialog("golden_triangle"),
         requires=("rdkit",),
         needs_structures=True,
@@ -53,7 +53,7 @@ TOOLS = (
     Tool(
         id="lipe",
         title="Lipophilic Efficiency (LipE)…",
-        menu=("Plot", "MedChem"),
+        menu=("Data", "Plot", "MedChem"),
         open=_dialog("lipe"),
         requires=("rdkit",),
         needs_structures=True,

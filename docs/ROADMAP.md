@@ -7,8 +7,9 @@ conformers and the Data menu. This roadmap covers what comes next:
 - improvements to the tools chemsuite already has, starting with search;
 - the rest of MolManager's features, ranked by value and install cost.
 
-Decisions so far: QSAR (phase 7d) is skipped for now. Groovy and custom themes stay. External
-tools (Gnina, AiZynthFinder, BioTransformer…) will be integrated, so their paths are already in
+Decisions so far: QSAR (phase 7d) is skipped for now. Metabolite prediction (BioTransformer) is
+dropped from the plan. Groovy and custom themes stay. External
+tools (Gnina, AiZynthFinder…) will be integrated, so their paths are already in
 Settings. Settings… sits in the app menu on macOS and the Edit menu elsewhere. Tool dialogs close on OK
 and their jobs run in the background (§2). A robust drawing sketcher that works with the table
 is needed (§6, tier 2).
@@ -34,8 +35,10 @@ progress, and cancel or clear them.
 **Status (2026-11-05): built.** Two lanes, job records, the status-bar indicator, the Jobs
 window (View ▸ Jobs), non-blocking failure reports, dropped results for replaced documents,
 the close prompt and keeping the computer awake. Saving still shows a short modal progress
-dialog, because the close prompt needs to know whether it worked. Not yet: removing ended jobs
-one by one in the window, and a desktop notification beyond the dock/taskbar alert.
+dialog, because the close prompt needs to know whether it worked. Done 2026-11-07: removing
+ended jobs one by one (or several) in the window, and a desktop notification when a long job
+ends unseen (osascript on macOS, notify-send on Linux, a tray balloon on Windows; Settings ▸
+General can turn it off).
 
 **Design**
 - **Two lanes in `JobRunner`.**
@@ -152,7 +155,7 @@ modified.
    - Rows combine with "all" or "any", and each row can be negated.
    - The result can show only matches, select them, or add them to a list.
    - Searches are saved with the document and kept in a recent-searches list.
-3. **Quick search bar:**
+3. ✅ **Quick search bar** (done 2026-11-07):
    - field syntax such as `ID:CPD-12`, `pIC50>7` or `"exact phrase"`;
    - a history dropdown, and a count of matches as you type.
 4. **Filters:**
@@ -160,21 +163,22 @@ modified.
    - filters **saved with the document** (a noted follow-up);
    - named filter sets ("Actives, MW < 450") you can switch between;
    - "Copy filtered rows to a new document".
-5. **Find and Replace:** searching within the selection or within chosen columns, and
-   replacing with regex groups.
+5. ✅ **Find and Replace** (done 2026-11-07): searching within the selection or within chosen
+   columns, and replacing with regex groups.
 
 ## 5. Improving the other existing tools
 
-- **Table**
+- ✅ **Table** (done 2026-11-07)
   - Conditional cell colouring: colour by value or category, like MolManager's
     `column_color.py`.
-  - Per-column number formats.
-  - Frozen ID and structure columns.
+  - Per-column number formats (fixed, thousands, scientific, significant figures, percent).
+  - Frozen columns (the first columns, up to the one chosen).
   - Column statistics in the header tooltip.
-- **Structures**
-  - Align all drawings to a common core (MolManager's "Align to Substructure").
-  - Larger hover previews.
-  - "Copy as SMILES / image".
+- ✅ **Structures**
+  - ✅ Align all drawings to a common core (MolManager's "Align to Substructure"), done
+    2026-11-07.
+  - ✅ Larger hover previews, done 2026-11-07.
+  - ✅ "Copy as SMILES / image" (cell menu ▸ Copy As).
 - **Plots**
   - Colour-range controls and marker shapes.
   - A density mode (hexbin) for 200k points.
@@ -214,7 +218,6 @@ modified.
 | Superpose conformers, pharmacophore screen | RDKit only, but needs the 3D viewer to be useful. |
 | PubChem, ChEMBL, vendor, patent and SQL queries | Network access, off by default under policy. Plain HTTPS REST calls, not MolManager's client libraries. SQL through the standard library or an optional driver. |
 | Retrosynthesis | AiZynthFinder through its own Python interpreter (path in Settings). |
-| Metabolite prediction | BioTransformer (Java .jar, path in Settings). |
 | Sketcher | **Decided: needed.** A robust drawing sketcher that works with the table: edit a structure cell in place, draw a query for structure search and filters, and add new compounds. Plan: [SKETCHER_PLAN.md](SKETCHER_PLAN.md) (native, Ketcher rules as reference, verified; no MolManager iupac_* code). |
 
 **Tier 3: heavy add-ons (a separate optional install)**

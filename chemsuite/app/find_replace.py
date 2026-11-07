@@ -14,7 +14,14 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Find and Replace: a non-modal window that walks the table's matching cells."""
+"""Find and Replace: a non-modal window that walks the table's matching cells.
+
+**In** sets where it looks: all columns, the selected columns, the selected cells, or columns
+chosen from a list. The selection is read once, when the search starts, so moving the cursor
+from match to match does not shrink it. In regular-expression mode the replacement can use the
+groups (``$1`` or ``\\1``, ``${name}`` or ``\\g<name>``); a reference to a group the expression
+does not have is reported before anything is replaced.
+"""
 
 from __future__ import annotations
 
@@ -31,13 +38,23 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from chemsuite.core.table import Changed
-from chemsuite.core.table.search import Matches, Query, find, replace_all, replace_cell
+from chemsuite.core.table.search import (
+    Cells,
+    Matches,
+    Query,
+    find,
+    replace_all,
+    replace_cell,
+    searchable_columns,
+)
 
 from .table_view import TableView
 
@@ -54,6 +71,8 @@ class FindReplaceDialog(QDialog):
         self.table = view.table_model.table
         self._matches: Matches | None = None
         self._scope_columns: list[str] | None = None
+        self._scope_cells: dict[str, np.ndarray] | None = None
+        self.chosen: list[str] = []
 
         self.find_edit = QLineEdit()
         self.replace_edit = QLineEdit()
@@ -64,6 +83,20 @@ class FindReplaceDialog(QDialog):
         self.scope = QComboBox()
         self.scope.addItem("All columns", "all")
         self.scope.addItem("Selected columns", "selected")
+        self.scope.addItem("Selected cells", "cells")
+        self.scope.addItem("Chosen columns", "chosen")
+        self.columns_button = QToolButton()
+        self.columns_button.setText("Columns…")
+        self.columns_button.setToolTip("The columns to search in")
+        self.columns_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.columns_menu = QMenu(self)
+        self.columns_menu.aboutToShow.connect(self._fill_columns_menu)
+        self.columns_button.setMenu(self.columns_menu)
+        self.columns_button.setVisible(False)
+        self.replace_edit.setToolTip(
+            "In regular-expression mode, $1 or \\1 is the first group, ${name} or \\g<name> "
+            "a named one, and $$ a dollar sign."
+        )
         self.hidden = QCheckBox("Replace All includes hidden rows")
         self.status = QLabel(" ")
 
@@ -71,7 +104,10 @@ class FindReplaceDialog(QDialog):
         form.addRow("Find:", self.find_edit)
         form.addRow("Replace with:", self.replace_edit)
         form.addRow("Match:", self.mode)
-        form.addRow("In:", self.scope)
+        scope_row = QHBoxLayout()
+        scope_row.addWidget(self.scope, 1)
+        scope_row.addWidget(self.columns_button)
+        form.addRow("In:", scope_row)
         options = QHBoxLayout()
         options.addWidget(self.case)
         options.addWidget(self.hidden)
@@ -101,9 +137,12 @@ class FindReplaceDialog(QDialog):
             self.find_edit.textChanged,
             self.mode.currentIndexChanged,
             self.case.toggled,
-            self.scope.currentIndexChanged,
         ):
             signal.connect(self._invalidate)
+        self.scope.currentIndexChanged.connect(self.rescope)
+        self.scope.currentIndexChanged.connect(
+            lambda _i: self.columns_button.setVisible(self.scope.currentData() == "chosen")
+        )
         self.previous_button.clicked.connect(lambda: self.find_next(backwards=True))
         self.next_button.clicked.connect(lambda: self.find_next())
         self.replace_button.clicked.connect(self.replace_one)
@@ -129,7 +168,10 @@ class FindReplaceDialog(QDialog):
         return query
 
     def _columns(self) -> list[str] | None:
-        if self.scope.currentData() != "selected":
+        scope = self.scope.currentData()
+        if scope == "chosen":
+            return [name for name in self.table.column_names if name in self.chosen]
+        if scope != "selected":
             return None
         if self._scope_columns is None:  # freeze the scope while walking the matches
             model = self.view.table_model
@@ -137,18 +179,55 @@ class FindReplaceDialog(QDialog):
             self._scope_columns = [n for n in self.table.column_names if n in selected]
         return self._scope_columns
 
+    def _cells(self) -> Cells | None:
+        """The selected cells, by column, when the scope is the selection (read once)."""
+        if self.scope.currentData() != "cells":
+            return None
+        if self._scope_cells is None:
+            self._scope_cells = self.view.selected_cells_by_column()
+        return self._scope_cells
+
     def matches(self) -> Matches | None:
         if self._matches is None:
             query = self.query()
             if query is None:
                 return None
-            self._matches = find(self.table, query, self._columns())
+            self._matches = find(self.table, query, self._columns(), within=self._cells())
         return self._matches
 
     def _invalidate(self, *_args) -> None:
+        """The query changed. The scope stays: walking the matches moves the selection."""
         self._matches = None
-        self._scope_columns = None
         self._say(" ")
+
+    def rescope(self, *_args) -> None:
+        """Read the selection afresh (the In choice changed, or the window was reopened)."""
+        self._scope_columns = None
+        self._scope_cells = None
+        self._invalidate()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.rescope()
+
+    def set_chosen(self, names: list[str]) -> None:
+        """Search in *names* (the Chosen columns scope)."""
+        self.chosen = [name for name in names if name in self.table]
+        self.scope.setCurrentIndex(self.scope.findData("chosen"))
+        self._invalidate()
+
+    def _fill_columns_menu(self) -> None:
+        menu = self.columns_menu
+        menu.clear()
+        for name in searchable_columns(self.table):
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(name in self.chosen)
+            action.toggled.connect(lambda on, n=name: self._toggle_column(n, on))
+
+    def _toggle_column(self, name: str, on: bool) -> None:
+        chosen = [n for n in self.chosen if n != name] + ([name] if on else [])
+        self.set_chosen(chosen)
 
     def _on_table_event(self, event: object) -> None:
         if isinstance(event, Changed):
@@ -202,10 +281,16 @@ class FindReplaceDialog(QDialog):
         self.view.scrollTo(target, QAbstractItemView.ScrollHint.EnsureVisible)
 
     # -- replacing ----------------------------------------------------------------------------
+    def _replacement_ok(self, query: Query) -> bool:
+        problem = query.replacement_problem(self.replace_edit.text())
+        if problem:
+            self._say(problem)
+        return not problem
+
     def replace_one(self) -> None:
         query = self.query()
         matches = self.matches()
-        if query is None or matches is None:
+        if query is None or matches is None or not self._replacement_ok(query):
             return
         index = self._current_match(matches)
         if index is None:  # not on a match yet: go to the next one first
@@ -217,7 +302,7 @@ class FindReplaceDialog(QDialog):
 
     def replace_everything(self) -> int:
         query = self.query()
-        if query is None:
+        if query is None or not self._replacement_ok(query):
             return 0
         changed = replace_all(
             self.table,
@@ -225,6 +310,7 @@ class FindReplaceDialog(QDialog):
             self.replace_edit.text(),
             self._columns(),
             shown_only=not self.hidden.isChecked(),
+            within=self._cells(),
         )
         self._say(f"Replaced in {changed:,} cell(s)" if changed else "Nothing to replace")
         return changed

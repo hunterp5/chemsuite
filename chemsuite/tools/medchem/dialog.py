@@ -175,7 +175,6 @@ class MedChemPlotDialog(QDialog):
             ctx.apply_results(
                 {title_of(k): (oids[:finished], columns[k]) for k in keys},
                 label=f"Calculate {len(keys)} descriptor(s)",
-                overwrite=True,
             )
             if finished == len(oids):  # classify and plot only a complete set
                 self.finish()
@@ -199,7 +198,7 @@ class MedChemPlotDialog(QDialog):
             result = (
                 ms.boiled_egg(x, y) if self.kind_key == "boiled_egg" else ms.golden_triangle(x, y)
             )
-        names = ctx.apply_results({kind.column: (oids, result)}, label=kind.title, overwrite=True)
+        names = ctx.apply_results({kind.column: (oids, result)}, label=kind.title)
         column = names[kind.column]
         self.plot = ctx.open_tool("scatter")
         self.plot.set_spec(x=x_name, y=y_name, color=column, guide=self.kind_key)

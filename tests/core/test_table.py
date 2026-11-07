@@ -403,6 +403,18 @@ def test_apply_results_overwrite_updates_existing_columns() -> None:
     assert [table.cell("MW", o) for o in oids] == ["1", "2", "3"]
 
 
+def test_apply_results_overwrites_only_the_named_columns() -> None:
+    table = Table()
+    table.add_rows({"MW": ["1", "2"], "Notes": ["a", "b"]}, undoable=False)
+    oids = table.oids
+    names = table.apply_results(
+        {"MW": (oids, [10, 20]), "Notes": (oids, ["x", "y"])}, label="r", overwrite={"MW"}
+    )
+    assert names == {"MW": "MW", "Notes": "Notes (2)"}
+    assert [table.cell("MW", o) for o in oids] == ["10", "20"]
+    assert [table.cell("Notes", o) for o in oids] == ["a", "b"]
+
+
 def test_apply_results_never_overwrites_a_structure_column() -> None:
     from chemsuite.core.table.columns import StructureColumn
 
@@ -430,3 +442,22 @@ def test_apply_results_position() -> None:
     table.add_rows({"A": [1], "B": [2]}, undoable=False)
     table.apply_results({"N": (table.oids, [3])}, label="r", position=1)
     assert table.column_names == ["A", "N", "B"]
+
+
+def test_unique_names_share_one_suffix() -> None:
+    t = Table()
+    t.add_rows({"ID": ["A"], "pKa": ["1"], "cLogD (2)": ["2"]}, undoable=False)
+    assert t.unique_names(["x", "y"]) == ["x", "y"]
+    # one name taken: both get (2); "cLogD (2)" is taken too, so the run moves on to (3)
+    assert t.unique_names(["pKa", "cLogD"]) == ["pKa (3)", "cLogD (3)"]
+    assert t.unique_names(["pKa", "other"]) == ["pKa (2)", "other (2)"]
+
+
+def test_duplicate_rows_copies_cells_and_undoes() -> None:
+    table = Table()
+    table.add_rows({"ID": ["A", "B"], "pIC50": ["5", "6"]}, undoable=False)
+    copies = table.duplicate_rows(table.oids[::-1])
+    assert [table.cell("ID", int(o)) for o in copies] == ["B", "A"]
+    assert table.cell("pIC50", int(copies[1])) == "5" and len(table) == 4
+    table.undo()
+    assert len(table) == 2

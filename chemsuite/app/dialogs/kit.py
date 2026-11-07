@@ -26,8 +26,8 @@ A tool dialog is a :class:`ToolDialog`:
   window title names the tool) and no explanatory text: no sentence describing what will
   happen, no heads-up notes. Explanations go in tooltips.
 
-Shared controls keep tools alike: :class:`RowsChoice` (All · Shown · Selected, with counts) and
-:class:`OutputChoice` (If it exists: Replace it · Add a new column).
+Shared controls keep tools alike: :class:`RowsChoice` (All · Shown · Selected, with counts).
+Results never replace an existing column: a taken name gets a new column, “Name (2)”.
 
 A subclass builds its sections in ``__init__``, calls :meth:`ToolDialog.refresh` when anything
 changes, and overrides :meth:`~ToolDialog.problem`, :meth:`~ToolDialog.verb` and
@@ -80,24 +80,23 @@ def muted(label: QLabel) -> None:
 
 
 class Section(QWidget):
-    """A titled group of fields: a small capitalised heading and rule over a form.
+    """A titled group of fields: a heading set into a hairline divider, over a form.
 
-    Explanations are tooltips on the field and its label, not text in the dialog, so the
-    dialog stays compact.
+    The title (as written, at the normal size, semibold, as a pane's section headings are)
+    interrupts the divider: the hairline runs from the title to the dialog's edge on the same
+    line, so a section costs no extra row. Explanations are tooltips on the field and its
+    label, not text in the dialog, so the dialog stays compact.
     """
 
     def __init__(self, title: str, *, collapsed: bool | None = None) -> None:
         """*collapsed* True or False makes the section foldable (folded or open to start);
         a foldable section holds optional settings whose defaults suit most runs."""
         super().__init__()
-        self.title = QLabel(title.upper())
+        self.title = QLabel(title)
         font = self.title.font()
-        font.setPointSizeF(max(8.0, font.pointSizeF() - 1.5))
         font.setWeight(QFont.Weight.DemiBold)
-        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.8)
         self.title.setFont(font)
-        muted(self.title)
-        rule = QFrame()
+        rule = QFrame()  # runs on from the title to the edge, on the title's line
         rule.setFrameShape(QFrame.Shape.HLine)
         rule.setFrameShadow(QFrame.Shadow.Plain)
         rule.setEnabled(False)
@@ -128,7 +127,7 @@ class Section(QWidget):
         self.form.setVerticalSpacing(7)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 6, 0, 2)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
         layout.addLayout(heading)
         self.body = QWidget()
         self.body.setLayout(self.form)
@@ -338,16 +337,6 @@ class RowsChoice(Segmented):
         return {"all": "", "shown": "shown ", "selected": "selected "}[self.value()]
 
 
-class OutputChoice(Segmented):
-    """If the result column already exists: replace it, or add a new column beside it."""
-
-    def __init__(self) -> None:
-        super().__init__((("replace", "Replace it"), ("new", "Add a new column")), "replace")
-
-    def overwrite(self) -> bool:
-        return self.value() == "replace"
-
-
 class ToolDialog(QDialog):
     """A tool's dialog: sections and footer (see the module notes)."""
 
@@ -473,7 +462,6 @@ class ToolDialog(QDialog):
 __all__ = [
     "FIELD_WIDTH",
     "LABEL_WIDTH",
-    "OutputChoice",
     "RowsChoice",
     "Section",
     "Segmented",

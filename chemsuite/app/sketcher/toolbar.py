@@ -152,6 +152,21 @@ def _text(text: str) -> Callable[[QPainter], None]:
     return draw
 
 
+def _library(p: QPainter) -> None:
+    """A small hexagon beside a stack of three more: the template library."""
+    r = 4.2
+    for cx, cy in ((7.0, 10.0),):
+        points = [
+            QPointF(cx + r * math.cos(math.pi / 6 + k * math.pi / 3),
+                    cy + r * math.sin(math.pi / 6 + k * math.pi / 3))
+            for k in range(6)
+        ]  # fmt: skip
+        for a, b in zip(points, points[1:] + points[:1], strict=True):
+            p.drawLine(a, b)
+    for y in (5.5, 10.0, 14.5):
+        p.drawLine(QPointF(13.5, y), QPointF(17.0, y))
+
+
 def _charge(sign: int) -> Callable[[QPainter], None]:
     """A circled plus or minus, drawn as strokes like the other tools."""
 
@@ -272,6 +287,7 @@ class SketchToolBar(QWidget):
     ``picked`` carries a new tool instance."""
 
     picked = Signal(object)
+    library_requested = Signal()  # the ring bar's last button: the template library
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -299,6 +315,14 @@ class SketchToolBar(QWidget):
                 _ring(len(template.atoms), template.aromatic),
                 lambda t=template: tools.TemplateTool(t),
             )
+        bottom.addSpacing(10)
+        self._add(
+            bottom,
+            "library",
+            "Template Library: rings and ring systems (Shift+T)",
+            _library,
+            None,
+        )
         bottom.addStretch(1)
         for symbol in ATOMS:
             self._add(
@@ -325,7 +349,10 @@ class SketchToolBar(QWidget):
         button.setToolTip(tip)
         button.setIconSize(QSize(int(GRID), int(GRID)))
         button.setObjectName(f"sketch-tool-{key}")
-        button.clicked.connect(lambda _c=False, k=key: self.picked.emit(self._factories[k]()))
+        if factory is None:  # opens a window rather than picking a tool directly
+            button.clicked.connect(lambda _c=False: self.library_requested.emit())
+        else:
+            button.clicked.connect(lambda _c=False, k=key: self.picked.emit(self._factories[k]()))
         self.group.addButton(button)
         layout.addWidget(button)
         self.buttons[key] = button
@@ -345,6 +372,11 @@ class SketchToolBar(QWidget):
 
     def show_tool(self, tool: tools.Tool) -> None:
         button = self.buttons.get(tool_key(tool))
+        if button is None and isinstance(tool, tools.TemplateTool):
+            from chemsuite.sketch.library import BY_NAME
+
+            if tool.template.name in BY_NAME:  # drawing with a library template
+                button = self.buttons["library"]
         if button is not None:
             button.setChecked(True)
 

@@ -503,6 +503,11 @@ class PanelHeader(QWidget):
             fill_arrange_menu(self.arrange_menu, window, self.dock)
 
     def add_tools(self, toolbar: QWidget) -> None:
+        """Put a pane's own toolbar in the header (replacing one shown before, e.g. when the
+        Filters pane is rebuilt for another document)."""
+        if self.toolbar is not None and self.toolbar is not toolbar:
+            self.row.removeWidget(self.toolbar)
+            self.toolbar.setParent(None)
         self.toolbar = toolbar
         self.row.insertWidget(self.tools_at, toolbar)
 

@@ -68,7 +68,7 @@ class StructureCard(FilterCard):
         self._searched: StructureQuery | None = None  # the query _hits belong to
         self._highlighting = False
         self.highlight_matches = True
-        self.query = QueryInput()
+        self.query = QueryInput(compact=True)
         self.mode = QComboBox()
         for key, title in MODES.items():
             self.mode.addItem(title, key)
@@ -82,8 +82,10 @@ class StructureCard(FilterCard):
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color: palette(placeholder-text)")
+        self.status.hide()  # shown only with something to say
         options = QHBoxLayout()
         options.setContentsMargins(0, 0, 0, 0)
+        options.setSpacing(8)
         options.addWidget(self.mode, 1)
         options.addWidget(self.threshold)
         options.addWidget(self.stereo)
@@ -147,7 +149,7 @@ class StructureCard(FilterCard):
         except QueryError as err:
             self._set_hits(None, None, str(err))
             return
-        self.status.setText("Searching…")
+        self._set_status("Searching…")
         holder: list[Job] = []
 
         def done(oids: np.ndarray, result: SearchResult) -> None:
@@ -160,12 +162,16 @@ class StructureCard(FilterCard):
         self.job = self.searcher.start(self.column, query, done)
         holder.append(self.job)
 
+    def _set_status(self, text: str) -> None:
+        self.status.setText(text)
+        self.status.setVisible(bool(text))
+
     def _set_hits(
         self, hits: frozenset[int] | None, query: StructureQuery | None, status: str
     ) -> None:
         self._hits = hits
         self._searched = query
-        self.status.setText(status)
+        self._set_status(status)
         self._update_highlight()
         self.changed.emit()
 

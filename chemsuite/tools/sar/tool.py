@@ -57,7 +57,7 @@ TOOLS = (
     Tool(
         id="rgroups",
         title="R-Group Decomposition…",
-        menu=MENU,
+        menu=("Chemistry",),
         open=_dialog("rgroup_dialog", "RGroupDialog"),
         requires=("rdkit",),
         needs_structures=True,
@@ -83,7 +83,7 @@ TOOLS = (
     ),
     Tool(
         id="hansch",
-        title="Hansch Analysis…",
+        title="Hansch…",
         menu=MENU,
         open=_dialog("hansch_ui", "HanschDialog"),
         restore=_restore("hansch_ui"),
@@ -93,7 +93,7 @@ TOOLS = (
     ),
     Tool(
         id="mmp",
-        title="Matched Molecular Pairs…",
+        title="Matched Pairs…",
         menu=MENU,
         open=_dialog("mmp_ui", "MmpDialog"),
         restore=_restore("mmp_ui"),
@@ -103,7 +103,7 @@ TOOLS = (
     ),
     Tool(
         id="sali",
-        title="Activity Cliffs (SALI)…",
+        title="Activity Cliffs…",
         menu=MENU,
         open=_dialog("sali_ui", "SaliDialog"),
         restore=_restore("sali_ui"),
