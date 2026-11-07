@@ -40,6 +40,7 @@ from PySide6.QtGui import QColor
 from chemsuite.core.table import NUMBER, Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import REACTION, STRUCTURE, NumberColumn, ParsedColumn
+from chemsuite.core.table.summary import column_summary, format_title
 
 OID_ROLE = Qt.ItemDataRole.UserRole + 1
 KIND_ROLE = Qt.ItemDataRole.UserRole + 2
@@ -148,6 +149,8 @@ class TableModel(QAbstractTableModel):
         name = self._columns[index.column()]
         column = self._table.column(name)
         slot = int(self._slots[index.row()])
+        if role == Qt.ItemDataRole.EditRole and isinstance(column, NumberColumn):
+            return column.plain(slot)  # "45.7%" or "1,234" would edit as text
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             return column.display(slot)
         if role == Qt.ItemDataRole.TextAlignmentRole:
@@ -189,8 +192,9 @@ class TableModel(QAbstractTableModel):
                 lines = [name, f"{self._table.kind(name)} column"]
                 if style.log10:
                     lines.append("Values converted to log₁₀ (Logarithmic)")
-                if style.precision is not None:
-                    lines.append(f"Shown with {style.precision} decimal place(s)")
+                if style.formats_numbers:
+                    lines.append(f"Shown as {format_title(style)}")
+                lines += ["", *column_summary(self._table.column(name))]
                 return "\n".join(lines)
             if role == KIND_ROLE:
                 return self._table.kind(name)

@@ -291,6 +291,7 @@ class TableView(QTableView):
         self._widths: dict[str, int] = {}
         self._kinds: dict[str, str] = {}
         self._structure_row_height = STRUCTURE_ROW_HEIGHT
+        self._frozen = None  # the FrozenView over the left edge, made when first needed
         self.setModel(model)
         self.setItemDelegate(CellDelegate(images, self))
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -415,6 +416,8 @@ class TableView(QTableView):
                 self.setColumnWidth(col, min(self.columnWidth(col), MAX_AUTO_COLUMN_WIDTH))
         self._kinds = {name: table.kind(name) for name in table.column_names}
         self._sync_sort_indicator()
+        if self._frozen is not None:
+            self._frozen.refresh()
 
     def _on_header_data_changed(self, orientation: Qt.Orientation, *_args) -> None:
         if orientation == Qt.Orientation.Horizontal:  # e.g. a column changed kind
@@ -650,6 +653,60 @@ class TableView(QTableView):
     def mousePressEvent(self, event) -> None:
         self._column_mode = False  # a cell click starts an ordinary selection
         super().mousePressEvent(event)
+
+    def start_column_selection(self) -> None:
+        """A header press (here or on the frozen columns' header): whole columns follow."""
+        self._column_mode = True
+
+    def start_cell_selection(self) -> None:
+        self._column_mode = False
+
+    # -- frozen columns -----------------------------------------------------------------------
+    @property
+    def frozen_count(self) -> int:
+        """How many columns, from the left, stay put while the rest scroll sideways."""
+        return self._frozen.count if self._frozen is not None else 0
+
+    def set_frozen(self, count: int) -> None:
+        """Freeze the first *count* columns (0 unfreezes)."""
+        count = max(0, min(count, self.table_model.columnCount()))
+        if count == self.frozen_count:
+            return
+        if self._frozen is None:
+            from .frozen_columns import FrozenView
+
+            self._frozen = FrozenView(self)
+        self._frozen.set_count(count)
+        self.horizontalScrollBar().setValue(0)
+
+    def updateGeometries(self) -> None:
+        super().updateGeometries()
+        if self._frozen is not None:
+            self._frozen.place()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._frozen is not None:
+            self._frozen.place()
+
+    def scrollTo(self, index, hint=QAbstractItemView.ScrollHint.EnsureVisible) -> None:
+        """Scroll as usual, then make sure a cell right of the frozen part is not under it.
+
+        A frozen cell is always in view sideways, so going to one only scrolls up or down.
+        """
+        frozen = self.frozen_count
+        sideways = self.horizontalScrollBar().value()
+        super().scrollTo(index, hint)
+        if not frozen or not index.isValid():
+            return
+        if index.column() < frozen:
+            self.horizontalScrollBar().setValue(sideways)
+            return
+        covered = self._frozen.frozen_width()
+        left = self.columnViewportPosition(index.column())
+        if left < covered:
+            bar = self.horizontalScrollBar()
+            bar.setValue(bar.value() - (covered - left))
 
     def contextMenuEvent(self, event) -> None:
         index = self.indexAt(event.pos())

@@ -355,6 +355,8 @@ class MainWindow(QMainWindow):
             add_filter=self.filter_column,
             split=self.split_column,
             join=self.join_columns,
+            freeze=lambda count: self.view.set_frozen(count),
+            frozen=lambda: self.view.frozen_count,
         )
         self._lists = ListActions(
             self,

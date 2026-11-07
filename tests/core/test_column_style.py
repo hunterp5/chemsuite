@@ -192,3 +192,35 @@ def test_bad_values_are_rejected():
         ColourRule(mode="rainbow")
     with pytest.raises(ValueError):
         ColumnStyle(precision=13)
+
+
+def test_number_formats_show_every_value_the_columns_way():
+    from chemsuite.core.table.style import format_with
+
+    assert format_with(1234567.891, "thousands", 2) == "1,234,567.89"
+    assert format_with(0.000123456, "scientific", 2) == "1.23e-04"
+    assert format_with(1234.5678, "significant", 3) == "1230"
+    assert format_with(0.0012345, "significant", 2) == "0.0012"
+    assert format_with(0.4567, "percent", 1) == "45.7%"
+    assert format_with(-0.0001, "thousands", 2) == "0.00"  # never -0.00
+    table = _table()
+    table.set_style("IC50", ColumnStyle(number_format="percent"))  # default 1 decimal
+    shown = [table.cell("IC50", int(o)) for o in table.oids]
+    assert all(text.endswith("%") for text in shown if text)
+    with pytest.raises(ValueError):
+        ColumnStyle(number_format="roman")
+    with pytest.raises(ValueError):
+        ColumnStyle(precision=0, number_format="significant")
+
+
+def test_number_format_is_saved_and_searched():
+    from chemsuite.core.table.search import Query, find
+
+    table = _table()
+    style = ColumnStyle(precision=1, number_format="percent")
+    table.set_style("IC50", style)
+    assert ColumnStyle.from_json(style.to_json()) == style
+    assert ColumnStyle.from_json({"number_format": "nonsense"}).number_format == "fixed"
+    assert len(find(table, Query("%"), ["IC50"])) == sum(
+        1 for o in table.oids if table.cell("IC50", int(o))
+    )

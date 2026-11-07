@@ -31,10 +31,8 @@ from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox, QWidget
 
 from chemsuite.core.table import NUMBER, TEXT, Table
 from chemsuite.core.table.columns import REACTION, STRUCTURE, to_number
-from chemsuite.core.table.style import MAX_PRECISION
 
 KIND_TITLES = {TEXT: "Text", NUMBER: "Number", STRUCTURE: "Structure", REACTION: "Reaction"}
-AS_TYPED = "As typed"
 
 
 class ColumnActions:
@@ -46,6 +44,8 @@ class ColumnActions:
         add_filter: Callable[[str], object] | None = None,
         split: Callable[[str], object] | None = None,
         join: Callable[[list[str]], object] | None = None,
+        freeze: Callable[[int], object] | None = None,
+        frozen: Callable[[], int] = lambda: 0,
     ) -> None:
         self._parent = parent
         self._table = table
@@ -53,6 +53,8 @@ class ColumnActions:
         self._add_filter = add_filter
         self._split = split
         self._join = join
+        self._freeze = freeze
+        self._frozen = frozen
 
     # -- sorting ------------------------------------------------------------------------------
     def sort(self, name: str, ascending: bool) -> None:
@@ -138,28 +140,14 @@ class ColumnActions:
         )
         return True
 
-    def set_precision(self, name: str) -> bool:
-        """Ask how many decimals to show for every number in *name* (display only)."""
-        column = self._table.column(name)
-        items = [AS_TYPED, *map(str, range(MAX_PRECISION + 1))]
-        current = AS_TYPED if column.style.precision is None else str(column.style.precision)
-        choice, ok = QInputDialog.getItem(
-            self._parent,
-            "Precision",
-            f"Decimal places shown in “{name}”:",
-            items,
-            items.index(current),
-            False,
-        )
-        if not ok:
-            return False
-        precision = None if choice == AS_TYPED else int(choice)
-        if precision == column.style.precision:
-            return False
-        self._table.set_style(
-            name, column.style.with_(precision=precision), label=f"Precision of {name}"
-        )
-        return True
+    def number_format(self, name: str):
+        """Open Number Format… for *name* (display only; one undoable step on OK)."""
+        from .number_format import NumberFormatDialog
+
+        dialog = NumberFormatDialog(self._parent, self._table, name)
+        dialog.finished.connect(lambda _r: dialog.deleteLater())
+        dialog.open()
+        return dialog
 
     def colour(self, name: str):
         from .column_colour import ColumnColourDialog
@@ -223,6 +211,17 @@ class ColumnActions:
         if self._add_filter is not None:
             add_filter = self._add_filter
             add("Filter This Column", lambda: add_filter(name))
+        if self._freeze is not None:
+            freeze = self._freeze
+            frozen = self._frozen()
+            through = add("Freeze Columns up to Here", lambda: freeze(position + 1))
+            through.setToolTip(
+                "Keep this column and the ones left of it in place while the rest scroll "
+                "sideways. Drag columns such as ID and Structure to the front first."
+            )
+            through.setEnabled(frozen != position + 1)
+            if frozen:
+                add("Unfreeze Columns", lambda: freeze(0))
         menu.addSeparator()
 
         add("Rename…", lambda: self.rename(name))
@@ -254,11 +253,12 @@ class ColumnActions:
             self.log_problem(name)
             or "Convert the values to log₁₀; choose again to convert them back. You can undo it."
         )
-        precision = add("Precision…", lambda: self.set_precision(name), number)
-        precision.setToolTip(
-            "Decimal places shown for every number; the stored values are not rounded."
+        formatting = add("Number Format…", lambda: self.number_format(name), number)
+        formatting.setToolTip(
+            "Decimals, thousands separator, scientific, significant figures or percent; the "
+            "stored values are not rounded."
             if number
-            else "Only Number columns have a precision."
+            else "Only Number columns have a number format."
         )
         drawn = table.kind(name) in (STRUCTURE, REACTION)
         colour = add("Colour Column…", lambda: self.colour(name), not drawn)

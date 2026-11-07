@@ -342,6 +342,8 @@ def capture(window: MainWindow) -> dict[str, Any]:
     widths = window.view.column_widths()
     if widths:
         out["widths"] = widths
+    if window.view.frozen_count:
+        out["frozen"] = window.view.frozen_count
     search = window.search
     if search.is_open or search.edit.text() or search.history:
         out["search"] = {
@@ -365,6 +367,9 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
         window.view.set_column_widths(
             {str(k): int(v) for k, v in widths.items() if isinstance(v, int | float) and v > 0}
         )
+    frozen = saved.get("frozen")
+    if isinstance(frozen, int) and not isinstance(frozen, bool) and frozen > 0:
+        window.view.set_frozen(frozen)
     search = saved.get("search")
     if isinstance(search, dict):
         bar = window.search

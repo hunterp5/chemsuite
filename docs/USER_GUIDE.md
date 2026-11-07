@@ -245,14 +245,32 @@ Right-click a column header for:
 - **Logarithmic (log₁₀)** (Number columns). Converts the values to log₁₀; choose it again to
   convert them back (10ˣ). The header shows "(log₁₀)". It needs every value above zero. One
   step you can undo.
-- **Precision…** (Number columns). The number of decimals shown for every value. The stored
-  values are not rounded, so sorting, filters and tools still use the full numbers. "As typed"
-  goes back to each cell's own format.
+- **Number Format…** (Number columns). How every value is shown:
+
+  | Format | 1234.5678 (or 0.4567 for Percent) with 2 digits |
+  |---|---|
+  | As typed | each cell as it was entered |
+  | Fixed decimals | 1234.57 |
+  | Thousands separator | 1,234.57 |
+  | Scientific | 1.23e+03 |
+  | Significant figures | 1200 |
+  | Percent | 45.67% |
+
+  The stored values are not rounded, so sorting, filters and tools still use the full numbers,
+  and editing a cell starts from the number as typed. The quick search and Find match what the
+  cells show.
 - **Colour Column…** Colours cell backgrounds: **Low → high** or **Low → middle → high**
   gradients for numbers, or **One colour per value** for any column (the same value always gets
   the same colour). Range ends left empty follow the data. Choose **None** to remove the
   colours.
-- Precision, Logarithmic and colours are saved in the document and can be undone.
+- **Freeze Columns up to Here** keeps that column and every column left of it in place while
+  the rest of the table scrolls sideways; **Unfreeze Columns** lets them scroll again. Drag the
+  columns you want to keep in view (ID, Structure) to the front first. Frozen columns are saved
+  with the document.
+- Number formats, Logarithmic and colours are saved in the document and can be undone.
+- **Hover over a column's header** for a summary of the column: how many cells are filled and
+  blank, and for numbers the range, mean ± standard deviation and median, or for text the
+  number of distinct values and the commonest one.
 - **Column Type ▸ Text / Number / Structure / Reaction.** Converting to Number warns you if
   some values are not numbers; those cells would be cleared. Converting to Structure or
   Reaction reads each cell's text; cells that do not read are kept and marked invalid.

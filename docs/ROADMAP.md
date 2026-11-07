@@ -168,11 +168,11 @@ modified.
 
 ## 5. Improving the other existing tools
 
-- **Table**
+- ✅ **Table** (done 2026-11-07)
   - Conditional cell colouring: colour by value or category, like MolManager's
     `column_color.py`.
-  - Per-column number formats.
-  - Frozen ID and structure columns.
+  - Per-column number formats (fixed, thousands, scientific, significant figures, percent).
+  - Frozen columns (the first columns, up to the one chosen).
   - Column statistics in the header tooltip.
 - **Structures**
   - Align all drawings to a common core (MolManager's "Align to Substructure").
