@@ -344,6 +344,8 @@ def capture(window: MainWindow) -> dict[str, Any]:
         out["widths"] = widths
     if window.view.frozen_count:
         out["frozen"] = window.view.frozen_count
+    if window.view.frozen_row_count:
+        out["frozen_rows"] = window.view.frozen_row_count
     alignments = window.view.alignments()
     if alignments:
         out["alignments"] = alignments
@@ -373,6 +375,9 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
     frozen = saved.get("frozen")
     if isinstance(frozen, int) and not isinstance(frozen, bool) and frozen > 0:
         window.view.set_frozen(frozen)
+    frozen_rows = saved.get("frozen_rows")
+    if isinstance(frozen_rows, int) and not isinstance(frozen_rows, bool) and frozen_rows > 0:
+        window.view.set_frozen_rows(frozen_rows)
     alignments = saved.get("alignments")
     if isinstance(alignments, dict):
         table = window.workspace.table

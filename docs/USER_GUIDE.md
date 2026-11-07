@@ -293,6 +293,16 @@ From Tools ▸ Table:
 ### Rows
 
 - **Delete Rows (Ctrl+Backspace)** deletes the selected rows. You can undo it.
+- **The row numbers** on the left are kept narrow: past 999 they are shortened (1.2k, 12k,
+  1.2M); point at one for the full number. Click a row number to select the row; drag down the
+  numbers for several.
+- **Right-click a row number** for:
+  - **Delete Rows** and **Duplicate Rows** (for the selected rows; the copies are added at the
+    end, or where the sort puts them, and are selected);
+  - **Freeze Rows up to Here**: that row and the ones above it stay in place while the rest
+    scroll up and down (with frozen columns as well, the corner stays put). It freezes the
+    rows as they are shown, so re-sorting changes which rows those are. **Unfreeze Rows** lets
+    them scroll again. Frozen rows are saved with the document.
 - **Data ▸ Search ▸ Show All Rows** clears every filter, search and "show only" at once.
 - **File ▸ New from Shown Rows** puts exactly the rows you can see, in their shown
   order, into a new untitled document. Column types are kept.
@@ -602,7 +612,9 @@ structure.
 
 ### Selection
 
-- Click, Shift-click and Ctrl-click rows in the table.
+- Click, Shift-click and Ctrl-click cells, or click the row numbers for whole rows. Every row
+  with a selected cell counts as selected; a selection of cells stays a selection of cells
+  when the table is sorted or filtered.
   - **Select All (Ctrl+A)**, **Invert Selection (Ctrl+I)**, **Clear Selection
     (Ctrl+Shift+A)**.
 - The selection is shared by the table, the plots and the tools:

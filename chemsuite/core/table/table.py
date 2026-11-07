@@ -375,6 +375,16 @@ class Table:
         snapshot = {name: col.take(slots) for name, col in self._columns.items()}
         self._execute(Command(label, [DeleteRows(oids, snapshot)]))
 
+    def duplicate_rows(
+        self, oids: Sequence[int] | np.ndarray, *, label: str = "Duplicate rows"
+    ) -> np.ndarray:
+        """Add a copy of each row in *oids* (in that order) as new rows; returns their oids."""
+        slots = self.slots_of(np.asarray(oids, dtype=np.int64))
+        if not len(slots):
+            return np.empty(0, dtype=np.int64)
+        copies = {name: column.take(slots) for name, column in self._columns.items()}
+        return self.add_rows(copies, label=label)
+
     def set_cells(
         self,
         name: str,

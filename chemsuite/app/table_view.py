@@ -41,6 +41,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontMetrics,
     QGuiApplication,
     QImage,
     QMouseEvent,
@@ -277,6 +278,8 @@ class TableView(QTableView):
 
     #: (column index, global position) for a right-click on the horizontal header
     headerMenuRequested = Signal(int, QPoint)
+    #: (display row, global position) for a right-click on the row header
+    rowHeaderMenuRequested = Signal(int, QPoint)
     #: (cell, global position) for a right-click on a cell
     cellMenuRequested = Signal(QModelIndex, QPoint)
     #: (cell, starting text or "" to keep the cell's) when a structure cell is to be edited
@@ -314,6 +317,8 @@ class TableView(QTableView):
         self._kinds: dict[str, str] = {}
         self._structure_row_height = STRUCTURE_ROW_HEIGHT
         self._frozen = None  # the FrozenView over the left edge, made when first needed
+        self._frozen_rows = None  # the FrozenRowsView over the top, made when first needed
+        self._frozen_corner = None  # where the two meet
         self.setModel(model)
         self.setItemDelegate(CellDelegate(images, self))
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -333,8 +338,12 @@ class TableView(QTableView):
         # Row numbers: flat, muted, no per-row separators; one hairline against the cells.
         vertical.setStyleSheet(
             "QHeaderView::section { background: palette(window); color: palette(placeholder-text);"
-            " border: none; border-right: 1px solid palette(mid); padding: 0 6px 0 8px; }"
+            " border: none; border-right: 1px solid palette(mid); padding: 0 4px 0 2px; }"
         )
+        vertical.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        vertical.customContextMenuRequested.connect(self._on_row_header_menu)
+        self._cell_memory = None  # a cell selection kept across sorting and filtering
+        self._fit_row_header()
         horizontal = self.horizontalHeader()
         horizontal.setResizeContentsPrecision(200)  # never measure all 200k rows
         horizontal.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
@@ -354,6 +363,7 @@ class TableView(QTableView):
         )
 
         model.modelAboutToBeReset.connect(self._remember_anchor)
+        model.layoutAboutToBeChanged.connect(self._remember_cells)
         model.modelReset.connect(self._after_reset)
         model.layoutChanged.connect(self._restore_selection)
         model.layoutChanged.connect(self._sync_sort_indicator)
@@ -371,6 +381,7 @@ class TableView(QTableView):
             font != self.font() or appearance.structure_row_height != self._structure_row_height
         )
         self.setFont(font)
+        self._fit_row_header()
         self._structure_row_height = appearance.structure_row_height
         self.table_model.set_alignment(appearance.table_align_h, appearance.table_align_v)
         if changed:
@@ -405,8 +416,8 @@ class TableView(QTableView):
             return False
         alignments[column] = Alignment(core_text, core)
         self.viewport().update()
-        if self._frozen is not None:
-            self._frozen.viewport().update()
+        for overlay in self._overlays():
+            overlay.viewport().update()
         return True
 
     def alignments(self) -> dict[str, str]:
@@ -461,8 +472,8 @@ class TableView(QTableView):
                 self.setColumnWidth(col, min(self.columnWidth(col), MAX_AUTO_COLUMN_WIDTH))
         self._kinds = {name: table.kind(name) for name in table.column_names}
         self._sync_sort_indicator()
-        if self._frozen is not None:
-            self._frozen.refresh()
+        for overlay in self._overlays():
+            overlay.refresh()
 
     def _on_header_data_changed(self, orientation: Qt.Orientation, *_args) -> None:
         if orientation == Qt.Orientation.Horizontal:  # e.g. a column changed kind
@@ -495,6 +506,39 @@ class TableView(QTableView):
         name = self.table_model.column_name(logical)
         self._reveal = name
         QTimer.singleShot(0, lambda: self.table_model.table.move_column(name, new_visual))
+
+    # -- the row header -------------------------------------------------------------------------
+    def _fit_row_header(self) -> None:
+        """A narrow row header: a smaller font, four characters at most ("999", "1.2k")."""
+        header = self.verticalHeader()
+        font = QFont(self.font())
+        font.setPointSizeF(max(8.0, font.pointSizeF() - 2))
+        header.setFont(font)
+        width = QFontMetrics(font).horizontalAdvance("1.2k") + 8
+        header.setFixedWidth(width)
+
+    def _on_row_header_menu(self, pos: QPoint) -> None:
+        header = self.verticalHeader()
+        row = header.logicalIndexAt(pos)
+        if row >= 0:
+            self.request_row_menu(row, header.mapToGlobal(pos))
+
+    def request_row_menu(self, row: int, global_pos: QPoint) -> None:
+        """A right-click on row *row*'s number (here or on the frozen rows)."""
+        if row not in set(self.selected_whole_rows().tolist()):
+            self._column_mode = False
+            self.selectRow(row)  # a right-click on an unselected row picks that row
+        self.rowHeaderMenuRequested.emit(row, global_pos)
+
+    def selected_whole_rows(self) -> np.ndarray:
+        """Display rows selected from end to end (as a row-header click selects them)."""
+        last = self.table_model.columnCount() - 1
+        parts = [
+            np.arange(r.top(), r.bottom() + 1, dtype=np.int64)
+            for r in self.selectionModel().selection()
+            if r.left() == 0 and r.right() == last
+        ]
+        return np.unique(np.concatenate(parts)) if parts else np.empty(0, dtype=np.int64)
 
     def _on_header_menu(self, pos: QPoint) -> None:
         column = self.horizontalHeader().logicalIndexAt(pos)
@@ -639,9 +683,60 @@ class TableView(QTableView):
     def _restore_selection(self) -> None:
         if not self._selection.oids and self.whole_columns():
             return  # a column selection survives re-sorting
+        if self._restore_cells():
+            return
         self._apply_rows(self._rows_for(self._selection.oids))
 
+    def _remember_cells(self, *_args) -> None:
+        """Before rows move (sorting, filtering): note a selection of cells (not whole rows) by
+        oid and column, so it comes back as cells rather than as whole rows."""
+        self._cell_memory = None
+        model = self.table_model
+        last = model.columnCount() - 1
+        ranges = list(self.selectionModel().selection())
+        if self._column_mode or not ranges or last < 0:
+            return
+        if all(r.left() == 0 and r.right() == last for r in ranges):
+            return  # whole rows: the compound selection brings them back
+        oids = model.visible_oids
+        blocks = [
+            (
+                np.array(oids[r.top() : r.bottom() + 1]),
+                [model.column_name(c) for c in range(r.left(), r.right() + 1)],
+            )
+            for r in ranges
+        ]
+        self._cell_memory = (self._selection.oids, blocks)
+
+    def _restore_cells(self) -> bool:
+        memory, self._cell_memory = self._cell_memory, None
+        if memory is None or memory[0] != self._selection.oids:
+            return False  # the compound selection changed meanwhile: select its rows
+        model = self.table_model
+        selection = QItemSelection()
+        for oids, names in memory[1]:
+            rows = model.rows_of_oids(oids)
+            rows = np.sort(rows[rows >= 0])
+            columns = [model.column_index(n) for n in names if n in model.table]
+            if not len(rows) or not columns:
+                continue
+            breaks = np.flatnonzero(np.diff(rows) != 1)
+            starts = np.concatenate([[rows[0]], rows[breaks + 1]])
+            ends = np.concatenate([rows[breaks], [rows[-1]]])
+            for start, end in zip(starts.tolist(), ends.tolist(), strict=True):
+                for col in columns:
+                    selection.select(model.index(start, col), model.index(end, col))
+        self._syncing = True
+        try:
+            self.selectionModel().select(
+                selection, QItemSelectionModel.SelectionFlag.ClearAndSelect
+            )
+        finally:
+            self._syncing = False
+        return True
+
     def _remember_anchor(self) -> None:
+        self._remember_cells()
         self._capture_widths()
         index = self.indexAt(self.viewport().rect().topLeft())
         self._anchor_oid = self.table_model.oid_at(index.row()) if index.isValid() else None
@@ -706,7 +801,42 @@ class TableView(QTableView):
     def start_cell_selection(self) -> None:
         self._column_mode = False
 
-    # -- frozen columns -----------------------------------------------------------------------
+    # -- frozen columns and rows ----------------------------------------------------------------
+    def _overlays(self) -> list:
+        return [o for o in (self._frozen, self._frozen_rows, self._frozen_corner) if o is not None]
+
+    def place_frozen(self) -> None:
+        """Lay the frozen overlays over the table (columns, then rows, then their corner)."""
+        for overlay in self._overlays():
+            overlay.place()
+
+    @property
+    def frozen_row_count(self) -> int:
+        """How many rows, from the top, stay put while the rest scroll up and down."""
+        return self._frozen_rows.count if self._frozen_rows is not None else 0
+
+    def set_frozen_rows(self, count: int) -> None:
+        """Freeze the first *count* rows as shown (0 unfreezes)."""
+        count = max(0, min(count, self.table_model.rowCount()))
+        if count == self.frozen_row_count:
+            return
+        if self._frozen_rows is None:
+            from .frozen_columns import FrozenRowsView
+
+            self._frozen_rows = FrozenRowsView(self)
+        self._frozen_rows.set_count(count)
+        self.verticalScrollBar().setValue(0)
+        self._update_corner()
+
+    def _update_corner(self) -> None:
+        if self._frozen_corner is None and self.frozen_count and self.frozen_row_count:
+            from .frozen_columns import FrozenCorner
+
+            self._frozen_corner = FrozenCorner(self)
+        if self._frozen_corner is not None:
+            self._frozen_corner.refresh()
+        self.place_frozen()
+
     @property
     def frozen_count(self) -> int:
         """How many columns, from the left, stay put while the rest scroll sideways."""
@@ -723,16 +853,15 @@ class TableView(QTableView):
             self._frozen = FrozenView(self)
         self._frozen.set_count(count)
         self.horizontalScrollBar().setValue(0)
+        self._update_corner()
 
     def updateGeometries(self) -> None:
         super().updateGeometries()
-        if self._frozen is not None:
-            self._frozen.place()
+        self.place_frozen()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if self._frozen is not None:
-            self._frozen.place()
+        self.place_frozen()
 
     def scrollTo(self, index, hint=QAbstractItemView.ScrollHint.EnsureVisible) -> None:
         """Scroll as usual, then make sure a cell right of the frozen part is not under it.
@@ -741,7 +870,10 @@ class TableView(QTableView):
         """
         frozen = self.frozen_count
         sideways = self.horizontalScrollBar().value()
+        upright = self.verticalScrollBar().value()
         super().scrollTo(index, hint)
+        if index.isValid() and self.frozen_row_count:
+            self._clear_frozen_rows(index.row(), upright)
         if not frozen or not index.isValid():
             return
         if index.column() < frozen:
@@ -752,6 +884,17 @@ class TableView(QTableView):
         if left < covered:
             bar = self.horizontalScrollBar()
             bar.setValue(bar.value() - (covered - left))
+
+    def _clear_frozen_rows(self, row: int, before: int) -> None:
+        """Going to a frozen row only scrolls sideways; any other row is kept out from under
+        the frozen rows."""
+        bar = self.verticalScrollBar()
+        if row < self.frozen_row_count:
+            bar.setValue(before)
+            return
+        covered = self._frozen_rows.frozen_height()
+        while bar.value() > bar.minimum() and self.rowViewportPosition(row) < covered:
+            bar.setValue(bar.value() - 1)
 
     def contextMenuEvent(self, event) -> None:
         index = self.indexAt(event.pos())

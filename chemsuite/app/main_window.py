@@ -376,6 +376,7 @@ class MainWindow(QMainWindow):
         self._view.structureEditRequested.connect(self._on_structure_edit_requested)
         self._view.structureDrawRequested.connect(self._on_structure_draw_requested)
         self._view.cellMenuRequested.connect(self._show_cell_menu)
+        self._view.rowHeaderMenuRequested.connect(self._show_row_menu)
         self._view.deleteColumnsRequested.connect(lambda names: self.columns.delete(names))
         self._unsubscribe = workspace.table.subscribe(self._on_table_event)
         workspace.selection.subscribe(lambda *_: self._update_status())
@@ -1226,6 +1227,37 @@ class MainWindow(QMainWindow):
         menu = self.cell_menu(index)
         menu.exec(pos)
         menu.deleteLater()
+
+    def _show_row_menu(self, row: int, pos: QPoint) -> None:
+        menu = self.row_menu(row)
+        menu.exec(pos)
+        menu.deleteLater()
+
+    def row_menu(self, row: int) -> QMenu:
+        """The right-click menu of the row numbers: for the selected rows, and freezing."""
+        view = self.view
+        count = len(view.selected_oids())
+        rows = "Row" if count == 1 else f"{count:,} Rows"
+        menu = QMenu(self)
+        menu.addAction(f"Delete {rows}", self.delete_rows).setEnabled(count > 0)
+        menu.addAction(f"Duplicate {rows}", self.duplicate_rows).setEnabled(count > 0)
+        menu.addSeparator()
+        freeze = menu.addAction("Freeze Rows up to Here", lambda: view.set_frozen_rows(row + 1))
+        freeze.setToolTip("Keep this row and the ones above it in place while the rest scroll")
+        freeze.setEnabled(view.frozen_row_count != row + 1)
+        if view.frozen_row_count:
+            menu.addAction("Unfreeze Rows", lambda: view.set_frozen_rows(0))
+        menu.setToolTipsVisible(True)
+        return menu
+
+    def duplicate_rows(self) -> None:
+        """Add a copy of each selected row (new rows go at the end, or by the sort) and select
+        the copies."""
+        oids = self.view.selected_oids()
+        if not len(oids):
+            return
+        copies = self.workspace.table.duplicate_rows(oids, label=f"Duplicate {len(oids)} row(s)")
+        self.workspace.selection.set(copies.tolist(), "menu")
 
     def cell_menu(self, index: QModelIndex) -> QMenu:
         """The right-click menu of a cell. Structure and reaction cells: the sketcher and Copy

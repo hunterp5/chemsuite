@@ -439,3 +439,13 @@ def test_unique_names_share_one_suffix() -> None:
     # one name taken: both get (2); "cLogD (2)" is taken too, so the run moves on to (3)
     assert t.unique_names(["pKa", "cLogD"]) == ["pKa (3)", "cLogD (3)"]
     assert t.unique_names(["pKa", "other"]) == ["pKa (2)", "other (2)"]
+
+
+def test_duplicate_rows_copies_cells_and_undoes() -> None:
+    table = Table()
+    table.add_rows({"ID": ["A", "B"], "pIC50": ["5", "6"]}, undoable=False)
+    copies = table.duplicate_rows(table.oids[::-1])
+    assert [table.cell("ID", int(o)) for o in copies] == ["B", "A"]
+    assert table.cell("pIC50", int(copies[1])) == "5" and len(table) == 4
+    table.undo()
+    assert len(table) == 2

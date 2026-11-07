@@ -510,3 +510,79 @@ def test_structure_cells_preview_a_large_drawing_on_hover(structures) -> None:
     assert tip.startswith('<img src="data:image/png;base64,')
     assert 'width="360" height="270"' in tip and "c1ccccc1" in tip
     assert model.data(model.index(2, 1), Qt.ItemDataRole.ToolTipRole).startswith("Invalid")
+
+
+# -- the row header -----------------------------------------------------------------------------
+
+
+def test_short_row_numbers() -> None:
+    from chemsuite.app.table_model import short_row_number
+
+    assert [short_row_number(n) for n in (7, 999, 1000, 1234, 12_345, 123_456, 2_500_000)] == [
+        "7",
+        "999",
+        "1k",
+        "1.2k",
+        "12k",
+        "123k",
+        "2.5M",
+    ]
+
+
+def test_cell_selection_survives_sorting_and_row_header_selects_rows(window, qtbot) -> None:
+    table = window.workspace.table
+    view = window.view
+    window.show()
+    qtbot.waitExposed(window)
+    model = view.table_model
+    qtbot.mouseClick(
+        view.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=view.visualRect(model.index(0, 1)).center(),  # A's pIC50
+    )
+    table.set_sort([("pIC50", False)])  # A moves to the bottom
+    ranges = [(r.top(), r.left(), r.bottom(), r.right()) for r in view.selectionModel().selection()]
+    assert ranges == [(2, 1, 2, 1)]  # still that one cell, not the whole row
+    header = view.verticalHeader()
+    qtbot.mouseClick(
+        header.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(header.width() // 2, header.sectionViewportPosition(0) + 4),
+    )
+    assert view.selected_whole_rows().tolist() == [0]
+    assert window.workspace.selection.oids == {int(table.oids[2])}  # C, now first
+
+
+def test_row_menu_deletes_duplicates_and_freezes(window, qtbot) -> None:
+    from chemsuite.app import session
+
+    table = window.workspace.table
+    view = window.view
+    table.add_rows({"ID": [f"X{i}" for i in range(40)], "pIC50": ["1"] * 40}, undoable=False)
+    view.selectRow(1)
+    titles = menu_titles(window.row_menu(1))
+    assert titles[:2] == ["Delete Row", "Duplicate Row"] and "Unfreeze Rows" not in titles
+    trigger(window.row_menu(1), "Duplicate Row")
+    assert len(table) == 44 and table.cell("ID", int(table.oids[-1])) == "B"
+    assert window.workspace.selection.oids == {int(table.oids[-1])}  # the copy is selected
+    table.undo()
+    assert len(table) == 43
+
+    window.resize(700, 400)
+    window.show()
+    qtbot.waitExposed(window)
+    trigger(window.row_menu(1), "Freeze Rows up to Here")
+    rows = view._frozen_rows
+    assert view.frozen_row_count == 2 and rows.isVisible()
+    assert rows.height() == 2 * view.rowHeight(0) + 1
+    view.scrollTo(model_index := view.table_model.index(30, 0))
+    assert view.rowViewportPosition(model_index.row()) >= rows.frozen_height()
+    view.set_frozen(1)  # columns too: the corner appears
+    assert view._frozen_corner is not None and view._frozen_corner.isVisible()
+
+    extras = session.capture(window)
+    trigger(window.row_menu(0), "Unfreeze Rows")
+    assert view.frozen_row_count == 0 and not rows.isVisible()
+    assert not view._frozen_corner.isVisible()
+    session.restore(window, extras)
+    assert window.view.frozen_row_count == 2

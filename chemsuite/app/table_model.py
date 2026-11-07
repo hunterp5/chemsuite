@@ -207,8 +207,11 @@ class TableModel(QAbstractTableModel):
             if role == KIND_ROLE:
                 return self._table.kind(name)
             return None
-        if role == Qt.ItemDataRole.DisplayRole and 0 <= section < len(self._slots):
-            return str(section + 1)
+        if 0 <= section < len(self._slots):
+            if role == Qt.ItemDataRole.DisplayRole:
+                return short_row_number(section + 1)
+            if role == Qt.ItemDataRole.ToolTipRole:
+                return f"Row {section + 1:,}"
         return None
 
     def flags(self, index: Index) -> Qt.ItemFlag:
@@ -318,6 +321,19 @@ def _status(column: ParsedColumn, slot: int) -> str:
     if blob is None:
         return "pending"
     return "ok" if blob else "invalid"
+
+
+def short_row_number(number: int) -> str:
+    """A row number in at most four characters, for the narrow row header: 999, 1.2k, 12k,
+    120k, 1.2M (the tooltip gives it in full)."""
+    if number < 1000:
+        return str(number)
+    for size, suffix in ((1_000_000, "M"), (1000, "k")):
+        if number >= size:
+            value = number / size
+            text = f"{value:.1f}" if value < 10 else f"{int(value)}"
+            return text.removesuffix(".0") + suffix
+    return str(number)
 
 
 __all__ = ["KIND_ROLE", "OID_ROLE", "STATUS_ROLE", "STRUCTURE", "STRUCTURE_ROLE", "TableModel"]
