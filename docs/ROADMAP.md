@@ -174,11 +174,11 @@ modified.
   - Per-column number formats (fixed, thousands, scientific, significant figures, percent).
   - Frozen columns (the first columns, up to the one chosen).
   - Column statistics in the header tooltip.
-- **Structures**
+- ✅ **Structures**
   - ✅ Align all drawings to a common core (MolManager's "Align to Substructure"), done
     2026-11-07.
   - ✅ Larger hover previews, done 2026-11-07.
-  - "Copy as SMILES / image".
+  - ✅ "Copy as SMILES / image" (cell menu ▸ Copy As).
 - **Plots**
   - Colour-range controls and marker shapes.
   - A density mode (hexbin) for 200k points.

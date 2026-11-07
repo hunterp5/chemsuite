@@ -118,15 +118,15 @@ class SpaceMapDialog(ToolDialog):
 
         more = self.section("More Options", collapsed=True)
         self.distance = QComboBox()
-        self.distance.addItem("Automatic", None)
         for key, title in em.UMAP_METRICS.items():
             self.distance.addItem(title, key)
+        self.distance.setCurrentIndex(self.distance.findData("jaccard"))
         more.row(
             "Distance",
             self.distance,
-            help="How unlike two compounds are. Automatic: Jaccard (Tanimoto) on fingerprint "
-            "bits, Euclidean on z-scored columns. Jaccard, Dice and Rogers-Tanimoto need "
-            "fingerprints.",
+            help="How unlike two compounds are. Jaccard, Dice, Rogers-Tanimoto and Hamming "
+            "work on fingerprint bits alone; with number columns the distance becomes "
+            "Euclidean on z-scored values.",
         )
         self.spread = QDoubleSpinBox()
         self.spread.setRange(0.1, 10.0)
@@ -181,12 +181,15 @@ class SpaceMapDialog(ToolDialog):
             help="Early exaggeration: higher pushes the groups further apart at the start.",
         )
         self.reduce_to = QSpinBox()
-        self.reduce_to.setRange(2, 500)
-        self.reduce_to.setValue(em.REDUCED_DIMS)
+        self.reduce_to.setRange(0, 500)
+        self.reduce_to.setSpecialValueText("Off")
+        self.reduce_to.setValue(0)
         more.row(
             "PCA dimensions",
             self.reduce_to,
-            help="t-SNE runs on this many principal components of the features.",
+            help="Off: the map is made from the features themselves (fingerprint bits by "
+            "Jaccard for t-SNE). A number: from that many principal components, Euclidean; "
+            "faster on large sets, but bit distances are then not available.",
         )
         self.init = QComboBox()
         self.init.addItem("PCA", "pca")
@@ -228,18 +231,23 @@ class SpaceMapDialog(ToolDialog):
         self.pacmap_distance = QComboBox()
         for key, title in em.PACMAP_METRICS.items():
             self.pacmap_distance.addItem(title, key)
+        self.pacmap_distance.setCurrentIndex(self.pacmap_distance.findData("jaccard"))
         more.row(
             "PaCMAP distance",
             self.pacmap_distance,
-            help="Measured on the PCA dimensions of the features. Angular is the cosine distance.",
+            help="Jaccard and Hamming work on fingerprint bits alone, with PCA dimensions Off. "
+            "Angular is the cosine distance.",
         )
         self._more_section = more
+        #: distance box -> the bit distance it was switched away from when bits stopped fitting
+        self._bit_choice: dict[QComboBox, str] = {}
 
         for signal in (
             self.method.currentIndexChanged,
             self.rows.changed,
             self.features.changed,
             self.dims.changed,
+            self.reduce_to.valueChanged,
             self.distance.currentIndexChanged,
             self.min_dist.valueChanged,
             self.spread.valueChanged,
@@ -259,10 +267,38 @@ class SpaceMapDialog(ToolDialog):
         if self.method.currentData() == "umap":
             metric = self.distance.currentData()
             if metric in em.BIT_METRICS and not self.features.fingerprints():
-                return f"{em.UMAP_METRICS[metric]} distance needs fingerprints."
+                return f"{em.UMAP_METRICS[metric]} distance needs fingerprints alone."
             if self.min_dist.value() > self.spread.value():
                 return "Min. distance must not be larger than the spread."
+        if self.method.currentData() == "pacmap":
+            distance = self.pacmap_distance.currentData()
+            if distance in em.BIT_METRICS and not self._bits_for_pacmap():
+                return (
+                    f"{em.PACMAP_METRICS[distance]} distance needs fingerprints alone, "
+                    "with PCA dimensions Off."
+                )
         return ""
+
+    def _bits_for_pacmap(self) -> bool:
+        return self.features.fingerprints() and self.reduce_to.value() == 0
+
+    def _fit_bit_distance(self, box: QComboBox, bits: bool) -> None:
+        """Bit distances only where they apply: switch to Euclidean when they stop fitting,
+        and back to the bit distance once they fit again."""
+        model = box.model()
+        for row in range(box.count()):
+            if box.itemData(row) in em.BIT_METRICS:
+                model.item(row).setEnabled(bits)
+        current = box.currentData()
+        blocked = box.blockSignals(True)
+        if not bits and current in em.BIT_METRICS:
+            self._bit_choice[box] = current
+            box.setCurrentIndex(box.findData("euclidean"))
+        elif bits and current == "euclidean" and box in self._bit_choice:
+            box.setCurrentIndex(box.findData(self._bit_choice.pop(box)))
+        elif bits:
+            self._bit_choice.pop(box, None)
+        box.blockSignals(blocked)
 
     def verb(self) -> str:
         return f"Map {self._count():,} Rows"
@@ -276,6 +312,8 @@ class SpaceMapDialog(ToolDialog):
                 self.neighbours.setValue(NEIGHBOURS.get(method, self.neighbours.value()))
             self._method_key = method
         three = self.dims.value() == "3"
+        self._fit_bit_distance(self.distance, self.features.fingerprints())
+        self._fit_bit_distance(self.pacmap_distance, self._bits_for_pacmap())
         section.set_row_visible(self.neighbours, method in ("umap", "pacmap"))
         section.set_row_visible(self.min_dist, method == "umap")
         section.set_row_visible(self.perplexity, method == "tsne")

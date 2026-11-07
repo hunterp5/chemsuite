@@ -70,8 +70,9 @@ def test_pca_map_of_number_columns(chem, qtbot) -> None:
     dialog = chem.open_tool("space_map")
     dialog.method.setCurrentIndex(dialog.method.findData("pca"))
     assert dialog.windowTitle() == "Dimensionality Reduction"
-    dialog.features.use_numbers.setChecked(True)
-    assert dialog.problem()  # no columns ticked yet
+    assert dialog.features.compare is None  # fingerprints and columns are chosen freely
+    dialog.features.set_fingerprint(None)
+    assert dialog.problem().startswith("Choose a fingerprint")  # nothing to map yet
     dialog.features.set_number_columns(["A", "B"])
     _run(qtbot, dialog)
     x = _numbers(table, "PCA 1")
@@ -135,10 +136,8 @@ def test_map_options_follow_the_method(chem) -> None:
     assert not more.isVisibleTo(dialog)  # PCA has no optional settings
     assert dialog._method_section.is_row_visible(dialog.components)
     dialog.method.setCurrentIndex(dialog.method.findData("umap"))
-    dialog.features.use_numbers.setChecked(True)
+    dialog.features.set_fingerprint(None)
     dialog.features.set_number_columns(["A", "B"])
-    dialog.distance.setCurrentIndex(dialog.distance.findData("dice"))
-    assert "needs fingerprints" in dialog.status.text() and not dialog.primary.isEnabled()
     dialog.distance.setCurrentIndex(dialog.distance.findData("manhattan"))
     dialog.seed.setValue(-1)
     options = dialog.options()
@@ -193,10 +192,9 @@ def test_maps_never_overwrite_and_combine_features(chem, qtbot) -> None:
     for _run_number in range(2):
         dialog = chem.open_tool("space_map")
         dialog.method.setCurrentIndex(dialog.method.findData("pca"))
-        dialog.features.compare.set_value("both")
-        assert dialog.features.both() and dialog.problem() == "Tick at least one number column."
+        assert dialog.features.fingerprints() and not dialog.features.both()
         dialog.features.set_number_columns(["A", "B"])
-        assert not dialog.problem()
+        assert dialog.features.both() and not dialog.problem()
         _run(qtbot, dialog)
     assert {"PCA 1", "PCA 2", "PCA 1 (1)", "PCA 2 (1)"} <= set(table.column_names)
     assert np.allclose(_numbers(table, "PCA 1"), _numbers(table, "PCA 1 (1)"), equal_nan=True)
@@ -204,3 +202,38 @@ def test_maps_never_overwrite_and_combine_features(chem, qtbot) -> None:
     assert np.isnan(x[-1])  # the blank structure has no fingerprint
     assert np.sign(x[:10].mean()) != np.sign(x[10:20].mean())  # both blocks split the groups
     assert dialog.plot.spec().color == "pIC50"  # opens coloured by the activity column
+
+
+def test_map_defaults_bit_distances_and_pca_off(chem) -> None:
+    dialog = chem.open_tool("space_map")
+    features = dialog.features
+    assert dialog.reduce_to.value() == 0 and dialog.reduce_to.text() == "Off"
+    assert dialog.distance.currentData() == "jaccard"
+    assert dialog.pacmap_distance.currentData() == "jaccard"
+    assert "hamming" in [dialog.distance.itemData(i) for i in range(dialog.distance.count())]
+    options = dialog.options()
+    assert options["reduce_to"] == 0 and options["metric"] == "jaccard"
+
+    features.set_number_columns(["A"])  # fingerprints and a column: bit distances do not fit
+    assert features.both()
+    assert dialog.distance.currentData() == "euclidean"
+    assert dialog.pacmap_distance.currentData() == "euclidean"
+    jaccard = dialog.distance.findData("jaccard")
+    assert not dialog.distance.model().item(jaccard).isEnabled()
+    features.set_number_columns([])  # fingerprints alone again: back to Jaccard
+    assert dialog.distance.currentData() == "jaccard"
+    assert dialog.pacmap_distance.currentData() == "jaccard"
+
+    dialog.pacmap_distance.setCurrentIndex(dialog.pacmap_distance.findData("hamming"))
+    dialog.reduce_to.setValue(20)  # PCA dimensions: no bit distances for PaCMAP
+    assert dialog.pacmap_distance.currentData() == "euclidean"
+    assert dialog.distance.currentData() == "jaccard"  # UMAP never uses PCA dimensions
+    dialog.reduce_to.setValue(0)
+    assert dialog.pacmap_distance.currentData() == "hamming"
+    assert not dialog.problem()
+    features.set_fingerprint(None)
+    features.set_number_columns(["A", "B"])
+    section = features.section
+    assert not section.is_row_visible(features.structure)  # no fingerprints: no structures
+    assert section.is_row_visible(features.kind) and section.is_row_visible(features.columns)
+    assert dialog.distance.currentData() == "euclidean"

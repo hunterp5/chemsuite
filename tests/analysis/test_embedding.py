@@ -36,7 +36,7 @@ def _blobs(per: int = 40, seed: int = 0):
 
 def _separated(coords: np.ndarray, labels: np.ndarray) -> bool:
     """Every point is nearer its own group's centre than any other group's."""
-    centres = np.array([coords[labels == g].mean(axis=0) for g in range(3)])
+    centres = np.array([coords[labels == g].mean(axis=0) for g in range(labels.max() + 1)])
     d = ((coords[:, None, :] - centres[None]) ** 2).sum(axis=2)
     return bool((d.argmin(axis=1) == labels).all())
 
@@ -175,10 +175,48 @@ def test_pacmap_on_fingerprints_and_settings() -> None:
     assert result.method == "pacmap" and result.placed == 21
     again = embed(features, "pacmap", neighbours=4, distance="angular", reduce_to=8, seed=1)
     assert np.allclose(result.coords, again.coords, equal_nan=True)  # the seed repeats it
+    with pytest.raises(ValueError, match="without PCA"):
+        embed(features, "pacmap", distance="jaccard", reduce_to=8)
     with pytest.raises(ValueError, match="distance"):
-        embed(features, "pacmap", distance="jaccard")
+        embed(features, "pacmap", distance="chebyshev")
     with pytest.raises(ValueError, match="2 or 3"):
         embed(features, "pacmap", dims=4)
+
+
+@pytest.mark.parametrize("method", ["tsne", "pacmap"])
+def test_bit_distances_without_pca_keep_the_series_apart(method) -> None:
+    chains = ["C" * i + "O" for i in range(2, 12)]
+    rings = ["c1ccccc1" + "C" * i for i in range(10)]
+    features = Features.from_fingerprints(compute_fingerprints(chains + rings))
+    labels = np.array([0] * 10 + [1] * 10)
+    distances = [None, "hamming"] if method == "pacmap" else [None]
+    for distance in distances:  # None: Jaccard on the bits
+        options = {"neighbours": 5} if method == "pacmap" else {"perplexity": 5}
+        if distance:
+            options["distance"] = distance
+        result = embed(features, method, seed=3, **options)
+        assert result.placed == 20 and _separated(result.coords, labels)
+
+
+def test_bit_neighbours_are_the_nearest_rows(monkeypatch) -> None:
+    from chemsuite.analysis import embedding
+    from chemsuite.analysis.fingerprints import similarity
+
+    smiles = [f"{'C' * i}c1ccccc1{'O' * (i % 3)}" for i in range(1, 30)]
+    fps = compute_fingerprints(smiles)
+    monkeypatch.setattr(embedding, "TILE_ROWS", 7)  # several tiles
+    near = embedding.bit_neighbours(fps, 4)
+    assert near.shape == (len(smiles), 4)
+    for row in (0, 13, 28):
+        sims = similarity(fps, fps.take(np.array([row])))
+        sims[row] = -1
+        assert np.allclose(np.sort(sims[near[row]])[::-1], np.sort(sims)[::-1][:4])
+    near = embedding.bit_neighbours(fps, 3, "hamming")
+    bits = np.unpackbits(fps.packed, axis=1, count=fps.kind.bits).astype(int)
+    for row in (2, 20):
+        differ = np.abs(bits - bits[row]).sum(axis=1)
+        differ[row] = 10**6
+        assert sorted(differ[near[row]]) == sorted(differ)[:3]
 
 
 def test_combined_features_weigh_both_blocks() -> None:

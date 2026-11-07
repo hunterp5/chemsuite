@@ -38,21 +38,29 @@ from .fingerprints import Fingerprints
 Progress = Callable[[int, int], None]
 
 METHODS = {"pca": "PCA", "umap": "UMAP", "tsne": "t-SNE", "pacmap": "PaCMAP"}
-#: PaCMAP distances (on z-scored columns, or on the PCA-reduced fingerprints)
-PACMAP_METRICS = {"euclidean": "Euclidean", "manhattan": "Manhattan", "angular": "Angular"}
+#: PaCMAP distances. Jaccard and Hamming need fingerprints without PCA (they are measured on
+#: the bits themselves); the others work on z-scored columns, bits or PCA dimensions.
+PACMAP_METRICS = {
+    "jaccard": "Jaccard (Tanimoto)",
+    "hamming": "Hamming",
+    "euclidean": "Euclidean",
+    "manhattan": "Manhattan",
+    "angular": "Angular",
+}
 DIMENSIONS = (2, 3)
 #: UMAP distances: metric name -> title. The bit metrics need fingerprints.
 UMAP_METRICS = {
     "jaccard": "Jaccard (Tanimoto)",
     "dice": "Dice",
     "rogerstanimoto": "Rogers-Tanimoto",
+    "hamming": "Hamming",
     "euclidean": "Euclidean",
     "manhattan": "Manhattan",
     "cosine": "Cosine",
     "correlation": "Correlation",
 }
-BIT_METRICS = frozenset({"jaccard", "dice", "rogerstanimoto"})
-REDUCED_DIMS = 50  # PCA dimensions handed to t-SNE and the SOM
+BIT_METRICS = frozenset({"jaccard", "dice", "rogerstanimoto", "hamming"})
+REDUCED_DIMS = 50  # PCA dimensions handed to the SOM (and to t-SNE / PaCMAP when asked)
 TILE_ROWS = 4096
 UMAP_FIT_MAX = 50_000  # larger sets: fit on a sample, then place the rest onto that map
 
@@ -220,6 +228,74 @@ def pca(
     return scores, values / variance
 
 
+def bit_neighbours(
+    fps: Fingerprints,
+    k: int,
+    metric: str = "jaccard",
+    *,
+    scores: bool = False,
+    progress: Progress | None = None,
+    cancel: CancelToken | None = None,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """The *k* nearest rows of every row (self excluded), nearest first, as an ``n × k`` index
+    array: by Tanimoto similarity (*metric* "jaccard") or by the number of differing bits
+    ("hamming"). Exact, tile by tile, so memory stays small. With *scores*, also returns the
+    matching similarities (Jaccard) or minus the differing bits (Hamming)."""
+    if metric not in ("jaccard", "hamming"):
+        raise ValueError(f"unknown bit distance {metric!r}")
+    n = len(fps)
+    k = max(1, min(k, n - 1))
+    counts = fps.counts.astype(np.float32)
+    bounds = list(range(0, n, TILE_ROWS)) + [n]
+    tiles = list(zip(bounds[:-1], bounds[1:], strict=True))
+    best = np.empty((n, k), dtype=np.int64)
+    best_sim = np.empty((n, k), dtype=np.float32)
+    for i, (a0, a1) in enumerate(tiles):
+        block_a = fps.unpacked(a0, a1)
+        top_sim = np.empty((a1 - a0, 0), dtype=np.float32)
+        top_idx = np.empty((a1 - a0, 0), dtype=np.int64)
+        for b0, b1 in tiles:
+            check(cancel)
+            common = block_a @ fps.unpacked(b0, b1).T
+            union = counts[a0:a1, None] + counts[None, b0:b1] - common
+            if metric == "jaccard":
+                sim = np.where(union > 0, common / np.maximum(union, 1), 1.0)
+            else:  # fewer differing bits is nearer
+                sim = common - union
+            sim = sim.astype(np.float32)
+            if a0 == b0:
+                np.fill_diagonal(sim, -np.inf)  # never its own neighbour
+            sims = np.concatenate([top_sim, sim], axis=1)
+            idx = np.concatenate([top_idx, np.broadcast_to(np.arange(b0, b1), sim.shape)], axis=1)
+            keep = np.argpartition(-sims, k - 1, axis=1)[:, :k] if sims.shape[1] > k else None
+            if keep is not None:
+                sims = np.take_along_axis(sims, keep, axis=1)
+                idx = np.take_along_axis(idx, keep, axis=1)
+            top_sim, top_idx = sims, idx
+        order = np.argsort(-top_sim, axis=1, kind="stable")
+        best[a0:a1] = np.take_along_axis(top_idx, order, axis=1)
+        best_sim[a0:a1] = np.take_along_axis(top_sim, order, axis=1)
+        if progress is not None:
+            progress(i + 1, len(tiles))
+    return (best, best_sim) if scores else best
+
+
+def _features_for(
+    features: Features,
+    reduce_to: int | None,
+    *,
+    progress: Progress | None = None,
+    cancel: CancelToken | None = None,
+) -> np.ndarray:
+    """What t-SNE and PaCMAP run on: *reduce_to* PCA dimensions, or (None or 0) the features
+    themselves (fingerprints as 0/1 bits)."""
+    if reduce_to:
+        x = reduce(features, max(2, reduce_to), progress=progress, cancel=cancel)
+    else:
+        x = features.dense(0, None) if features.fps is not None else features.matrix
+    return np.ascontiguousarray(x, dtype=np.float32)
+
+
 def reduce(
     features: Features,
     dims: int = REDUCED_DIMS,
@@ -341,15 +417,17 @@ def tsne_map(
     learning_rate: float | None = None,
     iterations: int = 1000,
     exaggeration: float = 12.0,
-    reduce_to: int = REDUCED_DIMS,
+    reduce_to: int | None = None,
     init: str = "pca",
     seed: int | None = 42,
     dims: int = 2,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> Embedding:
-    """t-SNE (Barnes-Hut) in *dims* (2 or 3) dimensions, on up to *reduce_to* PCA dimensions.
+    """t-SNE (Barnes-Hut) in *dims* (2 or 3) dimensions.
 
+    With *reduce_to* it runs on that many PCA dimensions (Euclidean); without, on the features
+    themselves: Jaccard (Tanimoto) on fingerprint bits, Euclidean on z-scored columns.
     *learning_rate* None is scikit-learn's "auto" (rows / exaggeration / 4); *init* is
     "pca" (stable layouts) or "random".
     """
@@ -359,9 +437,33 @@ def tsne_map(
     dims = _dims(dims)
     if init not in ("pca", "random"):
         raise ValueError(f"unknown t-SNE start {init!r}")
-    x = reduce(features, max(2, reduce_to), progress=progress, cancel=cancel)
+    x = _features_for(features, reduce_to, progress=progress, cancel=cancel)
+    jaccard = features.fps is not None and not reduce_to
     check(cancel)
-    perplexity = min(perplexity, (len(features) - 1) / 3)
+    n = len(features)
+    perplexity = min(perplexity, (n - 1) / 3)
+    metric = "euclidean"
+    if jaccard:
+        # The neighbours t-SNE needs (3 × perplexity), found exactly on the bits, as a sparse
+        # distance graph: much faster than scikit-learn's brute-force Jaccard.
+        from scipy.sparse import csr_matrix
+
+        k = min(n - 1, int(3.0 * perplexity + 1))
+        near, sims = bit_neighbours(features.fps, k, scores=True, cancel=cancel)
+        distances = np.clip(1.0 - sims.astype(np.float64), 1e-9, None)  # 0 would be dropped
+        # Each row also lists itself (scikit-learn asks for it, then leaves it out).
+        index = np.column_stack([np.arange(n), near])
+        distances = np.column_stack([np.full(n, 1e-12), distances])
+        graph = csr_matrix(
+            (distances.ravel(), index.ravel(), np.arange(0, n * (k + 1) + 1, k + 1)),
+            shape=(n, n),
+        )
+        if init == "pca":  # scikit-learn's own PCA start, which it skips for a graph
+            start = np.asarray(reduce(features, dims, cancel=cancel), dtype=np.float32)
+            if start.shape[1] < dims:
+                start = np.column_stack([start, np.zeros((n, dims - start.shape[1]))])
+            init = start / max(float(np.std(start[:, 0])), 1e-12) * 1e-4
+        x, metric = graph, "precomputed"
     model = TSNE(
         n_components=dims,
         perplexity=perplexity,
@@ -369,10 +471,13 @@ def tsne_map(
         max_iter=max(250, iterations),
         early_exaggeration=exaggeration,
         init=init,
+        metric=metric,
         random_state=seed,
         n_jobs=-1,
     )
-    coords = model.fit_transform(np.asarray(x, dtype=np.float32))
+    with warnings.catch_warnings():  # sparse graph efficiency notes
+        warnings.simplefilter("ignore")
+        coords = model.fit_transform(x)
     return _scatter(features, coords, "tsne", dims)
 
 
@@ -382,8 +487,8 @@ def pacmap_map(
     neighbours: int = 10,
     mn_ratio: float = 0.5,
     fp_ratio: float = 2.0,
-    distance: str = "euclidean",
-    reduce_to: int = REDUCED_DIMS,
+    distance: str | None = None,
+    reduce_to: int | None = None,
     seed: int | None = 42,
     dims: int = 2,
     progress: Progress | None = None,
@@ -392,26 +497,44 @@ def pacmap_map(
     """PaCMAP (Wang et al. 2021, JMLR 22:201): neighbour, mid-near and further pairs, so the
     map keeps both local groups and the overall layout.
 
-    Runs on up to *reduce_to* PCA dimensions (fingerprints are reduced by the streamed PCA, so
-    no dense bit matrix is built). *mn_ratio* and *fp_ratio* are the mid-near and further pairs
-    per neighbour pair; *distance* is a key of ``PACMAP_METRICS``.
+    With *reduce_to* it runs on that many PCA dimensions (fingerprints are reduced by the
+    streamed PCA, so no dense bit matrix is built); without, on the features themselves.
+    *mn_ratio* and *fp_ratio* are the mid-near and further pairs per neighbour pair; *distance*
+    is a key of ``PACMAP_METRICS`` (None: Jaccard on fingerprint bits, else Euclidean).
+    Jaccard and Hamming find the neighbour pairs exactly on the bits (see :func:`bit_neighbours`);
+    the mid-near and further pairs are sampled by Hamming distance.
     """
     _need(features, 5)
     dims = _dims(dims)
+    bits = features.fps is not None and not reduce_to
+    if distance is None:
+        distance = "jaccard" if bits else "euclidean"
     if distance not in PACMAP_METRICS:
         raise ValueError(f"unknown PaCMAP distance {distance!r}")
+    if distance in BIT_METRICS and not bits:
+        raise ValueError(
+            f"{PACMAP_METRICS[distance]} distance needs fingerprints without PCA dimensions"
+        )
     import pacmap  # imports numba and faiss: only when a map is made
 
-    x = reduce(features, max(2, reduce_to), progress=progress, cancel=cancel)
+    x = _features_for(features, reduce_to, progress=progress, cancel=cancel)
     check(cancel)
     n = len(features)
+    n_neighbors = max(2, min(neighbours, n - 2))
+    pairs = None
+    if distance in BIT_METRICS:
+        near = bit_neighbours(features.fps, n_neighbors, distance, cancel=cancel)
+        pairs = np.column_stack([np.repeat(np.arange(n), n_neighbors), near.ravel()])
+        pairs = np.ascontiguousarray(pairs, dtype=np.int32)
+        check(cancel)
     model = pacmap.PaCMAP(
         n_components=dims,
-        n_neighbors=max(2, min(neighbours, n - 2)),
+        n_neighbors=n_neighbors,
         MN_ratio=mn_ratio,
         FP_ratio=fp_ratio,
-        distance=distance,
-        apply_pca=False,  # already reduced above
+        pair_neighbors=pairs,
+        distance="hamming" if distance in BIT_METRICS else distance,
+        apply_pca=False,  # reduced above when asked
         random_state=seed,
     )
     quiet = logging.getLogger("pacmap")  # "random state is set", "high-dimensional data"
@@ -420,7 +543,7 @@ def pacmap_map(
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            coords = model.fit_transform(np.ascontiguousarray(x, dtype=np.float32), init="pca")
+            coords = model.fit_transform(x, init="pca")
     finally:
         quiet.setLevel(level)
     check(cancel)

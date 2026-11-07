@@ -1451,28 +1451,35 @@ Data ▸ SAR ▸ Activity Cliffs… lists similar compounds with very different 
 ### Dimensionality Reduction
 
 Data ▸ Chemical Space ▸ Dimensionality Reduction… places compounds on a 2D or 3D map by
-fingerprints, number columns, or both. **Compare by: Both** uses the fingerprints and the
-ticked number columns together, for rows that have all of them: the fingerprints are reduced to
-their principal components, the columns are z-scored, and the two are weighted equally so
-neither drowns out the other (distances are Euclidean). **Dimensions: 2D** writes two columns and opens a scatter plot;
+fingerprints, number columns, or both. Choose a **Fingerprint** (or **None**) and tick any
+**Columns**: a fingerprint alone maps by its bits, columns alone by their z-scores, and a
+fingerprint with ticked columns uses the two together, for rows that have all of them: the
+fingerprints are reduced to their principal components, the columns are z-scored, and the two
+are weighted equally so neither drowns out the other (distances are Euclidean).
+**Dimensions: 2D** writes two columns and opens a scatter plot;
 **3D** writes three and opens a 3D Scatter (a 3D PCA map is always PC1, PC2 and PC3).
 
 | Method | Options | More Options (folded) |
 |---|---|---|
 | PCA | **Components**: PC1 and PC2 (the default), PC1 and PC3, PC2 and PC3, or PC3 and PC4 | — |
-| UMAP | Neighbours, Min. distance | **Distance** (Automatic, Jaccard, Dice, Rogers-Tanimoto, Euclidean, Manhattan, Cosine, Correlation), **Spread**, **Epochs**, **Fit on up to** (rows; larger sets are fitted on a sample of this size and the rest placed onto that map; default 50,000), **Seed** |
-| PaCMAP | Neighbours (default 10) | **Mid-near pairs** (per neighbour pair; default 0.5), **Further pairs** (default 2), **PaCMAP distance** (Euclidean, Manhattan, Angular), **PCA dimensions** (default 50), **Seed** |
-| t-SNE | Perplexity | **Learning rate** (Automatic or a number), **Iterations**, **Exaggeration** (early exaggeration), **PCA dimensions** (t-SNE runs on this many principal components; default 50), **Start from** (PCA or Random), **Seed** |
+| UMAP | Neighbours, Min. distance | **Distance** (Jaccard, the default, Dice, Rogers-Tanimoto, Hamming, Euclidean, Manhattan, Cosine, Correlation), **Spread**, **Epochs**, **Fit on up to** (rows; larger sets are fitted on a sample of this size and the rest placed onto that map; default 50,000), **Seed** |
+| PaCMAP | Neighbours (default 10) | **Mid-near pairs** (per neighbour pair; default 0.5), **Further pairs** (default 2), **PaCMAP distance** (Jaccard, the default, Hamming, Euclidean, Manhattan, Angular), **PCA dimensions** (default Off), **Seed** |
+| t-SNE | Perplexity | **Learning rate** (Automatic or a number), **Iterations**, **Exaggeration** (early exaggeration), **PCA dimensions** (default Off: Jaccard on fingerprint bits; a number runs t-SNE on that many principal components), **Start from** (PCA or Random), **Seed** |
 
-- **Distance: Automatic** is Jaccard (Tanimoto) on fingerprints and Euclidean on number
-  columns. Jaccard, Dice and Rogers-Tanimoto need fingerprints.
+- **Jaccard** (Tanimoto), **Dice**, **Rogers-Tanimoto** and **Hamming** compare fingerprint
+  bits, so they need a fingerprint with no columns ticked (and, for PaCMAP, **PCA dimensions**
+  Off). When they don't apply the distance switches to Euclidean, and back once they do.
+- **PCA dimensions** is Off by default, so t-SNE and PaCMAP map the features themselves.
+  Setting a number first reduces the features to that many principal components, which is
+  faster on large sets (bit distances are then not available).
 - **Min. distance** must not be larger than **Spread**.
 - **Seed**: the same seed gives the same map every run (UMAP then runs on one processor core).
   Set it to **Random** for a faster map that differs each time.
 - PCA's note in the status bar gives the share of the variance on each chosen component.
 - **PaCMAP** (Wang et al., 2021) balances neighbour, mid-near and further pairs, so it keeps
-  local groups like UMAP while distances between groups mean more. It runs on the PCA
-  dimensions of the features and is fast on large sets.
+  local groups like UMAP while distances between groups mean more. With Jaccard or Hamming its
+  neighbours are found exactly on the fingerprint bits, which takes longer on very large sets
+  than a few PCA dimensions do.
 - t-SNE on very large sets (over 50,000 rows) can take many minutes; UMAP and PaCMAP are
   quicker there.
 - The map is written to new columns named after the method: "UMAP 1", "UMAP 2" (and
