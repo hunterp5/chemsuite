@@ -208,9 +208,13 @@ def test_box_plot_without_groups(data) -> None:
 
 def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -> None:
     from chemsuite.app.main_window import Workspace
+    from chemsuite.app.plots.cards import CardOptions
     from chemsuite.core.table import Table
 
-    data.open_tool("scatter").set_spec(x="MW", y="pIC50", color="Series", fit=True)
+    first = data.open_tool("scatter")
+    first.set_spec(x="MW", y="pIC50", color="Series", fit=True)
+    cards = CardOptions(when="both", values=False, columns=("ID",), size="large")
+    first.set_card_options(cards)
     data.open_tool("histogram").set_spec(x="Series")
     target = tmp_path / "plots.csd"
     assert data._save_to(target)
@@ -230,6 +234,7 @@ def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -
         "curve": None,
         "guide": None,
         "title": None,
+        "cards": cards.state(),
     }
     assert histogram.spec().x == "Series" and histogram.spec().kind == "histogram"
 
@@ -278,7 +283,7 @@ def test_options_open_from_the_dock_settings_button(data, qtbot) -> None:
     assert not panel.options.isVisible()
     bar.settings.click()
     qtbot.waitUntil(panel.options.isVisible)
-    assert panel.summary.isVisibleTo(panel.options)
+    assert not panel.summary.isVisibleTo(panel.options)  # no explanatory text in the options
     panel.options.hide()
     # Histogram options replace the scatter ones.
     panel.set_spec(kind="histogram")
@@ -333,3 +338,56 @@ def test_rename_a_plot_from_its_header(data, qtbot, tmp_path) -> None:
     title.clear()
     qtbot.keyClick(title, Qt.Key.Key_Return)
     assert panel.title() == "MW vs pIC50" and panel.custom_title is None
+
+
+def test_hover_card_options(data) -> None:
+    from chemsuite.app.plots.cards import CardOptions
+
+    panel = data.open_tool("scatter")
+    hover = panel.renderer.hover(data.workspace.table, 200, 6, 1.0, 0.01)
+    panel.set_card_options(CardOptions(label=False, columns=("Series",)))
+    panel.show_hover(hover)
+    assert panel.card.text.text().splitlines() == ["MW: 200", "pIC50: 6", "Series: y"]
+    panel.set_card_options(CardOptions(values=False))
+    panel.show_hover(hover)
+    assert panel.card.text.text() == "B"
+    panel.card.hide()
+    panel.card_when.setCurrentIndex(panel.card_when.findData("off"))
+    assert panel.card_options.when == "off" and not panel.card_options.hovering
+    state = panel.state()["cards"]
+    assert state["when"] == "off" and CardOptions.from_state(state) == panel.card_options
+    assert CardOptions.from_state({"when": "nonsense", "size": 3}) == CardOptions()
+
+
+def test_selected_points_keep_their_cards(data, qtbot) -> None:
+    data.show()
+    qtbot.waitExposed(data)
+    panel = data.open_tool("scatter")
+    table = data.workspace.table
+    first, second = (int(o) for o in table.oids[:2])
+    data.workspace.selection.set([first, second], "test")
+    assert not panel.pinned.cards  # "On Hover" does not pin
+    panel.card_when.setCurrentIndex(panel.card_when.findData("both"))
+    assert set(panel.pinned.cards) == {first, second}
+    card = panel.pinned.cards[first][0]
+    assert card.text.text().splitlines()[0] == "A"
+    qtbot.waitUntil(card.isVisible)
+    before = card.pos()
+    panel.plot.setXRange(0, 1000, padding=0)  # zooming out moves the card with its point
+    qtbot.waitUntil(lambda: card.pos() != before)
+    data.workspace.selection.set([first], "test")
+    assert set(panel.pinned.cards) == {first}
+    data.workspace.selection.set([], "test")
+    assert not panel.pinned.cards
+
+
+def test_pinned_cards_never_overlap() -> None:
+    from PySide6.QtCore import QPoint, QRect, QSize
+
+    from chemsuite.app.plots.cards import _free_spot
+
+    bounds, size, taken = QRect(0, 0, 800, 600), QSize(150, 120), []
+    for x in (300, 310, 320, 330, 340):  # five points almost on top of each other
+        rect = _free_spot(QPoint(x, 300), size, bounds, taken)
+        assert bounds.contains(rect) and not any(rect.intersects(t) for t in taken)
+        taken.append(rect)

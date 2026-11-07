@@ -44,14 +44,17 @@ def test_standardize_writes_a_new_column_and_notes(chem, qtbot) -> None:
     table = chem.workspace.table
     dialog = chem.open_tool("standardize")
     assert dialog.primary.text() == "Standardize 5 Rows"
-    assert "SMILES (Standardized)" in dialog.status.text()
+    assert not dialog.footer.isVisibleTo(dialog)  # no explanatory text when nothing is wrong
+    assert set(dialog.target.buttons) == {"source", "new"}
+    assert dialog.target.buttons["source"].text() == "Source"
+    assert dialog.target.buttons["new"].text() == "New Column"
     for box in dialog.steps.values():
         box.setChecked(False)
     assert "Choose at least one step" in dialog.status.text() and not dialog.primary.isEnabled()
     dialog.steps["strip_salts"].setChecked(True)
     dialog.steps["neutralise"].setChecked(True)
     dialog.protonate.setChecked(True)
-    assert dialog.ph.isEnabled() and "protonate at pH 7.4" in dialog.status.text()
+    assert dialog.ph.isEnabled() and dialog.primary.isEnabled()
     dialog.run()
     qtbot.waitUntil(lambda: "SMILES (Standardized)" in table.column_names, timeout=20_000)
     amine, acetate, alanine, bad, blank = (int(o) for o in table.oids)
@@ -71,10 +74,18 @@ def test_replacing_keeps_structures_that_fail(chem, qtbot) -> None:
     table = chem.workspace.table
     dialog = chem.open_tool("standardize")
     dialog.target.set_value("source")
-    dialog.notes.setChecked(False)
-    assert dialog.status.text().endswith("→ SMILES")
     dialog.run()
     first = int(table.oids[0])
     qtbot.waitUntil(lambda: table.cell("SMILES", first) == "CN1CCCCC1", timeout=20_000)
     assert table.cell("SMILES", int(table.oids[3])) == "C1CC"  # invalid: kept as it was
-    assert "Standardization Notes" not in table.column_names
+    assert "Standardization Notes" in table.column_names  # the notes are always written
+
+
+def test_running_again_replaces_the_results(chem, qtbot) -> None:
+    table = chem.workspace.table
+    for _ in range(2):
+        chem.open_tool("standardize").run()
+        qtbot.waitUntil(lambda: not chem._runner.active_jobs, timeout=20_000)
+    assert "SMILES (Standardized)" in table.column_names
+    assert "SMILES (Standardized) (2)" not in table.column_names
+    assert "Standardization Notes (2)" not in table.column_names

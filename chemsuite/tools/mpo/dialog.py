@@ -296,12 +296,12 @@ class MpoDialog(QDialog):
             self._widget(row, TARGET).setEnabled(shape in ("target", "gaussian"))
             self._widget(row, WIDTH).setEnabled(bell)
         try:
-            profile = self.profile()
+            self.profile()
         except ValueError as err:
             self.status.setText(str(err))
             self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
             return
-        self.status.setText("; ".join(f"{s.column}: {s.describe()}" for s in profile.properties))
+        self.status.setText("")
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(True)
 
     def load_dialog(self) -> None:

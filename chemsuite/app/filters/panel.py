@@ -173,11 +173,12 @@ class FilterPanel(QWidget):
                     "text",
                     "category",
                     "structure",
+                    "reaction",
                 ):
                     skipped += 1
                     continue
-                if kind == "structure" and (
-                    self.searcher is None or self.table.kind(column) != "structure"
+                if kind in ("structure", "reaction") and (
+                    self.searcher is None or self.table.kind(column) != kind
                 ):
                     skipped += 1
                     continue

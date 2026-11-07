@@ -218,5 +218,5 @@ def test_selectivity_dialog(data) -> None:
         assert _cell(table, "Narrow window", i) == expected or math.isclose(sel, 1, abs_tol=0.01)
     assert "Min logSel" not in table  # only one off-target
     dialog.set_off_targets(["hERG pIC50", "MW"])
-    assert "Min logSel" in dialog.status.text()
+    assert not dialog.status.text().strip()
     dialog.reject()

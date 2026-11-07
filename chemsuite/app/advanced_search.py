@@ -15,7 +15,9 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """Edit ▸ Advanced Search…: a panel of conditions combined with "all" or "any".
 
-Each row is a column (or any column), an operator and a value. Text and number conditions are
+Each condition is a column (or any column), an operator and a value, with Not. Conditions sit
+in groups: the search is a group, and **Add Group** nests another, with its own "all / any" and
+Not, so searches such as ``(A or B) and not (C and D)`` can be built. Text and number conditions are
 evaluated at once; structure conditions run as background searches first. The matches can be
 shown alone (one filter, ANDed with the Filters panel), selected or added to a list. The search,
 whether it is showing, and the recent searches are saved with the document.
@@ -225,6 +227,162 @@ class CriterionRow(QFrame):
         self.error.setVisible(bool(text))
 
 
+class GroupBox(QFrame):
+    """A group of conditions and nested groups: "Match all/any of", optionally "Not".
+
+    The top-level group is the whole search; nested groups are indented with a rule down their
+    left side, and have Not and a remove button.
+    """
+
+    changed = Signal()
+    removeRequested = Signal()
+
+    def __init__(self, table: Table, *, top: bool = False, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.table = table
+        self.top = top
+        self.items: list[CriterionRow | GroupBox] = []
+        self.setObjectName("SearchGroup")
+        if not top:
+            self.setStyleSheet(
+                "QFrame#SearchGroup { border: none; border-left: 2px solid palette(mid); }"
+            )
+        self.negate = QCheckBox("Not")
+        self.negate.setToolTip("Keep the rows this group does not match")
+        self.negate.setVisible(not top)
+        self.combine = QComboBox()
+        self.combine.addItem("all", "all")
+        self.combine.addItem("any", "any")
+        self.combine.setToolTip("all: every condition must match (and). any: one is enough (or).")
+        remove = QToolButton()
+        remove.setText("✕")
+        remove.setAutoRaise(True)
+        remove.setToolTip("Remove this group")
+        remove.setVisible(not top)
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(6)
+        header_row.addWidget(self.negate)
+        if not top:
+            header_row.addSpacing(6)
+        header_row.addWidget(QLabel("Match"))
+        header_row.addWidget(self.combine)
+        header_row.addWidget(QLabel("of these conditions" if top else "of these"))
+        header_row.addStretch(1)
+        header_row.addWidget(remove)
+        header = QWidget()
+        header.setLayout(header_row)
+
+        self.add_condition_button = QPushButton("Add Condition")
+        self.add_group_button = QPushButton("Add Group")
+        self.add_group_button.setToolTip(
+            "A group of conditions with its own all / any and Not, e.g. not (A and B)"
+        )
+        buttons = FlowRow()
+        buttons.addWidget(self.add_condition_button)
+        buttons.addWidget(self.add_group_button)
+
+        self._items_box = QVBoxLayout()
+        self._items_box.setContentsMargins(0, 0, 0, 0)
+        self._items_box.setSpacing(0)  # rows divide themselves with hairlines
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0 if top else 10, 4, 0, 4)
+        layout.setSpacing(2)
+        layout.addWidget(header)
+        layout.addLayout(self._items_box)
+        layout.addWidget(buttons)
+
+        self.negate.toggled.connect(lambda _on: self.changed.emit())
+        self.combine.currentIndexChanged.connect(lambda _i: self.changed.emit())
+        remove.clicked.connect(self.removeRequested.emit)
+        self.add_condition_button.clicked.connect(lambda: self.add_row())
+        self.add_group_button.clicked.connect(lambda: self.add_group())
+
+    # -- building -------------------------------------------------------------------------------
+    def add_row(self, criterion: Criterion | None = None) -> CriterionRow:
+        row = CriterionRow(self.table)
+        if criterion is not None:
+            row.set_criterion(criterion)
+        self._add(row)
+        return row
+
+    def add_group(self, search: CriteriaSearch | None = None) -> GroupBox:
+        """Add a nested group (by default holding one empty condition)."""
+        group = GroupBox(self.table)
+        if search is not None:
+            group.set_search(search)
+        else:
+            group.add_row()
+        self._add(group)
+        return group
+
+    def _add(self, item: CriterionRow | GroupBox) -> None:
+        self.items.append(item)
+        self._items_box.addWidget(item)
+        item.changed.connect(self.changed.emit)
+        item.removeRequested.connect(lambda: self.remove(item))
+        self.changed.emit()
+
+    def remove(self, item: CriterionRow | GroupBox) -> None:
+        if item in self.items:
+            self.items.remove(item)
+            item.setParent(None)
+            item.deleteLater()
+        if self.top and not self.items:
+            self.add_row()  # the search always has a condition to fill in
+        self.changed.emit()
+
+    def clear(self) -> None:
+        for item in list(self.items):
+            self.items.remove(item)
+            item.setParent(None)
+            item.deleteLater()
+
+    # -- the search ------------------------------------------------------------------------------
+    def search(self) -> CriteriaSearch:
+        return CriteriaSearch(
+            tuple(
+                item.search() if isinstance(item, GroupBox) else item.criterion()
+                for item in self.items
+            ),
+            self.combine.currentData(),
+            self.negate.isChecked() and not self.top,
+        )
+
+    def set_search(self, search: CriteriaSearch) -> None:
+        self.blockSignals(True)
+        try:
+            self.clear()
+            self.combine.setCurrentIndex(max(0, self.combine.findData(search.combine)))
+            self.negate.setChecked(search.negate and not self.top)
+            for item in search.criteria:
+                if isinstance(item, CriteriaSearch):
+                    self.add_group(item)
+                else:
+                    self.add_row(item)
+        finally:
+            self.blockSignals(False)
+
+    def rows(self) -> list[CriterionRow]:
+        """Every condition row, depth first (the order of ``CriteriaSearch.leaves``)."""
+        out: list[CriterionRow] = []
+        for item in self.items:
+            out.extend(item.rows() if isinstance(item, GroupBox) else [item])
+        return out
+
+    def groups(self) -> list[GroupBox]:
+        """The nested groups, depth first."""
+        out: list[GroupBox] = []
+        for item in self.items:
+            if isinstance(item, GroupBox):
+                out += [item, *item.groups()]
+        return out
+
+    def refresh_columns(self) -> None:
+        for row in self.rows():
+            row.refresh_columns()
+
+
 class AdvancedSearchPanel(QWidget):
     """The conditions, what to do with the matches, and recent searches."""
 
@@ -244,29 +402,21 @@ class AdvancedSearchPanel(QWidget):
         self.lists = lists
         self.searcher = searcher
         self.show_message = show_message
-        self.rows: list[CriterionRow] = []
         self.recent: list[CriteriaSearch] = []
         self.showing: CriteriaSearch | None = None  # the search the table is filtered by
         self.job = None  # the structure search running, if any
         self._pending: tuple | None = None
 
-        self.combine = QComboBox()
-        self.combine.addItem("all", "all")
-        self.combine.addItem("any", "any")
-        add = QPushButton("Add Condition")
+        #: the whole search: the top-level group
+        self.root = GroupBox(table, top=True)
+        self.combine = self.root.combine
         self.recent_button, self.recent_menu = menu_button("Recent")
         self.recent_menu.aboutToShow.connect(self._fill_recent)
-        header = FlowRow()
-        header.addWidget(QLabel("Match"))
-        header.addWidget(self.combine)
-        header.addWidget(QLabel("of these conditions"))
-
-        self._rows_box = QVBoxLayout()
-        self._rows_box.setContentsMargins(0, 0, 0, 0)
-        self._rows_box.setSpacing(0)  # rows divide themselves with hairlines
-        self._rows_box.addStretch(1)
         host = QWidget()
-        host.setLayout(self._rows_box)
+        host_box = QVBoxLayout(host)
+        host_box.setContentsMargins(0, 0, 0, 0)
+        host_box.addWidget(self.root)
+        host_box.addStretch(1)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -293,14 +443,12 @@ class AdvancedSearchPanel(QWidget):
         for widget in (self.show_button, self.select_button, self.clear_button, to_list):
             actions.addWidget(widget)
         tools = FlowRow()
-        tools.addWidget(add)
         tools.addWidget(self.recent_button)
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color: palette(placeholder-text)")
 
         layout = pane_layout(QVBoxLayout(self))
-        layout.addWidget(header)
         layout.addWidget(scroll, 1)
         layout.addWidget(tools)
         layout.addWidget(actions)
@@ -311,8 +459,7 @@ class AdvancedSearchPanel(QWidget):
         self._rerun.setSingleShot(True)
         self._rerun.setInterval(400)
         self._rerun.timeout.connect(self._refresh_showing)
-        add.clicked.connect(lambda: self.add_row())
-        self.combine.currentIndexChanged.connect(lambda _i: self._edited())
+        self.root.changed.connect(self._edited)
         self.show_button.clicked.connect(lambda: self.run("show"))
         self.select_button.clicked.connect(lambda: self.run("select"))
         self.list_button.clicked.connect(lambda: self.run("list"))
@@ -328,50 +475,39 @@ class AdvancedSearchPanel(QWidget):
         self._update()
 
     # -- rows ---------------------------------------------------------------------------------
+    @property
+    def rows(self) -> list[CriterionRow]:
+        """Every condition row, depth first through the groups."""
+        return self.root.rows()
+
     def add_row(self, criterion: Criterion | None = None) -> CriterionRow:
-        row = CriterionRow(self.table)
-        if criterion is not None:
-            row.set_criterion(criterion)
-        self.rows.append(row)
-        self._rows_box.insertWidget(self._rows_box.count() - 1, row)
-        row.changed.connect(self._edited)
-        row.removeRequested.connect(lambda: self.remove_row(row))
-        self._update()
-        return row
+        """Add a condition to the top-level group."""
+        return self.root.add_row(criterion)
+
+    def add_group(self, search: CriteriaSearch | None = None) -> GroupBox:
+        """Add a nested group to the top-level group."""
+        return self.root.add_group(search)
 
     def remove_row(self, row: CriterionRow) -> None:
-        if row in self.rows:
-            self.rows.remove(row)
-            row.setParent(None)
-            row.deleteLater()
-        if not self.rows:
-            self.add_row()
-        self._edited()
+        for group in [self.root, *self.root.groups()]:
+            if row in group.items:
+                group.remove(row)
+                return
 
     def current_search(self) -> CriteriaSearch:
-        return CriteriaSearch(
-            tuple(row.criterion() for row in self.rows), self.combine.currentData()
-        )
+        return self.root.search()
 
     def set_search(self, search: CriteriaSearch) -> None:
-        for row in list(self.rows):
-            self.rows.remove(row)
-            row.setParent(None)
-            row.deleteLater()
-        self.combine.blockSignals(True)
-        self.combine.setCurrentIndex(max(0, self.combine.findData(search.combine)))
-        self.combine.blockSignals(False)
-        for criterion in search.criteria:
-            self.add_row(criterion)
-        if not self.rows:
-            self.add_row()
+        self.root.set_search(search)
+        if not self.root.items:
+            self.root.add_row()
         self._update()
 
     def _edited(self) -> None:
         self._update()
 
     def _problems(self) -> list[str]:
-        """One message per row ("" where the row is fine)."""
+        """One message per condition row ("" where the row is fine), depth first."""
         problems = []
         for row in self.rows:
             try:
@@ -394,7 +530,8 @@ class AdvancedSearchPanel(QWidget):
             row.show_error(
                 problem if row.criterion().value or row.criterion().op == "blank" else ""
             )
-        ok = not any(problems) and self.job is None
+        empty_group = any(not g.items for g in self.root.groups())
+        ok = not any(problems) and not empty_group and self.job is None
         self.show_button.setEnabled(ok)
         self.select_button.setEnabled(ok)
         self.list_button.setEnabled(ok and bool(self.list_name.currentText().strip()))
@@ -415,7 +552,7 @@ class AdvancedSearchPanel(QWidget):
             return False
         list_name = self.list_name.currentText().strip()
         self._remember(search)
-        structure = [i for i, c in enumerate(search.criteria) if c.needs_structure_search]
+        structure = [i for i, c in enumerate(search.leaves()) if c.needs_structure_search]
         self._search_structures(
             search, structure, {}, lambda hits: self._finish(action, search, hits, list_name)
         )
@@ -429,7 +566,7 @@ class AdvancedSearchPanel(QWidget):
             then(hits)
             return
         index, rest = todo[0], todo[1:]
-        criterion = search.criteria[index]
+        criterion = search.leaves()[index]
         query = StructureQuery(criterion.value, criterion.op)
         self.status.setText(f"Searching structures ({len(hits) + 1} of {len(hits) + len(todo)})…")
 
@@ -494,8 +631,7 @@ class AdvancedSearchPanel(QWidget):
             if isinstance(change, ev.CellsChanged) and change.column in used:
                 structures_changed |= self.table.kind(change.column) == STRUCTURE
         if columns_changed:
-            for row in self.rows:
-                row.refresh_columns()
+            self.root.refresh_columns()
             self._update()
         if self.showing is not None and FILTER_KEY not in self.table.filters:
             # The table dropped the filter (one of its columns was removed or converted).
@@ -505,7 +641,7 @@ class AdvancedSearchPanel(QWidget):
         elif (
             self.showing is not None
             and structures_changed
-            and any(c.needs_structure_search for c in self.showing.criteria)
+            and any(c.needs_structure_search for c in self.showing.leaves())
         ):
             self._rerun.start()  # structure matches were found before the edit: search again
 
@@ -513,7 +649,7 @@ class AdvancedSearchPanel(QWidget):
         search = self.showing
         if search is None or self.job is not None:
             return
-        structure = [i for i, c in enumerate(search.criteria) if c.needs_structure_search]
+        structure = [i for i, c in enumerate(search.leaves()) if c.needs_structure_search]
         self._search_structures(
             search, structure, {}, lambda hits: self._finish("show", search, hits, "")
         )
@@ -542,7 +678,7 @@ class AdvancedSearchPanel(QWidget):
     def state(self) -> dict[str, Any]:
         """What to save with the document ({} when there is nothing worth keeping)."""
         search = self.current_search()
-        filled = any(c.value or c.op == "blank" for c in search.criteria)
+        filled = any(c.value or c.op == "blank" for c in search.leaves())
         if not filled and not self.recent:
             return {}
         return {

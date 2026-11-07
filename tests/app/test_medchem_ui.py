@@ -51,7 +51,7 @@ def _cells(table, name):
 def test_boiled_egg_plot(chem, qtbot) -> None:
     table = chem.workspace.table
     dialog = chem.open_tool("boiled_egg")
-    assert "TPSA (N,O,S,P)" in dialog.status.text()
+    assert not dialog.status.text().strip()
     dialog.accept()
     qtbot.waitUntil(lambda: dialog.plot is not None, timeout=20_000)
     assert _cells(table, "BOILED-Egg") == ["HIA (white)", "BBB (yolk)", "Outside", ""]
@@ -62,7 +62,7 @@ def test_boiled_egg_plot(chem, qtbot) -> None:
     assert plot.state()["guide"] == "boiled_egg"
     # Descriptors now exist, so a second plot needs no job.
     second = chem.open_tool("golden_triangle")
-    assert "MW" in second.status.text()  # only MW is missing
+    assert not second.status.text().strip()
     second.accept()
     qtbot.waitUntil(lambda: second.plot is not None, timeout=20_000)
     assert _cells(table, "Golden Triangle")[:3] == ["Outside"] * 3  # MW < 200; too lipophilic

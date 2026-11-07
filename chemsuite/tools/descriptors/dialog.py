@@ -25,7 +25,6 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QPushButton,
     QTreeWidget,
@@ -81,7 +80,6 @@ class DescriptorDialog(QDialog):
             "On: recalculating replaces the values in an existing “MW” column.\n"
             "Off: results go to new columns such as “MW (2)”."
         )
-        self.summary = QLabel()
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -96,7 +94,6 @@ class DescriptorDialog(QDialog):
         layout.addLayout(presets)
         layout.addWidget(self.selected_only)
         layout.addWidget(self.overwrite)
-        layout.addWidget(self.summary)
         layout.addWidget(self.buttons)
         self.resize(640, 640)
 
@@ -172,7 +169,6 @@ class DescriptorDialog(QDialog):
 
     def _update_summary(self) -> None:
         count = len(self.chosen_keys())
-        self.summary.setText(f"{count} descriptor(s) for {self._rows():,} row(s)")
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
             count > 0 and self._rows() > 0 and bool(self.structure.currentText())
         )

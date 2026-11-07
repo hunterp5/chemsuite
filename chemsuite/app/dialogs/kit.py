@@ -19,18 +19,19 @@ A tool dialog is a :class:`ToolDialog`:
 
 * **sections** in a fixed order, *Input* (structures or columns, which rows), *Method*,
   *Output* (column names, what to do if they exist), each a :class:`Section` with one label
-  column, fields of one width, and help text under the field it explains;
-* a **footer**: a sentence saying what will happen, which turns into the problem (with a
-  warning mark) when something must be fixed first, then Guide (bottom left, opening the
-  tool's section of the user guide), Cancel and the primary button, which names the action
-  ("Cluster 1,204 Rows"). There is no header: the window title names the tool.
+  column, fields of one width, and explanations in tooltips on the field and its label;
+* a **footer**: Guide (bottom left, opening the tool's section of the user guide), Cancel and
+  the primary button, which names the action ("Cluster 1,204 Rows"). Above them, only when
+  something must be fixed first, the problem with a warning mark. There is no header (the
+  window title names the tool) and no explanatory text: no sentence describing what will
+  happen, no heads-up notes. Explanations go in tooltips.
 
 Shared controls keep tools alike: :class:`RowsChoice` (All · Shown · Selected, with counts) and
 :class:`OutputChoice` (If it exists: Replace it · Add a new column).
 
 A subclass builds its sections in ``__init__``, calls :meth:`ToolDialog.refresh` when anything
-changes, and overrides :meth:`~ToolDialog.problem`, :meth:`~ToolDialog.summary`,
-:meth:`~ToolDialog.note`, :meth:`~ToolDialog.verb` and :meth:`~ToolDialog.run`.
+changes, and overrides :meth:`~ToolDialog.problem`, :meth:`~ToolDialog.verb` and
+:meth:`~ToolDialog.run`.
 """
 
 from __future__ import annotations
@@ -85,7 +86,9 @@ class Section(QWidget):
     dialog stays compact.
     """
 
-    def __init__(self, title: str) -> None:
+    def __init__(self, title: str, *, collapsed: bool | None = None) -> None:
+        """*collapsed* True or False makes the section foldable (folded or open to start);
+        a foldable section holds optional settings whose defaults suit most runs."""
         super().__init__()
         self.title = QLabel(title.upper())
         font = self.title.font()
@@ -100,6 +103,20 @@ class Section(QWidget):
         rule.setEnabled(False)
         heading = QHBoxLayout()
         heading.setSpacing(8)
+        #: the fold button of a foldable section (None otherwise)
+        self.toggle: QToolButton | None = None
+        if collapsed is not None:
+            self.toggle = QToolButton()
+            self.toggle.setAutoRaise(True)
+            self.toggle.setCheckable(True)
+            self.toggle.setChecked(not collapsed)
+            self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            self.toggle.setStyleSheet("QToolButton { border: none; padding: 0; }")
+            self.toggle.setToolTip("Show or hide these settings")
+            self.toggle.toggled.connect(self.set_open)
+            heading.addWidget(self.toggle)
+            self.title.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.title.mousePressEvent = lambda _event: self.toggle.toggle()
         heading.addWidget(self.title)
         heading.addWidget(rule, 1)
         self.form = QFormLayout()
@@ -113,8 +130,26 @@ class Section(QWidget):
         layout.setContentsMargins(0, 6, 0, 2)
         layout.setSpacing(8)
         layout.addLayout(heading)
-        layout.addLayout(self.form)
+        self.body = QWidget()
+        self.body.setLayout(self.form)
+        self.form.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.body)
         self._captions: dict[QWidget, QLabel] = {}
+        if self.toggle is not None:
+            self.set_open(self.toggle.isChecked())
+
+    def set_open(self, on: bool) -> None:
+        """Unfold or fold a foldable section."""
+        if self.toggle is None:
+            return
+        if self.toggle.isChecked() != on:
+            self.toggle.setChecked(on)  # calls back here
+            return
+        self.toggle.setArrowType(Qt.ArrowType.DownArrow if on else Qt.ArrowType.RightArrow)
+        self.body.setVisible(on)
+
+    def is_open(self) -> bool:
+        return self.toggle is None or self.toggle.isChecked()
 
     def row(self, label: str, field: QWidget, help: str = "") -> QWidget:
         """Add *field* with *label* ("" for none); *help* becomes its tooltip. Returns *field*."""
@@ -332,14 +367,11 @@ class ToolDialog(QDialog):
         self.warning_mark = QLabel("⚠")
         self.warning_mark.setStyleSheet("color: #c77700; font-size: 14px;")
         self.warning_mark.setAlignment(Qt.AlignmentFlag.AlignTop)
-        #: the footer sentence: the problem when there is one, else what will happen
+        #: what must be fixed before running (hidden when nothing is wrong)
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.status.setTextFormat(Qt.TextFormat.PlainText)
-        #: a heads-up that does not block running ("Butina on 80,000 rows may take minutes")
-        self.note_label = QLabel()
-        self.note_label.setWordWrap(True)
-        muted(self.note_label)
+        self.status.setStyleSheet("color: #b36b00;")
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -358,14 +390,12 @@ class ToolDialog(QDialog):
         self.guide_button.setVisible(GUIDE.exists())
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
-        words = QVBoxLayout()
-        words.setSpacing(2)
-        words.addWidget(self.status)
-        words.addWidget(self.note_label)
-        footer = QHBoxLayout()
+        self.footer = QWidget()
+        footer = QHBoxLayout(self.footer)
+        footer.setContentsMargins(0, 0, 0, 0)
         footer.setSpacing(8)
         footer.addWidget(self.warning_mark)
-        footer.addLayout(words, 1)
+        footer.addWidget(self.status, 1)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 14)
@@ -373,7 +403,7 @@ class ToolDialog(QDialog):
         layout.addLayout(self.sections)
         layout.addSpacing(4)
         layout.addWidget(rule)
-        layout.addLayout(footer)
+        layout.addWidget(self.footer)
         bottom = QHBoxLayout()
         bottom.addWidget(self.guide_button)
         bottom.addStretch(1)
@@ -383,25 +413,18 @@ class ToolDialog(QDialog):
         # (another method's settings) resize it rather than leave gaps.
         layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
         self.status.setFixedWidth(LABEL_WIDTH + 10 + FIELD_WIDTH - 20)
-        self.note_label.setFixedWidth(LABEL_WIDTH + 10 + FIELD_WIDTH - 20)
+        self.footer.hide()
 
     # -- building ---------------------------------------------------------------------------
-    def section(self, title: str) -> Section:
-        section = Section(title)
+    def section(self, title: str, *, collapsed: bool | None = None) -> Section:
+        """Add a section; ``collapsed=True`` makes a folded "More Options"-style section."""
+        section = Section(title, collapsed=collapsed)
         self.sections.addWidget(section)
         return section
 
     # -- what subclasses say ----------------------------------------------------------------
     def problem(self) -> str:
         """What must be fixed before running ("" when it can run)."""
-        return ""
-
-    def summary(self) -> str:
-        """One sentence: what running will do."""
-        return ""
-
-    def note(self) -> str:
-        """A heads-up that does not stop the run ("this may take minutes"), shown greyed."""
         return ""
 
     def verb(self) -> str:
@@ -423,12 +446,8 @@ class ToolDialog(QDialog):
     def refresh(self) -> None:
         """Bring the footer and the primary button up to date with the fields."""
         problem = self._problem()
-        self.warning_mark.setVisible(bool(problem))
-        self.status.setText(problem or self.summary())
-        self.status.setStyleSheet("color: #b36b00;" if problem else "")
-        heads_up = "" if problem else self.note()
-        self.note_label.setText(heads_up)
-        self.note_label.setVisible(bool(heads_up))
+        self.status.setText(problem)
+        self.footer.setVisible(bool(problem))
         self.primary.setText(self.verb())
         self.primary.setEnabled(not problem)
 

@@ -41,7 +41,6 @@ from chemsuite.tools.similarity.common import labels, scope_combo, scope_oids
 
 from .common import ResultTable, activity_combo, structure_cells
 
-WARN_ROWS = 50_000
 POOL_MIN_ROWS = 1000  # fragmenting is slow per molecule: worth the worker start-up early
 NO_ACTIVITY = "(none)"
 
@@ -95,12 +94,8 @@ class MmpDialog(QDialog):
         self._update()
 
     def _update(self) -> None:
-        count = len(scope_oids(self.ctx, self.rows.currentData()))
         problem = "" if self.structure.currentText() else "There is no structure column."
-        note = problem
-        if not problem and count > WARN_ROWS:
-            note = f"{count:,} rows: fragmenting may take several minutes (it can be cancelled)."
-        self.status.setText(note)
+        self.status.setText(problem)
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
 
     def accept(self) -> None:

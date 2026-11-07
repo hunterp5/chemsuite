@@ -163,26 +163,26 @@ def test_double_click_on_a_structure_opens_the_sketcher(structures) -> None:
     assert table.cell("SMILES", model.oid_at(0)) == "CCO"
 
 
-def test_double_click_on_an_invalid_structure_opens_the_text_editor(structures) -> None:
-    from chemsuite.app.structure_editor import StructureEditor
+def test_double_click_on_an_invalid_structure_opens_an_empty_sketcher(structures) -> None:
+    from chemsuite.app.sketcher import SketcherDialog
 
     window = structures
     model = window.workspace.model
+    table = window.workspace.table
     index = model.index(2, model.column_index("SMILES"))  # "C1CC" does not parse
     window.view.edit(index, window.view.EditTrigger.DoubleClicked, None)
-    editor = window.findChild(StructureEditor)
-    assert editor is not None and editor.text == "C1CC"
-    editor.reject()
+    sketcher = window.findChild(SketcherDialog)
+    assert sketcher is not None and sketcher.canvas.sketch.is_empty()
+    sketcher.reject()
+    assert table.cell("SMILES", model.oid_at(2)) == "C1CC"  # kept until a drawing replaces it
 
 
 def test_structure_cell_menu(structures) -> None:
     window = structures
     model = window.workspace.model
     menu = window.cell_menu(model.index(0, model.column_index("SMILES")))
-    assert menu_titles(menu) == [
+    assert menu_titles(menu) == [  # no plain Copy, no text editor
         "Edit in Sketcher…",
-        "Edit as Text…",
-        "Copy",
         "Copy As",
         "Paste",
         "Clear Cells",
@@ -317,7 +317,7 @@ def test_colour_dialog_gradient(window) -> None:
     dialog = window.columns.colour("pIC50")
     assert isinstance(dialog, ColumnColourDialog)
     assert dialog.chosen_mode() == GRADIENT
-    assert "from 5 (low) to 7 (high)" in dialog.status.text()
+    assert not dialog.status.text().strip()
     dialog.minimum.setText("9")
     assert "below high" in dialog.status.text() and not dialog.primary.isEnabled()
     dialog.minimum.setText("")

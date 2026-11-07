@@ -52,7 +52,7 @@ def test_split_dialog_previews_and_splits(assays) -> None:
     dialog = window.split_column("Assay")
     assert preview_headers(dialog) == ["Assay", "Assay_1", "Assay_2"]
     assert dialog.preview.item(0, 2).text() == "5.2"
-    assert "Detected “;”" in dialog.note.text()
+    assert not dialog.note.text().strip()
     dialog.prefix.setText("Data")
     dialog.update_preview()
     assert preview_headers(dialog)[1:] == ["Data_1", "Data_2"]
@@ -71,7 +71,7 @@ def test_split_dialog_custom_delimiter_and_errors(assays) -> None:
     assert not ok.isEnabled()
     dialog.custom.setText("C")
     dialog.update_preview()
-    assert ok.isEnabled() and "Splitting on “C”" in dialog.note.text()
+    assert ok.isEnabled() and not dialog.note.text().strip()
     dialog.keep.setCurrentIndex(dialog.keep.findData("last"))
     dialog.update_preview()
     assert preview_headers(dialog) == ["Assay", "Assay_last"]

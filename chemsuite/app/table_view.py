@@ -68,7 +68,7 @@ from chemsuite.core.selection import Selection
 from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table.columns import REACTION, STRUCTURE, ParsedColumn, ReactionColumn
 
-from .structure_editor import structure_text_from_mime
+from .structure_clipboard import structure_text_from_mime
 from .table_model import KIND_ROLE, STATUS_ROLE, STRUCTURE_ROLE, TableModel
 
 STRUCTURE_ROW_HEIGHT = 110
@@ -659,7 +659,7 @@ class TableView(QTableView):
     # -- editing ------------------------------------------------------------------------------
     def edit(self, index, trigger=None, event=None):  # type: ignore[override]
         """Structure and reaction cells open the sketcher on double-click and F2. Typing in a
-        structure cell opens the structure editor; typing in a reaction cell edits its text in
+        structure cell opens the sketcher too; typing in a reaction cell edits its text in
         place."""
         if trigger is None:
             return super().edit(index)

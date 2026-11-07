@@ -13,12 +13,16 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Advanced search: rows of conditions combined with "all" or "any".
+"""Advanced search: conditions combined with "all" or "any", in nested groups.
 
-Each :class:`Criterion` is one condition (column, operator, value). Text and number conditions
-are evaluated here with whole-column operations. Structure conditions need RDKit and may take a
-while, so the app runs them as background jobs and passes their matching rows in
-(``structure_hits``); this module stays free of chemistry.
+Each :class:`Criterion` is one condition (column, operator, value). A :class:`CriteriaSearch`
+is a group: conditions and other groups, combined with "all" (and) or "any" (or), optionally
+negated, so ``(A or B) and not (C and D)`` is a group of two groups. Structure conditions are
+numbered in depth-first order (:meth:`CriteriaSearch.leaves`), the order the app searches them.
+
+Text and number conditions are evaluated here with whole-column operations. Structure
+conditions need RDKit and may take a while, so the app runs them as background jobs and passes
+their matching rows in (``structure_hits``); this module stays free of chemistry.
 """
 
 from __future__ import annotations
@@ -228,42 +232,83 @@ class Criterion:
 
 @dataclass(frozen=True)
 class CriteriaSearch:
-    criteria: tuple[Criterion, ...]
+    """A group: conditions and nested groups, combined with *combine*, inverted by *negate*."""
+
+    criteria: tuple[Criterion | CriteriaSearch, ...]
     combine: Combine = "all"
+    negate: bool = False
+
+    def leaves(self) -> list[Criterion]:
+        """Every condition, depth first: the numbering *structure_hits* uses."""
+        out: list[Criterion] = []
+        for item in self.criteria:
+            out.extend(item.leaves() if isinstance(item, CriteriaSearch) else [item])
+        return out
 
     def check(self, table: Table) -> None:
         if not self.criteria:
             raise CriterionError("Add at least one condition.")
-        for criterion in self.criteria:
-            criterion.check(table)
+        for item in self.criteria:
+            if isinstance(item, CriteriaSearch) and not item.criteria:
+                raise CriterionError("A group needs at least one condition.")
+            item.check(table)
 
     def mask(
         self, table: Table, structure_hits: Mapping[int, np.ndarray] | None = None
     ) -> np.ndarray:
-        """``bool`` per row; *structure_hits* maps a criterion's index to its matching oids."""
-        hits = structure_hits or {}
-        masks = [c.matches(table, hits.get(i)) for i, c in enumerate(self.criteria)]
+        """``bool`` per row; *structure_hits* maps a condition's number (its index in
+        :meth:`leaves`) to its matching oids."""
+        return self._mask(table, structure_hits or {}, [0])
+
+    def _mask(self, table: Table, hits: Mapping[int, np.ndarray], counter: list[int]):
+        masks = []
+        for item in self.criteria:
+            if isinstance(item, CriteriaSearch):
+                masks.append(item._mask(table, hits, counter))
+            else:
+                masks.append(item.matches(table, hits.get(counter[0])))
+                counter[0] += 1
         if not masks:
-            return np.ones(len(table), dtype=np.bool_)
-        combined = np.logical_and if self.combine == "all" else np.logical_or
-        return combined.reduce(masks)
+            out = np.ones(len(table), dtype=np.bool_)
+        else:
+            combined = np.logical_and if self.combine == "all" else np.logical_or
+            out = combined.reduce(masks)
+        return ~out if self.negate else out
 
     def describe(self) -> str:
         joiner = " and " if self.combine == "all" else " or "
-        return joiner.join(c.describe() for c in self.criteria)
+        parts = [
+            f"({item.describe()})"
+            if isinstance(item, CriteriaSearch) and len(item.criteria) > 1 and not item.negate
+            else item.describe()
+            for item in self.criteria
+        ]
+        text = joiner.join(parts)
+        return f"not ({text})" if self.negate else text
 
     def renamed(self, old: str, new: str) -> CriteriaSearch:
         criteria = tuple(
-            dataclasses.replace(c, column=new) if c.column == old else c for c in self.criteria
+            item.renamed(old, new)
+            if isinstance(item, CriteriaSearch)
+            else dataclasses.replace(item, column=new)
+            if item.column == old
+            else item
+            for item in self.criteria
         )
         return dataclasses.replace(self, criteria=criteria)
 
     @property
     def columns(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys(c.column for c in self.criteria if c.column != ANY_COLUMN))
+        return tuple(dict.fromkeys(c.column for c in self.leaves() if c.column != ANY_COLUMN))
 
     def to_json(self) -> dict[str, Any]:
-        return {"combine": self.combine, "criteria": [c.to_json() for c in self.criteria]}
+        out: dict[str, Any] = {
+            "combine": self.combine,
+            "criteria": [item.to_json() for item in self.criteria],
+        }
+        if self.negate:
+            out["negate"] = True
+        return out
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> CriteriaSearch:
@@ -271,9 +316,17 @@ class CriteriaSearch:
         if combine not in ("all", "any"):
             raise ValueError(f"unknown combination {combine!r}")
         criteria = data.get("criteria")
-        if not isinstance(criteria, Sequence):
+        if not isinstance(criteria, Sequence) or isinstance(criteria, str):
             raise ValueError("a saved search needs a list of conditions")
-        return cls(tuple(Criterion.from_json(c) for c in criteria), combine)
+        items: list[Criterion | CriteriaSearch] = []
+        for entry in criteria:
+            if not isinstance(entry, Mapping):
+                raise ValueError(f"not a saved condition: {entry!r}")
+            # a group has its own list of conditions; a condition has a column
+            items.append(
+                cls.from_json(entry) if "criteria" in entry else Criterion.from_json(entry)
+            )
+        return cls(tuple(items), combine, bool(data.get("negate", False)))
 
 
 @dataclass(frozen=True)

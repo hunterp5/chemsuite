@@ -168,19 +168,26 @@ class OidFilter(Filter):
 
 @dataclass(frozen=True)
 class SearchFilter(Filter):
-    """Keep rows where any text or number column matches *query* (the quick search box)."""
+    """Keep rows where a text or number column matches *query* (the quick search box).
+
+    *column* limits the search to one column; None searches every searchable column.
+    """
 
     query: Query
     negate: bool = False
+    column: str | None = None
 
     @property
     def columns(self) -> tuple[str, ...]:
-        return ()  # every searchable column at evaluation time; never dropped with a column
+        # all columns: whatever is searchable at evaluation time, never dropped with a column;
+        # one column: dropped (and the bar told) when that column goes
+        return () if self.column is None else (self.column,)
 
     def mask(self, table: Table) -> np.ndarray:
         if not self.query.text:
             return np.ones(len(table), dtype=np.bool_)
-        return match_mask(table, self.query).any(axis=1)
+        columns = None if self.column is None else [self.column]
+        return match_mask(table, self.query, columns).any(axis=1)
 
 
 # -- summaries for filter widgets ------------------------------------------------------------

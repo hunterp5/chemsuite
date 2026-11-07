@@ -278,9 +278,7 @@ class SplitColumnDialog(_Base):
                 error=True,
             )
         else:
-            detected = "Detected" if delimiter is None else "Splitting on"
-            count = f"{len(headers)} new column" + ("s" if len(headers) != 1 else "")
-            self._say(f"{detected} {_describe(full.delimiter)} · {count}")
+            self._say("")
 
     def apply(self) -> None:
         self.result_names = split_column(
@@ -380,10 +378,7 @@ class JoinColumnsDialog(_Base):
             for oid, text in zip(oids.tolist(), joined, strict=True)
         ]
         self._fill([*names, result], rows)
-        taken = result in self.table
-        self._say(
-            f"“{result}” exists; the result goes to a new column beside it." if taken else " "
-        )
+        self._say("")
 
     def apply(self) -> None:
         self.result_name = join_columns(

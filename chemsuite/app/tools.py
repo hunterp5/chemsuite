@@ -38,7 +38,7 @@ from PySide6.QtWidgets import QDialog, QDockWidget, QWidget
 from chemsuite.core.lists import RowLists
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
-from chemsuite.core.table.columns import STRUCTURE, Column
+from chemsuite.core.table.columns import REACTION, STRUCTURE, Column
 
 from .jobs import QUEUE, Job
 
@@ -53,8 +53,9 @@ class Tool:
     ``menu`` is the menu path, e.g. ``("Chemistry",)`` or ``("Chemistry", "Calculate")``.
     ``requires`` names importable modules; a tool whose module is missing is shown disabled
     with the reason. ``needs_structures`` disables the tool while the table has no structure
-    column. ``restore`` reopens a panel saved with the document: a panel that should be saved
-    has ``state() -> dict`` and a ``tool_id`` naming the tool whose ``restore`` takes that dict.
+    column, ``needs_reactions`` while it has no reaction column. ``restore`` reopens a panel
+    saved with the document: a panel that should be saved has ``state() -> dict`` and a
+    ``tool_id`` naming the tool whose ``restore`` takes that dict.
     """
 
     id: str
@@ -63,6 +64,7 @@ class Tool:
     open: Callable[[ToolContext], Any]
     requires: tuple[str, ...] = ()
     needs_structures: bool = False
+    needs_reactions: bool = False
     shortcut: str | None = None
     tip: str = ""
     restore: Callable[[ToolContext, dict], Any] | None = None
@@ -103,6 +105,16 @@ class ToolContext:
     def structure_columns(self) -> list[str]:
         table = self.table
         return [name for name in table.column_names if table.kind(name) == STRUCTURE]
+
+    def reaction_columns(self) -> list[str]:
+        table = self.table
+        return [name for name in table.column_names if table.kind(name) == REACTION]
+
+    def default_reaction_column(self) -> str | None:
+        """The current cell's column when it holds reactions, else the first reaction column."""
+        current = self.current_column()
+        names = self.reaction_columns()
+        return current if current in names else (names[0] if names else None)
 
     def current_column(self) -> str | None:
         """The column of the table's current cell, if any."""
@@ -234,6 +246,10 @@ class ToolContext:
         Returns the new row's oid, or None when *text* is blank.
         """
         return self._window.append_compound(text)
+
+    def open_table(self, table: Table, message: str = "") -> Any:
+        """Show *table* (e.g. an enumerated library) in a new, unsaved document window."""
+        return self._window.open_table(table, message)
 
     def open_tool(self, tool_id: str) -> Any:
         """Open another tool (e.g. a scatter plot from a correlation) and return what it opened."""

@@ -146,3 +146,51 @@ def test_json_round_trip() -> None:
     assert search.describe() == "not (pIC50 between 6 and 8) or any column contains x"
     with pytest.raises(ValueError):
         CriteriaSearch.from_json({"combine": "most", "criteria": []})
+
+
+def test_nested_groups(table) -> None:
+    # (Series A or Series B) and not (pIC50 > 7 and ID starts with CPD)
+    either = CriteriaSearch(
+        (Criterion("Series", "equals", "A"), Criterion("Series", "equals", "B")), "any"
+    )
+    potent_cpd = CriteriaSearch(
+        (Criterion("pIC50", "gt", "7"), Criterion("ID", "starts", "CPD", case_sensitive=True)),
+        "all",
+        negate=True,
+    )
+    search = CriteriaSearch((either, potent_cpd), "all")
+    assert rows(table, search.mask(table)) == ["CPD-1", "cpd-3", "CPD-5"]  # CPD-2 is excluded
+    assert search.describe() == (
+        "(Series equals A or Series equals B) and not (pIC50 > 7 and ID starts with CPD)"
+    )
+    assert search.columns == ("Series", "pIC50", "ID")
+    assert CriteriaSearch.from_json(search.to_json()) == search
+    renamed = search.renamed("Series", "Set")
+    assert renamed.leaves()[1].column == "Set" and renamed.criteria[1] == potent_cpd
+
+
+def test_not_x_in_one_column_and_not_y_in_another(table) -> None:
+    search = CriteriaSearch(
+        (
+            Criterion("Series", "equals", "A", negate=True),
+            Criterion("ID", "contains", "5", negate=True),
+        )
+    )
+    assert rows(table, search.mask(table)) == ["CPD-2", "X-4"]
+
+
+def test_structure_hits_are_numbered_depth_first(table) -> None:
+    ring = Criterion("SMILES", "substructure", "c1ccccc1")
+    amine = Criterion("SMILES", "substructure", "N")
+    search = CriteriaSearch(
+        (CriteriaSearch((ring, Criterion("pIC50", "gt", "7")), "all"), amine), "any"
+    )
+    assert search.leaves() == [ring, Criterion("pIC50", "gt", "7"), amine]
+    hits = {0: table.oids[[1]], 2: table.oids[[2]]}  # condition 1 is not a structure search
+    assert rows(table, search.mask(table, hits)) == ["CPD-2", "cpd-3"]
+
+
+def test_empty_group_is_a_problem(table) -> None:
+    search = CriteriaSearch((Criterion("Series", "equals", "A"), CriteriaSearch(())))
+    with pytest.raises(CriterionError, match="group needs"):
+        search.check(table)

@@ -25,20 +25,23 @@ elsewhere highlights the matching points here.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor, QImage, QPixmap
+from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
     QFrame,
+    QHBoxLayout,
     QLabel,
+    QMenu,
+    QPushButton,
     QSpinBox,
     QToolBar,
     QVBoxLayout,
@@ -48,12 +51,22 @@ from PySide6.QtWidgets import (
 from chemsuite.analysis.medchem_space import GUIDES
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Changed, Table
-from chemsuite.core.table.columns import NUMBER, TEXT
+from chemsuite.core.table.columns import NUMBER, STRUCTURE, TEXT
 from chemsuite.plotting.data import colorable_columns, number_columns, shown_oids
 from chemsuite.plotting.stats import CURVES
 
 from ..flow_layout import compact
 from ..glyphs import glyph
+from .cards import (
+    MAX_PINNED,
+    SIZES,
+    WHEN,
+    CardContent,
+    CardOptions,
+    HoverCard,
+    ImageProvider,
+    PinnedCards,
+)
 from .renderers import RENDERERS, Hover, PlotSpec
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
 
@@ -62,34 +75,6 @@ KINDS = {"scatter": "Scatter", "histogram": "Histogram", "box": "Box Plot"}
 REBUILD_DELAY_MS = 150
 #: left, top, right, bottom space round the plot, so the axis titles do not touch the edges
 AXIS_MARGINS = (6, 6, 10, 6)
-ImageProvider = Callable[[int], QImage | None]
-
-
-class HoverCard(QFrame):
-    """A tooltip-like card: structure drawing and values for the point under the mouse."""
-
-    def __init__(self, parent: QWidget) -> None:
-        super().__init__(parent, Qt.WindowType.ToolTip)
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setStyleSheet(
-            "HoverCard { background: palette(base); border: 1px solid palette(mid); }"
-        )
-        self.image = QLabel()
-        self.text = QLabel()
-        self.text.setTextFormat(Qt.TextFormat.PlainText)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.addWidget(self.image, 0, Qt.AlignmentFlag.AlignHCenter)
-        layout.addWidget(self.text)
-
-    def show_at(self, pos: QPoint, image: QImage | None, lines: list[str]) -> None:
-        self.image.setVisible(image is not None)
-        if image is not None:
-            self.image.setPixmap(QPixmap.fromImage(image))
-        self.text.setText("\n".join(lines))
-        self.adjustSize()
-        self.move(pos + QPoint(16, 16))
-        self.show()
 
 
 class PlotOptions(QFrame):
@@ -180,12 +165,11 @@ class PlotPanel(QWidget):
             self._labels[widget] = label
             form.addRow(label, widget)
         form.addRow("", self.fit)
-        #: what was drawn: point counts, rows left out, fitted curves and their parameters
+        #: what was drawn: point counts, rows left out, fitted curves and their parameters.
+        #: Not shown in the options (no explanatory text there); the fit and curve controls
+        #: carry it as their tooltip.
         self.summary = QLabel(" ")
-        self.summary.setWordWrap(True)
-        self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.summary.setStyleSheet("color: palette(placeholder-text);")
-        form.addRow(self.summary)
+        self._build_card_options(form)
 
         # A slim toolbar joined to the top of the plot: icon buttons, the mode ones exclusive.
         self.toolbar = QToolBar()
@@ -226,6 +210,9 @@ class PlotPanel(QWidget):
         self.plot.layout.setContentsMargins(*AXIS_MARGINS)
         self._apply_palette()
         self.card = HoverCard(self)
+        self.pinned = PinnedCards(self.plot_widget, self._data_to_widget)
+        self.view_box.sigRangeChanged.connect(lambda *_: self.pinned.place())
+        self.plot_widget.installEventFilter(self)
 
         self.plot_widget.setFrameShape(QFrame.Shape.NoFrame)
         frame = QFrame()  # one bordered box round the toolbar and the plot
@@ -341,12 +328,15 @@ class PlotPanel(QWidget):
             "curve": spec.curve,
             "guide": spec.guide,
             "title": self.custom_title,
+            "cards": self.card_options.state(),
         }
 
     def set_state(self, state: dict) -> None:
         """Apply saved settings; names of columns that no longer exist are ignored."""
         title = state.get("title")
         self.custom_title = title.strip() or None if isinstance(title, str) else None
+        if "cards" in state:
+            self.set_card_options(CardOptions.from_state(state["cards"]))
         known = ("kind", "x", "y", "color", "size", "bins", "fit", "curve", "guide")
         values = {key: state[key] for key in known if key in state}
         if values.get("kind") not in KINDS:
@@ -409,7 +399,10 @@ class PlotPanel(QWidget):
                 self.renderer.clear()
             self.renderer = renderer_type(self.plot)
         self.summary.setText(self.renderer.build(self.table, spec, shown_oids(self.table)))
+        for control in (self.fit, self.curve):
+            control.setToolTip(self.summary.text())
         self.renderer.show_selection(self.selection.oids)
+        self.update_pinned()
         axes = (spec.kind, spec.x, spec.y, spec.bins)
         if axes != self._last_axes:
             self._last_axes = axes
@@ -499,6 +492,7 @@ class PlotPanel(QWidget):
     def _on_selection(self, oids: frozenset[int], origin: str) -> None:
         if origin != self._origin and self.renderer is not None:
             self.renderer.show_selection(oids)
+        self.update_pinned()
 
     # -- selecting ------------------------------------------------------------------------------
     def _select(self, oids: np.ndarray, modifiers) -> None:
@@ -512,6 +506,7 @@ class PlotPanel(QWidget):
         else:
             self.selection.set(oids.tolist(), self._origin)
         self.renderer.show_selection(self.selection.oids)
+        self.update_pinned()
 
     def _on_click(self, x: float, y: float, modifiers) -> None:
         sx, sy = self.view_box.viewPixelSize()
@@ -520,7 +515,11 @@ class PlotPanel(QWidget):
     # -- hovering -------------------------------------------------------------------------------
     def _on_mouse_moved(self, args) -> None:
         pos = args[0]
-        if self.renderer is None or not self.view_box.sceneBoundingRect().contains(pos):
+        if (
+            self.renderer is None
+            or not self.card_options.hovering
+            or not self.view_box.sceneBoundingRect().contains(pos)
+        ):
             self.card.hide()
             return
         point = self.view_box.mapSceneToView(pos)
@@ -532,16 +531,170 @@ class PlotPanel(QWidget):
         self.show_hover(hover)
 
     def show_hover(self, hover: Hover) -> None:
-        lines = list(hover.lines)
-        title = hover.title
-        if hover.oid is not None:
-            label = next((n for n in self.table.column_names if self.table.kind(n) == TEXT), None)
+        if hover.oid is None:  # a group of rows (a histogram bar, a box)
+            content = CardContent(hover.title, list(hover.lines))
+        else:
+            content = self.card_content(hover.oid)
+        if content.empty():
+            self.card.hide()
+            return
+        self.card.show_at(QCursor.pos(), content)
+
+    # -- point cards ----------------------------------------------------------------------------
+    def _build_card_options(self, form: QFormLayout) -> None:
+        self.card_options = CardOptions()
+        self.card_when = QComboBox()
+        for key, title in WHEN.items():
+            self.card_when.addItem(title, key)
+        self.card_when.setToolTip(
+            "When point cards show. Selected: each selected point keeps a card beside it "
+            f"(up to {MAX_PINNED} points)."
+        )
+        compact(self.card_when, chars=16)
+        rule = QFrame()
+        rule.setFrameShape(QFrame.Shape.HLine)
+        rule.setFrameShadow(QFrame.Shadow.Plain)
+        rule.setEnabled(False)
+        form.addRow(rule)
+        form.addRow("Point cards:", self.card_when)
+        shows = QWidget()
+        line = QHBoxLayout(shows)
+        line.setContentsMargins(0, 0, 0, 0)
+        line.setSpacing(8)
+        self.card_structure = QCheckBox("Structure")
+        self.card_label = QCheckBox("Label")
+        self.card_label.setToolTip("The row's first text column (its name or ID)")
+        self.card_values = QCheckBox("Values")
+        self.card_values.setToolTip("The plotted columns: X, Y, colour and size")
+        for box in (self.card_structure, self.card_label, self.card_values):
+            line.addWidget(box)
+        line.addStretch(1)
+        form.addRow("Show:", shows)
+        self.card_columns_button = QPushButton("None")
+        self.card_columns_button.setToolTip("More columns to show on the cards")
+        self.card_columns_menu = QMenu(self.card_columns_button)
+        self.card_columns_menu.aboutToShow.connect(self._fill_card_columns)
+        self.card_columns_button.setMenu(self.card_columns_menu)
+        self.card_columns_button.setStyleSheet("text-align: left; padding: 3px 8px;")
+        form.addRow("More columns:", self.card_columns_button)
+        self.card_size = QComboBox()
+        for key, (title, _size) in SIZES.items():
+            self.card_size.addItem(title, key)
+        compact(self.card_size, chars=16)
+        form.addRow("Drawing size:", self.card_size)
+        self._show_card_options(self.card_options)
+        for box in (self.card_structure, self.card_label, self.card_values):
+            box.toggled.connect(self._card_controls_changed)
+        for combo in (self.card_when, self.card_size):
+            combo.currentIndexChanged.connect(self._card_controls_changed)
+
+    def _show_card_options(self, options: CardOptions) -> None:
+        controls = (
+            self.card_when,
+            self.card_size,
+            self.card_structure,
+            self.card_label,
+            self.card_values,
+        )
+        for control in controls:
+            control.blockSignals(True)
+        self.card_when.setCurrentIndex(self.card_when.findData(options.when))
+        self.card_size.setCurrentIndex(self.card_size.findData(options.size))
+        self.card_structure.setChecked(options.structure)
+        self.card_label.setChecked(options.label)
+        self.card_values.setChecked(options.values)
+        for control in controls:
+            control.blockSignals(False)
+        count = len(options.columns)
+        self.card_columns_button.setText(
+            "None" if not count else options.columns[0] if count == 1 else f"{count} columns"
+        )
+
+    def _card_controls_changed(self, *_args) -> None:
+        self.set_card_options(
+            CardOptions(
+                when=self.card_when.currentData(),
+                structure=self.card_structure.isChecked(),
+                label=self.card_label.isChecked(),
+                values=self.card_values.isChecked(),
+                columns=self.card_options.columns,
+                size=self.card_size.currentData(),
+            )
+        )
+
+    def _fill_card_columns(self) -> None:
+        menu = self.card_columns_menu
+        menu.clear()
+        chosen = set(self.card_options.columns)
+        for name in self.table.column_names:
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(name in chosen)
+            action.toggled.connect(lambda on, n=name: self._toggle_card_column(n, on))
+
+    def _toggle_card_column(self, name: str, on: bool) -> None:
+        columns = [c for c in self.card_options.columns if c != name]
+        if on:
+            columns.append(name)
+        self.set_card_options(replace(self.card_options, columns=tuple(columns)))
+
+    def set_card_options(self, options: CardOptions) -> None:
+        """When cards show and what they hold; redraws the pinned cards."""
+        self.card_options = options
+        self._show_card_options(options)
+        if not options.hovering:
+            self.card.hide()
+        self.update_pinned()
+
+    def card_content(self, oid: int) -> CardContent:
+        """The card for one row, as the card options say."""
+        options = self.card_options
+        table = self.table
+        content = CardContent()
+        if options.label:
+            label = next((n for n in table.column_names if table.kind(n) == TEXT), None)
             if label:
-                title = self.table.cell(label, hover.oid)
-        if title:
-            lines.insert(0, title)
-        image = self._images(hover.oid) if self._images and hover.oid is not None else None
-        self.card.show_at(QCursor.pos(), image, lines)
+                content.title = table.cell(label, oid)
+        shown: list[str] = []
+        if options.values:
+            spec = self.spec()
+            shown = [n for n in (spec.x, spec.y, spec.color, spec.size) if n and n in table]
+        for name in options.columns:
+            if name in table and name not in shown and table.kind(name) != STRUCTURE:
+                shown.append(name)
+        content.lines = [f"{name}: {table.cell(name, oid)}" for name in dict.fromkeys(shown)]
+        if options.structure and self._images is not None:
+            content.image = self._images(oid, SIZES[options.size][1])
+        return content
+
+    def _data_to_widget(self, x: float, y: float) -> QPointF:
+        scene = self.view_box.mapViewToScene(QPointF(x, y))
+        return QPointF(self.plot_widget.mapFromScene(scene))
+
+    def update_pinned(self) -> None:
+        """Cards beside the selected points (when the options ask for them)."""
+        renderer = self.renderer
+        if (
+            not hasattr(self, "pinned")
+            or renderer is None
+            or not self.card_options.pinning
+            or not hasattr(renderer, "x")
+            or not len(self.selection)
+        ):
+            if hasattr(self, "pinned"):
+                self.pinned.clear()
+            return
+        mask = np.isin(renderer.oids, self.selection.as_array())
+        points = [
+            (int(o), float(x), float(y))
+            for o, x, y in zip(renderer.oids[mask], renderer.x[mask], renderer.y[mask], strict=True)
+        ]
+        self.pinned.show(points, self.card_content)
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.plot_widget and event.type() == QEvent.Type.Resize:
+            self.pinned.place()
+        return super().eventFilter(watched, event)
 
     def leaveEvent(self, event) -> None:
         self.card.hide()
@@ -566,4 +719,5 @@ class PlotPanel(QWidget):
         self._unsubscribe_selection()
         self._rebuild_timer.stop()
         self.card.hide()
+        self.pinned.clear()
         self.options.hide()

@@ -227,11 +227,7 @@ class BinningDialog(QDialog):
         ):
             for col, text in enumerate((rng, cls, f"{count:,}")):
                 self.preview.setItem(row, col, QTableWidgetItem(text))
-        unbinned = int((result.index < 0).sum())
-        self.status.setText(
-            f"{int(counts.sum()):,} row(s) in {len(counts)} bin(s)"
-            + (f"; {unbinned:,} blank or outside every bin" if unbinned else "")
-        )
+        self.status.setText("")
         ok.setEnabled(self.write_range.isChecked() or self.write_class.isChecked())
 
     def accept(self) -> None:

@@ -253,16 +253,6 @@ class CalculatorDialog(ToolDialog):
             return "Name the new column."
         return ""
 
-    def summary(self) -> str:
-        n = len(self.rows.oids())
-        return f"Calculates {self.name.text().strip()} for {n:,} {self.rows.describe()}rows."
-
-    def note(self) -> str:
-        formula = self.formula
-        if formula is not None and formula.chemistry and len(self.rows.oids()) > 20_000:
-            return "Chemistry functions on many rows run in the background; this may take a while."
-        return ""
-
     def verb(self) -> str:
         return f"Calculate {len(self.rows.oids()):,} Rows"
 

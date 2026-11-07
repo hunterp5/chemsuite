@@ -93,9 +93,6 @@ class ClusterDialog(ToolDialog):
             signal.connect(lambda *_: self._update())
         self._update()
 
-    def _name(self) -> str:
-        return self.output.text().strip() or CLUSTER_COLUMN
-
     def _rows(self) -> int:
         return len(self.rows.oids())
 
@@ -118,22 +115,6 @@ class ClusterDialog(ToolDialog):
         if method == "hierarchical" and fingerprints and self.linkage.currentData() == "ward":
             return "Ward linkage needs number columns: choose average or complete."
         return ""
-
-    def note(self) -> str:
-        rows = self._rows()
-        if self.method.currentData() == "butina" and rows > cl.BUTINA_WARN_ROWS:
-            return f"Butina compares every pair: {rows:,} rows may take minutes (you can cancel)."
-        return ""
-
-    def summary(self) -> str:
-        method = self.method.currentData()
-        how = {
-            "butina": f"Butina at {self.cutoff.value():.2f}",
-            "kmeans": f"k-means into {self.k.value():,}",
-            "hierarchical": f"{self.linkage.currentText()} hierarchical into {self.k.value():,}",
-        }[method]
-        name = self._name()
-        return f"{how} by {self.features.describe()} → {name}, {name} Size, {name} Centre"
 
     def verb(self) -> str:
         return f"Cluster {self._rows():,} Rows"

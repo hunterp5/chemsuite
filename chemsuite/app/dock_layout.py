@@ -16,9 +16,13 @@
 
 """Arranging panes around the table, and saving that arrangement with the document.
 
-Panes (plots, Filters, Advanced Search, the Selection Browser) dock left of, right of or below
-the table, side by side, stacked or as tabs. They can be dragged by their header, and each
-header's **Arrange** menu places the pane exactly:
+Panes (plots, the Selection Browser) dock left of, right of or below the table, side by side,
+stacked or as tabs. Two are exceptions: Filters is pinned at the right edge of the window at a
+fixed width (``FILTER_WIDTH``), and every arrangement keeps it there; Advanced Search is always
+its own floating window (``float_search``).
+
+The other panes can be dragged by their header, and each header's **Arrange** menu places
+the pane exactly:
 
 * **Beside** / **Below** another pane: split that pane's space in two;
 * **Tab With** another pane;
@@ -50,6 +54,10 @@ from PySide6.QtWidgets import QDockWidget, QMenu
 if TYPE_CHECKING:
     from .main_window import MainWindow
 
+#: the pinned Filters pane's width
+FILTER_WIDTH = 320
+#: the Advanced Search window's first size
+SEARCH_SIZE = (780, 560)
 LAYOUT_KEY = "layout"
 LAYOUT_VERSION = 1  # QMainWindow.saveState version tag
 TABS, SIDE, STACKED, GRID = "tabs", "side", "stacked", "grid"
@@ -79,6 +87,60 @@ def docked(window: MainWindow) -> list[QDockWidget]:
         for d in [*fixed, *window._panels]
         if is_open(d) and not d.isFloating() and d.widget() is not None
     ]
+
+
+def arrangeable(window: MainWindow) -> list[QDockWidget]:
+    """Docked panes the Arrange menus may move (all but the pinned Filters pane)."""
+    return [d for d in docked(window) if d is not window.filter_dock]
+
+
+def pin_filters(window: MainWindow) -> None:
+    """Put the Filters pane (and anything tabbed with it) back at the window's right edge."""
+    dock = window.filter_dock
+    if not is_open(dock) or getattr(window, "_pinning", False):
+        return
+    window._pinning = True  # re-adding the pane fires visibility signals that call back here
+    try:
+        _pin(window, dock)
+    finally:
+        window._pinning = False
+
+
+def _pin(window: MainWindow, dock: QDockWidget) -> None:
+    dock.setFloating(False)
+    companions = tab_group(window, dock)
+    right = Qt.DockWidgetArea.RightDockWidgetArea
+    current = next((d for d in [dock, *companions] if d.isVisible()), dock)
+    for d in [dock, *companions]:
+        _take(window, d)
+    window.addDockWidget(right, dock, Qt.Orientation.Horizontal)
+    _put(dock)
+    for d in companions:
+        window.tabifyDockWidget(dock, d)
+        _put(d)
+    current.raise_()
+
+
+def float_search(window: MainWindow, *, show: bool = True) -> None:
+    """Show Advanced Search as its own window (never docked). The first time, it gets a
+    useful size over the right side of the main window; after that it keeps where you put it.
+    With *show* False, only re-float it if it is open (after restoring a saved layout)."""
+    dock = window.search_dock
+    if not show and not is_open(dock):
+        return
+    first = not dock.property("placed")
+    if not dock.isFloating():
+        dock.setFloating(True)
+    if first:
+        frame = window.frameGeometry()
+        width, height = SEARCH_SIZE
+        width, height = min(width, frame.width()), min(height, frame.height())
+        dock.resize(width, height)
+        dock.move(frame.right() - width - 40, frame.top() + 80)
+        dock.setProperty("placed", True)
+    dock.show()
+    dock.raise_()
+    dock.activateWindow()
 
 
 def tab_group(window: MainWindow, dock: QDockWidget) -> list[QDockWidget]:
@@ -124,6 +186,7 @@ def split(
     target.raise_()
     _even(window, [target, dock], orientation)
     dock.raise_()
+    pin_filters(window)
 
 
 def tab_with(window: MainWindow, target: QDockWidget, dock: QDockWidget) -> None:
@@ -134,6 +197,7 @@ def tab_with(window: MainWindow, target: QDockWidget, dock: QDockWidget) -> None
     window.tabifyDockWidget(target, dock)
     _put(dock)
     dock.raise_()
+    pin_filters(window)
 
 
 def move_to_area(window: MainWindow, dock: QDockWidget, area: Qt.DockWidgetArea) -> None:
@@ -155,11 +219,12 @@ def move_to_area(window: MainWindow, dock: QDockWidget, area: Qt.DockWidgetArea)
         else:
             window.resizeDocks([dock], [max(240, window.height() // 3)], Qt.Orientation.Vertical)
     dock.raise_()
+    pin_filters(window)
 
 
 def arrange(window: MainWindow, how: str, docks: list[QDockWidget] | None = None) -> int:
     """Lay out every docked pane (or *docks*) right of the table; returns how many moved."""
-    docks = list(docks if docks is not None else docked(window))
+    docks = list(docks if docks is not None else arrangeable(window))
     if not docks:
         return 0
     area = Qt.DockWidgetArea.RightDockWidgetArea
@@ -199,6 +264,7 @@ def arrange(window: MainWindow, how: str, docks: list[QDockWidget] | None = None
     window.resizeDocks([first], [max(360, total)], Qt.Orientation.Horizontal)
     if how == SIDE:
         _even(window, docks, Qt.Orientation.Horizontal)
+    pin_filters(window)
     return len(docks)
 
 
@@ -218,7 +284,8 @@ def _even(window: MainWindow, docks: list[QDockWidget], orientation: Qt.Orientat
 def fill_arrange_menu(menu: QMenu, window: MainWindow, dock: QDockWidget) -> None:
     """The Arrange menu of one pane's header (rebuilt each time it opens)."""
     menu.clear()
-    others = [d for d in docked(window) if d is not dock]
+    others = arrangeable(window)
+    others = [d for d in others if d is not dock]
     for title, orientation in (
         ("Beside", Qt.Orientation.Horizontal),
         ("Below", Qt.Orientation.Vertical),
@@ -251,7 +318,7 @@ def fill_arrange_menu(menu: QMenu, window: MainWindow, dock: QDockWidget) -> Non
 
 def fill_arrange_all_menu(menu: QMenu, window: MainWindow) -> None:
     menu.clear()
-    count = len(docked(window))
+    count = len(arrangeable(window))
     for how, title in ARRANGEMENTS:
         action = menu.addAction(title, lambda h=how: arrange(window, h))
         action.setEnabled(count > 1 or (count == 1 and how == TABS))
@@ -283,6 +350,7 @@ def capture(window: MainWindow) -> dict[str, Any]:
             "case": search.case.isChecked(),
             "whole": search.whole.isChecked(),
             "regex": search.regex.isChecked(),
+            "column": search.column_name(),
         }
     return out
 
@@ -301,6 +369,8 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
         bar = window.search
         for key, action in (("case", bar.case), ("whole", bar.whole), ("regex", bar.regex)):
             action.setChecked(bool(search.get(key)))
+        column = search.get("column")
+        bar.set_column(column if isinstance(column, str) else None)
         text = str(search.get("text") or "")
         if search.get("open") or text:
             bar.open()
@@ -318,3 +388,5 @@ def restore_docks(window: MainWindow, saved: dict[str, Any]) -> None:
         except (ValueError, UnicodeError):
             return
         window.restoreState(QByteArray(data), LAYOUT_VERSION)
+        pin_filters(window)  # documents saved before Filters was pinned may have moved it
+        float_search(window, show=False)  # ... or docked Advanced Search
