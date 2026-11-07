@@ -391,3 +391,48 @@ def test_pinned_cards_never_overlap() -> None:
         rect = _free_spot(QPoint(x, 300), size, bounds, taken)
         assert bounds.contains(rect) and not any(rect.intersects(t) for t in taken)
         taken.append(rect)
+
+
+def test_pinned_cards_keep_clear_of_the_other_points() -> None:
+    from PySide6.QtCore import QPoint, QRect, QSize
+
+    from chemsuite.app.plots.cards import POINT_CLEARANCE, _free_spot
+
+    bounds, size, taken = QRect(0, 0, 800, 600), QSize(110, 80), []
+    points = [QPoint(400 + dx, 300 + dy) for dx in (-30, 0, 30) for dy in (-30, 0, 30)]
+    for point in points:  # a tight cluster of nine selected points
+        others = [p for p in points if p != point]
+        rect = _free_spot(point, size, bounds, taken, others)
+        assert bounds.contains(rect) and not any(rect.intersects(t) for t in taken)
+        c = POINT_CLEARANCE
+        assert not any(rect.intersects(QRect(p.x() - c, p.y() - c, 2 * c, 2 * c)) for p in points)
+        taken.append(rect)
+
+
+def test_card_drawings_fit_the_molecule() -> None:
+    from rdkit import Chem
+
+    from chemsuite.app.plots.cards import SIZES
+    from chemsuite.core.depict import fitted_size
+
+    largest = SIZES["medium"][1]
+    small = fitted_size(Chem.MolFromSmiles("CCO"), largest.width(), largest.height())
+    assert small[0] < 0.6 * largest.width() and small[1] < 0.6 * largest.height()
+    big = Chem.MolFromSmiles("CC1(C)SC2C(NC(=O)Cc3ccccc3)C(=O)N2C1C(=O)O")
+    assert fitted_size(big, largest.width(), largest.height()) == (
+        largest.width(),
+        largest.height(),
+    )
+
+
+def test_many_pinned_cards_get_smaller_drawings() -> None:
+    from PySide6.QtCore import QSize
+
+    from chemsuite.app.plots.cards import SIZES, TINY, pinned_size
+
+    large, plot = SIZES["large"][1], QSize(900, 700)
+    assert pinned_size(large, 2, plot) == large
+    shrunk = pinned_size(large, 8, plot)
+    assert shrunk is not None and shrunk.width() < large.width()
+    assert pinned_size(large, 12, QSize(300, 300)) is None  # text only
+    assert pinned_size(SIZES["small"][1], 12, QSize(700, 500)) in (SIZES["small"][1], TINY)

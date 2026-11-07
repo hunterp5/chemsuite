@@ -21,7 +21,7 @@ import math
 from collections.abc import Sequence
 
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -29,10 +29,12 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -63,6 +65,58 @@ def structure_cells(ctx: ToolContext, column: str, oids: np.ndarray) -> list:
         blob if blob is not None else (text or None)
         for blob, text in zip(structures.blobs(slots), structures.displays(slots), strict=True)
     ]
+
+
+def saved_rows(ctx: ToolContext, state: dict, *columns: str) -> list[int]:
+    """The rows a saved analysis covered that are still in the table. Raises KeyError when
+    a column it used has gone (the panel is then not reopened)."""
+    for name in columns:
+        if name not in ctx.table:
+            raise KeyError(name)
+    oids = np.asarray(state.get("oids", []), dtype=np.int64)
+    return oids[np.isin(oids, ctx.table.oids)].tolist()
+
+
+class RerunPanel(QWidget):
+    """Stands in for an analysis panel reopened with its document while the analysis reruns,
+    then holds the result. The dock is in place at once, so the saved arrangement applies."""
+
+    titleChanged = Signal(str)
+
+    def __init__(self, tool_id: str, title: str, state: dict) -> None:
+        super().__init__()
+        self.tool_id = tool_id
+        self._title = title
+        self._state = state
+        self.panel: QWidget | None = None
+        self.job = None
+        self.waiting = QLabel("Recalculating…")
+        self.waiting.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.waiting.setEnabled(False)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.addWidget(self.waiting)
+
+    def title(self) -> str:
+        return self.panel.title() if self.panel is not None else self._title
+
+    def fill(self, panel: QWidget) -> None:
+        self.panel = panel
+        self.job = None
+        self.waiting.hide()
+        self._layout.addWidget(panel)
+        if hasattr(panel, "titleChanged"):
+            panel.titleChanged.connect(self.titleChanged)
+        self.titleChanged.emit(panel.title())
+
+    def state(self) -> dict:
+        return self.panel.state() if self.panel is not None else self._state
+
+    def close_panel(self) -> None:
+        if self.job is not None and self.job.running:
+            self.job.cancel()
+        if self.panel is not None and hasattr(self.panel, "close_panel"):
+            self.panel.close_panel()
 
 
 def cell_mol(cell):
@@ -131,19 +185,33 @@ class CoreChooser(QWidget):
             return str(err)
         return ""
 
+    def recipe(self) -> dict:
+        """The column, core and matching, as saved with an analysis panel."""
+        return {
+            "structure": self.structure.currentText(),
+            "core": self.core.text(),
+            "exhaustive": self.exhaustive.isChecked(),
+        }
+
     def task(self, oids: np.ndarray):
         """A function for a job: ``work(job) -> Decomposition`` for *oids*."""
-        core = parse_core(self.core.text())
-        cells = structure_cells(self.ctx, self.structure.currentText(), oids)
-        exhaustive = self.exhaustive.isChecked()
+        return decompose_task(self.ctx, self.recipe(), oids)
 
-        def work(job) -> Decomposition:
-            mols = [cell_mol(c) for c in cells]
-            return decompose(
-                mols, core, exhaustive=exhaustive, progress=job.report, cancel=job.cancel_token
-            )
 
-        return work
+def decompose_task(ctx: ToolContext, recipe: dict, oids: np.ndarray):
+    """``work(job) -> Decomposition`` of *oids* onto the core *recipe* names
+    (see :meth:`CoreChooser.recipe`)."""
+    core = parse_core(recipe["core"])
+    cells = structure_cells(ctx, recipe["structure"], oids)
+    exhaustive = bool(recipe["exhaustive"])
+
+    def work(job) -> Decomposition:
+        mols = [cell_mol(c) for c in cells]
+        return decompose(
+            mols, core, exhaustive=exhaustive, progress=job.report, cancel=job.cancel_token
+        )
+
+    return work
 
 
 def number_text(value: float, digits: int = 3) -> str:

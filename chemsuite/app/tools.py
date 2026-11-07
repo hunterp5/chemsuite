@@ -227,17 +227,27 @@ class ToolContext:
         """
         return self._window.show_dialog(dialog)
 
-    def structure_image(self, column: str, oid: int, size: QSize) -> QImage | None:
-        """A drawing of one structure cell (cached; None for a blank or invalid cell)."""
+    def structure_image(
+        self, column: str, oid: int, size: QSize, *, fit: bool = False
+    ) -> QImage | None:
+        """A drawing of one structure cell (cached; None for a blank or invalid cell). With
+        *fit*, *size* is the largest box: a smaller molecule gets a smaller picture, drawn at
+        the normal bond length so it is always legible."""
         table = self.table
         if column not in table or table.kind(column) != STRUCTURE or oid not in table.oids:
             return None
         window = self._window
         dark = window.palette().base().color().lightness() < 128
         slot = int(table.slots_of([oid])[0])
-        return window._images.image(
-            table.column(column), slot, size, window.devicePixelRatioF(), dark
-        )
+        structures = table.column(column)
+        if fit:
+            from chemsuite.core.depict import fitted_size
+
+            mol = structures.obj(slot)
+            if mol is None:
+                return None
+            size = QSize(*fitted_size(mol, size.width(), size.height()))
+        return window._images.image(structures, slot, size, window.devicePixelRatioF(), dark)
 
     def add_compound(self, text: str) -> int | None:
         """Add a structure (SMILES, molfile, InChI) as a new, selected row, one undo step.

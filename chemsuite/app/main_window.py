@@ -68,15 +68,13 @@ from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import REACTION, STRUCTURE
 
-from . import dock_layout
-from .advanced_search import EXTRAS_KEY as ADVANCED_KEY
+from . import dock_layout, session
 from .advanced_search import AdvancedSearchPanel
 from .column_actions import ColumnActions
 from .commands import apply_shortcuts, register
 from .dock_layout import LAYOUT_KEY
 from .error_report import details_of, show_error, show_log_folder
 from .filters.cards import FilterCard
-from .filters.panel import EXTRAS_KEY as FILTERS_KEY
 from .filters.panel import FilterPanel
 from .find_replace import FindReplaceDialog
 from .jobs import QUEUE, QUICK, Job, JobRunner
@@ -147,9 +145,6 @@ def _jobs_window(runner: JobRunner) -> JobsWindow:
     return window
 
 
-PANELS_KEY = "panels"
-
-
 @functools.cache
 def registered_tools() -> tuple[Tool, ...]:
     from chemsuite.tools import TOOL_MODULES
@@ -177,18 +172,11 @@ class Workspace:
         self.lists = RowLists(table)
         if extras and LISTS_KEY in extras:
             self.lists.load_json(extras[LISTS_KEY])
-        filters = (extras or {}).get(FILTERS_KEY)
-        #: filter cards and filter sets saved with the document
-        self.saved_filters: dict[str, Any] = filters if isinstance(filters, dict) else {}
-        search = (extras or {}).get(ADVANCED_KEY)
-        #: the advanced search saved with the document
-        self.saved_search: dict[str, Any] = search if isinstance(search, dict) else {}
-        layout = (extras or {}).get(LAYOUT_KEY)
-        #: pane arrangement, column widths and search bar saved with the document
-        self.saved_layout: dict[str, Any] = layout if isinstance(layout, dict) else {}
-        panels = (extras or {}).get(PANELS_KEY)
-        #: panels saved with the document, reopened when the window installs this workspace
-        self.saved_panels: list[dict] = panels if isinstance(panels, list) else []
+        #: the window session saved with the document (see ``session.PARTS``), put back when
+        #: the window installs this workspace
+        self.saved_session: dict[str, Any] = {
+            key: value for key, value in (extras or {}).items() if key in session.KEYS
+        }
         self._saved_lists = self.lists.revision
 
     @property
@@ -351,20 +339,14 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self._filters = FilterPanel(workspace.table, searcher=self._searcher)
         self.filter_dock.setWidget(self._filters)
-        self._filters.load_state(workspace.saved_filters)
-        if self._filters.cards:
-            self.filter_dock.show()  # say why rows are hidden
         self._advanced = AdvancedSearchPanel(
             workspace.table,
             workspace.selection,
             workspace.lists,
             self._searcher,
             lambda message: self.statusBar().showMessage(message, 6000),
-            saved=workspace.saved_search,
         )
         self.search_dock.setWidget(self._advanced)
-        if workspace.saved_search.get("showing"):
-            dock_layout.float_search(self)  # say why rows are hidden
         self._columns = ColumnActions(
             self,
             workspace.table,
@@ -395,25 +377,24 @@ class MainWindow(QMainWindow):
         self._update_actions()
         self._update_status()
         self._start_parsing()
-        self._restore_panels(workspace.saved_panels)
-        if workspace.saved_layout:
-            dock_layout.restore(self, workspace.saved_layout)
-            # The new table and panels are laid out on the next pass, which would share the
-            # space out afresh and lose the saved splitter positions: apply them once more
-            # after that pass.
-            QTimer.singleShot(0, lambda ws=workspace: self._restore_dock_sizes(ws))
-        self._keep_hiding_panes_open()
+        saved = workspace.saved_session
+        session.restore(self, saved)
+        # The new table and panels are laid out on the next pass, which shares the space out
+        # afresh: apply the saved sizes and scroll position once more after that pass.
+        QTimer.singleShot(0, lambda ws=workspace: self._settle_session(ws))
+        if LAYOUT_KEY not in saved:
+            self._show_hiding_panes(saved)
 
-    def _restore_dock_sizes(self, workspace: Workspace) -> None:
+    def _settle_session(self, workspace: Workspace) -> None:
         if self._workspace is workspace:
-            dock_layout.restore_docks(self, workspace.saved_layout)
-            self._keep_hiding_panes_open()
+            session.settle(self, workspace.saved_session)
 
-    def _keep_hiding_panes_open(self) -> None:
-        """Whatever the saved arrangement, panes that hide rows stay open to say why."""
+    def _show_hiding_panes(self, saved: dict[str, Any]) -> None:
+        """A document saved without a layout: open the panes that hide rows, to say why."""
         if self._filters.cards:
             self.filter_dock.show()
-        if self.workspace.saved_search.get("showing"):
+        search = saved.get(session.ADVANCED_KEY)
+        if isinstance(search, dict) and search.get("showing"):
             dock_layout.float_search(self)
 
     def show_dialog(self, dialog: QDialog) -> QDialog:
@@ -1476,14 +1457,7 @@ class MainWindow(QMainWindow):
         snapshot = workspace.table.snapshot()
         checkpoint = workspace.table.history.checkpoint()
         extras, lists_revision = workspace.extras(), workspace.lists.revision
-        panels = self.panel_states()  # names the panels the arrangement refers to
-        if panels:
-            extras[PANELS_KEY] = panels
-        extras[LAYOUT_KEY] = dock_layout.capture(self)
-        if self.advanced_search.state():
-            extras[ADVANCED_KEY] = self.advanced_search.state()
-        if self.filters.state():
-            extras[FILTERS_KEY] = self.filters.state()
+        extras.update(session.capture(self))
         saved: list[bool] = []
 
         def work(job: Job) -> None:

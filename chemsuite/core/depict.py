@@ -49,6 +49,28 @@ def depiction_mol(mol: Chem.Mol) -> Chem.Mol:
     return copy
 
 
+def fitted_size(
+    mol: Chem.Mol, max_width: int, max_height: int, *, min_width: int = 56, min_height: int = 40
+) -> tuple[int, int]:
+    """The box (in pixels at scale 1) that holds *mol* drawn at the normal bond length, no
+    larger than ``max_width x max_height``: a small molecule gets a small box instead of a
+    large empty one, and a large one fills the box (shrinking only as much as it must)."""
+    shown = depiction_mol(mol)
+    if not shown.GetNumConformers() or shown.GetNumAtoms() == 0:
+        return max_width, max_height
+    positions = shown.GetConformer().GetPositions()[:, :2]
+    lengths = [
+        float(((positions[b.GetBeginAtomIdx()] - positions[b.GetEndAtomIdx()]) ** 2).sum()) ** 0.5
+        for b in shown.GetBonds()
+    ]
+    bond = sum(lengths) / len(lengths) if lengths else 1.5
+    extent = (positions.max(axis=0) - positions.min(axis=0)) / max(bond, 1e-6) * _BOND_PX
+    margin = 1.6 * _BOND_PX  # room for atom labels and padding on both sides
+    width = min(max_width, max(min_width, round(extent[0] + margin)))
+    height = min(max_height, max(min_height, round(extent[1] + margin)))
+    return int(width), int(height)
+
+
 def render_png(
     mol: Chem.Mol,
     width: int,

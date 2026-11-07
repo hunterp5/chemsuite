@@ -44,7 +44,7 @@ from chemsuite.tools.similarity.common import (
     scope_oids,
 )
 
-from .common import ResultTable, activity_combo
+from .common import RerunPanel, ResultTable, activity_combo, saved_rows
 
 SALI_COLUMN = "Max SALI"
 PARTNER_COLUMN = "Cliff Partner"
@@ -105,39 +105,29 @@ class SaliDialog(QDialog):
         self.job = self.find()
         super().accept()
 
+    def recipe(self) -> dict:
+        """Everything the analysis needs, saved with its panel to rerun it on reopening."""
+        return {
+            "oids": scope_oids(self.ctx, self.rows.currentData()).tolist(),
+            "activity": self.activity.currentText(),
+            "structure": self.features.structure.currentText(),
+            "fingerprint": self.features.kind.currentData(),
+            "metric": self.features.metric.currentData(),
+            "min_similarity": self.min_similarity.value(),
+            "skip_identical": self.skip_identical.isChecked(),
+        }
+
     def find(self):
-        ctx = self.ctx
-        oids = scope_oids(ctx, self.rows.currentData())
-        name = self.activity.currentText()
-        activity = numbers(ctx.table, name, oids)
-        metric = self.features.metric.currentData()
-        threshold = self.min_similarity.value()
-        skip_identical = self.skip_identical.isChecked()
-        compute, remember = fingerprint_task(
-            ctx, self.features.structure.currentText(), self.features.kind.currentData(), oids
+        recipe = self.recipe()
+        return _compute(
+            self.ctx,
+            recipe,
+            lambda oids, activity, cliffs: self.finish(
+                oids, activity, recipe["activity"], cliffs, recipe
+            ),
         )
 
-        def work(job):
-            fps = compute(job)
-            cliffs = sali_pairs(
-                fps,
-                activity,
-                min_similarity=threshold,
-                metric=metric,
-                skip_identical=skip_identical,
-                progress=job.report,
-                cancel=job.cancel_token,
-            )
-            return fps, cliffs
-
-        def done(result) -> None:
-            fps, cliffs = result
-            remember(fps)
-            self.finish(oids, activity, name, cliffs)
-
-        return ctx.run("Finding activity cliffs…", work, done)
-
-    def finish(self, oids, activity, name: str, cliffs: Cliffs):
+    def finish(self, oids, activity, name: str, cliffs: Cliffs, recipe: dict | None = None):
         ctx = self.ctx
         best, partner = cliffs.per_row(len(oids))
         names = labels(ctx, oids)
@@ -150,7 +140,7 @@ class SaliDialog(QDialog):
             label="Activity cliffs",
             overwrite=True,
         )
-        self.panel = SaliPanel(ctx, oids, activity, name, cliffs, names)
+        self.panel = SaliPanel(ctx, oids, activity, name, cliffs, names, recipe)
         ctx.add_panel(self.panel, self.panel.title())
         ctx.show_message(
             f"{len(cliffs):,} similar pair(s) scored; highest SALI per compound in "
@@ -164,9 +154,12 @@ class SaliPanel(QWidget):
     titleChanged = Signal(str)
     tool_id = "sali"
 
-    def __init__(self, ctx: ToolContext, oids, activity, name, cliffs: Cliffs, names) -> None:
+    def __init__(
+        self, ctx: ToolContext, oids, activity, name, cliffs: Cliffs, names, recipe=None
+    ) -> None:
         super().__init__()
         self.ctx = ctx
+        self.recipe = recipe or {}
         self.oids = np.asarray(oids)
         self.name = name
         shown = min(len(cliffs), SHOWN_PAIRS)
@@ -214,10 +207,52 @@ class SaliPanel(QWidget):
         return oids
 
     def state(self) -> dict:
-        return {}
-
-    def set_state(self, state: dict) -> None:
-        pass
+        return dict(self.recipe)
 
     def close_panel(self) -> None:
         pass
+
+
+def _compute(ctx: ToolContext, recipe: dict, done):
+    """Score the pairs *recipe* describes in the background; then
+    ``done(oids, activity, cliffs)``."""
+    oids = np.asarray(recipe["oids"], dtype=np.int64)
+    activity = numbers(ctx.table, recipe["activity"], oids)
+    threshold, metric = float(recipe["min_similarity"]), recipe["metric"]
+    skip_identical = bool(recipe["skip_identical"])
+    compute, remember = fingerprint_task(ctx, recipe["structure"], recipe["fingerprint"], oids)
+
+    def work(job):
+        fps = compute(job)
+        cliffs = sali_pairs(
+            fps,
+            activity,
+            min_similarity=threshold,
+            metric=metric,
+            skip_identical=skip_identical,
+            progress=job.report,
+            cancel=job.cancel_token,
+        )
+        return fps, cliffs
+
+    def finished(result) -> None:
+        fps, cliffs = result
+        remember(fps)
+        done(oids, activity, cliffs)
+
+    return ctx.run("Finding activity cliffs…", work, finished)
+
+
+def restore(ctx: ToolContext, state: dict) -> RerunPanel:
+    """Reopen a saved panel: rerun the analysis on the rows it covered (columns stay as they
+    were saved)."""
+    recipe = {**state, "oids": saved_rows(ctx, state, state["activity"], state["structure"])}
+    holder = RerunPanel(SaliPanel.tool_id, f"Activity Cliffs: {recipe['activity']}", recipe)
+    ctx.add_panel(holder, holder.title())
+
+    def done(oids, activity, cliffs) -> None:
+        names = labels(ctx, oids)
+        holder.fill(SaliPanel(ctx, oids, activity, recipe["activity"], cliffs, names, recipe))
+
+    holder.job = _compute(ctx, recipe, done)
+    return holder

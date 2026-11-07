@@ -66,6 +66,7 @@ from .cards import (
     HoverCard,
     ImageProvider,
     PinnedCards,
+    pinned_size,
 )
 from .renderers import RENDERERS, Hover, PlotSpec
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
@@ -646,8 +647,9 @@ class PlotPanel(QWidget):
             self.card.hide()
         self.update_pinned()
 
-    def card_content(self, oid: int) -> CardContent:
-        """The card for one row, as the card options say."""
+    def card_content(self, oid: int, size: QSize | None | bool = True) -> CardContent:
+        """The card for one row, as the card options say. *size* is the largest drawing (True:
+        the options' size; None: no drawing)."""
         options = self.card_options
         table = self.table
         content = CardContent()
@@ -663,8 +665,10 @@ class PlotPanel(QWidget):
             if name in table and name not in shown and table.kind(name) != STRUCTURE:
                 shown.append(name)
         content.lines = [f"{name}: {table.cell(name, oid)}" for name in dict.fromkeys(shown)]
-        if options.structure and self._images is not None:
-            content.image = self._images(oid, SIZES[options.size][1])
+        if size is True:
+            size = SIZES[options.size][1]
+        if options.structure and self._images is not None and size is not None:
+            content.image = self._images(oid, size)
         return content
 
     def _data_to_widget(self, x: float, y: float) -> QPointF:
@@ -689,11 +693,13 @@ class PlotPanel(QWidget):
             (int(o), float(x), float(y))
             for o, x, y in zip(renderer.oids[mask], renderer.x[mask], renderer.y[mask], strict=True)
         ]
-        self.pinned.show(points, self.card_content)
+        chosen = SIZES[self.card_options.size][1]
+        size = pinned_size(chosen, len(points), self.plot_widget.size())
+        self.pinned.show(points, lambda oid: self.card_content(oid, size))
 
     def eventFilter(self, watched, event) -> bool:
         if watched is self.plot_widget and event.type() == QEvent.Type.Resize:
-            self.pinned.place()
+            self.update_pinned()  # a smaller plot may need smaller cards
         return super().eventFilter(watched, event)
 
     def leaveEvent(self, event) -> None:

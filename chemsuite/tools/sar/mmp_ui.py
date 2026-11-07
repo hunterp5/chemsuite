@@ -39,7 +39,7 @@ from chemsuite.plotting.data import number_columns, numbers
 from chemsuite.sar.mmp import Pair, Transform, find_pairs, readable, transforms
 from chemsuite.tools.similarity.common import labels, scope_combo, scope_oids
 
-from .common import ResultTable, activity_combo, structure_cells
+from .common import RerunPanel, ResultTable, activity_combo, saved_rows, structure_cells
 
 POOL_MIN_ROWS = 1000  # fragmenting is slow per molecule: worth the worker start-up early
 NO_ACTIVITY = "(none)"
@@ -104,37 +104,29 @@ class MmpDialog(QDialog):
         self.job = self.find()
         super().accept()
 
+    def recipe(self) -> dict:
+        """Everything the analysis needs, saved with its panel to rerun it on reopening."""
+        return {
+            "oids": scope_oids(self.ctx, self.rows.currentData()).tolist(),
+            "structure": self.structure.currentText(),
+            "activity": self.activity.currentText(),
+            "max_variable": self.max_variable.value(),
+            "min_pairs": self.min_pairs.value(),
+        }
+
     def find(self):
-        ctx = self.ctx
-        oids = scope_oids(ctx, self.rows.currentData())
-        cells = structure_cells(ctx, self.structure.currentText(), oids)
-        name = self.activity.currentText()
-        activity = (
-            numbers(ctx.table, name, oids) if name != NO_ACTIVITY else np.full(len(oids), np.nan)
+        recipe = self.recipe()
+        return _compute(
+            self.ctx,
+            recipe,
+            lambda oids, activity, pairs, found: self.finish(
+                oids, activity, recipe["activity"], pairs, found, recipe
+            ),
         )
-        max_variable, min_pairs = self.max_variable.value(), self.min_pairs.value()
-        executor = ctx.process_pool() if len(cells) >= POOL_MIN_ROWS else None
 
-        def work(job):
-            pairs = find_pairs(
-                cells,
-                activity,
-                max_variable=max_variable,
-                executor=executor,
-                progress=job.report,
-                cancel=job.cancel_token,
-            )
-            return pairs, transforms(pairs, min_pairs=min_pairs)
-
-        def done(result) -> None:
-            pairs, found = result
-            self.finish(oids, activity, name, pairs, found)
-
-        return ctx.run("Finding matched pairs…", work, done)
-
-    def finish(self, oids, activity, name, pairs: list[Pair], found: list[Transform]):
+    def finish(self, oids, activity, name, pairs: list[Pair], found: list[Transform], recipe=None):
         ctx = self.ctx
-        self.panel = MmpPanel(ctx, oids, activity, name, found)
+        self.panel = MmpPanel(ctx, oids, activity, name, found, recipe)
         ctx.add_panel(self.panel, self.panel.title())
         ctx.show_message(
             f"{len(pairs):,} matched pair(s); {len(found):,} transformation(s) shown", 10_000
@@ -148,9 +140,12 @@ class MmpPanel(QWidget):
     titleChanged = Signal(str)
     tool_id = "mmp"
 
-    def __init__(self, ctx: ToolContext, oids, activity, name: str, found: list[Transform]):
+    def __init__(
+        self, ctx: ToolContext, oids, activity, name: str, found: list[Transform], recipe=None
+    ):
         super().__init__()
         self.ctx = ctx
+        self.recipe = recipe or {}
         self.oids = np.asarray(oids)
         self.activity = np.asarray(activity)
         self.name = name
@@ -198,7 +193,7 @@ class MmpPanel(QWidget):
         layout.addLayout(buttons)
 
     def title(self) -> str:
-        return "Matched Pairs" + (f": {self.name}" if self.name != NO_ACTIVITY else "")
+        return _title(self.name)
 
     def show_pairs(self) -> None:
         chosen = [t for t in self.transforms.selected_data() if t is not None]
@@ -226,10 +221,50 @@ class MmpPanel(QWidget):
         return oids
 
     def state(self) -> dict:
-        return {}
-
-    def set_state(self, state: dict) -> None:
-        pass
+        return dict(self.recipe)
 
     def close_panel(self) -> None:
         pass
+
+
+def _compute(ctx: ToolContext, recipe: dict, done):
+    """Find the pairs *recipe* describes in the background; then
+    ``done(oids, activity, pairs, found)``."""
+    oids = np.asarray(recipe["oids"], dtype=np.int64)
+    cells = structure_cells(ctx, recipe["structure"], oids)
+    name = recipe["activity"]
+    activity = numbers(ctx.table, name, oids) if name != NO_ACTIVITY else np.full(len(oids), np.nan)
+    max_variable, min_pairs = int(recipe["max_variable"]), int(recipe["min_pairs"])
+    executor = ctx.process_pool() if len(cells) >= POOL_MIN_ROWS else None
+
+    def work(job):
+        pairs = find_pairs(
+            cells,
+            activity,
+            max_variable=max_variable,
+            executor=executor,
+            progress=job.report,
+            cancel=job.cancel_token,
+        )
+        return pairs, transforms(pairs, min_pairs=min_pairs)
+
+    return ctx.run("Finding matched pairs…", work, lambda result: done(oids, activity, *result))
+
+
+def restore(ctx: ToolContext, state: dict) -> RerunPanel:
+    """Reopen a saved panel: rerun the analysis on the rows it covered."""
+    name = state["activity"]
+    columns = [state["structure"]] + ([name] if name != NO_ACTIVITY else [])
+    recipe = {**state, "oids": saved_rows(ctx, state, *columns)}
+    holder = RerunPanel(MmpPanel.tool_id, _title(name), recipe)
+    ctx.add_panel(holder, holder.title())
+
+    def done(oids, activity, _pairs, found) -> None:
+        holder.fill(MmpPanel(ctx, oids, activity, name, found, recipe))
+
+    holder.job = _compute(ctx, recipe, done)
+    return holder
+
+
+def _title(activity: str) -> str:
+    return "Matched Pairs" + (f": {activity}" if activity != NO_ACTIVITY else "")
