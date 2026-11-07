@@ -25,7 +25,7 @@ def _open(ctx: ToolContext, kind: str, state: dict | None = None):
 
     def image(oid: int, size):
         column = ctx.default_structure_column()
-        return ctx.structure_image(column, oid, size) if column else None
+        return ctx.structure_image(column, oid, size, fit=True) if column else None
 
     panel = PlotPanel(ctx.table, ctx.selection, image, kind=kind)
     panel.tool_id = "scatter"  # any plot tool restores any plot kind

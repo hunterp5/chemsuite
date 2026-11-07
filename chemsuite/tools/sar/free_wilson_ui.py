@@ -42,7 +42,15 @@ from chemsuite.sar.free_wilson import FreeWilson, free_wilson
 from chemsuite.sar.rgroups import HYDROGEN, Decomposition, assemble
 from chemsuite.tools.similarity.common import scope_combo, scope_oids
 
-from .common import CoreChooser, ResultTable, activity_combo, number_text
+from .common import (
+    CoreChooser,
+    RerunPanel,
+    ResultTable,
+    activity_combo,
+    decompose_task,
+    number_text,
+    saved_rows,
+)
 
 PREDICTED_COLUMN = "FW Predicted"
 UNMADE_LIMIT = 200
@@ -120,28 +128,22 @@ class FreeWilsonDialog(QDialog):
         self.job = self.analyse()
         super().accept()
 
-    def analyse(self):
-        ctx = self.ctx
-        oids = scope_oids(ctx, self.rows.currentData())
-        activity = numbers(ctx.table, self.activity.currentText(), oids)
-        decompose = self.core.task(oids)
-        min_count = self.min_count.value()
-        name = self.output.text().strip() or PREDICTED_COLUMN
-        options = {
+    def recipe(self) -> dict:
+        """Everything the analysis needs, saved with its panel to rerun it on reopening."""
+        return {
+            **self.core.recipe(),
+            "oids": scope_oids(self.ctx, self.rows.currentData()).tolist(),
             "activity": self.activity.currentText(),
+            "min_count": self.min_count.value(),
             "higher_is_better": self.higher_is_better.isChecked(),
-            "structure": self.core.structure.currentText(),
         }
 
-        def work(job):
-            d = decompose(job)
-            return d, free_wilson(d, activity, min_count=min_count)
-
-        def done(result) -> None:
-            d, model = result
-            self.finish(oids, d, model, name, options)
-
-        return ctx.run("Free-Wilson analysis…", work, done)
+    def analyse(self):
+        recipe = self.recipe()
+        name = self.output.text().strip() or PREDICTED_COLUMN
+        return _compute(
+            self.ctx, recipe, lambda oids, d, model: self.finish(oids, d, model, name, recipe)
+        )
 
     def finish(self, oids, d: Decomposition, model: FreeWilson, name: str, options: dict):
         ctx = self.ctx
@@ -161,7 +163,8 @@ class FreeWilsonDialog(QDialog):
 
 
 class FreeWilsonPanel(QWidget):
-    """Results of one Free-Wilson analysis (not kept with the document: rerun to refresh)."""
+    """Results of one Free-Wilson analysis. *options* is the analysis recipe (see
+    :meth:`FreeWilsonDialog.recipe`); it is saved with the panel to rerun it on reopening."""
 
     titleChanged = Signal(str)
     tool_id = "free_wilson"
@@ -297,10 +300,7 @@ class FreeWilsonPanel(QWidget):
         return new
 
     def state(self) -> dict:
-        return {}
-
-    def set_state(self, state: dict) -> None:
-        pass
+        return dict(self.options)
 
     def close_panel(self) -> None:
         pass
@@ -310,3 +310,31 @@ def _hydrogen(position: str, label: str) -> str | None:
     if label != HYDROGEN:
         return None
     return f"[H][*:{position.removeprefix('R')}]"
+
+
+def _compute(ctx: ToolContext, recipe: dict, done):
+    """Decompose and fit in the background; then ``done(oids, decomposition, model)``."""
+    oids = np.asarray(recipe["oids"], dtype=np.int64)
+    activity = numbers(ctx.table, recipe["activity"], oids)
+    decompose = decompose_task(ctx, recipe, oids)
+    min_count = int(recipe["min_count"])
+
+    def work(job):
+        d = decompose(job)
+        return d, free_wilson(d, activity, min_count=min_count)
+
+    return ctx.run("Free-Wilson analysis…", work, lambda result: done(oids, *result))
+
+
+def restore(ctx: ToolContext, state: dict) -> RerunPanel:
+    """Reopen a saved panel: rerun the analysis on the rows it covered (the prediction column
+    stays as it was saved)."""
+    recipe = {**state, "oids": saved_rows(ctx, state, state["activity"], state["structure"])}
+    holder = RerunPanel(FreeWilsonPanel.tool_id, f"Free-Wilson: {recipe['activity']}", recipe)
+    ctx.add_panel(holder, holder.title())
+    holder.job = _compute(
+        ctx,
+        recipe,
+        lambda oids, d, model: holder.fill(FreeWilsonPanel(ctx, oids, d, model, recipe)),
+    )
+    return holder

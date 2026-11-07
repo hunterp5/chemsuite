@@ -149,12 +149,18 @@ in the background, using every processor core. You can scroll and work while tha
   - named lists;
   - filters and filter sets;
   - the advanced search and recent searches;
-  - open plots and panels with their settings;
+  - open plots and panels with their settings. Analysis panels (Free-Wilson, Hansch, Matched
+    Pairs, Activity Cliffs) rerun their analysis on the same rows when the document opens
+    (they show "Recalculating…" meanwhile); Hansch keeps its substituent constants, so the CSV
+    file is not needed again;
+  - the selected rows, the current cell and where the table was scrolled to;
   - the workspace layout: where each panel is docked (beside, stacked, tabbed, left, right or
     below the table, floating), the size of each pane (where you dragged the dividers
     between the table and the panes, and between panes), which panes are open (Filters,
-    Advanced Search, Selection Browser), column widths, and the search bar with its text and options. Filters and an
-    active advanced search always reopen visible, since they explain why rows are hidden.
+    Advanced Search, Selection Browser), column widths, and the search bar with its text and
+    options.
+- A document reopens exactly as you left it: a pane that was closed stays closed, even when
+  its filters or search are hiding rows (the status bar still says how many rows are shown).
 - Saving is safe. The new file is written next to the old one and swapped in only once it is
   complete, so a crash or a full disk never damages your previous version.
 - **File ▸ Export…** writes SDF, CSV/TSV, SMILES, Excel, an RD file or an RXN file.
@@ -745,10 +751,12 @@ popup:
 | Point cards | **On Hover** (the default): a card follows the mouse. **On Hover and Selected**: as well, each selected point keeps a card beside it. **Selected Points Only**: only the kept cards. **Off**. |
 | Show | **Structure** (the drawing), **Label** (the row's first text column, such as its ID) and **Values** (the plotted columns: X, Y, colour and size). |
 | More columns | Tick any other columns to show on the cards. |
-| Drawing size | Small, Medium or Large. |
+| Drawing size | The largest drawing: Small, Medium or Large. A smaller molecule gets a smaller card, drawn at the normal bond length so it stays sharp. |
 
-- Kept cards sit beside their points, never on top of each other, and move with the plot when
-  you pan or zoom. A card disappears when its point is deselected, filtered out or out of view.
+- Kept cards are laid out together: each takes the nearest free spot around its point, never
+  on another card or another selected point, with a thin line back to its point when it had
+  to move away. They move with the plot when you pan or zoom. When many cards share a small
+  plot their drawings get smaller, and in a very crowded plot they show text only. A card disappears when its point is deselected, filtered out or out of view.
 - Cards are kept for up to 12 selected points; select more and none are kept (they would
   cover the plot). Hover still works.
 - The card settings are saved with the plot.

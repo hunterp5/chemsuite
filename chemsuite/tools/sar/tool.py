@@ -34,6 +34,15 @@ def _dialog(module: str, name: str):
     return open_dialog
 
 
+def _restore(module: str):
+    def restore(ctx: ToolContext, state: dict):
+        from importlib import import_module
+
+        return import_module(f"{__package__}.{module}").restore(ctx, state)
+
+    return restore
+
+
 def _matrix(ctx: ToolContext, state: dict | None = None):
     from .matrix_panel import SarMatrixPanel
 
@@ -67,6 +76,7 @@ TOOLS = (
         title="Free-Wilson…",
         menu=MENU,
         open=_dialog("free_wilson_ui", "FreeWilsonDialog"),
+        restore=_restore("free_wilson_ui"),
         requires=("rdkit",),
         needs_structures=True,
         tip="Additive substituent contributions, and the best combinations not yet made.",
@@ -76,6 +86,7 @@ TOOLS = (
         title="Hansch Analysis…",
         menu=MENU,
         open=_dialog("hansch_ui", "HanschDialog"),
+        restore=_restore("hansch_ui"),
         requires=("rdkit",),
         needs_structures=True,
         tip="Regress activity on substituent constants (π, σ, steric) from your own table.",
@@ -85,6 +96,7 @@ TOOLS = (
         title="Matched Molecular Pairs…",
         menu=MENU,
         open=_dialog("mmp_ui", "MmpDialog"),
+        restore=_restore("mmp_ui"),
         requires=("rdkit",),
         needs_structures=True,
         tip="Pairs that differ by one change, grouped by transformation, with activity shifts.",
@@ -94,6 +106,7 @@ TOOLS = (
         title="Activity Cliffs (SALI)…",
         menu=MENU,
         open=_dialog("sali_ui", "SaliDialog"),
+        restore=_restore("sali_ui"),
         requires=("rdkit",),
         needs_structures=True,
         tip="Similar compounds with very different activity (structure-activity landscape index).",

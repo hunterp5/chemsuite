@@ -196,3 +196,42 @@ def test_sar_panels_restore(series, qtbot) -> None:
     series._restore_panels(saved)
     restored = [d.widget() for d in series._panels if d.widget().tool_id == "sar_matrix"]
     assert len(restored) == 2 and restored[-1].aggregate.currentIndex() == 2
+
+
+def test_analysis_panels_reopen_with_the_document(series, qtbot, tmp_path) -> None:
+    """Free-Wilson, Hansch, Matched Pairs and Activity Cliffs panels rerun on reopening."""
+    from chemsuite.tools.sar.common import RerunPanel
+
+    path = tmp_path / "constants.csv"
+    path.write_text("smiles,pi\n*Cl,1.0\n*C,0.5\n*OC,-0.3\n*F,0.7\n*N,-0.4\n")
+    fw = series.open_tool("free_wilson")
+    fw.core.core.setText(CORE)
+    _run(qtbot, fw)
+    hansch = series.open_tool("hansch")
+    hansch.core.core.setText(CORE)
+    hansch.constants.setText(str(path))
+    hansch.electronic.setCurrentIndex(hansch.electronic.findData(""))
+    _run(qtbot, hansch)
+    mmp = series.open_tool("mmp")
+    mmp.min_pairs.setValue(1)
+    _run(qtbot, mmp)
+    sali = series.open_tool("sali")
+    sali.min_similarity.setValue(0.3)
+    _run(qtbot, sali)
+    saved = series.panel_states()
+    assert [s["tool"] for s in saved] == ["free_wilson", "hansch", "mmp", "sali"]
+    path.unlink()  # the constants are saved with the panel
+    expected = (fw.panel.model.fit.r2, len(mmp.panel.found), sali.panel.table.rowCount())
+    for dock in list(series._panels):
+        dock.close()
+    qtbot.waitUntil(lambda: not series._panels)
+    series._restore_panels(saved)
+    holders = series.panels
+    assert all(isinstance(h, RerunPanel) for h in holders) and len(holders) == 4
+    qtbot.waitUntil(lambda: all(h.panel is not None for h in holders), timeout=30_000)
+    fw_panel, hansch_panel, mmp_panel, sali_panel = (h.panel for h in holders)
+    assert hansch_panel.model.fit.coefficients[0] == pytest.approx(1.0, abs=1e-6)
+    r2, transforms, cliffs = expected
+    assert fw_panel.model.fit.r2 == pytest.approx(r2)
+    assert (len(mmp_panel.found), sali_panel.table.rowCount()) == (transforms, cliffs)
+    assert [h.state() for h in holders] == [s["state"] for s in saved]

@@ -17,8 +17,10 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 
+import numpy as np
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -50,7 +52,7 @@ from chemsuite.sar.hansch import (
 )
 from chemsuite.tools.similarity.common import scope_combo, scope_oids
 
-from .common import CoreChooser, ResultTable, activity_combo
+from .common import CoreChooser, RerunPanel, ResultTable, activity_combo, decompose_task, saved_rows
 from .free_wilson_ui import fit_summary
 
 PREDICTED_COLUMN = "Hansch Predicted"
@@ -208,29 +210,32 @@ class HanschDialog(QDialog):
         self.job = self.analyse(constants)
         super().accept()
 
+    def recipe(self, constants: dict) -> dict:
+        """Everything the analysis needs, saved with its panel to rerun it on reopening. The
+        constants themselves are kept, so reopening does not need the CSV file."""
+        return {
+            **self.core.recipe(),
+            "oids": scope_oids(self.ctx, self.rows.currentData()).tolist(),
+            "activity": self.activity.currentText(),
+            "constants": constants,
+            "settings": asdict(self.settings()),
+        }
+
     def analyse(self, constants: dict):
-        ctx = self.ctx
-        oids = scope_oids(ctx, self.rows.currentData())
-        name = self.activity.currentText()
-        activity = numbers(ctx.table, name, oids)
-        decompose = self.core.task(oids)
-        settings = self.settings()
+        recipe = self.recipe(constants)
         output = self.output.text().strip() or PREDICTED_COLUMN
+        return _compute(
+            self.ctx, recipe, lambda oids, model: self.finish(oids, model, output, recipe)
+        )
 
-        def work(job):
-            d = decompose(job)
-            return hansch(d, activity, constants, settings, activity_name=name)
-
-        return ctx.run("Hansch analysis…", work, lambda model: self.finish(oids, model, output))
-
-    def finish(self, oids, model: Hansch, output: str):
+    def finish(self, oids, model: Hansch, output: str, recipe: dict | None = None):
         ctx = self.ctx
         names = ctx.apply_results(
             {output: (oids, NumberColumn.from_floats(model.predicted, 2))},
             label="Hansch",
             overwrite=True,
         )
-        self.panel = HanschPanel(model)
+        self.panel = HanschPanel(model, recipe)
         ctx.add_panel(self.panel, self.panel.title())
         ctx.show_message(
             f"Hansch: R² {model.fit.r2:.2f} on {model.fit.n:,} compound(s); "
@@ -241,14 +246,16 @@ class HanschDialog(QDialog):
 
 
 class HanschPanel(QWidget):
-    """One Hansch equation (not kept with the document: rerun to refresh)."""
+    """One Hansch equation. *recipe* (see :meth:`HanschDialog.recipe`) is saved with the panel
+    to rerun the analysis on reopening."""
 
     titleChanged = Signal(str)
     tool_id = "hansch"
 
-    def __init__(self, model: Hansch) -> None:
+    def __init__(self, model: Hansch, recipe: dict | None = None) -> None:
         super().__init__()
         self.model = model
+        self.recipe = recipe or {}
         fit = model.fit
         equation = QLabel(model.equation())
         equation.setWordWrap(True)
@@ -280,10 +287,36 @@ class HanschPanel(QWidget):
         return f"Hansch: {self.model.activity_name}"
 
     def state(self) -> dict:
-        return {}
-
-    def set_state(self, state: dict) -> None:
-        pass
+        return dict(self.recipe)
 
     def close_panel(self) -> None:
         pass
+
+
+def _compute(ctx: ToolContext, recipe: dict, done):
+    """Decompose and fit in the background; then ``done(oids, model)``."""
+    oids = np.asarray(recipe["oids"], dtype=np.int64)
+    name = recipe["activity"]
+    activity = numbers(ctx.table, name, oids)
+    decompose = decompose_task(ctx, recipe, oids)
+    constants = {
+        str(group): {str(k): float(v) for k, v in values.items()}
+        for group, values in recipe["constants"].items()
+    }
+    settings = HanschSettings(**recipe["settings"])
+
+    def work(job):
+        d = decompose(job)
+        return hansch(d, activity, constants, settings, activity_name=name)
+
+    return ctx.run("Hansch analysis…", work, lambda model: done(oids, model))
+
+
+def restore(ctx: ToolContext, state: dict) -> RerunPanel:
+    """Reopen a saved panel: rerun the analysis on the rows it covered (the prediction column
+    stays as it was saved)."""
+    recipe = {**state, "oids": saved_rows(ctx, state, state["activity"], state["structure"])}
+    holder = RerunPanel(HanschPanel.tool_id, f"Hansch: {recipe['activity']}", recipe)
+    ctx.add_panel(holder, holder.title())
+    holder.job = _compute(ctx, recipe, lambda _oids, model: holder.fill(HanschPanel(model, recipe)))
+    return holder

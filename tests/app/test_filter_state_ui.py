@@ -71,6 +71,7 @@ def test_filters_are_saved_with_the_document(chem, tmp_path, qtbot) -> None:
     structure = chem.filters.add_filter("SMILES")
     structure.query.set_text("c1ccccc1")
     structure.enabled_box.setChecked(False)
+    chem.filter_dock.show()
     target = tmp_path / "filters.csd"
     assert chem._save_to(target)
 
@@ -85,7 +86,7 @@ def test_filters_are_saved_with_the_document(chem, tmp_path, qtbot) -> None:
     assert cards[2].negated and cards[2].mode.currentData() == "regex"
     assert not cards[3].is_enabled and cards[3].query.text() == "c1ccccc1"
     assert shown(chem) == ["C4"]
-    assert chem.filter_dock.isVisibleTo(chem)  # shows why rows are hidden
+    assert chem.filter_dock.isVisibleTo(chem)  # open, as when saved
     assert not chem.isWindowModified()
 
 
