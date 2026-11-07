@@ -21,7 +21,7 @@ from __future__ import annotations
 import numpy as np
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QVBoxLayout, QWidget
 
-from chemsuite.app.dialogs import OutputChoice, RowsChoice, ToolDialog
+from chemsuite.app.dialogs import RowsChoice, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 from chemsuite.ionisation.predict import PkaResults, predict_pka
@@ -94,8 +94,12 @@ class PkaDialog(ToolDialog):
             box.setChecked(key in DEFAULT_OUTPUTS)
             layout.addWidget(box)
             self.outputs[key] = box
-        output.row("Columns", boxes)
-        self.if_exists = output.row("If they exist", OutputChoice())
+        output.row(
+            "Columns",
+            boxes,
+            help="Each run writes new columns. When a name is already taken, every column of "
+            "the run gets the same suffix: (2), (3)…",
+        )
 
         for signal in (self.ph.valueChanged, self.rows.changed):
             signal.connect(lambda *_: self.refresh())
@@ -139,7 +143,6 @@ class PkaDialog(ToolDialog):
         ]
         ph = self.ph.value()
         chosen = self.chosen()
-        overwrite = self.if_exists.overwrite()
         use_pool = len(cells) >= POOL_MIN_ROWS
 
         def work(job):
@@ -152,7 +155,7 @@ class PkaDialog(ToolDialog):
             )
 
         def done(results: PkaResults) -> None:
-            finish(ctx, oids[: len(results)], results, ph, chosen, overwrite)
+            finish(ctx, oids[: len(results)], results, ph, chosen)
 
         return ctx.run("Predicting pKa…", work, done, keep_partial=True)
 
@@ -163,9 +166,12 @@ def finish(
     results: PkaResults,
     ph: float,
     chosen: list[str],
-    overwrite: bool,
 ) -> dict[str, str]:
-    """Write the chosen columns for *oids* (the rows *results* covers)."""
+    """Write the chosen columns for *oids* (the rows *results* covers), always as new columns.
+
+    The names get one suffix shared by the whole run when any of them is taken, so a rerun
+    never writes over, or into, an earlier run's columns.
+    """
     names = column_names(ph)
     values: dict[str, object] = {
         "pka": [
@@ -180,12 +186,11 @@ def finish(
         "logd": [NumberColumn.from_floats(np.array(results.logd), 2)],
         "species": [StructureColumn.from_parsed(results.species_blobs, results.species_texts)],
     }
-    columns = {
-        name: (oids, value)
-        for key in chosen
-        for name, value in zip(names[key], values[key], strict=True)
-    }
-    written = ctx.apply_results(columns, label="Predict pKa", overwrite=overwrite)
+    requested = [name for key in chosen for name in names[key]]
+    flat = [value for key in chosen for value in values[key]]
+    fresh = ctx.table.unique_names(requested)
+    columns = {name: (oids, value) for name, value in zip(fresh, flat, strict=True)}
+    written = ctx.apply_results(columns, label="Predict pKa")
     message = f"Predicted pKa for {len(oids):,} row(s) at pH {ph:g}"
     if results.failed:
         message += f"; {results.failed:,} structure(s) could not be processed"

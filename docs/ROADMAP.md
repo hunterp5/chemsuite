@@ -7,8 +7,9 @@ conformers and the Data menu. This roadmap covers what comes next:
 - improvements to the tools chemsuite already has, starting with search;
 - the rest of MolManager's features, ranked by value and install cost.
 
-Decisions so far: QSAR (phase 7d) is skipped for now. Groovy and custom themes stay. External
-tools (Gnina, AiZynthFinder, BioTransformer…) will be integrated, so their paths are already in
+Decisions so far: QSAR (phase 7d) is skipped for now. Metabolite prediction (BioTransformer) is
+dropped from the plan. Groovy and custom themes stay. External
+tools (Gnina, AiZynthFinder…) will be integrated, so their paths are already in
 Settings. Settings… sits in the app menu on macOS and the Edit menu elsewhere. Tool dialogs close on OK
 and their jobs run in the background (§2). A robust drawing sketcher that works with the table
 is needed (§6, tier 2).
@@ -214,7 +215,6 @@ modified.
 | Superpose conformers, pharmacophore screen | RDKit only, but needs the 3D viewer to be useful. |
 | PubChem, ChEMBL, vendor, patent and SQL queries | Network access, off by default under policy. Plain HTTPS REST calls, not MolManager's client libraries. SQL through the standard library or an optional driver. |
 | Retrosynthesis | AiZynthFinder through its own Python interpreter (path in Settings). |
-| Metabolite prediction | BioTransformer (Java .jar, path in Settings). |
 | Sketcher | **Decided: needed.** A robust drawing sketcher that works with the table: edit a structure cell in place, draw a query for structure search and filters, and add new compounds. Plan: [SKETCHER_PLAN.md](SKETCHER_PLAN.md) (native, Ketcher rules as reference, verified; no MolManager iupac_* code). |
 
 **Tier 3: heavy add-ons (a separate optional install)**

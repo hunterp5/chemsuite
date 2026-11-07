@@ -227,6 +227,19 @@ class Table:
             n += 1
         return f"{name} ({n})"
 
+    def unique_names(self, names: Sequence[str]) -> list[str]:
+        """*names* with one shared suffix, `` (2)``, `` (3)``…, so that none is taken.
+
+        A tool run that writes several columns gets the same suffix on all of them, so the
+        columns of one run read as a set even when only some names were taken before.
+        """
+        n = 1
+        while True:
+            candidates = [name if n == 1 else f"{name} ({n})" for name in names]
+            if not any(name in self._columns for name in candidates):
+                return candidates
+            n += 1
+
     @property
     def nbytes(self) -> int:
         return self._oids.nbytes + sum(c.nbytes for c in self._columns.values())

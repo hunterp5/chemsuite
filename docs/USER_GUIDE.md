@@ -973,6 +973,10 @@ chemsuite and runs on the CPU, at roughly 2 ms per molecule.
   | cLogD *pH* | Crippen cLogP of the neutral parent plus log10(fraction neutral). |
   | Major Species @ pH | The dominant protonation state, as a structure column. |
 
+  Each run writes new columns and never changes an earlier run's. When a name is already
+  taken, all the columns of the run get the same suffix, (2), (3)…, so they read as a set:
+  `pKa (most acidic) (2)` and `cLogD 7.4 (2)` come from the same run.
+
 - **How sites combine.** Each site is predicted, and ionised, independently (Henderson–
   Hasselbalch per site). This is a good approximation when sites are far apart and a rough one
   when they interact.
@@ -1443,7 +1447,7 @@ keeps them and **Cancel** puts everything back.
 |---|---|
 | Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colourful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
 | Keyboard | Change any command's shortcut. |
-| External Tools | Paths to optional programs (Open Babel, CONFORGE, Gnina, AmberTools, MAFFT, Java/BioTransformer, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
+| External Tools | Paths to optional programs (Open Babel, CONFORGE, Gnina, AmberTools, MAFFT, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
 | General | Processor cores to use (0 = automatic), recent files to keep. |
 
 Your IT department can fix some settings for everyone. Those are shown greyed out with a

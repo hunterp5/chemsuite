@@ -122,8 +122,8 @@ def test_dotted_access_and_recent() -> None:
     settings = Settings()
     settings.set("appearance.theme", custom_theme_id("Ocean"))
     assert settings.get("appearance.theme") == "custom:Ocean"
-    settings.set("tool_paths.java", "/usr/bin/java")
-    assert settings.get("tool_paths.java") == "/usr/bin/java"
+    settings.set("tool_paths.mafft", "/usr/bin/mafft")
+    assert settings.get("tool_paths.mafft") == "/usr/bin/mafft"
     for name in ("a", "b", "c", "a"):
         add_recent(settings, name)
     assert settings.files.recent == ["a", "c", "b"]
@@ -133,12 +133,13 @@ def test_external_tools(tmp_path) -> None:
     settings = Settings()
     settings.tool_paths["obabel"] = "/configured/obabel"
     assert et.resolve("obabel", settings) == "/configured/obabel"
-    assert et.resolve("biotransformer", settings) is None  # a file: nothing to look up
-    ok, message = et.test_tool("java", str(tmp_path / "missing"))
+    assert et.resolve("aizynthfinder_config", settings) is None  # a file: nothing to look up
+    ok, message = et.test_tool("mafft", str(tmp_path / "missing"))
     assert not ok and "No such file" in message
-    jar = tmp_path / "bt.jar"
-    jar.write_text("")
-    assert et.test_tool("biotransformer", str(jar)) == (True, "File found.")
+    config = tmp_path / "config.yml"
+    config.write_text("")
+    assert et.test_tool("aizynthfinder_config", str(config)) == (True, "File found.")
+    assert "biotransformer" not in et.BY_ID and "java" not in et.BY_ID
     ok, message = et.test_tool("aizynthfinder_python", sys.executable)
     assert ok and "Python" in message
     assert all(t.id in et.BY_ID for t in et.visible_tools())

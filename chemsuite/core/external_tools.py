@@ -73,16 +73,6 @@ TOOLS: tuple[ExternalTool, ...] = (
         "mafft", "MAFFT", "MAFFT sequence alignment (executable or install folder).", ("mafft",)
     ),
     ExternalTool(
-        "java", "Java", "Java runtime, for BioTransformer.", ("java",), version_args=("-version",)
-    ),
-    ExternalTool(
-        "biotransformer",
-        "BioTransformer",
-        "The BioTransformer .jar, for metabolite prediction.",
-        kind="file",
-        version_args=(),
-    ),
-    ExternalTool(
         "aizynthfinder_python",
         "AiZynthFinder Python",
         "Python interpreter with AiZynthFinder installed, for retrosynthesis.",

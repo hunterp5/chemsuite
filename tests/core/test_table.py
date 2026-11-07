@@ -430,3 +430,12 @@ def test_apply_results_position() -> None:
     table.add_rows({"A": [1], "B": [2]}, undoable=False)
     table.apply_results({"N": (table.oids, [3])}, label="r", position=1)
     assert table.column_names == ["A", "N", "B"]
+
+
+def test_unique_names_share_one_suffix() -> None:
+    t = Table()
+    t.add_rows({"ID": ["A"], "pKa": ["1"], "cLogD (2)": ["2"]}, undoable=False)
+    assert t.unique_names(["x", "y"]) == ["x", "y"]
+    # one name taken: both get (2); "cLogD (2)" is taken too, so the run moves on to (3)
+    assert t.unique_names(["pKa", "cLogD"]) == ["pKa (3)", "cLogD (3)"]
+    assert t.unique_names(["pKa", "other"]) == ["pKa (2)", "other (2)"]
