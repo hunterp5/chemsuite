@@ -1,0 +1,14 @@
+#!/bin/sh
+# Project rule: commits carry no AI attribution. Strip "Co-Authored-By:" trailers that name
+# Claude or Anthropic, and "Generated with Claude Code" lines, before the commit is made.
+msg="$1"
+tmp="$(mktemp)" || exit 1
+grep -v -i -E '^co-authored-by:.*(claude|anthropic)|generated with \[?claude code' "$msg" > "$tmp"
+# drop trailing blank lines left behind
+sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$tmp" > "$msg"
+rm -f "$tmp"
+if grep -q -i -E 'noreply@anthropic\.com' "$msg"; then
+    echo "commit-msg: this project does not credit AI tools in commits; remove the Anthropic address" >&2
+    exit 1
+fi
+exit 0
