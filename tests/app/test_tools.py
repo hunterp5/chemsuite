@@ -38,9 +38,29 @@ def chem(window):
     return window
 
 
+def test_menu_bar_order(window) -> None:
+    titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
+    assert titles == [
+        "File", "Edit", "Search", "Table", "Chemistry", "Analysis", "Plot", "View", "Help"
+    ]  # fmt: skip
+
+
+def test_tools_fill_slots_among_menu_commands(window) -> None:
+    def visible(menu) -> list[str]:
+        return [a.text().replace("&", "") for a in menu.actions() if a.isVisible()]
+
+    menus = {a.text().replace("&", ""): a.menu() for a in window.menuBar().actions()}
+    assert visible(menus["Search"])[4:7] == [
+        "Structure Search…",
+        "Reaction Search…",
+        "Clear Highlighting",
+    ]
+    table = visible(menus["Table"])
+    assert table.index("Bin Column…") < table.index("New Document from Shown Rows")
+    assert table[-1] == "Clear Sort"
+
+
 def test_registry_builds_the_chemistry_menu(window) -> None:
-    titles = [a.text() for a in window.menuBar().actions()]
-    assert titles.index("&Chemistry") == titles.index("&Data") + 1
     action = window.tool_action("descriptors")
     assert action.text() == "Calculate Descriptors…"
     assert not action.isEnabled()  # the fixture table has no structures

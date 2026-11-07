@@ -14,4 +14,4 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Chemistry ▸ Reactions: search, split and apply reactions (REACTIONS_PLAN R4)."""
+"""Reactions: search, split and apply reactions (REACTIONS_PLAN R4)."""

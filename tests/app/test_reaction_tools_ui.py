@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Chemistry ▸ Reactions: Reaction Search, Split Reaction, Enumerate Products, and the
+"""Reactions: Reaction Search, Split Reaction, Enumerate Products, and the
 reaction filter card (REACTIONS_PLAN R4)."""
 
 from __future__ import annotations

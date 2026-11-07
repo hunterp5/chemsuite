@@ -14,14 +14,16 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Chemical-space maps: PCA, UMAP and t-SNE of fingerprints or number columns, and the
-reduction to a few dozen dimensions that t-SNE and self-organising maps start from.
+"""Chemical-space maps: PCA, UMAP, t-SNE and PaCMAP of fingerprints or number columns, in two
+or three dimensions, and the reduction to a few dozen dimensions that t-SNE, PaCMAP and
+self-organising maps start from.
 
 Fingerprints are streamed in tiles, so 200k compounds never need a dense float matrix.
 """
 
 from __future__ import annotations
 
+import logging
 import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -35,7 +37,10 @@ from .fingerprints import Fingerprints
 
 Progress = Callable[[int, int], None]
 
-METHODS = {"pca": "PCA", "umap": "UMAP", "tsne": "t-SNE"}
+METHODS = {"pca": "PCA", "umap": "UMAP", "tsne": "t-SNE", "pacmap": "PaCMAP"}
+#: PaCMAP distances (on z-scored columns, or on the PCA-reduced fingerprints)
+PACMAP_METRICS = {"euclidean": "Euclidean", "manhattan": "Manhattan", "angular": "Angular"}
+DIMENSIONS = (2, 3)
 #: UMAP distances: metric name -> title. The bit metrics need fingerprints.
 UMAP_METRICS = {
     "jaccard": "Jaccard (Tanimoto)",
@@ -54,7 +59,7 @@ UMAP_FIT_MAX = 50_000  # larger sets: fit on a sample, then place the rest onto 
 
 @dataclass
 class Embedding:
-    coords: np.ndarray  # n × 2 (NaN for rows without features)
+    coords: np.ndarray  # n × 2 or n × 3 (NaN for rows without features)
     method: str
     explained: tuple[float, ...] = ()  # PCA: share of variance on each axis
     notes: list[str] = field(default_factory=list)
@@ -111,10 +116,16 @@ class Features:
         return np.unpackbits(part.packed, axis=1, count=self.fps.kind.bits).astype(bool)
 
 
-def _scatter(features: Features, values: np.ndarray, method: str, **kw) -> Embedding:
-    coords = np.full((features.n, 2), np.nan)
-    coords[features.rows] = values[:, :2]
+def _scatter(features: Features, values: np.ndarray, method: str, dims: int = 2, **kw) -> Embedding:
+    coords = np.full((features.n, dims), np.nan)
+    coords[features.rows] = values[:, :dims]
     return Embedding(coords, method, **kw)
+
+
+def _dims(dims: int) -> int:
+    if dims not in DIMENSIONS:
+        raise ValueError(f"a map has 2 or 3 dimensions, not {dims}")
+    return dims
 
 
 def _need(features: Features, minimum: int) -> None:
@@ -189,21 +200,32 @@ def reduce(
     return pca(features, dims, progress=progress, cancel=cancel)[0]
 
 
-def pca_map(features: Features, *, components: tuple[int, int] = (1, 2), **kw) -> Embedding:
-    """PCA scores on two components (1-based, e.g. ``(1, 3)`` for PC1 against PC3)."""
+def pca_map(
+    features: Features, *, components: tuple[int, ...] = (1, 2), dims: int = 2, **kw
+) -> Embedding:
+    """PCA scores on two components (1-based, e.g. ``(1, 3)`` for PC1 against PC3); a 3D map
+    (*dims* 3) is always PC1, PC2 and PC3."""
     _need(features, 3)
-    first, second = components
-    if not 1 <= first < second:
-        raise ValueError(f"components must be two increasing numbers from 1, not {components}")
-    scores, ratio = pca(features, second, **kw)
-    if scores.shape[1] < second:  # fewer components than asked: the missing axes are flat
-        pad = second - scores.shape[1]
+    dims = _dims(dims)
+    if dims == 3:
+        components = (1, 2, 3)
+    if (
+        len(components) != dims
+        or any(not 1 <= a < b for a, b in zip(components, components[1:], strict=False))
+        or components[0] < 1
+    ):
+        raise ValueError(f"components must be {dims} increasing numbers from 1, not {components}")
+    last = components[-1]
+    scores, ratio = pca(features, last, **kw)
+    if scores.shape[1] < last:  # fewer components than asked: the missing axes are flat
+        pad = last - scores.shape[1]
         scores = np.column_stack([scores, np.zeros((len(scores), pad))])
         ratio = np.concatenate([np.asarray(ratio, dtype=float), np.zeros(pad)])
-    picked = [first - 1, second - 1]
+    picked = [c - 1 for c in components]
     explained = tuple(float(ratio[i]) for i in picked)
-    note = f"PC{first} {explained[0]:.0%} and PC{second} {explained[1]:.0%} of the variance"
-    return _scatter(features, scores[:, picked], "pca", explained=explained, notes=[note])
+    parts = [f"PC{c} {e:.0%}" for c, e in zip(components, explained, strict=True)]
+    note = ", ".join(parts[:-1]) + f" and {parts[-1]} of the variance"
+    return _scatter(features, scores[:, picked], "pca", dims, explained=explained, notes=[note])
 
 
 def umap_map(
@@ -216,11 +238,13 @@ def umap_map(
     epochs: int | None = None,
     seed: int | None = 42,
     fit_max: int = UMAP_FIT_MAX,
+    dims: int = 2,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> Embedding:
-    """UMAP. The distance (*metric*) defaults to Jaccard on fingerprint bits and Euclidean on
-    z-scored columns; a fingerprint metric needs fingerprints (see ``UMAP_METRICS``).
+    """UMAP in *dims* (2 or 3) dimensions. The distance (*metric*) defaults to Jaccard on
+    fingerprint bits and Euclidean on z-scored columns; a fingerprint metric needs
+    fingerprints (see ``UMAP_METRICS``).
 
     Above *fit_max* rows the map is fitted on a random sample and the rest are placed onto it.
     A *seed* makes the map repeatable, at the cost of running on one core. *epochs* None lets
@@ -242,7 +266,9 @@ def umap_map(
     def take(index: np.ndarray) -> np.ndarray:
         return features.bits(index) if features.fps is not None else features.matrix[index]
 
+    dims = _dims(dims)
     model = umap.UMAP(
+        n_components=dims,
         n_neighbors=neighbours,
         min_dist=min_dist,
         spread=spread,
@@ -254,7 +280,7 @@ def umap_map(
     check(cancel)
     if progress is not None:
         progress(0, 100)
-    out = np.empty((n, 2))
+    out = np.empty((n, dims))
     with warnings.catch_warnings():  # "inverse_transform will be unavailable" (not used)
         warnings.filterwarnings("ignore", message=".*inverse_transform.*")
         # Identical fingerprints are "disconnected" under Jaccard; UMAP still places them.
@@ -272,7 +298,7 @@ def umap_map(
                 progress(50 + 50 * (i + 1) // len(chunks), 100)
     if progress is not None:
         progress(100, 100)
-    return _scatter(features, out, "umap", notes=notes)
+    return _scatter(features, out, "umap", dims, notes=notes)
 
 
 def tsne_map(
@@ -285,10 +311,11 @@ def tsne_map(
     reduce_to: int = REDUCED_DIMS,
     init: str = "pca",
     seed: int | None = 42,
+    dims: int = 2,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> Embedding:
-    """t-SNE (Barnes-Hut) on up to *reduce_to* PCA dimensions.
+    """t-SNE (Barnes-Hut) in *dims* (2 or 3) dimensions, on up to *reduce_to* PCA dimensions.
 
     *learning_rate* None is scikit-learn's "auto" (rows / exaggeration / 4); *init* is
     "pca" (stable layouts) or "random".
@@ -296,13 +323,14 @@ def tsne_map(
     _need(features, 5)
     from sklearn.manifold import TSNE
 
+    dims = _dims(dims)
     if init not in ("pca", "random"):
         raise ValueError(f"unknown t-SNE start {init!r}")
     x = reduce(features, max(2, reduce_to), progress=progress, cancel=cancel)
     check(cancel)
     perplexity = min(perplexity, (len(features) - 1) / 3)
     model = TSNE(
-        n_components=2,
+        n_components=dims,
         perplexity=perplexity,
         learning_rate="auto" if learning_rate is None else learning_rate,
         max_iter=max(250, iterations),
@@ -312,11 +340,62 @@ def tsne_map(
         n_jobs=-1,
     )
     coords = model.fit_transform(np.asarray(x, dtype=np.float32))
-    return _scatter(features, coords, "tsne")
+    return _scatter(features, coords, "tsne", dims)
+
+
+def pacmap_map(
+    features: Features,
+    *,
+    neighbours: int = 10,
+    mn_ratio: float = 0.5,
+    fp_ratio: float = 2.0,
+    distance: str = "euclidean",
+    reduce_to: int = REDUCED_DIMS,
+    seed: int | None = 42,
+    dims: int = 2,
+    progress: Progress | None = None,
+    cancel: CancelToken | None = None,
+) -> Embedding:
+    """PaCMAP (Wang et al. 2021, JMLR 22:201): neighbour, mid-near and further pairs, so the
+    map keeps both local groups and the overall layout.
+
+    Runs on up to *reduce_to* PCA dimensions (fingerprints are reduced by the streamed PCA, so
+    no dense bit matrix is built). *mn_ratio* and *fp_ratio* are the mid-near and further pairs
+    per neighbour pair; *distance* is a key of ``PACMAP_METRICS``.
+    """
+    _need(features, 5)
+    dims = _dims(dims)
+    if distance not in PACMAP_METRICS:
+        raise ValueError(f"unknown PaCMAP distance {distance!r}")
+    import pacmap  # imports numba and faiss: only when a map is made
+
+    x = reduce(features, max(2, reduce_to), progress=progress, cancel=cancel)
+    check(cancel)
+    n = len(features)
+    model = pacmap.PaCMAP(
+        n_components=dims,
+        n_neighbors=max(2, min(neighbours, n - 2)),
+        MN_ratio=mn_ratio,
+        FP_ratio=fp_ratio,
+        distance=distance,
+        apply_pca=False,  # already reduced above
+        random_state=seed,
+    )
+    quiet = logging.getLogger("pacmap")  # "random state is set", "high-dimensional data"
+    level = quiet.level
+    quiet.setLevel(logging.ERROR)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            coords = model.fit_transform(np.ascontiguousarray(x, dtype=np.float32), init="pca")
+    finally:
+        quiet.setLevel(level)
+    check(cancel)
+    return _scatter(features, np.asarray(coords, dtype=np.float64), "pacmap", dims)
 
 
 OPTIONS = {
-    "pca": ("components", "progress", "cancel"),
+    "pca": ("components", "dims", "progress", "cancel"),
     "umap": (
         "neighbours",
         "min_dist",
@@ -325,6 +404,7 @@ OPTIONS = {
         "epochs",
         "seed",
         "fit_max",
+        "dims",
         "progress",
         "cancel",
     ),
@@ -336,6 +416,18 @@ OPTIONS = {
         "reduce_to",
         "init",
         "seed",
+        "dims",
+        "progress",
+        "cancel",
+    ),
+    "pacmap": (
+        "neighbours",
+        "mn_ratio",
+        "fp_ratio",
+        "distance",
+        "reduce_to",
+        "seed",
+        "dims",
         "progress",
         "cancel",
     ),
@@ -343,9 +435,10 @@ OPTIONS = {
 
 
 def embed(features: Features, method: str, **options) -> Embedding:
-    """A 2D map by *method*; options another method takes (e.g. perplexity for UMAP) are
-    ignored, so one call can carry every setting."""
+    """A 2D or 3D (``dims=3``) map by *method*; options another method takes (e.g. perplexity
+    for UMAP) are ignored, so one call can carry every setting."""
     if method not in OPTIONS:
         raise ValueError(f"unknown method {method!r}")
     used = {k: v for k, v in options.items() if k in OPTIONS[method]}
-    return {"pca": pca_map, "umap": umap_map, "tsne": tsne_map}[method](features, **used)
+    makers = {"pca": pca_map, "umap": umap_map, "tsne": tsne_map, "pacmap": pacmap_map}
+    return makers[method](features, **used)

@@ -13,4 +13,4 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Data ▸ Chemical Space: PCA, UMAP and t-SNE maps, and self-organising maps."""
+"""Analysis ▸ Chemical Space: PCA, UMAP and t-SNE maps, and self-organising maps."""

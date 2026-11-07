@@ -247,7 +247,9 @@ class SomPanel(QWidget):
         if ROW_COLUMN not in table or COLUMN_COLUMN not in table:
             grid.setRowCount(0)
             grid.setColumnCount(0)
-            self.status.setText("Train a map first (Data ▸ Chemical Space ▸ Self-Organizing Map).")
+            self.status.setText(
+                "Train a map first (Analysis ▸ Chemical Space ▸ Self-Organizing Map)."
+            )
             return
         oids = shown_oids(table)
         r = numbers(table, ROW_COLUMN, oids)

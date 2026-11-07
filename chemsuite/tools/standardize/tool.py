@@ -31,7 +31,7 @@ def _open(ctx: ToolContext):
 
 TOOL = Tool(
     id="standardize",
-    title="Standardize Structures…",
+    title="Standardize…",
     menu=("Chemistry",),
     open=_open,
     requires=("rdkit",),

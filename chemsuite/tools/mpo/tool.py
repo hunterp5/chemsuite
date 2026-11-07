@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Data ▸ Scoring ▸ MPO Score…"""
+"""Analysis ▸ Scoring ▸ MPO Score…"""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _open(ctx: ToolContext):
 TOOL = Tool(
     id="mpo",
     title="MPO Score…",
-    menu=("Data", "Scoring"),
+    menu=("Analysis", "Scoring"),
     open=_open,
     tip="Score compounds on several properties at once (multi-parameter optimisation).",
 )

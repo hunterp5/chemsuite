@@ -13,13 +13,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Data ▸ SAR: R-Group Decomposition, SAR Matrix, Free-Wilson, Hansch, Matched Pairs, Cliffs."""
+"""Analysis ▸ SAR: R-Group Decomposition, SAR Matrix, Free-Wilson, Hansch, Matched Pairs, Cliffs."""
 
 from __future__ import annotations
 
 from chemsuite.app.tools import Tool, ToolContext
 
-MENU = ("Data", "SAR")
+MENU = ("Analysis", "SAR")
 
 
 def _dialog(module: str, name: str):
@@ -56,7 +56,7 @@ def _matrix(ctx: ToolContext, state: dict | None = None):
 TOOLS = (
     Tool(
         id="rgroups",
-        title="R-Group Decomposition…",
+        title="R-Groups…",
         menu=MENU,
         open=_dialog("rgroup_dialog", "RGroupDialog"),
         requires=("rdkit",),
@@ -83,7 +83,7 @@ TOOLS = (
     ),
     Tool(
         id="hansch",
-        title="Hansch Analysis…",
+        title="Hansch…",
         menu=MENU,
         open=_dialog("hansch_ui", "HanschDialog"),
         restore=_restore("hansch_ui"),
@@ -93,7 +93,7 @@ TOOLS = (
     ),
     Tool(
         id="mmp",
-        title="Matched Molecular Pairs…",
+        title="Matched Pairs…",
         menu=MENU,
         open=_dialog("mmp_ui", "MmpDialog"),
         restore=_restore("mmp_ui"),
@@ -103,7 +103,7 @@ TOOLS = (
     ),
     Tool(
         id="sali",
-        title="Activity Cliffs (SALI)…",
+        title="Activity Cliffs…",
         menu=MENU,
         open=_dialog("sali_ui", "SaliDialog"),
         restore=_restore("sali_ui"),

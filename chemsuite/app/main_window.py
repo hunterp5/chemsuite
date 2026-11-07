@@ -643,9 +643,11 @@ class MainWindow(QMainWindow):
         file_menu.addAction(
             A("file.save_as", "Save &As…", self.save_as, QKeySequence.StandardKey.SaveAs)
         )
-        file_menu.addAction(A("file.export", "&Export…", lambda: self.export_dialog(False)))
-        file_menu.addAction(
-            A("file.export_selected", "Export Selected…", lambda: self.export_dialog(True))
+        export_menu = file_menu.addMenu("&Export")
+        export_menu.setToolTipsVisible(True)
+        export_menu.addAction(A("file.export", "&Table…", lambda: self.export_dialog(False)))
+        export_menu.addAction(
+            A("file.export_selected", "&Selected Rows…", lambda: self.export_dialog(True))
         )
         file_menu.addSeparator()
         file_menu.addAction(A("file.close", "&Close", self.close, QKeySequence.StandardKey.Close))
@@ -668,44 +670,15 @@ class MainWindow(QMainWindow):
             )
         )
         edit.addAction(A("edit.paste", "&Paste", self.paste, QKeySequence.StandardKey.Paste))
-        edit.addAction(
-            A("edit.clear_cells", "Clear Cells", lambda: self.view.clear_selected_cells())
-        )
         copy_as = edit.addMenu("Copy Structure As")
         for fmt, title in COPY_FORMATS:
             command = "edit.copy_molfile" if fmt == "molfile" else f"edit.copy_{fmt}"
             copy_as.addAction(A(command, title, lambda f=fmt: self.copy_current_structure_as(f)))
-        edit.addSeparator()
+        edit.addAction(
+            A("edit.clear_cells", "Clear Cells", lambda: self.view.clear_selected_cells())
+        )
         edit.addAction(
             A("edit.structure", "Edit &Structure…", self.edit_current_structure, "Ctrl+E")
-        )
-        edit.addSeparator()
-        edit.addAction(
-            A(
-                "edit.search",
-                "&Search Rows",
-                lambda: self.search.focus(),
-                QKeySequence.StandardKey.Find,
-            )
-        )
-        edit.addAction(
-            A(
-                "edit.find_replace",
-                "Find and &Replace…",
-                self.show_find_replace,
-                [QKeySequence.StandardKey.Replace, "Ctrl+Alt+F"],
-            )
-        )
-        edit.addAction(A("edit.advanced_search", "Ad&vanced Search…", self.show_advanced_search))
-        edit.addAction(
-            A("edit.structure_search", "Structure Searc&h…", self.structure_search, "Ctrl+Shift+M")
-        )
-        edit.addAction(
-            A(
-                "edit.clear_highlight",
-                "Clear Structure Highlighting",
-                self.clear_structure_highlights,
-            )
         )
         edit.addSeparator()
         edit.addAction(
@@ -732,34 +705,8 @@ class MainWindow(QMainWindow):
                 "Ctrl+Shift+A",
             )
         )
-        edit.addSeparator()
-        edit.addAction(A("edit.delete_rows", "&Delete Rows", self.delete_rows, "Ctrl+Backspace"))
-        edit.addSeparator()
-        settings_action = A(
-            "app.settings",
-            "Settings…",
-            self.open_settings,
-            [QKeySequence.StandardKey.Preferences, "Ctrl+,"],
-        )
-        settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)  # the app menu on macOS
-        edit.addAction(settings_action)
-
-        self._building = "Data"
-        data = bar.addMenu("&Data")
-        table_menu = data.addMenu("&Table")
-        self._building = "Data ▸ Table"
-        table_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
-        table_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
-        table_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
-        table_menu.addSeparator()
-        table_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
-        table_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
-        table_menu.addSeparator()
-        table_menu.addAction(
-            A("data.clear_sort", "Clear Sort", lambda: self.workspace.table.set_sort([]))
-        )
-        self._building = "Data ▸ Lists"
-        self._lists_menu = data.addMenu("&Lists")
+        self._building = "Edit ▸ Lists"
+        self._lists_menu = edit.addMenu("&Lists")
         self._add_to_list = A(
             "lists.add_selected",
             "&Add Selected to List…",
@@ -778,25 +725,87 @@ class MainWindow(QMainWindow):
         )
         self._lists_menu.addAction(self._add_to_list)  # so the shortcut works before first show
         self.addAction(self._add_to_list)
-        self._building = "Data"
-        data.addSeparator()
-        data.addAction(A("data.show_all_rows", "Show All Rows", self.show_all_rows))
-        data.addAction(
+        self._building = "Edit"
+        edit.addSeparator()
+        edit.addAction(A("edit.delete_rows", "&Delete Rows", self.delete_rows, "Ctrl+Backspace"))
+        edit.addSeparator()
+        settings_action = A(
+            "app.settings",
+            "Settings…",
+            self.open_settings,
+            [QKeySequence.StandardKey.Preferences, "Ctrl+,"],
+        )
+        settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)  # the app menu on macOS
+        edit.addAction(settings_action)
+
+        self._building = "Search"
+        search = bar.addMenu("&Search")
+        search.addAction(
+            A(
+                "edit.search",
+                "&Search Rows",
+                lambda: self.search.focus(),
+                QKeySequence.StandardKey.Find,
+            )
+        )
+        search.addAction(
+            A(
+                "edit.find_replace",
+                "Find and &Replace…",
+                self.show_find_replace,
+                [QKeySequence.StandardKey.Replace, "Ctrl+Alt+F"],
+            )
+        )
+        search.addAction(A("edit.advanced_search", "Ad&vanced Search…", self.show_advanced_search))
+        search.addSeparator()
+        search.addAction(
+            A("edit.structure_search", "Structure Searc&h…", self.structure_search, "Ctrl+Shift+M")
+        )
+        search_tools = search.addSeparator()  # Reaction Search goes here
+        search_tools.setVisible(False)
+        search.addAction(
+            A("edit.clear_highlight", "Clear Highlighting", self.clear_structure_highlights)
+        )
+        search.addSeparator()
+        search.addAction(A("data.show_all_rows", "Show &All Rows", self.show_all_rows))
+
+        self._building = "Table"
+        table_menu = bar.addMenu("&Table")
+        table_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
+        table_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
+        table_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
+        table_menu.addSeparator()
+        table_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
+        table_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
+        table_menu.addSeparator()
+        table_tools = table_menu.addSeparator()  # Bin Column, Calculator, Random… go here
+        table_tools.setVisible(False)
+        table_menu.addSeparator()
+        table_menu.addAction(
             A(
                 "data.copy_shown_rows",
-                "Copy Shown Rows to New Document",
+                "New Document from Shown Rows",
                 self.copy_shown_rows_to_new_document,
             )
         )
-        data.addSeparator()  # the analysis tools follow
+        table_menu.addAction(
+            A("data.clear_sort", "Clear Sort", lambda: self.workspace.table.set_sort([]))
+        )
 
+        # the tool menus, in order (tools fill them; see chemsuite.tools.TOOL_MODULES)
         self._tool_actions: dict[str, QAction] = {}
-        menus = {
+        menus: dict[tuple[str, ...], Any] = {
             ("File",): file_menu,
+            ("File", "Export"): export_menu,
             ("Edit",): edit,
-            ("Data",): data,
-            ("Data", "Table"): table_menu,
+            ("Search",): search,
+            ("Table",): table_menu,
         }
+        for name in ("Chemistry", "Analysis", "Plot"):
+            menus[(name,)] = bar.addMenu(f"&{name}")
+            menus[(name,)].setToolTipsVisible(True)
+        #: tools in these menus go before this action instead of at the end
+        self._tool_slots = {("Search",): search_tools, ("Table",): table_tools}
         for tool in registered_tools():
             self._add_tool(tool, menus)
 
@@ -879,9 +888,16 @@ class MainWindow(QMainWindow):
         )
         action.setEnabled(not missing)
         action.triggered.connect(lambda _checked=False, t=tool: self.open_tool(t))
-        menus[tool.menu].addAction(action)
-        if tool.separator_after:
-            menus[tool.menu].addSeparator()
+        menu = menus[tool.menu]
+        slot = self._tool_slots.get(tool.menu)
+        if slot is not None:  # among the menu's own commands
+            menu.insertAction(slot, action)
+            if tool.separator_after:
+                menu.insertSeparator(slot)
+        else:
+            menu.addAction(action)
+            if tool.separator_after:
+                menu.addSeparator()
         self._tool_actions[tool.id] = action
         self._commands[f"tool.{tool.id}"] = action
 

@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Data ▸ Utilities ▸ Random Numbers… and Random Rows…"""
+"""Table ▸ Random Numbers… and Random Rows…"""
 
 from __future__ import annotations
 

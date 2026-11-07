@@ -41,7 +41,7 @@ def _separated(coords: np.ndarray, labels: np.ndarray) -> bool:
     return bool((d.argmin(axis=1) == labels).all())
 
 
-@pytest.mark.parametrize("method", ["pca", "umap", "tsne"])
+@pytest.mark.parametrize("method", ["pca", "umap", "tsne", "pacmap"])
 def test_maps_separate_groups(method) -> None:
     columns, labels = _blobs()
     features = Features.from_columns(columns)
@@ -148,3 +148,34 @@ def test_umap_and_tsne_settings() -> None:
         init="random",
     )
     assert _separated(result.coords[:-1], labels)
+
+
+@pytest.mark.parametrize("method", ["pca", "umap", "tsne", "pacmap"])
+def test_three_dimensional_maps(method) -> None:
+    columns, labels = _blobs()
+    result = embed(Features.from_columns(columns), method, dims=3, neighbours=10, perplexity=15)
+    assert result.coords.shape == (len(labels) + 1, 3)
+    assert np.isnan(result.coords[-1]).all()
+    coords = result.coords[:-1]
+    assert np.isfinite(coords).all()
+    # t-SNE in 3D draws groups as shells rather than blobs: judge by nearest neighbours there
+    d = ((coords[:, None, :] - coords[None]) ** 2).sum(axis=2)
+    np.fill_diagonal(d, np.inf)
+    assert (labels[d.argmin(axis=1)] == labels).mean() > 0.95
+    if method != "tsne":
+        assert _separated(coords, labels)
+    if method == "pca":
+        assert len(result.explained) == 3 and "PC3" in result.notes[0]
+
+
+def test_pacmap_on_fingerprints_and_settings() -> None:
+    smiles = ["CCO", "CCCO", "CCCCO", "c1ccccc1", "Cc1ccccc1", "CCc1ccccc1", "", "CCCCCO"] * 3
+    features = Features.from_fingerprints(compute_fingerprints(smiles))
+    result = embed(features, "pacmap", neighbours=4, distance="angular", reduce_to=8, seed=1)
+    assert result.method == "pacmap" and result.placed == 21
+    again = embed(features, "pacmap", neighbours=4, distance="angular", reduce_to=8, seed=1)
+    assert np.allclose(result.coords, again.coords, equal_nan=True)  # the seed repeats it
+    with pytest.raises(ValueError, match="distance"):
+        embed(features, "pacmap", distance="jaccard")
+    with pytest.raises(ValueError, match="2 or 3"):
+        embed(features, "pacmap", dims=4)

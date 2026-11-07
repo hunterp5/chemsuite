@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Data ▸ Statistics…: a panel of summaries, correlations, outliers, curve fits and tests."""
+"""Analysis ▸ Statistics…: a panel of summaries, correlations, outliers, curve fits and tests."""
 
 from __future__ import annotations
 
@@ -33,9 +33,10 @@ def _open(ctx: ToolContext, state: dict | None = None):
 TOOL = Tool(
     id="statistics",
     title="Statistics…",
-    menu=("Data",),
+    menu=("Analysis",),
     open=_open,
     restore=_open,
     requires=("scipy",),
     tip="Summaries, correlations, outliers, curve fits and hypothesis tests for number columns.",
+    separator_after=True,
 )

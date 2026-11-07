@@ -49,6 +49,18 @@ def _pan(p: QPainter) -> None:
     p.drawPath(path)
 
 
+def _rotate(p: QPainter) -> None:
+    """An arrow round a circle: turn the 3D view."""
+    path = QPainterPath()
+    path.arcMoveTo(QRectF(2.5, 2.5, 11, 11), 60)
+    path.arcTo(QRectF(2.5, 2.5, 11, 11), 60, 290)
+    tip = path.currentPosition()
+    path.moveTo(tip + QPointF(-2.6, -0.6))
+    path.lineTo(tip)
+    path.lineTo(tip + QPointF(0.4, -2.7))
+    p.drawPath(path)
+
+
 def _box(p: QPainter) -> None:
     """A dashed selection rectangle."""
     pen = QPen(p.pen())
@@ -151,6 +163,7 @@ GLYPHS: dict[str, Draw] = {
     "undock": _undock,
     "close": _close,
     "pan": _pan,
+    "rotate": _rotate,
     "box": _box,
     "lasso": _lasso,
     "fit": _fit,

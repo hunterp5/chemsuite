@@ -153,3 +153,27 @@ def test_pca_map_on_other_components(chem, qtbot) -> None:
     dialog.components.setCurrentText("PC2 and PC3")
     _run(qtbot, dialog)
     assert "PCA 1" in table.column_names  # the columns are named by axis, not component
+
+
+def test_pacmap_map_in_3d(chem, qtbot) -> None:
+    table = chem.workspace.table
+    dialog = chem.open_tool("space_map")
+    dialog.method.setCurrentIndex(dialog.method.findData("pacmap"))
+    assert dialog.neighbours.value() == 10  # PaCMAP's own default
+    assert dialog._method_section.is_row_visible(dialog.neighbours)
+    assert dialog._more_section.is_row_visible(dialog.mn_ratio)
+    dialog.dims.set_value("3")
+    dialog.neighbours.setValue(5)
+    assert dialog.output.text() == "PaCMAP" and dialog.options()["dims"] == 3
+    _run(qtbot, dialog)
+    x = _numbers(table, "PaCMAP 3")
+    assert np.isnan(x[-1]) and np.isfinite(x[:-1]).all()
+    spec = dialog.plot.spec()
+    assert (spec.kind, spec.x, spec.y, spec.z) == ("scatter3d", "PaCMAP 1", "PaCMAP 2", "PaCMAP 3")
+    dialog2 = chem.open_tool("space_map")
+    dialog2.method.setCurrentIndex(dialog2.method.findData("pacmap"))
+    dialog2.method.setCurrentIndex(dialog2.method.findData("umap"))
+    assert dialog2.neighbours.value() == 15  # back to UMAP's default
+    dialog2.dims.set_value("3")
+    dialog2.method.setCurrentIndex(dialog2.method.findData("pca"))
+    assert not dialog2._method_section.is_row_visible(dialog2.components)  # 3D: PC1-3

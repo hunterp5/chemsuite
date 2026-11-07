@@ -13,13 +13,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Data ▸ Chemical Space ▸ Chemical Space Map…, Self-Organizing Map…"""
+"""Analysis ▸ Chemical Space ▸ Chemical Space Map…, Self-Organizing Map…"""
 
 from __future__ import annotations
 
 from chemsuite.app.tools import Tool, ToolContext
 
-MENU = ("Data", "Chemical Space")
+MENU = ("Analysis", "Chemical Space")
 
 
 def _map(ctx: ToolContext):
@@ -51,7 +51,7 @@ def _som_panel(ctx: ToolContext, state: dict | None = None):
 TOOLS = (
     Tool(
         id="space_map",
-        title="Chemical Space Map…",
+        title="Space Map…",
         menu=MENU,
         open=_map,
         requires=("sklearn",),

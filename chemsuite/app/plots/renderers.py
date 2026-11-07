@@ -38,11 +38,16 @@ from chemsuite.core.table.columns import NUMBER
 from chemsuite.plotting.data import BLANK_LABEL, OTHER_LABEL, categories, numbers, xy
 from chemsuite.plotting.geometry import box_mask, jitter, lasso_mask, nearest
 from chemsuite.plotting.stats import (
+    AGGREGATES,
+    aggregate,
     bin_of,
     box_stats,
+    density_grid,
     fit_distribution,
     histogram_edges,
     linear_fit,
+    mean_by_x,
+    unit_scale,
 )
 from chemsuite.plotting.style import (
     DEFAULT_COLOR,
@@ -72,6 +77,11 @@ class PlotSpec:
     fit: bool = False  # scatter: least-squares line(s)
     curve: str | None = None  # histogram: "normal" or "lognormal" density overlay
     guide: str | None = None  # scatter: a key of GUIDES (BOILED-Egg, Golden Triangle, LipE)
+    aggregate: str = "mean"  # bar: a key of AGGREGATES
+    errors: bool = False  # bar: standard deviation whiskers (with "mean")
+    columns: tuple[str, ...] = ()  # radar: the axes
+    z: str | None = None  # 3D: the third axis (the landscape's height)
+    drop: bool = False  # 3D scatter: lines from each point down to the floor
 
 
 @dataclass(frozen=True)
@@ -538,4 +548,419 @@ class BoxRenderer(ScatterRenderer):
         return None
 
 
-RENDERERS = {"scatter": ScatterRenderer, "histogram": HistogramRenderer, "box": BoxRenderer}
+def _chosen(selected: frozenset[int] | np.ndarray) -> np.ndarray:
+    return np.fromiter(selected, dtype=np.int64) if isinstance(selected, frozenset) else selected
+
+
+class BarRenderer(HistogramRenderer):
+    """One bar per group of a column: the mean (median, sum…) of a number column, or the row
+    count. Clicking, boxing or lassoing a bar selects its rows."""
+
+    MAX_GROUPS = 40
+
+    def __init__(self, plot: pg.PlotItem) -> None:
+        super().__init__(plot)
+        self.spec = PlotSpec(kind="bar")
+        self.how = "count"
+        self.spread = np.empty(0)
+        self.members = np.empty(0, dtype=np.int64)
+        self._errors: pg.ErrorBarItem | None = None
+
+    def clear(self) -> None:
+        super().clear()
+        if self._errors is not None:
+            self.plot.removeItem(self._errors)
+            self._errors = None
+
+    def build(self, table: Table, spec: PlotSpec, oids: np.ndarray) -> str:
+        self.clear()
+        self.spec = spec
+        if not spec.x or spec.x not in table:
+            return "Choose a column to group by."
+        self.how = spec.aggregate if spec.y and spec.y in table else "count"
+        self.oids = oids
+        cats = categories(table, spec.x, oids, limit=self.MAX_GROUPS)
+        self.bins, self.labels = cats.codes, cats.labels
+        positions = np.arange(len(cats.labels), dtype=float)
+        self.left, self.right = positions - 0.4, positions + 0.4
+        values = numbers(table, spec.y, oids) if self.how != "count" else None
+        groups = aggregate(values, self.bins, len(cats.labels), self.how)
+        self.counts = np.nan_to_num(groups.value)  # bar heights
+        self.spread, self.members = groups.spread, groups.count
+        self._bars = pg.BarGraphItem(
+            x0=self.left,
+            x1=self.right,
+            height=self.counts,
+            brush=_brush(DEFAULT_COLOR, 190),
+            pen=pg.mkPen(255, 255, 255, 120),
+        )
+        self.plot.addItem(self._bars)
+        if spec.errors and self.how == "mean":
+            spread = np.nan_to_num(self.spread)
+            self._errors = pg.ErrorBarItem(
+                x=positions,
+                y=self.counts,
+                top=spread,
+                bottom=spread,
+                beam=0.25,
+                pen=pg.mkPen((60, 60, 60), width=1.5),
+            )
+            self._errors.setZValue(12)
+            self.plot.addItem(self._errors)
+        self.plot.getAxis("bottom").setTicks(
+            [[(i, label[:18]) for i, label in enumerate(cats.labels)]]
+        )
+        self.plot.setLabel("bottom", spec.x)
+        what = AGGREGATES[self.how]
+        self.plot.setLabel("left", "Rows" if self.how == "count" else f"{what} {spec.y}")
+        status = f"{len(oids):,} rows in {len(cats.labels)} groups"
+        if self.how != "count":
+            blank = len(oids) - int(self.members.sum())
+            if blank:
+                status += f" · {blank:,} blank or not a number"
+        return status
+
+    def show_selection(self, selected: frozenset[int] | np.ndarray) -> None:
+        chosen = _chosen(selected)
+        if self._overlay is not None:
+            self.plot.removeItem(self._overlay)
+            self._overlay = None
+        if self._bars is not None:
+            self._bars.setOpacity(1.0)
+        if not len(chosen) or not len(self.oids):
+            return
+        groups = np.unique(self.bins[np.isin(self.oids, chosen) & (self.bins >= 0)])
+        if not len(groups):
+            return
+        self._overlay = pg.BarGraphItem(
+            x0=self.left[groups],
+            x1=self.right[groups],
+            height=self.counts[groups],
+            brush=_brush(HIGHLIGHT, 200),
+            pen=None,
+        )
+        self._overlay.setZValue(10)
+        self.plot.addItem(self._overlay)
+        self._bars.setOpacity(0.55)
+
+    def _bar_at(self, x: float, y: float) -> int | None:
+        hit = np.flatnonzero((self.left <= x) & (x <= self.right))
+        if not len(hit):
+            return None
+        i = int(hit[0])
+        height = float(self.counts[i])
+        return i if min(0.0, height) <= y <= max(0.0, height) or height == 0 else None
+
+    def hover(self, table: Table, x: float, y: float, sx: float, sy: float) -> Hover | None:
+        i = self._bar_at(x, y)
+        if i is None:
+            return None
+        rows = int((self.bins == i).sum())
+        if self.how == "count":
+            return Hover(None, self.labels[i], (f"{rows:,} rows",))
+        value = f"{AGGREGATES[self.how]}: {self.counts[i]:.4g}"
+        if self.how == "mean" and np.isfinite(self.spread[i]):
+            value += f" ± {self.spread[i]:.3g} (SD)"
+        return Hover(None, self.labels[i], (value, f"{int(self.members[i]):,} of {rows:,} rows"))
+
+
+class LineRenderer(ScatterRenderer):
+    """Points joined in X order: one line, or one per category when coloured by text. Rows
+    sharing an X value (replicates, a time point) are joined through their mean."""
+
+    def __init__(self, plot: pg.PlotItem) -> None:
+        super().__init__(plot)
+        self._lines: list[pg.PlotDataItem] = []
+
+    def clear(self) -> None:
+        super().clear()
+        for line in self._lines:
+            self.plot.removeItem(line)
+        self._lines = []
+
+    def build(self, table: Table, spec: PlotSpec, oids: np.ndarray) -> str:
+        status = super().build(table, spec, oids)
+        if not len(self.oids):
+            return status
+        if self._color_codes is not None and self._color_labels is not None:
+            groups = [
+                (self._color_codes == code, category_color(code, label, special=SPECIAL))
+                for code, label in enumerate(self._color_labels)
+            ]
+        else:
+            groups = [(np.ones(len(self.oids), dtype=np.bool_), DEFAULT_COLOR)]
+        for mask, rgb in groups:
+            if mask.sum() < 2:
+                continue
+            xs, ys = mean_by_x(self.x[mask], self.y[mask])
+            if len(xs) < 2:
+                continue
+            line = pg.PlotDataItem(xs, ys, pen=pg.mkPen(rgb, width=2.5))
+            line.setZValue(8)  # over the points, as fitted lines are
+            self.plot.addItem(line)
+            self._lines.append(line)
+        return status
+
+
+class DensityRenderer:
+    """Where the points are crowded: a 2D histogram of X and Y, shaded by count (log scale).
+    The points are not drawn, but box, lasso and click select the rows beneath."""
+
+    def __init__(self, plot: pg.PlotItem) -> None:
+        self.plot = plot
+        self.oids = np.empty(0, dtype=np.int64)
+        self.x = np.empty(0)
+        self.y = np.empty(0)
+        self.grid = None
+        self.spec = PlotSpec(kind="density")
+        self._image: pg.ImageItem | None = None
+        self._overlay = pg.ScatterPlotItem(
+            pen=pg.mkPen(HIGHLIGHT, width=1.2), brush=_brush(HIGHLIGHT, 160), pxMode=True
+        )
+        self._overlay.setZValue(10)
+        self._bar: pg.ColorBarItem | None = None
+
+    def clear(self) -> None:
+        if self._image is not None:
+            self.plot.removeItem(self._image)
+            self._image = None
+        if self._overlay.scene() is not None:
+            self.plot.removeItem(self._overlay)
+
+    def build(self, table: Table, spec: PlotSpec, oids: np.ndarray) -> str:
+        self.clear()
+        self.spec = spec
+        if not spec.x or not spec.y:
+            return "Choose number columns for X and Y."
+        data = xy(table, spec.x, spec.y, oids)
+        self.oids, self.x, self.y = data.oids, data.x, data.y
+        self.grid = density_grid(self.x, self.y, spec.bins)
+        self.plot.setLabel("bottom", spec.x)
+        self.plot.setLabel("left", spec.y)
+        if self.grid is None:
+            return "No rows with both values."
+        grid = self.grid
+        shade = np.where(grid.counts > 0, np.log1p(grid.counts), np.nan)
+        self._image = pg.ImageItem(shade)
+        self._image.setColorMap(pg.colormap.get("viridis"))
+        x0, x1 = grid.x_edges[0], grid.x_edges[-1]
+        y0, y1 = grid.y_edges[0], grid.y_edges[-1]
+        self._image.setRect(pg.QtCore.QRectF(x0, y0, x1 - x0, y1 - y0))
+        self._image.setZValue(-5)
+        self.plot.addItem(self._image)
+        self.plot.addItem(self._overlay)
+        nx, ny = grid.counts.shape
+        parts = [f"{len(self.oids):,} points on a {nx} × {ny} grid"]
+        parts.append(f"densest cell {int(grid.counts.max()):,}")
+        if data.missing:
+            parts.append(f"{data.missing:,} rows without both values")
+        return " · ".join(parts)
+
+    def show_selection(self, selected: frozenset[int] | np.ndarray) -> None:
+        chosen = _chosen(selected)
+        mask = (
+            np.isin(self.oids, chosen)
+            if len(chosen) and len(self.oids)
+            else np.zeros(len(self.oids), bool)
+        )
+        self._overlay.setData(x=self.x[mask], y=self.y[mask], size=POINT_SIZE)
+
+    def hit_box(self, x0: float, y0: float, x1: float, y1: float) -> np.ndarray:
+        return self.oids[box_mask(self.x, self.y, x0, x1, y0, y1)]
+
+    def hit_lasso(self, polygon: np.ndarray) -> np.ndarray:
+        return self.oids[lasso_mask(self.x, self.y, polygon)]
+
+    def _cell_rows(self, x: float, y: float) -> tuple[tuple[int, int] | None, np.ndarray]:
+        cell = self.grid.cell_at(x, y) if self.grid is not None else None
+        if cell is None:
+            return None, np.empty(0, dtype=np.int64)
+        inside = (self.grid.cell[:, 0] == cell[0]) & (self.grid.cell[:, 1] == cell[1])
+        return cell, self.oids[inside]
+
+    def hit_point(self, x: float, y: float, sx: float, sy: float) -> np.ndarray:
+        return self._cell_rows(x, y)[1]
+
+    def hover(self, table: Table, x: float, y: float, sx: float, sy: float) -> Hover | None:
+        cell, rows = self._cell_rows(x, y)
+        if cell is None or not len(rows):
+            return None
+        g = self.grid
+        i, j = cell
+        return Hover(
+            None,
+            f"{len(rows):,} rows",
+            (
+                f"{self.spec.x}: {g.x_edges[i]:.4g} to {g.x_edges[i + 1]:.4g}",
+                f"{self.spec.y}: {g.y_edges[j]:.4g} to {g.y_edges[j + 1]:.4g}",
+            ),
+        )
+
+
+class RadarRenderer:
+    """Several number columns as spokes, each scaled to its own range (centre: lowest value,
+    rim: highest). Shows the mean of the plotted rows, and each selected row (up to
+    ``MAX_ROWS``) as its own outline."""
+
+    MAX_ROWS = 12
+    RINGS = (0.25, 0.5, 0.75, 1.0)
+
+    def __init__(self, plot: pg.PlotItem) -> None:
+        self.plot = plot
+        self.oids = np.empty(0, dtype=np.int64)
+        self.spec = PlotSpec(kind="radar")
+        self.columns: list[str] = []
+        self.scaled = np.empty((0, 0))
+        self.lows = np.empty(0)
+        self.highs = np.empty(0)
+        self._frame: list = []  # spokes, rings and labels
+        self._shapes: list = []  # the mean and the selected rows
+        self._vx = np.empty(0)  # outline corners for hover and hit tests
+        self._vy = np.empty(0)
+        self._voids = np.empty(0, dtype=np.int64)  # row per corner (-1: the mean)
+        self._vaxis = np.empty(0, dtype=np.int64)
+
+    def clear(self) -> None:
+        for item in self._frame + self._shapes:
+            self.plot.removeItem(item)
+        self._frame, self._shapes = [], []
+        self.plot.showAxis("left")
+        self.plot.showAxis("bottom")
+        self.plot.showGrid(x=True, y=True, alpha=0.15)
+        self.plot.getViewBox().setAspectLocked(False)
+
+    def _angles(self) -> np.ndarray:
+        n = len(self.columns)
+        return np.pi / 2 - 2 * np.pi * np.arange(n) / n  # first spoke straight up, clockwise
+
+    def _corners(self, values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        r = np.nan_to_num(values, nan=0.0)
+        angles = self._angles()
+        return r * np.cos(angles), r * np.sin(angles)
+
+    def build(self, table: Table, spec: PlotSpec, oids: np.ndarray) -> str:
+        self.clear()
+        self.spec = spec
+        self.columns = [c for c in spec.columns if c in table and table.kind(c) == NUMBER]
+        if len(self.columns) < 3:
+            return "Choose at least three number columns for the axes."
+        self.oids = oids
+        self.scaled, self.lows, self.highs = unit_scale(
+            [numbers(table, c, oids) for c in self.columns]
+        )
+        self.plot.hideAxis("left")
+        self.plot.hideAxis("bottom")
+        self.plot.showGrid(x=False, y=False)
+        self.plot.getViewBox().setAspectLocked(True)
+        self._draw_frame()
+        return f"{len(oids):,} rows on {len(self.columns)} axes"
+
+    def _draw_frame(self) -> None:
+        ink = (150, 150, 150)
+        angles = self._angles()
+        # invisible corners: fitting the view to the data keeps room for the axis labels
+        room = pg.ScatterPlotItem(x=[-1.6, 1.6], y=[-1.25, 1.25], size=0, pen=None, brush=None)
+        self.plot.addItem(room)
+        self._frame.append(room)
+        for ring in self.RINGS:
+            xs = np.append(ring * np.cos(angles), ring * np.cos(angles[0]))
+            ys = np.append(ring * np.sin(angles), ring * np.sin(angles[0]))
+            item = pg.PlotDataItem(xs, ys, pen=pg.mkPen(*ink, 90, width=1))
+            self.plot.addItem(item)
+            self._frame.append(item)
+        for name, angle in zip(self.columns, angles, strict=True):
+            spoke = pg.PlotDataItem(
+                [0, np.cos(angle)], [0, np.sin(angle)], pen=pg.mkPen(*ink, 140, width=1)
+            )
+            self.plot.addItem(spoke)
+            cx, cy = np.cos(angle), np.sin(angle)
+            anchor = (0.5 - 0.5 * cx, 0.5 + 0.5 * cy)
+            label = pg.TextItem(name, color=(110, 110, 110), anchor=anchor)
+            label.setPos(1.08 * cx, 1.08 * cy)
+            # Text is sized in pixels: in a pane not yet laid out it would span a huge range,
+            # and fitting the view to it drew the radar tiny. The "room" corners keep space.
+            self.plot.addItem(label, ignoreBounds=True)
+            self._frame += [spoke, label]
+
+    def _outline(self, values: np.ndarray, rgb, alpha: int, width: float, oid: int) -> None:
+        xs, ys = self._corners(values)
+        item = pg.PlotDataItem(
+            np.append(xs, xs[0]),
+            np.append(ys, ys[0]),
+            pen=pg.mkPen(rgb, width=width),
+            fillLevel=None,
+            symbol="o",
+            symbolSize=5,
+            symbolPen=None,
+            symbolBrush=_brush(rgb, 230),
+        )
+        fill = QGraphicsPolygonItem(QPolygonF([QPointF(x, y) for x, y in zip(xs, ys, strict=True)]))
+        fill.setBrush(QColor(*rgb, alpha))
+        fill.setPen(pg.mkPen(None))
+        for shape in (fill, item):
+            self.plot.addItem(shape)
+            self._shapes.append(shape)
+        self._vx = np.append(self._vx, xs)
+        self._vy = np.append(self._vy, ys)
+        self._voids = np.append(self._voids, np.full(len(xs), oid))
+        self._vaxis = np.append(self._vaxis, np.arange(len(xs)))
+
+    def show_selection(self, selected: frozenset[int] | np.ndarray) -> None:
+        for item in self._shapes:
+            self.plot.removeItem(item)
+        self._shapes = []
+        self._vx, self._vy = np.empty(0), np.empty(0)
+        self._voids = np.empty(0, dtype=np.int64)
+        self._vaxis = np.empty(0, dtype=np.int64)
+        if len(self.columns) < 3 or not len(self.oids):
+            return
+        with np.errstate(all="ignore"):
+            mean = np.nanmean(self.scaled, axis=0)
+        self._outline(mean, (120, 120, 120), 50, 2.0, -1)
+        chosen = _chosen(selected)
+        rows = np.flatnonzero(np.isin(self.oids, chosen))[: self.MAX_ROWS] if len(chosen) else []
+        for n, row in enumerate(rows):
+            rgb = category_color(n, str(n), special=())
+            self._outline(self.scaled[row], rgb, 35, 1.8, int(self.oids[row]))
+
+    def _nearest(self, x: float, y: float, sx: float, sy: float) -> int | None:
+        return nearest(self._vx, self._vy, x, y, sx, sy, HOVER_RADIUS)
+
+    def hit_box(self, x0: float, y0: float, x1: float, y1: float) -> np.ndarray:
+        inside = box_mask(self._vx, self._vy, x0, x1, y0, y1)
+        return np.unique(self._voids[inside & (self._voids >= 0)])
+
+    def hit_lasso(self, polygon: np.ndarray) -> np.ndarray:
+        inside = lasso_mask(self._vx, self._vy, polygon)
+        return np.unique(self._voids[inside & (self._voids >= 0)])
+
+    def hit_point(self, x: float, y: float, sx: float, sy: float) -> np.ndarray:
+        i = self._nearest(x, y, sx, sy)
+        if i is None or self._voids[i] < 0:
+            return np.empty(0, dtype=np.int64)
+        return self._voids[[i]]
+
+    def hover(self, table: Table, x: float, y: float, sx: float, sy: float) -> Hover | None:
+        i = self._nearest(x, y, sx, sy)
+        if i is None:
+            return None
+        oid, axis = int(self._voids[i]), int(self._vaxis[i])
+        name = self.columns[axis]
+        if oid < 0:
+            with np.errstate(all="ignore"):
+                mean = np.nanmean(numbers(table, name, self.oids))
+            span = f"{self.lows[axis]:.4g} to {self.highs[axis]:.4g}"
+            return Hover(None, "Mean of the plotted rows", (f"{name}: {mean:.4g} ({span})",))
+        lines = tuple(f"{c}: {table.cell(c, oid)}" for c in self.columns)
+        return Hover(oid, "", lines)
+
+
+RENDERERS = {
+    "scatter": ScatterRenderer,
+    "line": LineRenderer,
+    "histogram": HistogramRenderer,
+    "bar": BarRenderer,
+    "box": BoxRenderer,
+    "density": DensityRenderer,
+    "radar": RadarRenderer,
+}

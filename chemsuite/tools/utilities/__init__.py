@@ -14,4 +14,4 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Data ▸ Utilities: Calculator, random numbers and rows, potency standardisation, notes."""
+"""Table (utilities): Calculator, random numbers and rows, potency standardisation, notes."""

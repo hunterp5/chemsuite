@@ -18,6 +18,10 @@
 The options (kind, columns, bins, fits…) live in a popup, :class:`PlotOptions`, opened from the
 settings button on the panel's dock title bar (see ``PanelDock``), so the plot keeps the room.
 
+2D kinds draw with pyqtgraph; 3D kinds (3D Scatter, 3D Landscape) with OpenGL in the same panel
+(``scene3d``), so switching between any two kinds keeps the pane, its toolbar, title, columns,
+cards and selection, and only swaps the drawing.
+
 The panel follows the table: it redraws (debounced) when cells, columns or filters change, and
 plots only the rows the table shows. Selecting in the plot sets the shared selection; selecting
 elsewhere highlights the matching points here.
@@ -43,6 +47,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QSpinBox,
+    QStackedWidget,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -53,7 +58,7 @@ from chemsuite.core.selection import Selection
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table.columns import NUMBER, STRUCTURE, TEXT
 from chemsuite.plotting.data import colorable_columns, number_columns, shown_oids
-from chemsuite.plotting.stats import CURVES
+from chemsuite.plotting.stats import AGGREGATES, CURVES
 
 from ..flow_layout import compact
 from ..glyphs import glyph
@@ -69,10 +74,33 @@ from .cards import (
     pinned_size,
 )
 from .renderers import RENDERERS, Hover, PlotSpec
+from .scene3d import AVAILABLE as HAS_3D
+from .scene3d import KINDS_3D
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
 
 NONE = "(none)"
-KINDS = {"scatter": "Scatter", "histogram": "Histogram", "box": "Box Plot"}
+KINDS = {
+    "scatter": "Scatter",
+    "line": "Line",
+    "histogram": "Histogram",
+    "bar": "Bar Chart",
+    "box": "Box Plot",
+    "density": "Density",
+    "radar": "Radar",
+    "scatter3d": "3D Scatter",
+    "landscape": "3D Landscape",
+}
+#: kinds plotting one number column against another
+XY_KINDS = ("scatter", "line", "density", *KINDS_3D)
+#: what the first mode button does and looks like, in 2D and in 3D
+MOVE_MODE = {
+    False: (
+        "pan",
+        "Pan and Zoom",
+        "Drag to pan, scroll or right-drag to zoom; click a point to select it",
+    ),
+    True: ("rotate", "Turn", "Drag to turn, scroll to zoom; click a point to select it"),
+}
 REBUILD_DELAY_MS = 150
 #: left, top, right, bottom space round the plot, so the axis titles do not touch the edges
 AXIS_MARGINS = (6, 6, 10, 6)
@@ -121,10 +149,17 @@ class PlotPanel(QWidget):
 
         self.kind = QComboBox()
         for key, title in KINDS.items():
+            if key == KINDS_3D[0]:
+                self.kind.insertSeparator(self.kind.count())
             self.kind.addItem(title, key)
+            if key in KINDS_3D and not HAS_3D:  # pragma: no cover - only without PyOpenGL
+                item = self.kind.model().item(self.kind.count() - 1)
+                item.setEnabled(False)
+                item.setToolTip("3D plots need the PyOpenGL package.")
         self.kind.setCurrentIndex(max(0, self.kind.findData(kind)))  # unknown kind: scatter
         self.x = QComboBox()
         self.y = QComboBox()
+        self.z = QComboBox()
         self.color = QComboBox()
         self.size = QComboBox()
         self.bins = QSpinBox()
@@ -147,7 +182,32 @@ class PlotPanel(QWidget):
                 Qt.ItemDataRole.ToolTipRole,
             )
         self.guide.setToolTip("Reference regions or lines drawn behind the points")
-        compact(self.x, self.y, self.color, self.size, self.curve, self.guide, chars=16)
+        self.aggregate = QComboBox()
+        for key, title in AGGREGATES.items():
+            self.aggregate.addItem(title, key)
+        self.aggregate.setToolTip("How each bar sums up its rows' values")
+        self.errors = QCheckBox("Error bars")
+        self.errors.setToolTip("± one standard deviation (with Mean)")
+        self.drop = QCheckBox("Drop lines")
+        self.drop.setToolTip("A line from each point down to the floor, so heights read easily")
+        self.axes: list[str] = []  # radar spokes
+        self.axes_button = QPushButton("None")
+        self.axes_button.setToolTip("The number columns drawn as spokes (at least three)")
+        self.axes_menu = QMenu(self.axes_button)
+        self.axes_menu.aboutToShow.connect(self._fill_axes_menu)
+        self.axes_button.setMenu(self.axes_menu)
+        self.axes_button.setStyleSheet("text-align: left; padding: 3px 8px;")
+        compact(
+            self.x,
+            self.y,
+            self.z,
+            self.color,
+            self.size,
+            self.curve,
+            self.guide,
+            self.aggregate,
+            chars=16,
+        )
         #: Settings button on the dock title bar opens this (``PanelDock`` looks for ``options``)
         self.options = PlotOptions(self)
         form = self.options.form
@@ -156,16 +216,21 @@ class PlotPanel(QWidget):
         for title, widget in (
             ("X", self.x),
             ("Y", self.y),
+            ("Z", self.z),
             ("Color", self.color),
             ("Size", self.size),
             ("Bins", self.bins),
             ("Curve", self.curve),
             ("Guide", self.guide),
+            ("Summary", self.aggregate),
+            ("Axes", self.axes_button),
         ):
             label = QLabel(title + ":")
             self._labels[widget] = label
             form.addRow(label, widget)
         form.addRow("", self.fit)
+        form.addRow("", self.errors)
+        form.addRow("", self.drop)
         #: what was drawn: point counts, rows left out, fitted curves and their parameters.
         #: Not shown in the options (no explanatory text there); the fit and curve controls
         #: carry it as their tooltip.
@@ -181,8 +246,7 @@ class PlotPanel(QWidget):
         self._glyphs: dict[QAction, str] = {}
         modes = QActionGroup(self)
         for mode, icon, text, tip in (
-            (ZOOM, "pan", "Pan and Zoom",
-             "Drag to pan, scroll or right-drag to zoom; click a point to select it"),
+            (ZOOM, *MOVE_MODE[False]),
             (BOX, "box", "Box Select", "Drag a rectangle to select (Shift adds, ⌘/Ctrl toggles)"),
             (LASSO, "lasso", "Lasso Select",
              "Draw around points to select (Shift adds, ⌘/Ctrl toggles)"),
@@ -211,18 +275,24 @@ class PlotPanel(QWidget):
         self.plot.layout.setContentsMargins(*AXIS_MARGINS)
         self._apply_palette()
         self.card = HoverCard(self)
-        self.pinned = PinnedCards(self.plot_widget, self._data_to_widget)
+        self.plot_widget.setFrameShape(QFrame.Shape.NoFrame)
+        #: the 2D plot, and the OpenGL view once a 3D kind is first shown (made lazily)
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.plot_widget)
+        self.view3d = None
+        self.scene3d = None
+        self._camera: dict | None = None  # a saved camera, applied when the view is made
+        self.pinned = PinnedCards(self.stack, self._data_to_widget)
         self.view_box.sigRangeChanged.connect(lambda *_: self.pinned.place())
         self.plot_widget.installEventFilter(self)
 
-        self.plot_widget.setFrameShape(QFrame.Shape.NoFrame)
         frame = QFrame()  # one bordered box round the toolbar and the plot
         frame.setObjectName("PlotFrame")
         inside = QVBoxLayout(frame)
         inside.setContentsMargins(1, 1, 1, 1)
         inside.setSpacing(0)
         inside.addWidget(self.toolbar)
-        inside.addWidget(self.plot_widget, 1)
+        inside.addWidget(self.stack, 1)
         self._frame = frame
         self._header_attached = False
         #: a title the user typed (None: the automatic "pIC50 vs MW")
@@ -239,12 +309,15 @@ class PlotPanel(QWidget):
         self._rebuild_timer.setInterval(REBUILD_DELAY_MS)
         self._rebuild_timer.timeout.connect(self.rebuild)
         self._fill_columns(initial=True)
-        for combo in (self.kind, self.x, self.y, self.color, self.size):
+        for combo in (self.kind, self.x, self.y, self.z, self.color, self.size):
             combo.currentIndexChanged.connect(self._controls_changed)
         self.bins.valueChanged.connect(self._controls_changed)
         self.curve.currentIndexChanged.connect(self._controls_changed)
         self.guide.currentIndexChanged.connect(self._controls_changed)
+        self.aggregate.currentIndexChanged.connect(self._controls_changed)
         self.fit.toggled.connect(self._controls_changed)
+        self.errors.toggled.connect(self._controls_changed)
+        self.drop.toggled.connect(self._controls_changed)
         self.view_box.clicked.connect(self._on_click)
         self.view_box.boxSelected.connect(
             lambda x0, y0, x1, y1, mods: self._select(self.renderer.hit_box(x0, y0, x1, y1), mods)
@@ -269,29 +342,44 @@ class PlotPanel(QWidget):
         kind = self.kind.currentData()
         return PlotSpec(
             kind=kind,
-            x=name(self.x),
-            y=name(self.y) if kind in ("scatter", "box") else None,
-            color=name(self.color) if kind == "scatter" else None,
-            size=name(self.size) if kind == "scatter" else None,
-            bins=self.bins.value() or None,
+            x=name(self.x) if kind != "radar" else None,
+            y=name(self.y) if kind in (*XY_KINDS, "box", "bar") else None,
+            color=name(self.color) if kind in ("scatter", "line", "scatter3d") else None,
+            size=name(self.size) if kind in ("scatter", "scatter3d") else None,
+            bins=self.bins.value() or None
+            if kind in ("histogram", "density", "landscape")
+            else None,
             fit=self.fit.isChecked() and kind == "scatter",
             curve=self.curve.currentData() if kind == "histogram" else None,
             guide=self.guide.currentData() if kind == "scatter" else None,
+            aggregate=self.aggregate.currentData() if kind == "bar" else "mean",
+            errors=self.errors.isChecked() and kind == "bar",
+            columns=tuple(self.axes) if kind == "radar" else (),
+            z=name(self.z) if kind in KINDS_3D else None,
+            drop=self.drop.isChecked() and kind == "scatter3d",
         )
 
+    def is_3d(self) -> bool:
+        return self.kind.currentData() in KINDS_3D
+
     def set_spec(self, **values) -> None:
-        """Set controls by name (x, y, color, size, kind, bins, fit, curve, guide); redraw now."""
-        widgets = {"x": self.x, "y": self.y, "color": self.color, "size": self.size}
+        """Set controls by name (x, y, z, color, size, kind, bins, fit, curve, guide, aggregate,
+        errors, drop, columns, camera); redraw now."""
+        widgets = {"x": self.x, "y": self.y, "z": self.z, "color": self.color, "size": self.size}
         controls = (
             self.kind,
             self.x,
             self.y,
+            self.z,
             self.color,
             self.size,
             self.bins,
             self.fit,
             self.curve,
             self.guide,
+            self.aggregate,
+            self.errors,
+            self.drop,
         )
         for control in controls:  # one redraw at the end, not one per control
             control.blockSignals(True)
@@ -299,9 +387,11 @@ class PlotPanel(QWidget):
             if "kind" in values:
                 self.kind.setCurrentIndex(self.kind.findData(values.pop("kind")))
                 self._fill_columns()
+            camera = values.pop("camera", None)
             for key, value in values.items():
                 if key in widgets:
-                    widgets[key].setCurrentText(value or NONE)
+                    if value is None or widgets[key].findText(value) >= 0:
+                        widgets[key].setCurrentText(value or NONE)
                 elif key == "bins":
                     self.bins.setValue(value or 0)
                 elif key == "fit":
@@ -310,10 +400,20 @@ class PlotPanel(QWidget):
                     self.curve.setCurrentIndex(max(0, self.curve.findData(value)))
                 elif key == "guide":
                     self.guide.setCurrentIndex(max(0, self.guide.findData(value)))
+                elif key == "aggregate":
+                    self.aggregate.setCurrentIndex(max(0, self.aggregate.findData(value)))
+                elif key == "errors":
+                    self.errors.setChecked(bool(value))
+                elif key == "drop":
+                    self.drop.setChecked(bool(value))
+                elif key == "columns":
+                    self._set_axes(value)
         finally:
             for control in controls:
                 control.blockSignals(False)
         self.rebuild()
+        if isinstance(camera, dict):
+            self.set_camera(camera)
 
     def state(self) -> dict:
         """The plot's settings, for saving with the document (JSON-friendly)."""
@@ -328,6 +428,12 @@ class PlotPanel(QWidget):
             "fit": spec.fit,
             "curve": spec.curve,
             "guide": spec.guide,
+            "aggregate": self.aggregate.currentData(),
+            "errors": self.errors.isChecked(),
+            "columns": list(self.axes),
+            "z": spec.z,
+            "drop": self.drop.isChecked(),
+            "camera": self.camera(),
             "title": self.custom_title,
             "cards": self.card_options.state(),
         }
@@ -338,7 +444,23 @@ class PlotPanel(QWidget):
         self.custom_title = title.strip() or None if isinstance(title, str) else None
         if "cards" in state:
             self.set_card_options(CardOptions.from_state(state["cards"]))
-        known = ("kind", "x", "y", "color", "size", "bins", "fit", "curve", "guide")
+        known = (
+            "kind",
+            "x",
+            "y",
+            "color",
+            "size",
+            "bins",
+            "fit",
+            "curve",
+            "guide",
+            "aggregate",
+            "errors",
+            "columns",
+            "z",
+            "drop",
+            "camera",
+        )
         values = {key: state[key] for key in known if key in state}
         if values.get("kind") not in KINDS:
             values.pop("kind", None)
@@ -349,14 +471,22 @@ class PlotPanel(QWidget):
         numbers = number_columns(table)
         kind = self.kind.currentData()
         texts = [n for n in table.column_names if table.kind(n) == TEXT]
+        groupable = [n for n in table.column_names if table.kind(n) in (NUMBER, TEXT)]
         x_choices = {
             "scatter": numbers,
-            "histogram": [n for n in table.column_names if table.kind(n) in (NUMBER, TEXT)],
+            "line": numbers,
+            "density": numbers,
+            "histogram": groupable,
+            "bar": texts or groupable,  # the grouping column
             "box": [NONE, *texts],  # the grouping column (optional)
+            "radar": [],
+            "scatter3d": numbers,
+            "landscape": numbers,
         }[kind]
         lists = {
             self.x: x_choices,
-            self.y: numbers,
+            self.y: [NONE, *numbers] if kind == "bar" else numbers,
+            self.z: numbers,
             self.color: [NONE, *colorable_columns(table)],
             self.size: [NONE, *numbers],
         }
@@ -369,16 +499,81 @@ class PlotPanel(QWidget):
                 combo.setCurrentText(current)
             elif initial and combo is self.y and len(names) > 1:
                 combo.setCurrentIndex(1)
+            elif combo is self.z:  # a column not already on X or Y
+                taken = {self.x.currentText(), self.y.currentText()}
+                spare = [n for n in names if n not in taken]
+                if spare:
+                    combo.setCurrentText(spare[0])
+            elif combo is self.y and kind == "bar" and current not in names:
+                combo.setCurrentIndex(min(1, len(names) - 1))  # a number column, not a count
             combo.blockSignals(False)
+        self.axes = [a for a in self.axes if a in numbers]
+        if initial or (kind == "radar" and len(self.axes) < 3):
+            self.axes = self.axes if len(self.axes) >= 3 else numbers[:6]
+        self._show_axes()
         shown = {
-            "scatter": (self.y, self.color, self.size, self.fit, self.guide),
-            "histogram": (self.bins, self.curve),
-            "box": (self.y,),
+            "scatter": (self.x, self.y, self.color, self.size, self.fit, self.guide),
+            "line": (self.x, self.y, self.color),
+            "density": (self.x, self.y, self.bins),
+            "histogram": (self.x, self.bins, self.curve),
+            "bar": (self.x, self.y, self.aggregate, self.errors),
+            "box": (self.x, self.y),
+            "radar": (self.axes_button,),
+            "scatter3d": (self.x, self.y, self.z, self.color, self.size, self.drop),
+            "landscape": (self.x, self.y, self.z, self.bins),
         }[kind]
-        for widget in (self.y, self.color, self.size, self.fit, self.bins, self.curve, self.guide):
+        optional = (
+            self.x,
+            self.y,
+            self.color,
+            self.size,
+            self.fit,
+            self.bins,
+            self.curve,
+            self.guide,
+            self.aggregate,
+            self.errors,
+            self.axes_button,
+            self.z,
+            self.drop,
+        )
+        for widget in optional:
             self.options.form.setRowVisible(widget, widget in shown)
-        self._labels[self.x].setText("Group by:" if kind == "box" else "X:")
-        self._labels[self.y].setText("Values:" if kind == "box" else "Y:")
+        self._labels[self.x].setText("Group by:" if kind in ("box", "bar") else "X:")
+        self._labels[self.y].setText("Values:" if kind in ("box", "bar") else "Y:")
+        self._labels[self.z].setText("Height:" if kind == "landscape" else "Z:")
+        self._labels[self.bins].setText("Grid:" if kind == "landscape" else "Bins:")
+        self.bins.setToolTip(
+            "Grid cells along each side (Auto picks from the number of points)"
+            if kind == "landscape"
+            else "Number of bins (Auto picks a width from the data)"
+        )
+
+    def _fill_axes_menu(self) -> None:
+        menu = self.axes_menu
+        menu.clear()
+        for name in number_columns(self.table):
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(name in self.axes)
+            action.toggled.connect(lambda on, n=name: self._toggle_axis(n, on))
+
+    def _toggle_axis(self, name: str, on: bool) -> None:
+        axes = [a for a in self.axes if a != name]
+        if on:
+            axes.append(name)
+        self._set_axes(axes)
+        self.rebuild()
+
+    def _set_axes(self, names) -> None:
+        numbers = set(number_columns(self.table))
+        self.axes = [n for n in names or () if isinstance(n, str) and n in numbers]
+        self._show_axes()
+
+    def _show_axes(self) -> None:
+        text = ", ".join(self.axes) if self.axes else "None"
+        metrics = self.axes_button.fontMetrics()
+        self.axes_button.setText(metrics.elidedText(text, Qt.TextElideMode.ElideRight, 180))
 
     def _controls_changed(self, *_args) -> None:
         if self.sender() is self.kind:
@@ -387,6 +582,8 @@ class PlotPanel(QWidget):
 
     def set_mode(self, mode: str) -> None:
         self.view_box.set_mode(mode)
+        if self.view3d is not None:
+            self.view3d.mode = mode
         if not self.mode_buttons[mode].isChecked():
             self.mode_buttons[mode].setChecked(True)
 
@@ -394,21 +591,94 @@ class PlotPanel(QWidget):
     def rebuild(self) -> None:
         self._rebuild_timer.stop()
         spec = self.spec()
-        renderer_type = RENDERERS[spec.kind]
-        if not isinstance(self.renderer, renderer_type):
-            if self.renderer is not None:
+        three = spec.kind in KINDS_3D and self._ensure_3d()
+        self._show_page(three)
+        if three:
+            if self.renderer is not None:  # leave nothing of a 2D kind behind
                 self.renderer.clear()
-            self.renderer = renderer_type(self.plot)
-        self.summary.setText(self.renderer.build(self.table, spec, shown_oids(self.table)))
+                self.renderer = None
+            self.summary.setText(self.scene3d.build(self.table, spec, shown_oids(self.table)))
+        else:
+            renderer_type = RENDERERS.get(spec.kind, RENDERERS["scatter"])
+            if not isinstance(self.renderer, renderer_type):
+                if self.renderer is not None:
+                    self.renderer.clear()
+                self.renderer = renderer_type(self.plot)
+            self.summary.setText(self.renderer.build(self.table, spec, shown_oids(self.table)))
         for control in (self.fit, self.curve):
             control.setToolTip(self.summary.text())
-        self.renderer.show_selection(self.selection.oids)
+        self._active().show_selection(self.selection.oids)
         self.update_pinned()
-        axes = (spec.kind, spec.x, spec.y, spec.bins)
+        axes = (spec.kind, spec.x, spec.y, spec.bins, spec.aggregate, spec.columns)
         if axes != self._last_axes:
+            # a new 2D layout fits the view to it; turning a 3D plot's columns keeps the camera
+            moved_in_3d = three and self._last_axes is not None and self._last_axes[0] in KINDS_3D
             self._last_axes = axes
-            self.reset_view()
+            if not moved_in_3d:
+                self.reset_view()
         self.titleChanged.emit(self.title())
+
+    def _active(self):
+        """What draws the current kind: a 2D renderer or the 3D scene."""
+        return self.scene3d if self.is_3d() and self.scene3d is not None else self.renderer
+
+    def _ensure_3d(self) -> bool:
+        """Make the OpenGL view the first time a 3D kind is shown; False without PyOpenGL."""
+        if self.view3d is not None:
+            return True
+        if not HAS_3D:  # pragma: no cover - only without PyOpenGL
+            return False
+        from .scene3d import Scene3D, View3D
+
+        self.view3d = View3D()
+        self.view3d.mode = self.view_box.mode
+        self.scene3d = Scene3D(self.view3d)
+        self.stack.addWidget(self.view3d)
+        self.view3d.clicked.connect(
+            lambda pos, mods: self._select(self.scene3d.hit_point(pos), mods)
+        )
+        self.view3d.boxed.connect(lambda rect, mods: self._select(self.scene3d.hit_box(rect), mods))
+        self.view3d.lassoed.connect(
+            lambda polygon, mods: self._select(self.scene3d.hit_lasso(polygon), mods)
+        )
+        self.view3d.hovered.connect(self._on_hover_3d)
+        self.view3d.turning.connect(self.pinned.clear)
+        self.view3d.moved.connect(self.update_pinned)
+        self.view3d.installEventFilter(self)
+        if self._camera is not None:
+            self.view3d.set_camera(self._camera)
+            self._camera = None
+        else:
+            self.view3d.reset_camera()
+        return True
+
+    def _show_page(self, three: bool) -> None:
+        """The 2D plot or the 3D view, and the toolbar's first button to match."""
+        page = self.view3d if three else self.plot_widget
+        if self.stack.currentWidget() is not page:
+            self.card.hide()
+            self.pinned.clear()
+            self.stack.setCurrentWidget(page)
+        icon, text, tip = MOVE_MODE[three]
+        move = self.mode_buttons[ZOOM]
+        move.setText(text)
+        move.setToolTip(f"{text}: {tip}")
+        self._glyphs[move] = icon
+        move.setIcon(glyph(icon, self.palette().text().color()))
+
+    def camera(self) -> dict | None:
+        """Where a 3D plot is looked at from (None before a 3D kind was shown)."""
+        if self.view3d is not None:
+            return self.view3d.camera()
+        return dict(self._camera) if self._camera else None
+
+    def set_camera(self, camera: object) -> None:
+        if not isinstance(camera, dict):
+            return
+        if self.view3d is not None:
+            self.view3d.set_camera(camera)
+        else:
+            self._camera = dict(camera)
 
     def set_custom_title(self, text: str | None) -> None:
         """Name the plot; empty or None goes back to the automatic title."""
@@ -429,15 +699,32 @@ class PlotPanel(QWidget):
         spec = self.spec()
         if spec.kind == "scatter" and spec.x and spec.y:
             return f"{spec.y} vs {spec.x}"
+        if spec.kind == "scatter3d" and spec.x and spec.y and spec.z:
+            return f"3D: {spec.x}, {spec.y}, {spec.z}"
+        if spec.kind == "landscape" and spec.x and spec.y and spec.z:
+            return f"Landscape: {spec.z} over {spec.x}, {spec.y}"
         if spec.kind == "box" and spec.y:
             return f"{spec.y} by {spec.x}" if spec.x else f"Box Plot: {spec.y}"
         if spec.kind == "histogram" and spec.x:
             return f"Histogram: {spec.x}"
+        if spec.kind == "line" and spec.x and spec.y:
+            return f"{spec.y} by {spec.x}"
+        if spec.kind == "density" and spec.x and spec.y:
+            return f"Density: {spec.y} vs {spec.x}"
+        if spec.kind == "bar" and spec.x:
+            if spec.y:
+                return f"{AGGREGATES[spec.aggregate]} {spec.y} by {spec.x}"
+            return f"Rows by {spec.x}"
         return KINDS[spec.kind]
 
     def reset_view(self) -> None:
+        """Fit the plot to the data (3D: look from the start position). A 2D view keeps fitting
+        as the pane is resized until you pan or zoom, so a plot drawn while its pane was still
+        tiny never stays tiny."""
+        if self.is_3d() and self.view3d is not None:
+            self.view3d.reset_camera()
+            return
         self.plot.enableAutoRange()
-        self.plot.autoRange()
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
@@ -491,8 +778,9 @@ class PlotPanel(QWidget):
         self._rebuild_timer.start()
 
     def _on_selection(self, oids: frozenset[int], origin: str) -> None:
-        if origin != self._origin and self.renderer is not None:
-            self.renderer.show_selection(oids)
+        active = self._active()
+        if origin != self._origin and active is not None:
+            active.show_selection(oids)
         self.update_pinned()
 
     # -- selecting ------------------------------------------------------------------------------
@@ -506,7 +794,7 @@ class PlotPanel(QWidget):
             self.selection.set(current ^ hit, self._origin)
         else:
             self.selection.set(oids.tolist(), self._origin)
-        self.renderer.show_selection(self.selection.oids)
+        self._active().show_selection(self.selection.oids)
         self.update_pinned()
 
     def _on_click(self, x: float, y: float, modifiers) -> None:
@@ -530,6 +818,17 @@ class PlotPanel(QWidget):
             self.card.hide()
             return
         self.show_hover(hover)
+
+    def _on_hover_3d(self, pos: QPoint) -> None:
+        i = self.scene3d.hit_index(pos) if self.card_options.hovering else None
+        if i is None:
+            self.card.hide()
+            return
+        content = self.card_content(int(self.scene3d.oids[i]))
+        if content.empty():
+            self.card.hide()
+            return
+        self.card.show_at(self.view3d.mapToGlobal(pos), content)
 
     def show_hover(self, hover: Hover) -> None:
         if hover.oid is None:  # a group of rows (a histogram bar, a box)
@@ -660,7 +959,8 @@ class PlotPanel(QWidget):
         shown: list[str] = []
         if options.values:
             spec = self.spec()
-            shown = [n for n in (spec.x, spec.y, spec.color, spec.size) if n and n in table]
+            plotted = (spec.x, spec.y, spec.z, spec.color, spec.size)
+            shown = [n for n in plotted if n and n in table]
         for name in options.columns:
             if name in table and name not in shown and table.kind(name) != STRUCTURE:
                 shown.append(name)
@@ -672,26 +972,35 @@ class PlotPanel(QWidget):
         return content
 
     def _data_to_widget(self, x: float, y: float) -> QPointF:
+        if self.is_3d():  # 3D cards are placed at their points' screen pixels already
+            return QPointF(x, y)
         scene = self.view_box.mapViewToScene(QPointF(x, y))
         return QPointF(self.plot_widget.mapFromScene(scene))
 
     def update_pinned(self) -> None:
         """Cards beside the selected points (when the options ask for them)."""
-        renderer = self.renderer
+        renderer = self._active() if hasattr(self, "stack") else None
+        three = renderer is not None and renderer is self.scene3d
         if (
             not hasattr(self, "pinned")
             or renderer is None
             or not self.card_options.pinning
-            or not hasattr(renderer, "x")
+            or not (three or hasattr(renderer, "x"))
             or not len(self.selection)
         ):
             if hasattr(self, "pinned"):
                 self.pinned.clear()
             return
         mask = np.isin(renderer.oids, self.selection.as_array())
+        if three:  # where the points are on screen; behind the camera: no card
+            xy, front = renderer.screen_points()
+            mask &= front
+            xs, ys = xy[:, 0], xy[:, 1]
+        else:
+            xs, ys = renderer.x, renderer.y
         points = [
             (int(o), float(x), float(y))
-            for o, x, y in zip(renderer.oids[mask], renderer.x[mask], renderer.y[mask], strict=True)
+            for o, x, y in zip(renderer.oids[mask], xs[mask], ys[mask], strict=True)
         ]
         chosen = SIZES[self.card_options.size][1]
         size = pinned_size(chosen, len(points), self.plot_widget.size())
@@ -700,6 +1009,8 @@ class PlotPanel(QWidget):
     def eventFilter(self, watched, event) -> bool:
         if watched is self.plot_widget and event.type() == QEvent.Type.Resize:
             self.update_pinned()  # a smaller plot may need smaller cards
+        if watched is self.view3d and event.type() == QEvent.Type.Leave:
+            self.card.hide()
         return super().eventFilter(watched, event)
 
     def leaveEvent(self, event) -> None:
@@ -708,13 +1019,15 @@ class PlotPanel(QWidget):
 
     # -- export and closing ---------------------------------------------------------------------
     def export_dialog(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Plot", f"{self.title()}.png", "PNG image (*.png);;SVG drawing (*.svg)"
-        )
+        kinds = "PNG image (*.png)" if self.is_3d() else "PNG image (*.png);;SVG drawing (*.svg)"
+        path, _ = QFileDialog.getSaveFileName(self, "Export Plot", f"{self.title()}.png", kinds)
         if path:
             self.export(Path(path))
 
     def export(self, path: Path) -> None:
+        if self.is_3d() and self.view3d is not None:
+            self.view3d.export(path.with_suffix(".png"))
+            return
         from pyqtgraph.exporters import ImageExporter, SVGExporter
 
         exporter = SVGExporter if path.suffix.lower() == ".svg" else ImageExporter

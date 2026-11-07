@@ -23,7 +23,7 @@ import numpy as np
 from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox
 
 from chemsuite.analysis import embedding as em
-from chemsuite.app.dialogs import OutputChoice, RowsChoice, ToolDialog
+from chemsuite.app.dialogs import OutputChoice, RowsChoice, Segmented, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import colorable_columns
@@ -41,7 +41,11 @@ HELP = {
     "umap": "Keeps neighbourhoods together, so series form islands; distances between "
     "islands mean little. Above 50,000 rows it is fitted on a sample.",
     "tsne": "Like UMAP, good at local groups; slower, and only for the rows given.",
+    "pacmap": "Keeps local groups and the overall layout together, so distances between "
+    "islands mean more than in UMAP or t-SNE; fast on large sets.",
 }
+#: default neighbours per method (the box is shared, so switching method updates it)
+NEIGHBOURS = {"umap": 15, "pacmap": 10}
 
 
 class SpaceMapDialog(ToolDialog):
@@ -61,14 +65,26 @@ class SpaceMapDialog(ToolDialog):
         method = self.section("Method")
         self.method = QComboBox()
         has_umap = importlib.util.find_spec("umap") is not None
+        missing = {
+            "umap": None if has_umap else "UMAP needs the umap-learn package.",
+            "pacmap": None
+            if importlib.util.find_spec("pacmap") is not None
+            else "PaCMAP needs the pacmap package.",
+        }
         for key, title in em.METHODS.items():
             self.method.addItem(title, key)
-            if key == "umap" and not has_umap:
+            if missing.get(key):
                 item = self.method.model().item(self.method.count() - 1)
                 item.setEnabled(False)
-                item.setToolTip("UMAP needs the umap-learn package.")
+                item.setToolTip(missing[key])
         self.method.setCurrentIndex(self.method.findData("umap" if has_umap else "pca"))
         method.row("Method", self.method)
+        self.dims = Segmented((("2", "2D"), ("3", "3D")), "2")
+        method.row(
+            "Dimensions",
+            self.dims,
+            help="3D writes three columns and opens a 3D Scatter you can turn.",
+        )
         self.neighbours = QSpinBox()
         self.neighbours.setRange(2, 200)
         self.neighbours.setValue(15)
@@ -100,6 +116,7 @@ class SpaceMapDialog(ToolDialog):
             "differences the first two miss.",
         )
         self._method_section = method
+        self._method_key = self.method.currentData()
 
         more = self.section("More Options", collapsed=True)
         self.distance = QComboBox()
@@ -191,6 +208,33 @@ class SpaceMapDialog(ToolDialog):
             help="The same seed gives the same map every run (UMAP then uses one processor "
             "core). Random is faster but differs each time.",
         )
+        self.mn_ratio = QDoubleSpinBox()
+        self.mn_ratio.setRange(0.0, 10.0)
+        self.mn_ratio.setSingleStep(0.1)
+        self.mn_ratio.setValue(0.5)
+        more.row(
+            "Mid-near pairs",
+            self.mn_ratio,
+            help="Mid-near pairs per neighbour pair; more keeps the overall layout (global "
+            "structure) better.",
+        )
+        self.fp_ratio = QDoubleSpinBox()
+        self.fp_ratio.setRange(0.0, 20.0)
+        self.fp_ratio.setSingleStep(0.5)
+        self.fp_ratio.setValue(2.0)
+        more.row(
+            "Further pairs",
+            self.fp_ratio,
+            help="Further pairs per neighbour pair; more pushes separate groups further apart.",
+        )
+        self.pacmap_distance = QComboBox()
+        for key, title in em.PACMAP_METRICS.items():
+            self.pacmap_distance.addItem(title, key)
+        more.row(
+            "PaCMAP distance",
+            self.pacmap_distance,
+            help="Measured on the PCA dimensions of the features. Angular is the cosine distance.",
+        )
         self._more_section = more
 
         output = self.section("Output")
@@ -212,6 +256,7 @@ class SpaceMapDialog(ToolDialog):
             self.features.changed,
             self.output.textChanged,
             self.color.currentIndexChanged,
+            self.dims.changed,
             self.distance.currentIndexChanged,
             self.min_dist.valueChanged,
             self.spread.valueChanged,
@@ -243,10 +288,15 @@ class SpaceMapDialog(ToolDialog):
         method = self.method.currentData()
         section = self._method_section
         section.set_help(self.method, HELP[method])
-        section.set_row_visible(self.neighbours, method == "umap")
+        if method != self._method_key:  # each method's own default number of neighbours
+            if self.neighbours.value() == NEIGHBOURS.get(self._method_key):
+                self.neighbours.setValue(NEIGHBOURS.get(method, self.neighbours.value()))
+            self._method_key = method
+        three = self.dims.value() == "3"
+        section.set_row_visible(self.neighbours, method in ("umap", "pacmap"))
         section.set_row_visible(self.min_dist, method == "umap")
         section.set_row_visible(self.perplexity, method == "tsne")
-        section.set_row_visible(self.components, method == "pca")
+        section.set_row_visible(self.components, method == "pca" and not three)
         more = self._more_section
         for widget in (self.distance, self.spread, self.epochs, self.fit_max):
             more.set_row_visible(widget, method == "umap")
@@ -254,10 +304,12 @@ class SpaceMapDialog(ToolDialog):
             self.learning_rate,
             self.iterations,
             self.exaggeration,
-            self.reduce_to,
             self.init,
         ):
             more.set_row_visible(widget, method == "tsne")
+        more.set_row_visible(self.reduce_to, method in ("tsne", "pacmap"))
+        for widget in (self.mn_ratio, self.fp_ratio, self.pacmap_distance):
+            more.set_row_visible(widget, method == "pacmap")
         more.setVisible(method != "pca")
         name = em.METHODS[method]
         if self.output.text() in ("", self._auto_name):
@@ -286,6 +338,10 @@ class SpaceMapDialog(ToolDialog):
             "reduce_to": self.reduce_to.value(),
             "init": self.init.currentData(),
             "seed": None if self.seed.value() < 0 else self.seed.value(),
+            "mn_ratio": self.mn_ratio.value(),
+            "fp_ratio": self.fp_ratio.value(),
+            "distance": self.pacmap_distance.currentData(),
+            "dims": int(self.dims.value()),
         }
 
     def make_map(self):
@@ -319,16 +375,23 @@ class SpaceMapDialog(ToolDialog):
         overwrite: bool = True,
     ):
         ctx = self.ctx
+        dims = result.coords.shape[1]
+        axes = [f"{prefix} {i + 1}" for i in range(dims)]
         names = ctx.apply_results(
             {
-                f"{prefix} 1": (oids, NumberColumn.from_floats(result.coords[:, 0], 3)),
-                f"{prefix} 2": (oids, NumberColumn.from_floats(result.coords[:, 1], 3)),
+                axis: (oids, NumberColumn.from_floats(result.coords[:, i], 3))
+                for i, axis in enumerate(axes)
             },
             label=f"{em.METHODS[result.method]} map",
             overwrite=overwrite,
         )
-        self.plot = ctx.open_tool("scatter")
-        self.plot.set_spec(x=names[f"{prefix} 1"], y=names[f"{prefix} 2"], color=color)
+        columns = [names[a] for a in axes]
+        if dims == 3:
+            self.plot = ctx.open_tool("scatter3d")
+            self.plot.set_spec(x=columns[0], y=columns[1], z=columns[2], color=color)
+        else:
+            self.plot = ctx.open_tool("scatter")
+            self.plot.set_spec(x=columns[0], y=columns[1], color=color)
         message = f"{result.placed:,} of {len(oids):,} row(s) placed"
         if result.notes:
             message += "; " + "; ".join(result.notes)

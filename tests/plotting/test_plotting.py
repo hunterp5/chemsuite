@@ -147,3 +147,87 @@ def test_distribution_fits() -> None:
     assert fit_distribution(np.array([-1.0, -2.0, 3.0]), "lognormal") is None
     with pytest.raises(ValueError):
         fit_distribution(np.ones(5), "gamma")
+
+
+def test_aggregate_per_group() -> None:
+    from chemsuite.plotting.stats import aggregate
+
+    values = np.array([1.0, 3.0, np.nan, 10.0, 2.0])
+    codes = np.array([0, 0, 0, 1, -1])
+    mean = aggregate(values, codes, 3, "mean")
+    assert mean.value[:2].tolist() == [2.0, 10.0] and np.isnan(mean.value[2])
+    assert mean.spread[0] == pytest.approx(np.sqrt(2)) and np.isnan(mean.spread[1])
+    assert mean.count.tolist() == [2, 1, 0]
+    assert aggregate(None, codes, 3, "count").value.tolist() == [3.0, 1.0, 0.0]
+    assert aggregate(values, codes, 2, "sum").value.tolist() == [4.0, 10.0]
+    with pytest.raises(ValueError):
+        aggregate(values, codes, 2, "mode")
+
+
+def test_density_grid() -> None:
+    from chemsuite.plotting.stats import density_grid
+
+    x = np.array([0.0, 0.1, 0.9, 1.0, np.nan])
+    y = np.array([0.0, 0.0, 1.0, 1.0, 5.0])
+    grid = density_grid(x, y, bins=2)
+    assert grid.counts.tolist() == [[2.0, 0.0], [0.0, 2.0]]
+    assert grid.cell[:4].tolist() == [[0, 0], [0, 0], [1, 1], [1, 1]]
+    assert grid.cell[4].tolist() == [-1, -1]
+    assert grid.cell_at(1.0, 1.0) == (1, 1) and grid.cell_at(2.0, 0.0) is None
+    assert density_grid(np.array([np.nan]), np.array([1.0])) is None
+
+
+def test_unit_scale() -> None:
+    from chemsuite.plotting.stats import unit_scale
+
+    scaled, lows, highs = unit_scale([np.array([1.0, 3.0, np.nan]), np.array([5.0, 5.0, 5.0])])
+    assert scaled[:, 0][:2].tolist() == [0.0, 1.0] and np.isnan(scaled[2, 0])
+    assert scaled[:, 1].tolist() == [0.5, 0.5, 0.5]
+    assert lows.tolist() == [1.0, 5.0] and highs.tolist() == [3.0, 5.0]
+
+
+def test_mean_by_x() -> None:
+    from chemsuite.plotting.stats import mean_by_x
+
+    xs, ys = mean_by_x(np.array([2.0, 1.0, 2.0, np.nan]), np.array([4.0, 1.0, 6.0, 9.0]))
+    assert xs.tolist() == [1.0, 2.0] and ys.tolist() == [1.0, 5.0]
+
+
+def test_project_to_the_screen() -> None:
+    from chemsuite.plotting.geometry import project
+
+    # a camera 2 units back looking down -z, 90° field of view
+    near, far = 0.1, 100.0
+    perspective = np.array(
+        [
+            [1.0, 0, 0, 0],
+            [0, 1.0, 0, 0],
+            [0, 0, -(far + near) / (far - near), -2 * far * near / (far - near)],
+            [0, 0, -1.0, 0],
+        ]
+    )
+    view = np.eye(4)
+    view[2, 3] = -2.0
+    points = np.array([[0.0, 0, 0], [1.0, 1.0, 0], [0, 0, 5.0]])
+    xy, in_front = project(points, perspective @ view, 200, 100)
+    assert xy[0].tolist() == [100.0, 50.0]  # the centre
+    assert xy[1].tolist() == pytest.approx([150.0, 25.0])  # right and up
+    assert in_front.tolist() == [True, True, False]  # the last is behind the camera
+
+
+def test_activity_landscape_surface() -> None:
+    from chemsuite.plotting.stats import landscape
+
+    rng = np.random.default_rng(0)
+    # two islands in the plane: one active (z ≈ 8), one inactive (z ≈ 5), far apart
+    x = np.concatenate([rng.normal(0, 0.3, 200), rng.normal(10, 0.3, 200), [np.nan]])
+    y = np.concatenate([rng.normal(0, 0.3, 200), rng.normal(10, 0.3, 200), [1.0]])
+    z = np.concatenate([np.full(200, 8.0), np.full(200, 5.0), [9.0]])
+    surface = landscape(x, y, z, bins=20)
+    assert surface.heights.shape == (20, 20) and len(surface.xs) == len(surface.ys) == 20
+    assert surface.heights[0, 0] == pytest.approx(8.0)  # a weighted mean, not a sum
+    assert surface.heights[-1, -1] == pytest.approx(5.0)
+    assert np.isnan(surface.heights[10, 10])  # nothing near the middle: no height made up
+    finite = surface.heights[np.isfinite(surface.heights)]
+    assert finite.min() >= 5.0 - 1e-9 and finite.max() <= 8.0 + 1e-9
+    assert landscape(x[:2], y[:2], z[:2]) is None

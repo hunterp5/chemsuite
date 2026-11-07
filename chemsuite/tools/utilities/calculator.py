@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Data ▸ Utilities ▸ Calculator…: a new column from a formula over other columns.
+"""Table ▸ Calculator…: a new column from a formula over other columns.
 
 The formula language is :mod:`chemsuite.analysis.formula`. The dialog checks the formula as
 it is typed and previews the result on the first rows; Insert menus add column names and
