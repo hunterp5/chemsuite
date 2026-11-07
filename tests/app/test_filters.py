@@ -162,3 +162,21 @@ def test_panel_tools_sit_in_the_title_bar_and_cards_carry_no_text(window) -> Non
     window._install(type(window.workspace)(window.workspace.table))  # a fresh document
     assert header.toolbar is window._filters.toolbar is not old_toolbar
     assert old_toolbar.parent() is None
+
+
+def test_cards_are_striped_compact_and_use_glyphs(panel) -> None:
+    cards = [panel.add_filter(c) for c in ("pIC50", "Series", "ID")]
+    assert [c._alternate for c in cards] == [False, True, False]
+    background = [c.styleSheet().split("background: ")[1][:7] for c in cards]
+    assert background[0] == background[2] != background[1]
+    panel.remove_filter(cards[0])  # the stripes follow the new order
+    assert [c._alternate for c in panel.cards] == [False, True]
+    series = cards[1]
+    for button in (series.not_button, series.remove_button, series.all_button):
+        assert not button.icon().isNull() and not button.text()
+    # The list is as tall as its four values (A, B, C, blank), not a fixed 180 px.
+    assert series.values.height() < 4 * series.values.sizeHintForRow(0) + 20
+    series.none_button.click()
+    assert series.checked_values() == set()
+    series.all_button.click()
+    assert len(series.checked_values()) == 4

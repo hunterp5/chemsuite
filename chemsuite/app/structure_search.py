@@ -27,7 +27,7 @@ from concurrent.futures import Executor
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QEvent, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QRadioButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -203,15 +204,27 @@ class QueryInput(QWidget):
         self,
         current_structure: Callable[[], str] | None = None,
         parent: QWidget | None = None,
+        *,
+        compact: bool = False,
     ) -> None:
         super().__init__(parent)
         self._current_structure = current_structure
         self.edit = QLineEdit()
         self.edit.setPlaceholderText("SMILES or SMARTS")
         self.edit.setClearButtonEnabled(True)
-        self.draw_button = QPushButton("Draw…")
+        if compact:  # a pencil glyph (filter cards); dialogs keep the labelled button
+            self.draw_button = QToolButton()
+            self.draw_button.setAutoRaise(True)
+            self.draw_button.setFixedSize(22, 22)
+            self.draw_button.setToolTip("Draw the query in the sketcher")
+            self._compact = True
+            self._paint_pencil()
+        else:
+            self.draw_button = QPushButton("Draw…")
+            self._compact = False
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(4 if compact else 6)
         row.addWidget(self.edit, 1)
         row.addWidget(self.draw_button)
         if current_structure is not None:
@@ -221,6 +234,16 @@ class QueryInput(QWidget):
             row.addWidget(self.current_button)
         self.edit.textChanged.connect(lambda _t: self.changed.emit())
         self.draw_button.clicked.connect(self.draw)
+
+    def _paint_pencil(self) -> None:
+        from .glyphs import glyph
+
+        self.draw_button.setIcon(glyph("pencil", self.palette().text().color()))
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange and getattr(self, "_compact", False):
+            self._paint_pencil()
 
     def text(self) -> str:
         return self.edit.text()

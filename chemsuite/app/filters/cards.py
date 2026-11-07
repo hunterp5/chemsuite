@@ -27,7 +27,8 @@ import math
 import re
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -37,7 +38,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QPushButton,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -54,7 +54,7 @@ from chemsuite.core.table.filters import (
 )
 from chemsuite.core.table.numbers import format_general
 
-from ..pane import section
+from ..glyphs import flat_buttons, glyph
 from .range_slider import RangeSlider
 
 #: Text columns with at most this many distinct values get a category card by default.
@@ -62,6 +62,10 @@ CATEGORY_LIMIT = 200
 #: A category list shows at most this many values (the most frequent).
 CATEGORY_LIST_LIMIT = 1000
 HISTOGRAM_BINS = 40
+#: how far a striped card's background moves from the base colour toward the text colour
+STRIPE = 0.055
+#: a category list grows to this many rows before it scrolls
+LIST_ROWS = 8
 BLANK_LABEL = "(blank)"
 
 TEXT_MODES = {
@@ -84,34 +88,34 @@ class FilterCard(QFrame):
         super().__init__(parent)
         self.table = table
         self.column = column
-        section(self, "FilterCard")
+        self.setObjectName("FilterCard")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self._alternate = False  # striped like table rows (the panel sets it)
+        self._glyphs: dict[QToolButton, str] = {}
+        self._restyling = False
 
         self.enabled_box = QCheckBox()
         self.enabled_box.setChecked(True)
         self.enabled_box.setToolTip("Apply this filter")
         self.title = QLabel()
         self.title.setStyleSheet("font-weight: 600")
-        self.not_button = QToolButton()
-        self.not_button.setText("Not")
+        self.not_button = self.glyph_button("not", "Not: keep the rows this filter would hide")
         self.not_button.setCheckable(True)
-        self.not_button.setToolTip("Keep the rows this filter would hide instead")
-        self.remove_button = QToolButton()
-        self.remove_button.setText("✕")
-        self.remove_button.setAutoRaise(True)
-        self.remove_button.setToolTip("Remove filter")
+        self.remove_button = self.glyph_button("close", "Remove filter")
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(6)
+        header.setSpacing(4)
         header.addWidget(self.enabled_box)
-        header.addSpacing(2)  # the check box reports no gap after its indicator
+        header.addSpacing(4)  # the check box reports no gap after its indicator
         header.addWidget(self.title, 1)
         header.addWidget(self.not_button)
         header.addWidget(self.remove_button)
         self.body = QVBoxLayout()
         self.body.setContentsMargins(0, 0, 0, 0)
+        self.body.setSpacing(6)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 8, 0, 10)
+        outer.setContentsMargins(12, 6, 8, 10)
         outer.setSpacing(6)
         outer.addLayout(header)
         outer.addLayout(self.body)
@@ -120,6 +124,55 @@ class FilterCard(QFrame):
         self.not_button.toggled.connect(lambda _on: self.changed.emit())
         self.remove_button.clicked.connect(self.removeRequested.emit)
         self._update_title()
+        self._restyle()
+
+    # -- look ---------------------------------------------------------------------------------
+    def glyph_button(self, name: str, tip: str) -> QToolButton:
+        """A flat glyph button, drawn in the palette's colours."""
+        button = QToolButton()
+        button.setAutoRaise(True)
+        button.setIconSize(QSize(14, 14))
+        button.setFixedSize(22, 22)
+        button.setToolTip(tip)
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._glyphs[button] = name
+        return button
+
+    def set_alternate(self, on: bool) -> None:
+        """Use the alternate background, like every other table row."""
+        if on != self._alternate:
+            self._alternate = on
+            self._restyle()
+
+    def _restyle(self) -> None:
+        palette = self.palette()
+        ink = palette.text().color()
+        for button, name in self._glyphs.items():
+            button.setIcon(glyph(name, ink))
+        background = palette.base().color()
+        if self._alternate:  # base a shade toward the text, as the native table stripes rows
+            ink_rgb, base_rgb = ink.getRgbF()[:3], background.getRgbF()[:3]
+            background = QColor.fromRgbF(
+                *(b + (i - b) * STRIPE for b, i in zip(base_rgb, ink_rgb, strict=True))
+            )
+        line = palette.mid().color().name()
+        sheet = (
+            f"QFrame#FilterCard {{ background: {background.name()}; border: none;"
+            f" border-bottom: 1px solid {line}; }} "
+            + flat_buttons(palette, "QFrame#FilterCard QToolButton")
+        )
+        if sheet != self.styleSheet():  # a new sheet changes the palette: no loop
+            self.setStyleSheet(sheet)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        palette = event.type() == QEvent.Type.PaletteChange
+        if palette and hasattr(self, "_glyphs") and not self._restyling:
+            self._restyling = True
+            try:
+                self._restyle()
+            finally:
+                self._restyling = False
 
     # -- state --------------------------------------------------------------------------------
     @property
@@ -397,17 +450,19 @@ class CategoryCard(FilterCard):
         self.search.setClearButtonEnabled(True)
         self.values = QListWidget()
         self.values.setUniformItemSizes(True)
-        self.values.setMaximumHeight(180)
-        all_button = QPushButton("All")
-        none_button = QPushButton("None")
-        buttons = QHBoxLayout()
-        buttons.setContentsMargins(0, 0, 0, 0)
-        buttons.addWidget(all_button)
-        buttons.addWidget(none_button)
-        buttons.addStretch(1)
+        self.all_button = self.glyph_button("tick_all", "Tick every value")
+        self.none_button = self.glyph_button("tick_none", "Untick every value")
+        all_button, none_button = self.all_button, self.none_button
+        find = QHBoxLayout()
+        find.setContentsMargins(0, 0, 0, 0)
+        find.setSpacing(2)
+        find.addWidget(self.search, 1)
+        find.addSpacing(4)
+        find.addWidget(all_button)
+        find.addWidget(none_button)
         holder = QWidget()
-        holder.setLayout(buttons)
-        for widget in (self.search, self.values, holder):
+        holder.setLayout(find)
+        for widget in (holder, self.values):
             self.body.addWidget(widget)
 
         self.search.textChanged.connect(self._apply_search)
@@ -432,12 +487,20 @@ class CategoryCard(FilterCard):
                 self.values.addItem(item)
         finally:
             self.values.blockSignals(False)
+        self._fit_list()
         self.set_details(
             f"Listing the {len(shown):,} most common of {len(counts):,} values"
             if self._hidden_values
             else f"{len(counts):,} values"
         )
         self._apply_search(self.search.text())
+
+    def _fit_list(self) -> None:
+        """As tall as its values, up to LIST_ROWS rows (then it scrolls)."""
+        rows = min(max(self.values.count(), 1), LIST_ROWS)
+        row = self.values.sizeHintForRow(0) if self.values.count() else 0
+        row = row if row > 0 else self.fontMetrics().height() + 4
+        self.values.setFixedHeight(rows * row + 2 * self.values.frameWidth() + 2)
 
     def listed_values(self) -> list[str]:
         return [

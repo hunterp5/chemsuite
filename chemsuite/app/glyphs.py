@@ -284,7 +284,44 @@ def _regex(p: QPainter) -> None:
     p.drawPath(path)
 
 
+def _not(p: QPainter) -> None:
+    """ "¬": logical not (keep what the filter would hide)."""
+    path = QPainterPath()
+    path.moveTo(3, 6.5)
+    path.lineTo(13, 6.5)
+    path.lineTo(13, 10.5)
+    p.drawPath(path)
+
+
+def _tick_box(p: QPainter, ticked: bool) -> None:
+    p.drawRoundedRect(QRectF(2.5, 2.5, 11, 11), 2.5, 2.5)
+    if ticked:
+        path = QPainterPath()
+        path.moveTo(5.2, 8.2)
+        path.lineTo(7.2, 10.2)
+        path.lineTo(10.8, 5.8)
+        p.drawPath(path)
+
+
+def _pencil(p: QPainter) -> None:
+    """A pencil: draw a structure."""
+    path = QPainterPath()
+    path.moveTo(3, 13)
+    path.lineTo(3.6, 10.2)
+    path.lineTo(10.8, 3)
+    path.lineTo(13, 5.2)
+    path.lineTo(5.8, 12.4)
+    path.closeSubpath()
+    path.moveTo(9.2, 4.6)
+    path.lineTo(11.4, 6.8)
+    p.drawPath(path)
+
+
 GLYPHS: dict[str, Draw] = {
+    "pencil": _pencil,
+    "not": _not,
+    "tick_all": lambda p: _tick_box(p, True),
+    "tick_none": lambda p: _tick_box(p, False),
     "search": _search,
     "first": lambda p: _chevron(p, False, True),
     "previous": lambda p: _chevron(p, False, False),

@@ -116,3 +116,11 @@ def test_hidden_browser_catches_up_when_shown(window, browser, qtbot) -> None:
     assert len(browser.oids) == 0  # not refreshed while hidden
     window.browser_dock.show()
     qtbot.waitUntil(lambda: len(browser.oids) == 2)
+
+
+def test_scope_is_a_check_box(browser) -> None:
+    assert browser.only_selected.isChecked() and browser.scope_key() == "selected"
+    browser.only_selected.setChecked(False)
+    assert browser.scope_key() == "shown"
+    browser.set_scope("selected")
+    assert browser.only_selected.isChecked()

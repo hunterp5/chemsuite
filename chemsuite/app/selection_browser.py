@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -88,10 +89,11 @@ class SelectionBrowser(QWidget):
         self._following = False  # moving the table cursor ourselves
         self._stale = False
 
-        self.scope = QComboBox()
-        for key, title in SCOPES.items():
-            self.scope.addItem(title, key)
-        self.scope.setToolTip("Which rows to step through")
+        self.only_selected = QCheckBox("Selected rows only")
+        self.only_selected.setChecked(True)
+        self.only_selected.setToolTip(
+            "Step through the selected rows; untick to step through every row shown"
+        )
         self.structure = QComboBox()
         self.structure.setToolTip("The structure column to draw")
         self.preview = _Preview(self)
@@ -131,7 +133,8 @@ class SelectionBrowser(QWidget):
 
         top = QHBoxLayout()
         top.setSpacing(8)
-        top.addWidget(self.scope, 1)
+        top.addWidget(self.only_selected)
+        top.addStretch(1)
         top.addWidget(self.structure, 1)
         nav = QHBoxLayout()
         nav.setSpacing(2)
@@ -144,12 +147,26 @@ class SelectionBrowser(QWidget):
         nav.addSpacing(4)
         nav.addWidget(self.next_button)
         nav.addWidget(self.last_button)
-        nav.addStretch(1)
-        nav.addWidget(self.select_box)
+        # The buttons centred under the drawing; the tick box at the right. Equal side columns
+        # keep the buttons centred whatever the tick box's width.
+        controls = QGridLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.addLayout(nav, 0, 1)
+        controls.addWidget(self.select_box, 0, 2, Qt.AlignmentFlag.AlignRight)
+        side = self.select_box.sizeHint().width()
+        for column in (0, 2):
+            controls.setColumnStretch(column, 1)
+            controls.setColumnMinimumWidth(column, side)
+        drawing = QWidget()
+        drawing_layout = QVBoxLayout(drawing)
+        drawing_layout.setContentsMargins(0, 0, 0, 0)
+        drawing_layout.setSpacing(6)
+        drawing_layout.addWidget(self.preview, 1)
+        drawing_layout.addLayout(controls)
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setHandleWidth(6)
         splitter.setChildrenCollapsible(False)
-        splitter.addWidget(self.preview)
+        splitter.addWidget(drawing)
         splitter.addWidget(self.properties)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
@@ -157,7 +174,6 @@ class SelectionBrowser(QWidget):
         layout.setContentsMargins(12, 10, 12, 12)
         layout.setSpacing(8)
         layout.addLayout(top)
-        layout.addLayout(nav)
         layout.addWidget(splitter, 1)
         self.setMinimumWidth(280)
         self._restyle()
@@ -167,7 +183,7 @@ class SelectionBrowser(QWidget):
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.setInterval(40)
         self._refresh_timer.timeout.connect(self.refresh)
-        self.scope.currentIndexChanged.connect(lambda _i: self.refresh(restart=True))
+        self.only_selected.toggled.connect(lambda _on: self.refresh(restart=True))
         self.structure.currentIndexChanged.connect(lambda _i: self._draw())
         self.position.valueChanged.connect(lambda value: self.go(value - 1))
         self.select_box.clicked.connect(self.set_selected)
@@ -224,10 +240,13 @@ class SelectionBrowser(QWidget):
         return self._oid
 
     def scope_key(self) -> str:
-        return self.scope.currentData()
+        """ "selected" or "shown": which rows the browser steps through."""
+        return "selected" if self.only_selected.isChecked() else "shown"
 
     def set_scope(self, key: str) -> None:
-        self.scope.setCurrentIndex(self.scope.findData(key))
+        if key not in SCOPES:
+            raise ValueError(f"unknown browser scope {key!r}")
+        self.only_selected.setChecked(key == "selected")
 
     def _scope_oids(self) -> np.ndarray:
         shown = self.model.visible_oids

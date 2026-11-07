@@ -103,9 +103,7 @@ class SearchBar(QWidget):
         self.edit.setClearButtonEnabled(True)
         self.edit.setToolTip(SYNTAX_TIP)
         self.history: list[str] = []
-        self._search_icon = self.edit.addAction(
-            QIcon(), QLineEdit.ActionPosition.LeadingPosition
-        )
+        self._search_icon = self.edit.addAction(QIcon(), QLineEdit.ActionPosition.LeadingPosition)
         self._search_icon.setToolTip(SYNTAX_TIP)
         self.history_button = QToolButton()
         self.history_button.setAutoRaise(True)

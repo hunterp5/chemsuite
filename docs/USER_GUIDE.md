@@ -614,7 +614,10 @@ structure.
 
 Data ▸ Browser (Ctrl+Shift+B) steps through rows one at a time with a large drawing.
 
-- It browses either the selected rows or every shown row, in the table's order.
+- **Selected rows only** (on by default) browses the selected rows; untick it to browse every
+  shown row, in the table's order.
+- The arrows and the row number under the drawing move through the rows (or use the arrow
+  keys, Home and End).
 - It keeps the table's current row in step with what it shows.
 - Its tick box adds or removes the compound from the selection.
 
@@ -775,8 +778,12 @@ a row is shown only if it passes every enabled card.
 - Add cards with the **+** button in the panel's header or a column header's **Filter This
   Column**. The header's other buttons are **Filter Sets** and **Remove All Filters**; point at
   Remove All for how many rows are showing.
-- Each card has an on/off tick box and a remove button. Point at a card's title for its column
-  and its values (range, or how many categories are listed).
+- Each card has an on/off tick box, a **¬** (Not) toggle that keeps the rows the card would
+  hide, and **×** to remove it. Cards alternate in shade, like table rows. Point at a card's
+  title for its column and its values (range, or how many categories are listed).
+- A category card's list is as tall as its values (up to eight, then it scrolls); the two tick
+  boxes beside **Find a value** tick or untick every value. The Structure card's pencil opens
+  the sketcher.
 - **Filter sets.** The **Filter Sets** menu saves the current cards under a name (such as
   "Actives, MW < 450") so you can switch between groups of filters. Applying a set whose column
   has since been removed restores the cards it can.

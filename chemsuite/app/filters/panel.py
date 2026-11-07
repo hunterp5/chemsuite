@@ -46,7 +46,6 @@ from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 
 from ..glyphs import glyph
-from ..pane import pane_layout
 from .cards import FilterCard, card_for
 
 APPLY_DELAY_MS = 120
@@ -104,7 +103,8 @@ class FilterPanel(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(host)
 
-        layout = pane_layout(QVBoxLayout(self))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)  # striped cards reach the pane's edges
         layout.addWidget(scroll, 1)
         self.setMinimumWidth(240)
 
@@ -121,6 +121,7 @@ class FilterPanel(QWidget):
         card = card_for(self.table, column, kind, self.searcher)
         self._cards[card] = f"panel:{next(_keys)}"
         self._cards_box.insertWidget(self._cards_box.count() - 1, card)
+        self._stripe()
         card.changed.connect(lambda: self._mark_dirty(card))
         card.removeRequested.connect(lambda: self.remove_filter(card))
         self._update_summary()
@@ -137,6 +138,7 @@ class FilterPanel(QWidget):
             self.table.set_filter(key, None)
         card.setParent(None)
         card.deleteLater()
+        self._stripe()
         self._update_summary()
 
     def remove_all(self) -> None:
@@ -337,6 +339,12 @@ class FilterPanel(QWidget):
             card.dispose()
             card.setParent(None)
             card.deleteLater()
+        self._stripe()
+
+    def _stripe(self) -> None:
+        """Alternate the cards' backgrounds, like table rows, so neighbours stand apart."""
+        for i, card in enumerate(self._cards):
+            card.set_alternate(i % 2 == 1)
 
     def _refresh_stale(self) -> None:
         for card in [c for c in self._stale if c in self._cards]:
