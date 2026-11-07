@@ -210,6 +210,7 @@ def test_map_defaults_bit_distances_and_pca_off(chem) -> None:
     assert dialog.reduce_to.value() == 0 and dialog.reduce_to.text() == "Off"
     assert dialog.distance.currentData() == "jaccard"
     assert dialog.pacmap_distance.currentData() == "jaccard"
+    assert dialog.init.currentData() == "random"  # t-SNE starts from a random layout
     assert "hamming" in [dialog.distance.itemData(i) for i in range(dialog.distance.count())]
     options = dialog.options()
     assert options["reduce_to"] == 0 and options["metric"] == "jaccard"

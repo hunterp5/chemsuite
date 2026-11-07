@@ -37,7 +37,7 @@ import re
 
 import numpy as np
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QKeyEvent
+from PySide6.QtGui import QAction, QIcon, QKeyEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -103,10 +103,12 @@ class SearchBar(QWidget):
         self.edit.setClearButtonEnabled(True)
         self.edit.setToolTip(SYNTAX_TIP)
         self.history: list[str] = []
+        self._search_icon = self.edit.addAction(
+            QIcon(), QLineEdit.ActionPosition.LeadingPosition
+        )
+        self._search_icon.setToolTip(SYNTAX_TIP)
         self.history_button = QToolButton()
         self.history_button.setAutoRaise(True)
-        self.history_button.setStyleSheet("QToolButton::menu-indicator { image: none; }")
-        self._paint_glyphs()
         self.history_button.setToolTip("Recent searches")
         self.history_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.history_menu = QMenu(self)
@@ -118,32 +120,42 @@ class SearchBar(QWidget):
         self.case = QAction("Match Case", self, checkable=True)
         self.whole = QAction("Whole Cell", self, checkable=True)
         self.regex = QAction("Regular Expression", self, checkable=True)
-        options = QMenu(self)
+        self.case.setToolTip("Match Case: capitals and lower case differ")
+        self.whole.setToolTip("Whole Cell: the cell is exactly the text")
+        self.regex.setToolTip("Regular Expression: the text is a Python regular expression")
+        #: the three toggles (one widget, so structure searches can turn them all off)
+        self.options_button = QWidget()
+        toggles = QHBoxLayout(self.options_button)
+        toggles.setContentsMargins(0, 0, 0, 0)
+        toggles.setSpacing(1)
         for action in (self.case, self.whole, self.regex):
-            options.addAction(action)
+            button = QToolButton()
+            button.setDefaultAction(action)
+            button.setAutoRaise(True)
+            toggles.addWidget(button)
             action.toggled.connect(lambda _on: self.apply_now())
         self.whole.toggled.connect(lambda on: on and self.regex.setChecked(False))
         self.regex.toggled.connect(lambda on: on and self.whole.setChecked(False))
-        self.options_button = QToolButton()
-        self.options_button.setText("Options")
-        self.options_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.options_button.setMenu(options)
 
-        close = QToolButton()
-        close.setText("✕")
-        close.setAutoRaise(True)
-        close.setToolTip("Close the search bar and clear the search (Esc)")
-        close.clicked.connect(self.dismiss)
+        self.close_button = QToolButton()
+        self.close_button.setAutoRaise(True)
+        self.close_button.setToolTip("Close the search bar and clear the search (Esc)")
+        self.close_button.clicked.connect(self.dismiss)
         self.edit.escapeWhenEmpty.connect(self.dismiss)
+        self.setObjectName("SearchBar")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._paint_glyphs()
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setContentsMargins(8, 5, 8, 5)
+        layout.setSpacing(6)
         layout.addWidget(self.column)
         layout.addWidget(self.history_button)
         layout.addWidget(self.edit, 1)
         layout.addWidget(self.count)
         layout.addWidget(self.options_button)
-        layout.addWidget(close)
+        layout.addSpacing(4)
+        layout.addWidget(self.close_button)
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -164,9 +176,21 @@ class SearchBar(QWidget):
         self._unsubscribe = table.subscribe(self._on_table_event)
 
     def _paint_glyphs(self) -> None:
-        from .glyphs import glyph
+        """Glyphs and the flat toolbar look, in the palette's colours (again on theme changes)."""
+        from .glyphs import flat_buttons, glyph
 
-        self.history_button.setIcon(glyph("history", self.palette().buttonText().color()))
+        palette = self.palette()
+        ink = palette.text().color()
+        muted = palette.placeholderText().color()
+        self._search_icon.setIcon(glyph("search", muted))
+        self.history_button.setIcon(glyph("history", ink))
+        self.close_button.setIcon(glyph("close", ink))
+        for action, name in ((self.case, "case"), (self.whole, "whole"), (self.regex, "regex")):
+            action.setIcon(glyph(name, ink))
+        line = palette.mid().color().name()
+        self.setStyleSheet(
+            f"QWidget#SearchBar {{ border-bottom: 1px solid {line}; }} " + flat_buttons(palette)
+        )
 
     def changeEvent(self, event) -> None:
         super().changeEvent(event)

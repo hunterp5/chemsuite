@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 
 #: drawn on a 16 × 16 grid; pixmaps are made at 2× for sharp high-DPI screens
 GRID = 16.0
@@ -218,7 +218,81 @@ def _history(p: QPainter) -> None:
     p.drawPath(path)
 
 
+def _search(p: QPainter) -> None:
+    """A magnifying glass."""
+    p.drawEllipse(QRectF(2.5, 2.5, 8, 8))
+    p.drawLine(QPointF(9.4, 9.4), QPointF(13.5, 13.5))
+
+
+def _chevron(p: QPainter, flip: bool, bar: bool) -> None:
+    """A chevron pointing left (or right when *flip*), with a bar at its tip for first/last."""
+    x = (lambda v: GRID - v) if flip else (lambda v: v)
+    path = QPainterPath()
+    shift = 1.5 if bar else 0.0
+    path.moveTo(x(10 + shift), 3.5)
+    path.lineTo(x(5.5 + shift), 8)
+    path.lineTo(x(10 + shift), 12.5)
+    if bar:
+        path.moveTo(x(4), 3.5)
+        path.lineTo(x(4), 12.5)
+    p.drawPath(path)
+
+
+def _letters(p: QPainter, text: str, y: float = 12.0, size: float = 9.5) -> None:
+    """*text* filled in the glyph's colour, centred across the grid."""
+    font = QFont()
+    font.setPixelSize(round(size))
+    font.setWeight(QFont.Weight.DemiBold)
+    path = QPainterPath()
+    path.addText(0, 0, font, text)
+    box = path.boundingRect()
+    path.translate((GRID - box.width()) / 2 - box.left(), y)
+    p.save()
+    p.setBrush(p.pen().color())
+    p.setPen(Qt.PenStyle.NoPen)
+    p.drawPath(path)
+    p.restore()
+
+
+def _case(p: QPainter) -> None:
+    """ "Aa": match case."""
+    _letters(p, "Aa")
+
+
+def _whole(p: QPainter) -> None:
+    """ "ab" over a bracket: the whole cell."""
+    _letters(p, "ab", y=10.0, size=9)
+    path = QPainterPath()
+    path.moveTo(2, 10.5)
+    path.lineTo(2, 13.5)
+    path.lineTo(14, 13.5)
+    path.lineTo(14, 10.5)
+    p.drawPath(path)
+
+
+def _regex(p: QPainter) -> None:
+    """ ".*": a regular expression."""
+    p.save()
+    p.setBrush(p.pen().color())
+    p.drawEllipse(QPointF(4.0, 12.0), 1.1, 1.1)
+    p.restore()
+    centre = QPointF(10.5, 6.0)
+    path = QPainterPath()
+    for dx, dy in ((0, 3.4), (2.95, 1.7), (2.95, -1.7)):
+        path.moveTo(centre - QPointF(dx, dy))
+        path.lineTo(centre + QPointF(dx, dy))
+    p.drawPath(path)
+
+
 GLYPHS: dict[str, Draw] = {
+    "search": _search,
+    "first": lambda p: _chevron(p, False, True),
+    "previous": lambda p: _chevron(p, False, False),
+    "next": lambda p: _chevron(p, True, False),
+    "last": lambda p: _chevron(p, True, True),
+    "case": _case,
+    "whole": _whole,
+    "regex": _regex,
     "history": _history,
     "plus": _plus,
     "sets": _sets,
@@ -244,6 +318,26 @@ def glyph(name: str, colour: QColor) -> QIcon:
     for mode, ink in ((QIcon.Mode.Normal, colour), (QIcon.Mode.Disabled, faint)):
         icon.addPixmap(_pixmap(GLYPHS[name], ink), mode)
     return icon
+
+
+def flat_buttons(palette: QPalette, selector: str = "QToolButton") -> str:
+    """Style sheet for glyph buttons as the plot toolbars draw them: no frame, a faint wash
+    on hover and a tint of the highlight colour when checked."""
+    ink = palette.text().color()
+    hover = QColor(ink)
+    hover.setAlphaF(0.08)
+    checked = QColor(palette.highlight().color())
+    checked.setAlphaF(0.28)
+
+    def rgba(c: QColor) -> str:
+        return f"rgba({c.red()}, {c.green()}, {c.blue()}, {c.alphaF():.2f})"
+
+    return (
+        f"{selector} {{ border: none; border-radius: 4px; padding: 2px; }}"
+        f" {selector}:hover {{ background: {rgba(hover)}; }}"
+        f" {selector}:checked {{ background: {rgba(checked)}; }}"
+        f" {selector}::menu-indicator {{ image: none; }}"
+    )
 
 
 def _pixmap(draw: Draw, colour: QColor) -> QPixmap:

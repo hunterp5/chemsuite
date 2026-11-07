@@ -192,8 +192,8 @@ class SpaceMapDialog(ToolDialog):
             "faster on large sets, but bit distances are then not available.",
         )
         self.init = QComboBox()
-        self.init.addItem("PCA", "pca")
         self.init.addItem("Random", "random")
+        self.init.addItem("PCA", "pca")
         more.row(
             "Start from",
             self.init,

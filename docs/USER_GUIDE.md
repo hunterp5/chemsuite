@@ -670,8 +670,9 @@ rows that match, and the count of matching rows appears beside the box.
   the matching atoms are highlighted in the drawings. The search runs in the background
   shortly after you stop typing. A query that cannot be read turns the box red; hover over it
   to see why.
-- The **Options** button sets **Match Case**, **Whole Cell** or **Regular Expression** (text
-  searches only).
+- The three toggles right of the box are **Match Case** (Aa), **Whole Cell** (ab) and
+  **Regular Expression** (.*), for text searches only. Whole Cell and Regular Expression turn
+  each other off.
 - If the chosen column is removed, the bar goes back to All Columns. A renamed column stays
   chosen. The column is saved with the document, with the search text and options.
 - Escape clears the search. A second Escape, or the ✕ button, hides the bar.
@@ -1468,7 +1469,7 @@ are weighted equally so neither drowns out the other (distances are Euclidean).
 | PCA | **Components**: PC1 and PC2 (the default), PC1 and PC3, PC2 and PC3, or PC3 and PC4 | — |
 | UMAP | Neighbours, Min. distance | **Distance** (Jaccard, the default, Dice, Rogers-Tanimoto, Hamming, Euclidean, Manhattan, Cosine, Correlation), **Spread**, **Epochs**, **Fit on up to** (rows; larger sets are fitted on a sample of this size and the rest placed onto that map; default 50,000), **Seed** |
 | PaCMAP | Neighbours (default 10) | **Mid-near pairs** (per neighbour pair; default 0.5), **Further pairs** (default 2), **PaCMAP distance** (Jaccard, the default, Hamming, Euclidean, Manhattan, Angular), **PCA dimensions** (default Off), **Seed** |
-| t-SNE | Perplexity | **Learning rate** (Automatic or a number), **Iterations**, **Exaggeration** (early exaggeration), **PCA dimensions** (default Off: Jaccard on fingerprint bits; a number runs t-SNE on that many principal components), **Start from** (PCA or Random), **Seed** |
+| t-SNE | Perplexity | **Learning rate** (Automatic or a number), **Iterations**, **Exaggeration** (early exaggeration), **PCA dimensions** (default Off: Jaccard on fingerprint bits; a number runs t-SNE on that many principal components), **Start from** (Random, the default, or PCA), **Seed** |
 
 - **Jaccard** (Tanimoto), **Dice**, **Rogers-Tanimoto** and **Hamming** compare fingerprint
   bits, so they need a fingerprint with no columns ticked (and, for PaCMAP, **PCA dimensions**

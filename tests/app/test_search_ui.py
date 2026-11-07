@@ -240,3 +240,17 @@ def test_find_replace_in_selected_cells_and_chosen_columns(window) -> None:
     dialog._fill_columns_menu()
     checked = [a.text() for a in dialog.columns_menu.actions() if a.isChecked()]
     assert checked == ["Notes"]
+
+
+def test_search_options_are_glyph_toggles(window) -> None:
+    from PySide6.QtWidgets import QToolButton
+
+    bar = window.search
+    buttons = bar.options_button.findChildren(QToolButton)
+    assert [b.defaultAction() for b in buttons] == [bar.case, bar.whole, bar.regex]
+    assert all(not b.icon().isNull() and b.isCheckable() for b in buttons)
+    assert not bar.close_button.icon().isNull()
+    buttons[2].click()  # Regular Expression
+    assert bar.regex.isChecked() and bar.query().mode == "regex"
+    buttons[1].click()  # Whole Cell turns the regular expression off
+    assert bar.whole.isChecked() and not bar.regex.isChecked()
