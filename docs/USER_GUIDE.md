@@ -620,10 +620,27 @@ with the document.
 ### Quick search (Ctrl+F)
 
 Data ▸ Search ▸ Search Rows opens the search bar above the table. As you type, the table shows only the
-rows that have a matching cell.
+rows that match, and the count of matching rows appears beside the box.
 
 - The **column menu** at the left of the bar chooses where to look: **All Columns** (every text
   and number column) or one column.
+- **Field syntax.** Several words must all be found, anywhere in the row. Beyond that:
+
+  | Type | Finds rows where |
+  |---|---|
+  | `kinase "cell line"` | some cell contains *kinase* and some cell contains the phrase *cell line* |
+  | `ID:CPD-12` | the ID column contains CPD-12 (`ID:"two words"` for spaces) |
+  | `pIC50>7` | pIC50 is above 7; also `>=`, `<`, `<=`, `=` and `!=` |
+  | `Series=A` | Series is exactly A (any case); `Series!=A` for anything else |
+  | `-Series:B` | Series does not contain B; a `-` excludes any term |
+  | `"Mol Wt"<400` | quote a column name that has spaces |
+
+  Column names ignore case. A word before a colon that is not a column name is searched for
+  as text, so `10:30` or `http://` still work. Whole Cell and Regular Expression take the text
+  exactly as typed. Hover over the box for a reminder.
+- **Recent searches.** The clock button left of the box lists the last ten searches; pick one to run it again. A
+  search goes on the list when you press Return or leave it in place for a moment. The list is
+  saved with the document.
 - **Substructure search.** Choose a structure column and type a substructure as SMILES or
   SMARTS (for example `c1ccccc1` or `[OH]a`). The table shows the rows that contain it, and
   the matching atoms are highlighted in the drawings. The search runs in the background
@@ -642,6 +659,16 @@ rows that have a matching cell.
 A window that steps through matching cells, with **Replace** and **Replace All**. A replacement
 is one step you can undo. **Replace All includes hidden rows** controls whether rows hidden by
 filters or searches are changed too.
+
+- **In** chooses where to look: **All columns**, **Selected columns** (the columns of the
+  selected cells), **Selected cells**, or **Chosen columns** (tick them under **Columns…**).
+  The selection is read when you choose the scope or open the window, so stepping from match
+  to match, which moves the cursor, does not shrink it.
+- **Groups.** With **Regular expression**, the replacement can reuse what the groups matched:
+  `$1` or `\1` for the first group, `${name}` or `\g<name>` for a named one, and `$$` for a
+  dollar sign. Finding `(\w+)-(\d+)` and replacing with `$2-$1` turns `CPD-12` into
+  `12-CPD`. A reference to a group the expression does not have is reported, and nothing is
+  replaced.
 
 ### Advanced Search
 

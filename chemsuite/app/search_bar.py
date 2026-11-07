@@ -23,6 +23,12 @@ highlighted in the drawings.
 The bar starts hidden. Edit ▸ Search Rows (or View ▸ Search Bar) opens it. Escape clears the
 search, and a second Escape (or the close button) hides the bar. Hiding the bar always clears its
 search, so it never leaves rows hidden by a search you cannot see.
+
+In its normal mode the box understands field syntax
+(:func:`chemsuite.core.table.search.parse_terms`): ``ID:CPD-12``, ``pIC50>7``,
+``"exact phrase"``, ``-Series:B``; Whole Cell and Regular Expression take the text as typed. A
+count of matching rows sits beside the box, and the clock button lists the last searches (saved
+with the document).
 """
 
 from __future__ import annotations
@@ -30,16 +36,24 @@ from __future__ import annotations
 import re
 
 import numpy as np
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QKeyEvent
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLineEdit, QMenu, QToolButton, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QToolButton,
+    QWidget,
+)
 
 from chemsuite.analysis.structure_search import QueryError, StructureQuery
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import REACTION, STRUCTURE
 from chemsuite.core.table.filters import OidFilter, SearchFilter
-from chemsuite.core.table.search import Query
+from chemsuite.core.table.search import Query, parse_terms
 
 FILTER_KEY = "search"
 DELAY_MS = 200
@@ -47,6 +61,13 @@ DELAY_MS = 200
 STRUCTURE_DELAY_MS = 500
 ALL_COLUMNS = "All Columns"
 INVALID_STYLE = "border: 1px solid #d33"
+HISTORY_LIMIT = 10
+#: a search kept this long (or confirmed with Return) goes into the history
+HISTORY_AFTER_MS = 1500
+SYNTAX_TIP = (
+    'Words must all be found. "exact phrase" · Column:text · pIC50>7 (also >=, <, <=, =, !=) · '
+    '-word or -Column:text excludes. Quote column names with spaces: "Mol Wt"<400.'
+)
 
 
 class _SearchEdit(QLineEdit):
@@ -80,6 +101,20 @@ class SearchBar(QWidget):
         self.column.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.edit = _SearchEdit()
         self.edit.setClearButtonEnabled(True)
+        self.edit.setToolTip(SYNTAX_TIP)
+        self.history: list[str] = []
+        self.history_button = QToolButton()
+        self.history_button.setAutoRaise(True)
+        self.history_button.setStyleSheet("QToolButton::menu-indicator { image: none; }")
+        self._paint_glyphs()
+        self.history_button.setToolTip("Recent searches")
+        self.history_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.history_menu = QMenu(self)
+        self.history_menu.aboutToShow.connect(self._fill_history)
+        self.history_button.setMenu(self.history_menu)
+        self.count = QLabel()
+        self.count.setEnabled(False)  # the muted colour of a hint
+        self.count.hide()
         self.case = QAction("Match Case", self, checkable=True)
         self.whole = QAction("Whole Cell", self, checkable=True)
         self.regex = QAction("Regular Expression", self, checkable=True)
@@ -104,7 +139,9 @@ class SearchBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(self.column)
+        layout.addWidget(self.history_button)
         layout.addWidget(self.edit, 1)
+        layout.addWidget(self.count)
         layout.addWidget(self.options_button)
         layout.addWidget(close)
 
@@ -112,9 +149,29 @@ class SearchBar(QWidget):
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.apply_now)
         self.edit.textChanged.connect(lambda _t: self._timer.start(self._delay()))
+        self._remember_timer = QTimer(self)
+        self._remember_timer.setSingleShot(True)
+        self._remember_timer.setInterval(HISTORY_AFTER_MS)
+        self._remember_timer.timeout.connect(self.remember)
+        self.edit.textChanged.connect(lambda _t: self._remember_timer.start())
+        self.edit.returnPressed.connect(self.remember)
+        self._count_timer = QTimer(self)
+        self._count_timer.setSingleShot(True)
+        self._count_timer.setInterval(DELAY_MS)
+        self._count_timer.timeout.connect(self.update_count)
         self.fill_columns()
         self.column.currentIndexChanged.connect(lambda _i: self._column_changed())
         self._unsubscribe = table.subscribe(self._on_table_event)
+
+    def _paint_glyphs(self) -> None:
+        from .glyphs import glyph
+
+        self.history_button.setIcon(glyph("history", self.palette().buttonText().color()))
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self._paint_glyphs()  # follow light and dark themes
 
     # -- the column -------------------------------------------------------------------------
     def fill_columns(self) -> None:
@@ -151,6 +208,7 @@ class SearchBar(QWidget):
     def _show_mode(self) -> None:
         structure = self.structure_mode()
         self.options_button.setEnabled(not structure)
+        self.edit.setToolTip("" if structure else SYNTAX_TIP)
         name = self.column_name()
         self.edit.setPlaceholderText(
             f"Substructure in {name} (SMILES or SMARTS)"
@@ -174,6 +232,19 @@ class SearchBar(QWidget):
         )
         return Query(self.edit.text(), mode, self.case.isChecked())
 
+    def search_filter(self) -> SearchFilter | None:
+        """The filter for the box's text; raises :class:`re.error` for a bad expression."""
+        query = self.query()
+        if not query.text.strip():
+            return None
+        if query.mode != "contains":  # Whole Cell and Regular Expression: the text as typed
+            query.pattern()
+            return SearchFilter(query, column=self.column_name())
+        terms = parse_terms(query.text, self.table.column_names)
+        if not terms:
+            return None
+        return SearchFilter(query, column=self.column_name(), terms=terms)
+
     def structure_query(self) -> StructureQuery:
         return StructureQuery(self.edit.text().strip(), "substructure")
 
@@ -184,15 +255,15 @@ class SearchBar(QWidget):
             self._search_structures()
             return
         self._highlight(None)
-        query = self.query()
         problem = ""
+        flt = None
         try:
-            query.pattern()
+            flt = self.search_filter()
         except re.error as err:
             problem = f"Invalid regular expression: {err}"
         self._show_problem(problem)
-        flt = SearchFilter(query, column=self.column_name()) if query.text and not problem else None
         self._set_filter(flt)
+        self.update_count()
 
     def _search_structures(self) -> None:
         query = self.structure_query()
@@ -201,6 +272,7 @@ class SearchBar(QWidget):
             self._show_problem("")
             self._highlight(None)
             self._set_filter(None)
+            self.update_count()
             return
         try:
             self.job = self.searcher.start(
@@ -219,6 +291,7 @@ class SearchBar(QWidget):
         hits = frozenset(oids[result.hits].tolist())
         self._set_filter(OidFilter(hits, label=f"Substructure in {column}"))
         self._highlight(column)
+        self.update_count()
 
     def _highlight(self, column: str | None) -> None:
         if self.searcher is None:
@@ -242,11 +315,54 @@ class SearchBar(QWidget):
 
     def _show_problem(self, problem: str) -> None:
         self.edit.setStyleSheet(INVALID_STYLE if problem else "")
-        self.edit.setToolTip(problem)
+        self.edit.setToolTip(problem or ("" if self.structure_mode() else SYNTAX_TIP))
+
+    # -- the count ----------------------------------------------------------------------------
+    def matching(self) -> int | None:
+        """Rows the search keeps (before the other filters), or None with no search."""
+        flt = self.table.filters.get(FILTER_KEY)
+        if flt is None:
+            return None
+        return int(np.count_nonzero(flt.matches(self.table)))
+
+    def update_count(self) -> None:
+        self._count_timer.stop()
+        found = self.matching()
+        self.count.setVisible(found is not None)
+        if found is not None:
+            self.count.setText(f"{found:,} {'row' if found == 1 else 'rows'}")
+            shown = len(self.table.view())
+            self.count.setToolTip(
+                f"{found:,} of {len(self.table):,} rows match; {shown:,} are shown with "
+                "the other filters"
+            )
+
+    # -- history ------------------------------------------------------------------------------
+    def remember(self, text: str | None = None) -> None:
+        """Put *text* (default: the box's text) at the top of the recent searches."""
+        self._remember_timer.stop()
+        text = (self.edit.text() if text is None else text).strip()
+        if not text:
+            return
+        self.history = [text, *[item for item in self.history if item != text]][:HISTORY_LIMIT]
+
+    def _fill_history(self) -> None:
+        menu = self.history_menu
+        menu.clear()
+        for text in self.history:
+            action = menu.addAction(text)
+            action.triggered.connect(lambda _c=False, t=text: self.edit.setText(t))
+        if not self.history:
+            menu.addAction("No Recent Searches").setEnabled(False)
+            return
+        menu.addSeparator()
+        menu.addAction("Clear Recent Searches").triggered.connect(self.history.clear)
 
     def _on_table_event(self, event: object) -> None:
         if not isinstance(event, Changed):
             return
+        if FILTER_KEY in self.table.filters:
+            self._count_timer.start()  # edits change what the search matches
         if any(
             isinstance(
                 change,
@@ -288,5 +404,7 @@ class SearchBar(QWidget):
     def close_bar(self) -> None:
         """The document is closing: stop listening to the table."""
         self._timer.stop()
+        self._remember_timer.stop()
+        self._count_timer.stop()
         self._cancel()
         self._unsubscribe()

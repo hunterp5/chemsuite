@@ -489,6 +489,7 @@ class MainWindow(QMainWindow):
     def show_find_replace(self) -> FindReplaceDialog:
         if self._find is None:
             self._find = FindReplaceDialog(self.view, self)
+        self._find.rescope()  # the selection may have changed since it was last used
         self._find.show()
         self._find.raise_()
         self._find.activateWindow()

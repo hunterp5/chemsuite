@@ -155,7 +155,7 @@ modified.
    - Rows combine with "all" or "any", and each row can be negated.
    - The result can show only matches, select them, or add them to a list.
    - Searches are saved with the document and kept in a recent-searches list.
-3. **Quick search bar:**
+3. ✅ **Quick search bar** (done 2026-11-07):
    - field syntax such as `ID:CPD-12`, `pIC50>7` or `"exact phrase"`;
    - a history dropdown, and a count of matches as you type.
 4. **Filters:**
@@ -163,8 +163,8 @@ modified.
    - filters **saved with the document** (a noted follow-up);
    - named filter sets ("Actives, MW < 450") you can switch between;
    - "Copy filtered rows to a new document".
-5. **Find and Replace:** searching within the selection or within chosen columns, and
-   replacing with regex groups.
+5. ✅ **Find and Replace** (done 2026-11-07): searching within the selection or within chosen
+   columns, and replacing with regex groups.
 
 ## 5. Improving the other existing tools
 

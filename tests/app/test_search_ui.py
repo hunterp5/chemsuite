@@ -164,3 +164,79 @@ def test_search_bar_substructure_search(window, qtbot) -> None:
     bar.edit.setText("B")
     bar.apply_now()
     assert ids_shown(window) == ["B"]
+
+
+def test_search_bar_field_syntax_count_and_history(window, qtbot) -> None:
+    from chemsuite.app import session
+
+    bar = window.search
+    bar.open()
+    bar.edit.setText("pIC50>5.5 -ID:C")
+    bar.apply_now()
+    assert ids_shown(window) == ["B"]
+    assert bar.count.isVisibleTo(bar) and bar.count.text() == "1 row"
+    bar.edit.setText("pIC50>=6")
+    bar.apply_now()
+    assert ids_shown(window) == ["B", "C"] and bar.count.text() == "2 rows"
+    table = window.workspace.table
+    table.set_cells("pIC50", [int(table.oids[0])], ["9"])  # an edit updates the count
+    qtbot.waitUntil(lambda: bar.count.text() == "3 rows", timeout=3000)
+    bar.whole.setChecked(True)  # Whole Cell: the text as typed, no field syntax
+    assert ids_shown(window) == []
+    bar.whole.setChecked(False)
+
+    bar.remember("pIC50>=6")
+    bar.remember("ID:A")
+    bar.remember("pIC50>=6")  # moves back to the top
+    assert bar.history == ["pIC50>=6", "ID:A"]
+    bar._fill_history()
+    bar.history_menu.actions()[1].trigger()
+    assert bar.edit.text() == "ID:A"
+
+    extras = session.capture(window)
+    bar.history = []
+    session.restore(window, extras)
+    assert window.search.history == ["pIC50>=6", "ID:A"]
+    bar.dismiss()
+    assert not bar.count.isVisibleTo(bar)
+
+
+def test_find_replace_in_selected_cells_and_chosen_columns(window) -> None:
+    from PySide6.QtCore import QItemSelectionModel
+
+    table = window.workspace.table
+    table.add_column("Notes", ["A-5", "B-6", "C-7"])
+    view = window.view
+    model = view.table_model
+    notes = model.column_index("Notes")
+    selection = view.selectionModel()
+    flags = QItemSelectionModel.SelectionFlag
+    selection.select(model.index(0, notes), flags.ClearAndSelect)
+    selection.select(model.index(2, notes), flags.Select)
+    dialog = window.show_find_replace()
+    dialog.scope.setCurrentIndex(dialog.scope.findData("cells"))
+    dialog.find_edit.setText(r"(\w)-(\d)")
+    dialog.mode.setCurrentIndex(dialog.mode.findData("regex"))
+    dialog.replace_edit.setText("$2$1")
+    assert dialog.find_next()  # moves the cursor, so the selection changes...
+    dialog.case.setChecked(True)  # ...but editing the query keeps the scope read at the start
+    assert dialog.replace_everything() == 2
+    assert [table.cell("Notes", int(o)) for o in table.oids] == ["5A", "B-6", "7C"]
+
+    dialog.replace_edit.setText("$3")  # a group the expression does not have
+    dialog.scope.setCurrentIndex(dialog.scope.findData("all"))
+    assert dialog.replace_everything() == 0
+    assert "invalid group reference 3" in dialog.status.text()
+    assert table.cell("Notes", int(table.oids[1])) == "B-6"
+
+    dialog.find_edit.setText("6")
+    dialog.mode.setCurrentIndex(dialog.mode.findData("contains"))
+    dialog.replace_edit.setText("9")
+    dialog.set_chosen(["Notes"])
+    assert dialog.columns_button.isVisibleTo(dialog)
+    assert dialog.replace_everything() == 1  # Notes only; pIC50's 6 is left alone
+    assert table.cell("Notes", int(table.oids[1])) == "B-9"
+    assert table.cell("pIC50", int(table.oids[1])) == "6"
+    dialog._fill_columns_menu()
+    checked = [a.text() for a in dialog.columns_menu.actions() if a.isChecked()]
+    assert checked == ["Notes"]

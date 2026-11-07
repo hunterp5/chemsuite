@@ -343,7 +343,7 @@ def capture(window: MainWindow) -> dict[str, Any]:
     if widths:
         out["widths"] = widths
     search = window.search
-    if search.is_open or search.edit.text():
+    if search.is_open or search.edit.text() or search.history:
         out["search"] = {
             "open": search.is_open,
             "text": search.edit.text(),
@@ -351,6 +351,7 @@ def capture(window: MainWindow) -> dict[str, Any]:
             "whole": search.whole.isChecked(),
             "regex": search.regex.isChecked(),
             "column": search.column_name(),
+            "history": list(search.history),
         }
     return out
 
@@ -371,6 +372,9 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
             action.setChecked(bool(search.get(key)))
         column = search.get("column")
         bar.set_column(column if isinstance(column, str) else None)
+        history = search.get("history")
+        if isinstance(history, list):
+            bar.history = [str(item) for item in history if isinstance(item, str) and item][:10]
         text = str(search.get("text") or "")
         if search.get("open") or text:
             bar.open()

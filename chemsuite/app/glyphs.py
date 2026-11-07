@@ -202,7 +202,24 @@ def _trash(p: QPainter) -> None:
     p.drawPath(path)
 
 
+def _history(p: QPainter) -> None:
+    """A clock whose rim turns back into an arrow: recent items."""
+    path = QPainterPath()
+    face = QRectF(2.5, 2.5, 11, 11)
+    path.arcMoveTo(face, 160)
+    path.arcTo(face, 160, -310)
+    start = QPointF(2.5 + 5.5 - 5.5 * 0.94, 8 - 5.5 * 0.342)  # the rim point at 160°
+    path.moveTo(start + QPointF(-1.6, -1.8))
+    path.lineTo(start)
+    path.lineTo(start + QPointF(2.3, -0.6))
+    path.moveTo(8, 5)
+    path.lineTo(8, 8)
+    path.lineTo(10.2, 9.4)
+    p.drawPath(path)
+
+
 GLYPHS: dict[str, Draw] = {
+    "history": _history,
     "plus": _plus,
     "sets": _sets,
     "trash": _trash,
