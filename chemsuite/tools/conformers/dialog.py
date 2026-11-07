@@ -90,8 +90,6 @@ class ConformerDialog(QDialog):
         self.seed.setSpecialValueText("Random")
         self.seed.setToolTip("The same seed gives the same conformers every time.")
         self.selected_only = selected_only(ctx)
-        self.overwrite = QCheckBox("Replace an existing 3D column of the same name")
-        self.overwrite.setChecked(True)
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -107,7 +105,6 @@ class ConformerDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(self.selected_only)
-        layout.addWidget(self.overwrite)
         layout.addStretch(1)
         layout.addWidget(self.buttons)
 
@@ -176,7 +173,6 @@ class ConformerDialog(QDialog):
             blob if blob is not None else (text or None)
             for blob, text in zip(column.blobs(slots), column.displays(slots), strict=True)
         ]
-        overwrite = self.overwrite.isChecked()
         use_pool = len(cells) >= POOL_MIN_ROWS
         target = output_name(name)
 
@@ -198,7 +194,7 @@ class ConformerDialog(QDialog):
             if settings.optimize:
                 span = SPAN_COLUMN + " (kcal/mol)"
                 results[span] = (done_oids, NumberColumn.from_floats(batch.spans, 2))
-            names = ctx.apply_results(results, label="Generate conformers", overwrite=overwrite)
+            names = ctx.apply_results(results, label="Generate conformers")
             made = int(batch.counts[batch.counts > 0].sum())
             message = f"{made:,} conformers for {len(done_oids):,} row(s) in “{names[target]}”"
             if batch.failed:

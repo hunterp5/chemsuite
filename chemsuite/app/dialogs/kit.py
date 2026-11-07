@@ -26,8 +26,8 @@ A tool dialog is a :class:`ToolDialog`:
   window title names the tool) and no explanatory text: no sentence describing what will
   happen, no heads-up notes. Explanations go in tooltips.
 
-Shared controls keep tools alike: :class:`RowsChoice` (All · Shown · Selected, with counts) and
-:class:`OutputChoice` (If it exists: Replace it · Add a new column).
+Shared controls keep tools alike: :class:`RowsChoice` (All · Shown · Selected, with counts).
+Results never replace an existing column: a taken name gets a new column, “Name (2)”.
 
 A subclass builds its sections in ``__init__``, calls :meth:`ToolDialog.refresh` when anything
 changes, and overrides :meth:`~ToolDialog.problem`, :meth:`~ToolDialog.verb` and
@@ -337,16 +337,6 @@ class RowsChoice(Segmented):
         return {"all": "", "shown": "shown ", "selected": "selected "}[self.value()]
 
 
-class OutputChoice(Segmented):
-    """If the result column already exists: replace it, or add a new column beside it."""
-
-    def __init__(self) -> None:
-        super().__init__((("replace", "Replace it"), ("new", "Add a new column")), "replace")
-
-    def overwrite(self) -> bool:
-        return self.value() == "replace"
-
-
 class ToolDialog(QDialog):
     """A tool's dialog: sections and footer (see the module notes)."""
 
@@ -472,7 +462,6 @@ class ToolDialog(QDialog):
 __all__ = [
     "FIELD_WIDTH",
     "LABEL_WIDTH",
-    "OutputChoice",
     "RowsChoice",
     "Section",
     "Segmented",

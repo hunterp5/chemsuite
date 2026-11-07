@@ -186,7 +186,7 @@ class SelectivityDialog(QDialog):
             results[MIN_NAME] = (oids, NumberColumn.from_floats(result.minimum, 2))
         if self.flag.isChecked():
             results[WINDOW_NAME] = (oids, result.narrow)
-        names = ctx.apply_results(results, label="Selectivity", overwrite=True)
+        names = ctx.apply_results(results, label="Selectivity")
         narrow = sum(1 for flag in result.narrow if flag == "yes")
         measured = int(np.isfinite(result.minimum).sum())
         message = f"Selectivity for {measured:,} row(s)"

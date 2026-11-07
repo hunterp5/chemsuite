@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import Executor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -188,7 +188,7 @@ class ToolContext:
         results: Mapping[str, tuple[np.ndarray, Sequence[object] | Column]],
         *,
         label: str,
-        overwrite: bool = False,
+        overwrite: bool | Collection[str] = False,
     ) -> dict[str, str]:
         """Write result columns as one undoable step, skipping rows deleted meanwhile.
 

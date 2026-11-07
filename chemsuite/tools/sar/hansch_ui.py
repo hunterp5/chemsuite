@@ -233,7 +233,6 @@ class HanschDialog(QDialog):
         names = ctx.apply_results(
             {output: (oids, NumberColumn.from_floats(model.predicted, 2))},
             label="Hansch",
-            overwrite=True,
         )
         self.panel = HanschPanel(model, recipe)
         ctx.add_panel(self.panel, self.panel.title())

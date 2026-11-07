@@ -21,7 +21,6 @@ See :mod:`chemsuite.app.dialogs.kit` for the layout rules.
 from .kit import (
     FIELD_WIDTH,
     LABEL_WIDTH,
-    OutputChoice,
     RowsChoice,
     Section,
     Segmented,
@@ -33,7 +32,6 @@ from .kit import (
 __all__ = [
     "FIELD_WIDTH",
     "LABEL_WIDTH",
-    "OutputChoice",
     "RowsChoice",
     "Section",
     "Segmented",

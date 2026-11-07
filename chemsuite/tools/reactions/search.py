@@ -29,7 +29,7 @@ from chemsuite.analysis.reactions import (
     parse_reaction_query,
     search_reactions,
 )
-from chemsuite.app.dialogs import OutputChoice, RowsChoice, Segmented, ToolDialog
+from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.app.tools import ToolContext
 
 from .common import ReactionText, cells, current_reaction
@@ -74,8 +74,6 @@ class ReactionSearchDialog(ToolDialog):
             Segmented((("select", "Select them"), ("column", "Add a column")), "select"),
             help=f"Select the matching rows, or mark them Yes / No in a “{COLUMN}” column.",
         )
-        self.if_exists = output.row("If it exists", OutputChoice())
-        self._output_section = output
 
         self.role.currentIndexChanged.connect(lambda _i: self._role_changed())
         self.query.changed.connect(self.refresh)
@@ -87,12 +85,6 @@ class ReactionSearchDialog(ToolDialog):
     def _role_changed(self) -> None:
         self.query.set_reactions(self.role.currentData() == "reaction")
         self.refresh()
-
-    def refresh(self) -> None:
-        if hasattr(self, "_output_section"):
-            column = self.output.value() == "column"
-            self._output_section.set_row_visible(self.if_exists, column)
-        super().refresh()
 
     def current_query(self) -> ReactionQuery:
         return ReactionQuery(self.query.text(), self.role.currentData())
@@ -117,7 +109,6 @@ class ReactionSearchDialog(ToolDialog):
         query = self.current_query()
         data = cells(ctx.table, self.column.currentText(), oids)
         select = self.output.value() == "select"
-        overwrite = self.if_exists.overwrite()
         use_pool = len(data) >= POOL_MIN_ROWS
 
         def work(job):
@@ -130,7 +121,7 @@ class ReactionSearchDialog(ToolDialog):
             )
 
         def done(hits: np.ndarray) -> None:
-            finish(ctx, oids[: len(hits)], hits, query, select, overwrite, len(oids))
+            finish(ctx, oids[: len(hits)], hits, query, select, len(oids))
 
         return ctx.run("Searching reactions…", work, done, keep_partial=True)
 
@@ -141,7 +132,6 @@ def finish(
     hits: np.ndarray,
     query: ReactionQuery,
     select: bool,
-    overwrite: bool,
     total: int,
 ) -> None:
     """Select or mark the matches among *oids* (the rows searched before any cancel)."""
@@ -151,5 +141,5 @@ def finish(
         ctx.selection.set(found.tolist(), "reaction-search")
     else:
         values = ["Yes" if hit else "No" for hit in hits.tolist()]
-        ctx.apply_results({COLUMN: (oids, values)}, label="Reaction Search", overwrite=overwrite)
+        ctx.apply_results({COLUMN: (oids, values)}, label="Reaction Search")
     ctx.show_message(f"{len(found):,} reaction(s) match {query.describe()}{partial}", 8000)

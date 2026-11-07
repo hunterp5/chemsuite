@@ -119,9 +119,9 @@ reads the same way, top to bottom:
   choose that method. Hover over a field or its label for an explanation.
 - **More Options.** Optional settings whose defaults suit most runs sit in a folded section.
   Click its arrow or title to open it.
-- **Output.** The name of the result column, and **If it exists: Replace it · Add a new
-  column**. Adding a new column keeps the earlier result and names the new one "Cluster (2)",
-  and so on.
+- **Output.** The name of the result column. A tool never replaces an existing column: when
+  the name is taken, the result goes to a new column named "Cluster (2)", "Cluster (3)" and so
+  on, so earlier results are kept.
 - **Problems.** If something has to be fixed first, the problem appears above the buttons,
   marked ⚠, and the main button is greyed out. Otherwise there is no text there.
 - **Main button.** It names the action and how many rows it covers, such as **Cluster 1,204
@@ -1009,9 +1009,10 @@ are not already columns, then plots them.
 
 ### Calculate Descriptors (Ctrl+Shift+D)
 
-Pick a structure column and the properties you want. Each property becomes a number (or text)
-column. **Recalculate descriptors that are already columns** controls whether existing results
-are overwritten.
+Pick a structure column, the rows (All, Shown or Selected), and the properties you want.
+**Find** narrows the list; **Common Set**, **All** and **None** tick or untick many at once.
+Each property becomes a number (or text) column. An existing column is never replaced:
+calculating MW again adds "MW (2)".
 
 | Group | Descriptors |
 |---|---|
@@ -1034,7 +1035,12 @@ are overwritten.
   and a penalty for size, stereocentres, macrocycles and unusual ring fusions. Most drug-like
   compounds score 2-4.
 - **3D shape descriptors** use a 3D structure when the cell has conformers.
-- **Cancelling** keeps the rows already calculated.
+- **Fingerprints.** Tick any of the fingerprints the similarity tools use (ECFP4, ECFP6, FCFP4,
+  RDKit paths, atom pairs, topological torsions, MACCS keys). Each becomes a text column
+  ("ECFP4", "MACCS Keys"…) holding the bits in hexadecimal, bit 0 first (the high bit of the
+  first byte), ready to export for modelling. A row with no valid structure is left blank.
+- **Cancelling** keeps the rows already calculated; a fingerprint is written only when every
+  row has one.
 
 ### Predict pKa
 
@@ -1276,6 +1282,7 @@ Data ▸ Bin Values… groups a number column into bins.
   the last.
 - **Output:** a **range column** ("[5, 6)") and a **class column** with names you choose. Low /
   Medium / High is filled in for you.
+- **Rows:** all, shown or selected rows; other rows stay blank.
 - A live preview shows each bin's count.
 
 ---
@@ -1397,7 +1404,7 @@ Data ▸ Cluster… groups compounds using one of three methods:
 - Rows that cannot be clustered (no structure, a missing number) get no cluster.
 - Butina works on fingerprints only. Ward linkage needs number columns. Hierarchical clustering
   has a row limit. The dialog says so, above its buttons, when one of these applies.
-- **If it exists: Add a new column** keeps an earlier clustering beside the new one.
+- Clustering again keeps the earlier clustering beside the new one ("Cluster (2)").
 
 ---
 

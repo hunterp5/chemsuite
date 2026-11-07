@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis import formula as fx
-from chemsuite.app.dialogs import FIELD_WIDTH, LABEL_WIDTH, OutputChoice, RowsChoice, ToolDialog
+from chemsuite.app.dialogs import FIELD_WIDTH, LABEL_WIDTH, RowsChoice, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.table import NUMBER
@@ -167,8 +167,6 @@ class CalculatorDialog(ToolDialog):
         output = self.section("Output")
         self.name = QLineEdit("Result")
         output.row("Column", self.name, "The new column's name.")
-        self.output = OutputChoice()
-        output.row("If it exists", self.output)
 
         self.edit.textChanged.connect(self._changed)
         self.rows.changed.connect(lambda *_: self.refresh())
@@ -264,7 +262,6 @@ class CalculatorDialog(ToolDialog):
         table = ctx.table
         data = {name: column_values(table, name, oids, blobs=True) for name in formula.columns}
         name = self.name.text().strip()
-        overwrite = self.output.overwrite()
         n = len(oids)
 
         def work(job):
@@ -273,9 +270,7 @@ class CalculatorDialog(ToolDialog):
         def done(result) -> None:
             _kind, cells = result
             written = oids[: len(cells)]
-            names = ctx.apply_results(
-                {name: (written, cells)}, label=f"Calculate {name}", overwrite=overwrite
-            )
+            names = ctx.apply_results({name: (written, cells)}, label=f"Calculate {name}")
             partial = "" if len(cells) == n else f" (stopped after {len(cells):,} rows)"
             ctx.show_message(f"Calculated {names.get(name, name)}{partial}: {formula.text}")
 

@@ -21,7 +21,7 @@ import numpy as np
 from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox
 
 from chemsuite.analysis import clustering as cl
-from chemsuite.app.dialogs import OutputChoice, RowsChoice, ToolDialog
+from chemsuite.app.dialogs import RowsChoice, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn
 
@@ -78,7 +78,6 @@ class ClusterDialog(ToolDialog):
         output = self.section("Output")
         self.output = QLineEdit(CLUSTER_COLUMN)
         output.row("Column name", self.output)
-        self.if_exists = output.row("If it exists", OutputChoice())
         self._output_section = output
 
         for signal in (
@@ -135,7 +134,6 @@ class ClusterDialog(ToolDialog):
         ctx = self.ctx
         oids = self.rows.oids()
         method = self.method.currentData()
-        overwrite = self.if_exists.overwrite()
         k, cutoff, linkage = self.k.value(), self.cutoff.value(), self.linkage.currentData()
         name = self.output.text().strip() or CLUSTER_COLUMN
         if self.features.fingerprints():
@@ -170,13 +168,11 @@ class ClusterDialog(ToolDialog):
             fps, clusters = result
             if remember is not None:
                 remember(fps)
-            self.finish(oids, clusters, name, overwrite)
+            self.finish(oids, clusters, name)
 
         return ctx.run("Clustering…", work, done)
 
-    def finish(
-        self, oids: np.ndarray, clusters: cl.Clusters, name: str, overwrite: bool = True
-    ) -> dict[str, str]:
+    def finish(self, oids: np.ndarray, clusters: cl.Clusters, name: str) -> dict[str, str]:
         ctx = self.ctx
         member = clusters.labels >= 0
         number = np.where(member, clusters.labels + 1, np.nan)
@@ -189,7 +185,6 @@ class ClusterDialog(ToolDialog):
                 f"{name} Centre": (oids, centre),
             },
             label="Cluster",
-            overwrite=overwrite,
         )
         left_out = int((~member).sum())
         message = (

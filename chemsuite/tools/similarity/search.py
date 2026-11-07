@@ -232,7 +232,7 @@ class SimilarityDialog(QDialog):
             ref_labels = labels(ctx, refs)
             nearest = [ref_labels[w] if w >= 0 else "" for w in which.tolist()]
             results[NEAREST_COLUMN] = (targets, nearest)
-        names = ctx.apply_results(results, label="Fingerprint similarity", overwrite=True)
+        names = ctx.apply_results(results, label="Fingerprint similarity")
         column = names[name]
         if self.sort.isChecked():
             ctx.table.set_sort([(column, False)])

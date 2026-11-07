@@ -183,7 +183,7 @@ def finish(
 ) -> dict[str, str]:
     """Write the results for *oids* (the rows *results* covers), with the notes column.
 
-    Existing result columns are replaced, so running again updates them.
+    Replacing writes into *source*; otherwise the results go to new columns.
     """
     blobs, texts = results.blobs, results.texts
     target_oids = oids
@@ -199,7 +199,9 @@ def finish(
         ),
         NOTES_COLUMN: (oids, results.notes),
     }
-    written = ctx.apply_results(columns, label="Standardize Structures", overwrite=True)
+    written = ctx.apply_results(
+        columns, label="Standardize Structures", overwrite={source} if replace else False
+    )
     message = f"Standardized {len(oids):,} row(s); {results.changed:,} changed"
     if results.failed:
         message += f"; {results.failed:,} could not be standardized"

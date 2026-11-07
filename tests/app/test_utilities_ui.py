@@ -133,7 +133,6 @@ def test_random_numbers_fill_a_column_reproducibly(data):
     dialog.low.setValue(1)
     dialog.high.setValue(6)
     dialog.seed.setText("7")
-    dialog.output.set_value("new")
     dialog.accept()
     assert cells(table, "Random (2)") == first
 

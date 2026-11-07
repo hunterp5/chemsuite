@@ -89,7 +89,7 @@ class RGroupDialog(QDialog):
         results = {MATCH_COLUMN: (oids, ["yes" if m else "" for m in matched])}
         for position in d.positions:
             results[position] = (oids, d.labels[position])
-        names = ctx.apply_results(results, label="R-Group Decomposition", overwrite=True)
+        names = ctx.apply_results(results, label="R-Group Decomposition")
         count = int(d.matched.sum())
         varying = ", ".join(names[p] for p in d.varying()) or "none"
         ctx.show_message(

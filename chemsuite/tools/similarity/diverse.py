@@ -152,7 +152,6 @@ class DiverseSubsetDialog(QDialog):
         names = ctx.apply_results(
             {name: (everything, NumberColumn.from_floats(rank, 0))},
             label="Diverse subset",
-            overwrite=True,
         )
         picked = everything[picks.rows]
         if self.select.isChecked():

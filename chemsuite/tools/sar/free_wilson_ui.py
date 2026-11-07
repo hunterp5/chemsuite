@@ -150,7 +150,6 @@ class FreeWilsonDialog(QDialog):
         names = ctx.apply_results(
             {name: (oids, NumberColumn.from_floats(model.predicted, 2))},
             label="Free-Wilson",
-            overwrite=True,
         )
         self.panel = FreeWilsonPanel(ctx, oids, d, model, options)
         ctx.add_panel(self.panel, self.panel.title())

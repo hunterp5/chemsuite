@@ -403,6 +403,18 @@ def test_apply_results_overwrite_updates_existing_columns() -> None:
     assert [table.cell("MW", o) for o in oids] == ["1", "2", "3"]
 
 
+def test_apply_results_overwrites_only_the_named_columns() -> None:
+    table = Table()
+    table.add_rows({"MW": ["1", "2"], "Notes": ["a", "b"]}, undoable=False)
+    oids = table.oids
+    names = table.apply_results(
+        {"MW": (oids, [10, 20]), "Notes": (oids, ["x", "y"])}, label="r", overwrite={"MW"}
+    )
+    assert names == {"MW": "MW", "Notes": "Notes (2)"}
+    assert [table.cell("MW", o) for o in oids] == ["10", "20"]
+    assert [table.cell("Notes", o) for o in oids] == ["a", "b"]
+
+
 def test_apply_results_never_overwrites_a_structure_column() -> None:
     from chemsuite.core.table.columns import StructureColumn
 

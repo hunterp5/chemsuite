@@ -22,7 +22,7 @@ import numpy as np
 from PySide6.QtWidgets import QCheckBox, QComboBox
 
 from chemsuite.analysis.reactions import POOL_MIN_ROWS, SPLIT_ROLES, split_cells
-from chemsuite.app.dialogs import OutputChoice, RowsChoice, Segmented, ToolDialog
+from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.mols import parse_structure
 from chemsuite.core.table.columns import StructureColumn
@@ -84,7 +84,6 @@ class SplitReactionDialog(ToolDialog):
             help="Off: map numbers are removed, so the same molecule compares equal across "
             "reactions (structure search, duplicates, descriptors).",
         )
-        self.if_exists = output.row("If they exist", OutputChoice())
 
         self.column.currentTextChanged.connect(lambda *_: self.refresh())
         for signal in (self.rows.changed, self.layout_choice.changed):
@@ -108,7 +107,6 @@ class SplitReactionDialog(ToolDialog):
         data = cells(ctx.table, source, oids)
         keep_maps = self.keep_maps.isChecked()
         each = self.layout_choice.value() == "each"
-        overwrite = self.if_exists.overwrite()
         use_pool = len(data) >= POOL_MIN_ROWS
 
         def work(job):
@@ -121,7 +119,7 @@ class SplitReactionDialog(ToolDialog):
             )
 
         def done(split: list) -> None:
-            finish(ctx, oids[: len(split)], split, source, each, overwrite)
+            finish(ctx, oids[: len(split)], split, source, each)
 
         return ctx.run("Splitting reactions…", work, done, keep_partial=True)
 
@@ -132,7 +130,6 @@ def finish(
     split: list[dict[str, list[str]] | None],
     source: str,
     each: bool,
-    overwrite: bool,
 ) -> dict[str, str]:
     columns: dict[str, tuple[np.ndarray, StructureColumn]] = {}
     for (role, position), name in column_names(source, split, each).items():
@@ -148,7 +145,7 @@ def finish(
     if not columns:
         ctx.show_message("No reaction in these rows could be read", 8000)
         return {}
-    written = ctx.apply_results(columns, label="Split Reaction", overwrite=overwrite)
+    written = ctx.apply_results(columns, label="Split Reaction")
     failed = sum(1 for row in split if row is None)
     message = f"Split {len(oids) - failed:,} reaction(s) into {len(written)} column(s)"
     if failed:

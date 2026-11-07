@@ -32,7 +32,7 @@ from chemsuite.analysis.reactions import (
     enumerate_rows,
     parse_template,
 )
-from chemsuite.app.dialogs import OutputChoice, RowsChoice, Segmented, ToolDialog
+from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.mols import parse_structure
@@ -89,10 +89,6 @@ class EnumerateDialog(ToolDialog):
             "same row; the product goes in a new column. Every combination: each distinct "
             "building block with every other (a virtual library), in a new window.",
         )
-
-        output = self.section("Output")
-        self._output_section = output
-        self.if_exists = output.row("If they exist", OutputChoice())
 
         self.template.changed.connect(self.refresh)
         for signal in (self.rows.changed, self.mode.changed):
@@ -158,11 +154,10 @@ class EnumerateDialog(ToolDialog):
 
     # -- ToolDialog ---------------------------------------------------------------------------
     def refresh(self) -> None:
-        if hasattr(self, "_output_section"):
+        if hasattr(self, "_blocks_section"):
             count = self.reactant_count()
             for i, combo in enumerate(self.sources):
                 self._blocks_section.set_row_visible(combo, i < count)
-            self._output_section.setVisible(self._row_mode())
         super().refresh()
 
     def problem(self) -> str:
@@ -201,7 +196,6 @@ class EnumerateDialog(ToolDialog):
         ctx = self.ctx
         oids = self.rows.oids()
         columns = [cells(ctx.table, self.sources[i].currentData(), oids) for i in self._slots()]
-        overwrite = self.if_exists.overwrite()
         use_pool = len(oids) >= POOL_MIN_ROWS
 
         def work(job):
@@ -214,7 +208,7 @@ class EnumerateDialog(ToolDialog):
             )
 
         def done(products: list[list[str]]) -> None:
-            finish_rows(ctx, oids[: len(products)], products, overwrite)
+            finish_rows(ctx, oids[: len(products)], products)
 
         return ctx.run("Enumerating products…", work, done, keep_partial=True)
 
@@ -269,9 +263,7 @@ def load_blocks(path: Path) -> list[str]:
     return list(seen)
 
 
-def finish_rows(
-    ctx: ToolContext, oids: np.ndarray, products: list[list[str]], overwrite: bool
-) -> dict[str, str]:
+def finish_rows(ctx: ToolContext, oids: np.ndarray, products: list[list[str]]) -> dict[str, str]:
     """The first product of each row in a structure column, and how many there were."""
     texts = [p[0] if p else "" for p in products]
     blobs = [parse_structure(t)[0] if t else b"" for t in texts]
@@ -281,7 +273,6 @@ def finish_rows(
             FOUND: (oids, [float(len(p)) for p in products]),
         },
         label="Enumerate Products",
-        overwrite=overwrite,
     )
     made = sum(1 for p in products if p)
     several = sum(1 for p in products if len(p) > 1)

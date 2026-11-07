@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from chemsuite.app.dialogs import OutputChoice, RowsChoice, ToolDialog
+from chemsuite.app.dialogs import RowsChoice, ToolDialog
 from chemsuite.app.settings_hub import settings_hub
 from chemsuite.app.tools import ToolContext
 from chemsuite.retro import (
@@ -163,11 +163,9 @@ class RetrosynthesisDialog(ToolDialog):
             help="Rows that already have AiZynth values are left alone. Clear those cells, or "
             "turn this off, to search them again.",
         )
-        self.if_exists = output.row("If they exist", OutputChoice())
 
         self.structure.currentTextChanged.connect(lambda *_: self.refresh())
-        for signal in (self.rows.changed, self.if_exists.changed):
-            signal.connect(lambda *_: self.refresh())
+        self.rows.changed.connect(lambda *_: self.refresh())
         for box in (self.skip_done, self.return_first):
             box.toggled.connect(lambda *_: self.refresh())
         self.refresh()
@@ -247,8 +245,8 @@ class RetrosynthesisDialog(ToolDialog):
             str(text or "").strip()
             for text in ctx.table.column(self.structure.currentText()).displays(slots)
         ]
-        overwrite = self.if_exists.overwrite()
         python, config = self.python, self.config
+        resume = self.skip_done.isChecked()
 
         def work(job):
             return search(
@@ -261,7 +259,7 @@ class RetrosynthesisDialog(ToolDialog):
             )
 
         def done(replies: list[SearchReply]) -> None:
-            finish(ctx, oids, of_row, replies, overwrite=overwrite)
+            finish(ctx, oids, of_row, replies, resume=resume)
 
         label = f"Planning routes to {len(targets):,} structure(s)…"
         return ctx.run(label, work, done, keep_partial=True)
@@ -273,7 +271,7 @@ def finish(
     of_row: list[str],
     replies: list[SearchReply],
     *,
-    overwrite: bool,
+    resume: bool,
 ) -> dict[str, str]:
     """Write the ``AiZynth …`` columns for the rows the search covered, and show the routes."""
     by_target = {reply.target: reply for reply in replies}
@@ -289,7 +287,7 @@ def finish(
         columns = {
             name: (covered, [reply.columns.get(name, "") for _oid, reply in rows]) for name in names
         }
-        written = ctx.apply_results(columns, label="Retrosynthesis", overwrite=overwrite)
+        written = ctx.apply_results(columns, label="Retrosynthesis", overwrite=resume)
     show_routes(ctx, replies)
     ctx.show_message(_summary(replies, len(rows)), 8000)
     return written

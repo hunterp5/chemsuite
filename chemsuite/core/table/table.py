@@ -36,7 +36,7 @@ Edits
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 
 import numpy as np
@@ -594,13 +594,14 @@ class Table:
         *,
         label: str = "Add results",
         position: int | None = None,
-        overwrite: bool = False,
+        overwrite: bool | Collection[str] = False,
     ) -> dict[str, str]:
         """Write a tool's output columns as one undoable step.
 
         *results* maps a requested column name to ``(oids, values)``. An existing column is
         reused when every cell in it is blank, or always with *overwrite* (rerunning a tool
-        updates its columns; rows outside *oids* keep their values). A structure column is only
+        updates its columns; rows outside *oids* keep their values). *overwrite* may also name
+        the only columns to overwrite. A structure column is only
         ever overwritten by structures (regenerated conformers). Otherwise the result goes
         to a new column named ``name (2)``, ``name (3)``…, inserted at *position* (default: the
         end). Returns ``{requested name: actual name}``.
@@ -608,6 +609,10 @@ class Table:
         ops: list[Op] = []
         names: dict[str, str] = {}
         taken: set[str] = set()
+
+        def replace(name: str) -> bool:
+            return overwrite if isinstance(overwrite, bool) else name in overwrite
+
         end = len(self._columns)
         position = end if position is None else max(0, min(position, end))
         for requested, (oids, values) in results.items():
@@ -619,7 +624,10 @@ class Table:
             existing = self._columns.get(requested)
             reusable = existing is not None and (
                 existing.is_all_blank()
-                or (overwrite and (existing.kind not in _CHOSEN or incoming.kind == existing.kind))
+                or (
+                    replace(requested)
+                    and (existing.kind not in _CHOSEN or incoming.kind == existing.kind)
+                )
             )
             if reusable and requested not in taken:
                 self._put_ops(requested, oids, incoming, ops)

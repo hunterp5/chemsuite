@@ -54,24 +54,42 @@ class FingerprintKind:
     bits: int
     help: str = ""
     listed: bool = True  # offered in the similarity tools' fingerprint menus
+    short: str = ""  # the column name when written to the table (default: the title)
+
+    @property
+    def column(self) -> str:
+        return self.short or self.title
 
 
 KINDS: dict[str, FingerprintKind] = {
     k.key: k
     for k in (
-        FingerprintKind("morgan2", "Morgan r=2 (ECFP4), 2048 bits", 2048, "The usual default."),
-        FingerprintKind("morgan3", "Morgan r=3 (ECFP6), 2048 bits", 2048),
+        FingerprintKind(
+            "morgan2", "Morgan r=2 (ECFP4), 2048 bits", 2048, "The usual default.", short="ECFP4"
+        ),
+        FingerprintKind("morgan3", "Morgan r=3 (ECFP6), 2048 bits", 2048, short="ECFP6"),
         FingerprintKind(
             "fcfp4",
             "Feature Morgan r=2 (FCFP4), 2048 bits",
             2048,
             "Atoms by role (donor, acceptor, aromatic…): finds scaffold hops.",
+            short="FCFP4",
         ),
-        FingerprintKind("rdkit", "RDKit paths (up to 7 bonds), 2048 bits", 2048),
-        FingerprintKind("atompair", "Atom pairs, 2048 bits", 2048, "Good for overall shape."),
-        FingerprintKind("torsion", "Topological torsions, 2048 bits", 2048),
         FingerprintKind(
-            "maccs", "MACCS keys (166)", 167, "Small, interpretable substructure keys."
+            "rdkit", "RDKit paths (up to 7 bonds), 2048 bits", 2048, short="RDKit Fingerprint"
+        ),
+        FingerprintKind(
+            "atompair", "Atom pairs, 2048 bits", 2048, "Good for overall shape.", short="Atom Pairs"
+        ),
+        FingerprintKind(
+            "torsion", "Topological torsions, 2048 bits", 2048, short="Topological Torsions"
+        ),
+        FingerprintKind(
+            "maccs",
+            "MACCS keys (166)",
+            167,
+            "Small, interpretable substructure keys.",
+            short="MACCS Keys",
         ),
         FingerprintKind(
             "pattern",
@@ -237,6 +255,16 @@ def compute_fingerprints(
     if not parts:
         return Fingerprints(kind, np.zeros((0, row_bytes(kind)), np.uint8), np.zeros(0, bool))
     return Fingerprints(kind, np.concatenate(parts), np.concatenate(flags))
+
+
+def as_hex(fps: Fingerprints) -> list[str]:
+    """Each row's bits as hexadecimal text, bit 0 first (the high bit of the first byte); a
+    row that could not be fingerprinted is ""."""
+    width = math.ceil(fps.kind.bits / 8)
+    return [
+        row[:width].tobytes().hex() if ok else ""
+        for row, ok in zip(fps.packed, fps.valid.tolist(), strict=True)
+    ]
 
 
 def query_fingerprint(mol: Chem.Mol, key: str = DEFAULT_KIND) -> Fingerprints:
