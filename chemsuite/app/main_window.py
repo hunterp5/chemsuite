@@ -78,7 +78,7 @@ from .filters.cards import FilterCard
 from .filters.panel import FilterPanel
 from .find_replace import FindReplaceDialog
 from .jobs import QUEUE, QUICK, Job, JobRunner
-from .jobs_ui import JobsIndicator, JobsWindow
+from .jobs_ui import JobsIndicator, JobsWindow, duration
 from .list_actions import ListActions
 from .log_ui import LogWindow
 from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader, schedule_header_refresh
@@ -1563,8 +1563,7 @@ class MainWindow(QMainWindow):
             on_done(result)
             if job.lane == QUEUE and job.elapsed > NOTIFY_AFTER_S:
                 self.statusBar().showMessage(f"{label.rstrip('…')}: done", 8000)
-                if not self.isActiveWindow():
-                    QApplication.alert(self)
+                self._notify_unseen(job, job.summary or "Done")
 
         job.finished.connect(finished)
         if lane == QUEUE:
@@ -1616,8 +1615,22 @@ class MainWindow(QMainWindow):
             loop.exec()
         dialog.deleteLater()
 
+    def _notify_unseen(self, job: Job, outcome: str) -> None:
+        """A long job ended while this window was not in front: alert the dock or taskbar and,
+        unless Settings ▸ General turns it off, post a desktop notification."""
+        if self.isActiveWindow():
+            return
+        QApplication.alert(self)
+        if settings_hub().settings.jobs.notify:
+            from .notify import notify
+
+            where = f" ({job.document})" if job.document else ""
+            notify(f"{job.name}{where}", f"{outcome} after {duration(job.elapsed)}")
+
     def _report_failure(self, job: Job, error: BaseException) -> None:
         """A background job failed: say so without blocking; details are one click away."""
+        if job.elapsed > NOTIFY_AFTER_S:
+            self._notify_unseen(job, f"Failed: {error}" if str(error) else "Failed")
         self.statusBar().showMessage(f"{job.title.rstrip('…')} failed: {error}", 10000)
         self._failure_box = show_error(
             self,

@@ -749,8 +749,11 @@ descriptors, conformers, clustering, maps and searches.
   From there you can:
   - cancel a job;
   - remove a queued job, or move it up or down;
-  - clear finished jobs;
+  - **Remove** finished, failed or cancelled jobs from the list (select one or several, or
+    press Delete); **Clear Finished** removes them all;
   - copy an error.
+
+  Right-click a job for the same commands.
 - **Cancelling.** A job stops within about a tenth of a second. While it stops, the status bar
   says "Cancelling …".
 - **Partial results.** Tools that work row by row keep what they finished when you cancel:
@@ -776,8 +779,10 @@ descriptors, conformers, clustering, maps and searches.
   - Results from a job are never written into a different document.
 - **Long runs.**
   - The computer is kept awake while jobs run.
-  - A job that takes more than 30 seconds and finishes while you are elsewhere shows a
-    notification.
+  - When a job that took more than 30 seconds finishes or fails while chemsuite is not in
+    front, the dock icon (taskbar on Windows) asks for attention and a desktop notification
+    names the job and its result. Settings ▸ General ▸ **Notify when a long job finishes** turns
+    the notification off.
 
 ---
 
@@ -1448,7 +1453,7 @@ keeps them and **Cancel** puts everything back.
 | Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colourful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
 | Keyboard | Change any command's shortcut. |
 | External Tools | Paths to optional programs (Open Babel, CONFORGE, Gnina, AmberTools, MAFFT, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
-| General | Processor cores to use (0 = automatic), recent files to keep. |
+| General | Processor cores to use (0 = automatic), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. |
 
 Your IT department can fix some settings for everyone. Those are shown greyed out with a
 padlock.

@@ -92,6 +92,11 @@ class Performance:
 
 
 @dataclass
+class Jobs:
+    notify: bool = True  # a desktop notification when a long background job ends unseen
+
+
+@dataclass
 class Settings:
     version: int = SCHEMA_VERSION
     appearance: Appearance = field(default_factory=Appearance)
@@ -99,6 +104,7 @@ class Settings:
     tool_paths: dict[str, str] = field(default_factory=dict)  # external tool id → path
     files: Files = field(default_factory=Files)
     performance: Performance = field(default_factory=Performance)
+    jobs: Jobs = field(default_factory=Jobs)
 
     def copy(self) -> Settings:
         return copy.deepcopy(self)
@@ -184,6 +190,7 @@ CHECKS = {
     "files.recent_limit": _int_between(0, 50),
     "files.last_directory": lambda v: isinstance(v, str),
     "performance.max_workers": _int_between(0, 1024),
+    "jobs.notify": lambda v: isinstance(v, bool),
 }
 
 

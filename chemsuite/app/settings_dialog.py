@@ -627,26 +627,36 @@ class GeneralPage(QWidget):
         self.recent_limit.setRange(0, 50)
         clear = QPushButton("Clear Recent Files")
         clear.clicked.connect(self.clear_recent)
+        self.notify = QCheckBox("Notify when a long job finishes")
+        self.notify.setToolTip(
+            "A desktop notification when a background job of more than 30 seconds ends "
+            "while chemsuite is not in front."
+        )
         form = QFormLayout(self)
         form.addRow("Processor cores:", self.workers)
         form.addRow("Recent files to keep:", self.recent_limit)
         form.addRow("", clear)
+        form.addRow("Jobs:", self.notify)
         self.load()
         dialog.lock(self.workers, "performance.max_workers")
         dialog.lock(self.recent_limit, "files.recent_limit")
+        dialog.lock(self.notify, "jobs.notify")
         self.workers.valueChanged.connect(self._store)
         self.recent_limit.valueChanged.connect(self._store)
+        self.notify.toggled.connect(self._store)
 
     def load(self) -> None:
         user = self.dialog.user
         self.workers.setValue(user.performance.max_workers)
         self.recent_limit.setValue(user.files.recent_limit)
+        self.notify.setChecked(user.jobs.notify)
 
     def _store(self, *_args) -> None:
         user = self.dialog.user
         user.performance.max_workers = self.workers.value()
         user.files.recent_limit = self.recent_limit.value()
         user.files.recent = user.files.recent[: user.files.recent_limit]
+        user.jobs.notify = self.notify.isChecked()
 
     def clear_recent(self) -> None:
         self.dialog.user.files.recent = []
@@ -654,3 +664,4 @@ class GeneralPage(QWidget):
     def reset(self) -> None:
         self.workers.setValue(0)
         self.recent_limit.setValue(10)
+        self.notify.setChecked(True)
