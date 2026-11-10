@@ -43,11 +43,45 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QModelIndex, Qt
+from PySide6.QtCore import QEvent, QItemSelectionModel, QModelIndex, QSize, Qt
 from PySide6.QtWidgets import QAbstractItemView, QFrame, QHeaderView, QTableView
 
 if TYPE_CHECKING:
     from .table_view import TableView
+
+
+def quiet_column_header(view: QTableView) -> None:
+    """Keep *view*'s column header from asking the selection about every row.
+
+    Whenever the header paints with rows selected, Qt checks each shown column (and its
+    neighbours) with ``isColumnSelected``, which asks the model about every row: seconds per
+    paint on a large table, even for a hover. The header gets a selection model of its own
+    instead, holding only the whole selected columns (a few ranges, so quick to ask), and the
+    columns the selection touches are highlighted by ``TableView._highlight_header``.
+    """
+    header = view.horizontalHeader()
+    header.setHighlightSections(False)
+    header.setSelectionModel(QItemSelectionModel(view.model(), header))
+
+
+class RowHeader(QHeaderView):
+    """The row numbers, at a fixed width.
+
+    Qt sizes a table's row header from its ``sizeHint`` on every layout (each model reset: a
+    search, a filter, a sort), and the stock hint reads the label of hundreds of rows to find
+    the widest. Once the width is fixed, the hint is simply that width.
+    """
+
+    def __init__(self, parent: QTableView) -> None:
+        super().__init__(Qt.Orientation.Vertical, parent)
+        self.setSectionsClickable(True)  # what QTableView sets on its own row header
+        self.setHighlightSections(True)
+
+    def sizeHint(self) -> QSize:
+        width = self.maximumWidth()
+        if width != self.minimumWidth():  # not fixed yet
+            return super().sizeHint()
+        return QSize(width, self.defaultSectionSize())
 
 
 class _Overlay(QTableView):
@@ -65,6 +99,7 @@ class _Overlay(QTableView):
         self.main = main
         self.setModel(main.model())
         self.setSelectionModel(main.selectionModel())
+        quiet_column_header(self)
         self.setItemDelegate(main.itemDelegate())
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setSelectionMode(main.selectionMode())
@@ -77,6 +112,8 @@ class _Overlay(QTableView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollMode(main.verticalScrollMode())
         self.setHorizontalScrollMode(main.horizontalScrollMode())
+        if self.shows_row_numbers:
+            self.setVerticalHeader(RowHeader(self))
         vertical = self.verticalHeader()
         vertical.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         if self.shows_row_numbers:

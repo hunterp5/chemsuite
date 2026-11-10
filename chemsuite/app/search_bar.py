@@ -342,10 +342,8 @@ class SearchBar(QWidget):
     # -- the count ----------------------------------------------------------------------------
     def matching(self) -> int | None:
         """Rows the search keeps (before the other filters), or None with no search."""
-        flt = self.table.filters.get(FILTER_KEY)
-        if flt is None:
-            return None
-        return int(np.count_nonzero(flt.matches(self.table)))
+        mask = self.table.filter_mask(FILTER_KEY)
+        return None if mask is None else int(np.count_nonzero(mask))
 
     def update_count(self) -> None:
         self._count_timer.stop()

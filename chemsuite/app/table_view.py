@@ -75,6 +75,7 @@ from chemsuite.core.selection import Selection
 from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table.columns import REACTION, STRUCTURE, ParsedColumn, ReactionColumn
 
+from .frozen_columns import RowHeader, quiet_column_header
 from .structure_clipboard import structure_text_from_mime
 from .table_model import KIND_ROLE, STATUS_ROLE, STRUCTURE_ROLE, TableModel
 
@@ -112,6 +113,10 @@ class Alignment:
 
     text: str  # the core as the user gave it (SMILES or SMARTS); also its cache key
     core: Chem.Mol
+
+
+#: the header property listing the sections to draw highlighted (see ``theme.PolishStyle``)
+HIGHLIGHTED = "highlighted_sections"
 
 
 class StructureImages:
@@ -300,6 +305,7 @@ class TableView(QTableView):
         self._origin = f"table:{id(self)}"
         self._selection = selection
         self._syncing = False
+        self._row_columns: list[int] | None = None  # set while whole rows are being selected
         self._anchor_oid: int | None = None
         self._anchor_x = 0  # horizontal scroll kept across a model reset
         self._anchor_columns: list[str] = []  # whole columns selected before a reset
@@ -332,6 +338,7 @@ class TableView(QTableView):
         self.setAlternatingRowColors(True)
         self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.setFrameShape(QFrame.Shape.NoFrame)  # flush with the window and its panes
+        self.setVerticalHeader(RowHeader(self))
         vertical = self.verticalHeader()
         vertical.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         vertical.setDefaultAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -346,6 +353,7 @@ class TableView(QTableView):
         self._fit_row_header()
         horizontal = self.horizontalHeader()
         horizontal.setResizeContentsPrecision(200)  # never measure all 200k rows
+        quiet_column_header(self)  # Qt's highlighting asks about every row on each paint
         horizontal.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         horizontal.setSortIndicatorShown(True)
         horizontal.setSectionsClickable(True)  # a click selects the column; sorting is a menu
@@ -369,6 +377,7 @@ class TableView(QTableView):
         model.layoutChanged.connect(self._sync_sort_indicator)
         model.headerDataChanged.connect(self._on_header_data_changed)
         self.selectionModel().selectionChanged.connect(self._on_view_selection)
+        self.selectionModel().selectionChanged.connect(self._highlight_header)
         self._unsubscribe = selection.subscribe(self._on_store_selection)
         self._fit_layout()
 
@@ -632,10 +641,8 @@ class TableView(QTableView):
         return np.unique(np.concatenate(parts)) if parts else np.empty(0, dtype=np.int64)
 
     def selected_columns(self) -> list[int]:
-        columns: set[int] = set()
-        for r in self.selectionModel().selection():
-            columns.update(range(r.left(), r.right() + 1))
-        return sorted(columns)
+        spans = {(r.left(), r.right()) for r in self.selectionModel().selection()}
+        return sorted({c for left, right in spans for c in range(left, right + 1)})
 
     def selected_oids(self) -> np.ndarray:
         """Oids of the selected rows; none while whole columns are selected on the header."""
@@ -669,16 +676,20 @@ class TableView(QTableView):
             starts = np.concatenate([[rows[0]], rows[breaks + 1]])
             ends = np.concatenate([rows[breaks], [rows[-1]]])
             last = model.columnCount() - 1
+            index = model.createIndex  # rows are known to exist: skip index()'s bounds checks
             for start, end in zip(starts.tolist(), ends.tolist(), strict=True):
-                selection.select(model.index(start, 0), model.index(end, last))
+                selection.select(index(start, 0), index(end, last))
         self._syncing = True
         self._column_mode = False
+        # whole rows touch every column: no need to walk thousands of ranges to find that out
+        self._row_columns = list(range(model.columnCount())) if len(rows) else []
         try:
             self.selectionModel().select(
                 selection, QItemSelectionModel.SelectionFlag.ClearAndSelect
             )
         finally:
             self._syncing = False
+            self._row_columns = None
 
     def _restore_selection(self) -> None:
         if not self._selection.oids and self.whole_columns():
@@ -802,6 +813,43 @@ class TableView(QTableView):
         self._column_mode = False
 
     # -- frozen columns and rows ----------------------------------------------------------------
+    def _highlight_header(self, *_args) -> None:
+        """Mark the columns the selection touches on the column headers (drawn by
+        ``theme.PolishStyle``), from the selection's ranges rather than cell by cell."""
+        columns = self._row_columns
+        if columns is None:
+            columns = self.selected_columns()
+        whole = [] if self._row_columns is not None else self._whole_column_indexes()
+        headers = [self.horizontalHeader()]
+        headers += [o.horizontalHeader() for o in self._overlays()]
+        for header in headers:
+            if header.property(HIGHLIGHTED) != columns:
+                header.setProperty(HIGHLIGHTED, columns)
+                header.viewport().update()
+            self._mirror_columns(header, whole)
+
+    def _whole_column_indexes(self) -> list[int]:
+        rows = self.table_model.rowCount()
+        spans = {
+            (r.left(), r.right())
+            for r in self.selectionModel().selection()
+            if r.top() == 0 and r.bottom() == rows - 1
+        }
+        return sorted({c for left, right in spans for c in range(left, right + 1)})
+
+    def _mirror_columns(self, header: QHeaderView, columns: list[int]) -> None:
+        """Give the column header's own selection model (see ``quiet_column_header``) the whole
+        selected columns, and nothing else: Qt asks it whether a Ctrl+click on a column header
+        adds that column or takes it away."""
+        model = self.table_model
+        last = model.rowCount() - 1
+        selection = QItemSelection()
+        for col in columns:
+            selection.select(model.index(0, col), model.index(last, col))
+        mirror = header.selectionModel()
+        if mirror.selection() != selection:  # (a model reset empties it)
+            mirror.select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+
     def _overlays(self) -> list:
         return [o for o in (self._frozen, self._frozen_rows, self._frozen_corner) if o is not None]
 
@@ -836,6 +884,7 @@ class TableView(QTableView):
         if self._frozen_corner is not None:
             self._frozen_corner.refresh()
         self.place_frozen()
+        self._highlight_header()  # a new overlay's header starts unmarked
 
     @property
     def frozen_count(self) -> int:

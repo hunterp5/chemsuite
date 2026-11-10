@@ -91,6 +91,9 @@ class Table:
         self._filters: dict[str, Filter] = {}
         self._sort: tuple[SortKey, ...] = ()
         self._view: np.ndarray | None = None
+        #: each filter's mask (see filter_mask); any change but a re-sort or a new filter clears
+        #: them, since a filter on every column (the quick search) can read any cell
+        self._masks: dict[str, np.ndarray] = {}
         self._listeners: list[Listener] = []
         self._depth = 0
         self._pending: list[ev.Change] = []
@@ -259,8 +262,8 @@ class Table:
         """Storage slots of the visible rows, in display order (read-only)."""
         if self._view is None:
             mask: np.ndarray | None = None
-            for flt in self._filters.values():
-                keep = flt.matches(self)
+            for key in self._filters:
+                keep = self._mask(key)
                 mask = keep if mask is None else (mask & keep)
             if mask is None:
                 slots = np.arange(len(self._oids), dtype=np.int64)
@@ -270,6 +273,23 @@ class Table:
             view.flags.writeable = False
             self._view = view
         return self._view
+
+    def filter_mask(self, key: str) -> np.ndarray | None:
+        """The rows filter *key* keeps (physical order, read-only), or None without it.
+
+        Computed with the view, so asking for it (a match count) costs nothing extra.
+        """
+        if key not in self._filters:
+            return None
+        mask = self._mask(key).view()  # read-only, without freezing the filter's own array
+        mask.flags.writeable = False
+        return mask
+
+    def _mask(self, key: str) -> np.ndarray:
+        mask = self._masks.get(key)
+        if mask is None:
+            mask = self._masks[key] = self._filters[key].matches(self)
+        return mask
 
     def visible_oids(self) -> np.ndarray:
         return self._oids[self.view()]
@@ -294,11 +314,13 @@ class Table:
                 self._filters.pop(key, None)
             else:
                 self._filters[key] = flt
+            self._masks.pop(key, None)
             self._invalidate_view()
 
     def clear_filters(self) -> None:
         with self._changing(structural=True):
             self._filters.clear()
+            self._masks = {}
             self._invalidate_view()
 
     def _sorted(self, slots: np.ndarray) -> np.ndarray:
@@ -699,6 +721,8 @@ class Table:
             self._depth -= 1
             if outer:
                 changes, self._pending = tuple(self._pending), []
+                if any(not isinstance(c, ev.ViewChanged) for c in changes):
+                    self._masks = {}  # cells, rows, columns or styles changed
                 self._emit(ev.Changed(self._pending_structural, changes))
 
     def _emit(self, event: ev.TableEvent) -> None:

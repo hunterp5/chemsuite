@@ -636,3 +636,25 @@ def test_radar_fits_its_pane_once_laid_out(data, qtbot) -> None:
     qtbot.wait(20)
     (x0, x1), (y0, y1) = panel.view_box.viewRange()
     assert x1 - x0 < 6 and y1 - y0 < 6  # the radar (±1.6 × ±1.25) fills the pane
+
+
+def test_scatter_item_places_points_like_pyqtgraph(qtbot) -> None:
+    """The quick path for points of one style gives each point the atlas entry pyqtgraph
+    would; points with their own sizes take pyqtgraph's own path."""
+    import numpy as np
+    import pyqtgraph as pg
+
+    from chemsuite.app.plots.scatter_item import ScatterItem
+
+    x, y = np.arange(500.0), np.arange(500.0)
+    sizes = np.where(np.arange(500) % 2, 5.0, 9.0)
+    for kwargs in ({"size": 7.0}, {"size": sizes}):
+        ours = ScatterItem(x=x, y=y, pen=None, brush=pg.mkBrush(10, 20, 200), **kwargs)
+        stock = pg.ScatterPlotItem(x=x, y=y, pen=None, brush=pg.mkBrush(10, 20, 200), **kwargs)
+        rects = ours.data["sourceRect"]
+        assert (rects["w"] > 0).all()
+        assert len({tuple(r) for r in rects.tolist()}) == len(
+            {tuple(r) for r in stock.data["sourceRect"].tolist()}
+        )
+        ours.setData(x=x[:10], y=y[:10], size=11.0)  # the selection overlay's redraw
+        assert (ours.data["sourceRect"]["w"] > 0).all()

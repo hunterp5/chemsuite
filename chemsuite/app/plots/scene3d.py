@@ -62,7 +62,6 @@ FLOOR_LINES = 4  # grid lines across the floor, each way
 DROP_MAX = 20_000  # more points than this: drop lines only for the selected ones
 SPECIAL = (OTHER_LABEL, BLANK_LABEL)  # categories drawn grey
 CAMERA = {"distance": 4.6, "elevation": 22.0, "azimuth": -55.0}
-KINDS_3D = ("scatter3d", "landscape")
 #: the cube's corners are at ±1 on every axis
 CORNERS = np.array(
     [
