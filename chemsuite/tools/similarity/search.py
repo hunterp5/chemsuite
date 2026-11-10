@@ -19,112 +19,94 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QCheckBox,
-    QDialog,
-    QDialogButtonBox,
     QDoubleSpinBox,
-    QFormLayout,
-    QHBoxLayout,
-    QLabel,
     QLineEdit,
     QPushButton,
-    QRadioButton,
-    QVBoxLayout,
+    QToolButton,
 )
 
 from chemsuite.analysis.fingerprints import max_similarity, query_fingerprint, similarity
-from chemsuite.app.dialogs import follow_rows
+from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog, follow_rows, inline
+from chemsuite.app.glyphs import glyph
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table.columns import NumberColumn
 
-from .common import FeatureChooser, fingerprint_task, labels, scope_combo, scope_oids
+from .common import FeatureChooser, fingerprint_task, labels
 
 NEAREST_COLUMN = "Nearest Selected"
+STRUCTURE_COLUMN = "Similarity"
+SELECTION_COLUMN = "Max Similarity to Selection"
 
 
-class SimilarityDialog(QDialog):
+class SimilarityDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Fingerprint Similarity")
+        super().__init__(ctx.parent, "Similarity Search", guide="similarity-search")
         self.ctx = ctx
-        self.job = None
-        self.features = FeatureChooser(ctx, numbers_allowed=False)
-        self.to_structure = QRadioButton("A structure:")
-        self.to_selection = QRadioButton()
-        group = QButtonGroup(self)
-        group.addButton(self.to_structure)
-        group.addButton(self.to_selection)
-        self.to_structure.setChecked(True)
 
-        def follow() -> None:
-            count = len(ctx.selection)
-            self.to_selection.setText(
-                f"The selected rows ({count:,}): similarity to the nearest one"
-            )
-            self.to_selection.setEnabled(count > 0)
-            if not count and self.to_selection.isChecked():
-                self.to_structure.setChecked(True)
+        inputs = self.section("Input")
+        self.features = FeatureChooser(ctx, numbers_allowed=False, section=inputs)
+        self.rows = inputs.row("Rows", RowsChoice(ctx))
 
-        follow_rows(self.to_selection, ctx, follow)
+        reference = self.section("Compare With")
+        self.reference = Segmented((("structure", "A Structure"), ("selection", "Selected Rows")))
+        self.to_structure = self.reference.buttons["structure"]
+        self.to_selection = self.reference.buttons["selection"]
+        reference.row(
+            "Reference",
+            self.reference,
+            help="A Structure: every row's similarity to it. Selected Rows: every row's "
+            "similarity to the nearest selected compound, and a column naming that compound.",
+        )
+        follow_rows(
+            self.to_selection,
+            ctx,
+            lambda: self.reference.set_text("selection", f"Selected Rows ({len(ctx.selection):,})"),
+        )
         self.query = QLineEdit()
-        self.query.setPlaceholderText("SMILES, or Draw… / Current Row")
-        draw = QPushButton("Draw…")
+        self.query.setPlaceholderText("SMILES")
+        draw = QToolButton()
+        draw.setAutoRaise(True)
+        draw.setFixedSize(22, 22)
+        draw.setIcon(glyph("pencil", draw.palette().text().color()))
+        draw.setToolTip("Draw the structure in the sketcher")
         current = QPushButton("Current Row")
-        self.query_info = QLabel()
-        self.rows = scope_combo(ctx)
-        self.output = QLineEdit("Similarity")
-        self.sort = QCheckBox("Sort the table, most similar first")
+        current.setAutoDefault(False)
+        current.setToolTip("Use the structure in the table's current row")
+        self.query_field = inline(self.query, draw, current, stretch=0)
+        reference.row("Structure", self.query_field, help="Type or paste SMILES, or draw it.")
+        self._reference = reference
+
+        output = self.section("Output")
+        self.output = QLineEdit(STRUCTURE_COLUMN)
+        output.row("Column name", self.output)
+        self.sort = QCheckBox("Most similar first")
         self.sort.setChecked(True)
-        self.select = QCheckBox("Select rows with similarity of at least")
+        output.row("Sort", self.sort, help="Sort the table by the new column.")
+        self.select = QCheckBox("At least")
         self.threshold = QDoubleSpinBox()
         self.threshold.setRange(0.0, 1.0)
         self.threshold.setSingleStep(0.05)
         self.threshold.setValue(0.7)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        self.threshold.setEnabled(False)
+        self.select.toggled.connect(self.threshold.setEnabled)
+        output.row(
+            "Select",
+            inline(self.select, self.threshold),
+            help="Select the rows at least this similar.",
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Calculate")
-
-        query_row = QHBoxLayout()
-        query_row.addWidget(self.query, 1)
-        query_row.addWidget(draw)
-        query_row.addWidget(current)
-        select_row = QHBoxLayout()
-        select_row.addWidget(self.select)
-        select_row.addWidget(self.threshold)
-        select_row.addStretch(1)
-        form = QFormLayout()
-        form.addRow("Rows:", self.rows)
-        form.addRow("Result column:", self.output)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Compare every row with:"))
-        layout.addWidget(self.to_structure)
-        layout.addLayout(query_row)
-        layout.addWidget(self.query_info)
-        layout.addWidget(self.to_selection)
-        layout.addWidget(self.features)
-        layout.addLayout(form)
-        layout.addWidget(self.sort)
-        layout.addLayout(select_row)
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(560, 0)
 
         draw.clicked.connect(self.draw)
         current.clicked.connect(self.use_current_row)
-        self.query.textChanged.connect(lambda _t: self._update())
-        self.to_structure.toggled.connect(self._mode_changed)
-        self.features.changed.connect(self._update)
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
+        self.query.textChanged.connect(lambda _t: self.refresh())
+        self.reference.changed.connect(self._mode_changed)
+        self.features.changed.connect(self.refresh)
+        self.rows.changed.connect(lambda *_: self.refresh())
         if ctx.current_oid() is not None:
             self.use_current_row()
-        self._update()
+        self._mode_changed()
 
     # -- the query ----------------------------------------------------------------------------
     def use_current_row(self) -> None:
@@ -152,41 +134,44 @@ class SimilarityDialog(QDialog):
 
     def _mode_changed(self, *_args) -> None:
         to_structure = self.to_structure.isChecked()
-        self.query.setEnabled(to_structure)
+        self._reference.set_row_visible(self.query_field, to_structure)
         current = self.output.text()
-        if current in ("Similarity", "Max Similarity to Selection"):
-            self.output.setText("Similarity" if to_structure else "Max Similarity to Selection")
-        self._update()
+        if current in (STRUCTURE_COLUMN, SELECTION_COLUMN):
+            self.output.setText(STRUCTURE_COLUMN if to_structure else SELECTION_COLUMN)
+        self.refresh()
 
     def _query_mol(self):
         found = read_structure(self.query.text())
         return found.mol, ("" if found.mol is not None else found.error or "Enter a structure.")
 
-    def _update(self) -> None:
+    # -- what will happen ---------------------------------------------------------------------
+    def problem(self) -> str:
         problem = self.features.problem()
-        if not problem and self.to_structure.isChecked():
-            _mol, problem = self._query_mol()
-        self.query_info.setText(problem if self.to_structure.isChecked() else "")
-        self.status.setText(problem if not self.to_structure.isChecked() else "")
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
+        if problem:
+            return problem
+        if self.to_structure.isChecked():
+            return self._query_mol()[1]
+        if not len(self.ctx.selection):
+            return "No rows are selected. Select the compounds to compare with."
+        return ""
+
+    def verb(self) -> str:
+        return f"Compare {len(self.rows.oids()):,} Rows"
+
+    def run(self):
+        return self.calculate()
 
     # -- running ------------------------------------------------------------------------------
-    def accept(self) -> None:
-        self.job = self.calculate()
-        if self.job is not None:
-            super().accept()
-
     def calculate(self):
         ctx = self.ctx
         column = self.features.structure.currentText()
         key = self.features.kind.currentData()
         metric = self.features.metric.currentData()
-        targets = scope_oids(ctx, self.rows.currentData())
-        name = self.output.text().strip() or "Similarity"
+        targets = self.rows.oids()
+        name = self.output.text().strip() or STRUCTURE_COLUMN
         if self.to_structure.isChecked():
-            mol, problem = self._query_mol()
+            mol, _problem = self._query_mol()
             if mol is None:
-                self.query_info.setText(problem)
                 return None
             query = query_fingerprint(mol, key)
             refs = np.empty(0, dtype=np.int64)

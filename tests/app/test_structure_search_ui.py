@@ -78,7 +78,7 @@ def test_dialog_rejects_bad_queries(chem) -> None:
     ok = dialog.buttons.button(dialog.buttons.StandardButton.Ok)
     dialog.query.set_text("C((((")
     assert not ok.isEnabled()
-    assert "SMILES or SMARTS" in dialog.query_info.text()
+    assert "SMILES or SMARTS" in dialog.status.text()
     dialog.query.set_text("[C,N]")  # SMARTS: fine for substructures only
     assert ok.isEnabled()
     dialog.mode.setCurrentIndex(dialog.mode.findData("exact"))
@@ -92,7 +92,7 @@ def test_dialog_adds_matches_to_a_list_within_the_selection(chem, qtbot) -> None
     dialog.query.set_text("c1ccccc1")
     dialog.actions["list"].setChecked(True)
     dialog.list_name.setCurrentText("Aromatics")
-    dialog.rows.setCurrentIndex(dialog.rows.findData("selected"))
+    dialog.rows.set_value("selected")
     assert dialog.start()
     _wait(qtbot, dialog.job)
     assert chem.workspace.lists.oids("Aromatics").tolist() == _oids(chem, [0])

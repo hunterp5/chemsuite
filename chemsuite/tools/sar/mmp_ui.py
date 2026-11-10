@@ -21,11 +21,7 @@ import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
     QHBoxLayout,
-    QLabel,
     QPushButton,
     QSpinBox,
     QSplitter,
@@ -34,10 +30,11 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.selectivity import looks_like_assay
+from chemsuite.app.dialogs import RowsChoice, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.plotting.data import number_columns, numbers
 from chemsuite.sar.mmp import Pair, Transform, find_pairs, readable, transforms
-from chemsuite.tools.similarity.common import labels, scope_combo, scope_oids
+from chemsuite.tools.similarity.common import labels
 
 from .common import RerunPanel, ResultTable, activity_combo, saved_rows, structure_cells
 
@@ -45,69 +42,62 @@ POOL_MIN_ROWS = 1000  # fragmenting is slow per molecule: worth the worker start
 NO_ACTIVITY = "(none)"
 
 
-class MmpDialog(QDialog):
+class MmpDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Matched Molecular Pairs")
+        super().__init__(ctx.parent, "Matched Molecular Pairs", guide="matched-molecular-pairs")
         self.ctx = ctx
-        self.job = None
         self.panel: MmpPanel | None = None
+        inputs = self.section("Input")
         self.structure = QComboBox()
         self.structure.addItems(ctx.structure_columns())
         default = ctx.default_structure_column()
         if default:
             self.structure.setCurrentText(default)
+        inputs.row("Structures", self.structure)
         self.activity = QComboBox()
         self.activity.addItem(NO_ACTIVITY)
         self.activity.addItems(number_columns(ctx.table))
-
         guess = activity_combo(ctx).currentText()
         if guess and looks_like_assay(guess):
             self.activity.setCurrentText(guess)
-        self.rows = scope_combo(ctx, "shown")
+        inputs.row(
+            "Activity",
+            self.activity,
+            help="Transformations are summarised with the activity shift across their pairs.",
+        )
+        self.rows = inputs.row("Rows", RowsChoice(ctx, "shown"))
+
+        method = self.section("Method")
         self.max_variable = QSpinBox()
         self.max_variable.setRange(1, 40)
         self.max_variable.setValue(10)
-        self.max_variable.setToolTip("Largest changing part, in heavy atoms.")
+        self.max_variable.setSuffix(" heavy atoms")
+        method.row("Largest change", self.max_variable, help="The largest changing part.")
         self.min_pairs = QSpinBox()
         self.min_pairs.setRange(1, 1000)
         self.min_pairs.setValue(2)
-        self.min_pairs.setToolTip("Show transformations seen in at least this many pairs.")
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        method.row(
+            "Min. pairs",
+            self.min_pairs,
+            help="List transformations seen in at least this many pairs.",
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Find Pairs")
-        form = QFormLayout(self)
-        form.addRow("Structures:", self.structure)
-        form.addRow("Activity:", self.activity)
-        form.addRow("Rows:", self.rows)
-        form.addRow("Largest change (heavy atoms):", self.max_variable)
-        form.addRow("Minimum pairs:", self.min_pairs)
-        form.addRow(self.status)
-        form.addRow(self.buttons)
-        self.resize(480, 0)
-        self.rows.currentIndexChanged.connect(lambda *_: self._update())
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        self._update()
 
-    def _update(self) -> None:
-        problem = "" if self.structure.currentText() else "There is no structure column."
-        self.status.setText(problem)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
+        self.rows.changed.connect(lambda *_: self.refresh())
+        self.refresh()
 
-    def accept(self) -> None:
-        if not self.structure.currentText():
-            return
-        self.job = self.find()
-        super().accept()
+    def problem(self) -> str:
+        return "" if self.structure.currentText() else "There is no structure column."
+
+    def verb(self) -> str:
+        return f"Find Pairs in {len(self.rows.oids()):,} Rows"
+
+    def run(self):
+        return self.find()
 
     def recipe(self) -> dict:
         """Everything the analysis needs, saved with its panel to rerun it on reopening."""
         return {
-            "oids": scope_oids(self.ctx, self.rows.currentData()).tolist(),
+            "oids": self.rows.oids().tolist(),
             "structure": self.structure.currentText(),
             "activity": self.activity.currentText(),
             "max_variable": self.max_variable.value(),

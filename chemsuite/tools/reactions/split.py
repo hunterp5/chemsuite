@@ -57,7 +57,7 @@ def column_names(
 
 class SplitReactionDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent, "Split Reaction", guide="split-reaction")
+        super().__init__(ctx.parent, "Split Reaction", guide="split-reactions")
         self.ctx = ctx
 
         inputs = self.section("Input")

@@ -204,7 +204,7 @@ def test_binning_dialog(data) -> None:
 
 def test_selectivity_dialog(data) -> None:
     dialog = data.open_tool("selectivity")
-    assert dialog.primary.currentText() == "pIC50"
+    assert dialog.assay.currentText() == "pIC50"
     assert dialog.chosen_off_targets() == ["hERG pIC50"]
     dialog.window.setValue(1.0)
     dialog.cutoff.setValue(7.0)

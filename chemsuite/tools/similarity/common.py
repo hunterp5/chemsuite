@@ -22,9 +22,7 @@ from collections.abc import Callable
 import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QComboBox,
-    QFormLayout,
     QListWidget,
     QListWidgetItem,
     QRadioButton,
@@ -38,26 +36,10 @@ from chemsuite.analysis.fingerprints import (
     Fingerprints,
 )
 from chemsuite.analysis.fingerprints import fingerprint_task as cached_fingerprint_task
-from chemsuite.app.dialogs import follow_rows
 from chemsuite.app.tools import ToolContext
 from chemsuite.plotting.data import number_columns, numbers, shown_oids
 
-SCOPES = {"all": "All rows", "shown": "Shown rows", "selected": "Selected rows"}
 LABEL_COLUMNS = ("ID", "Name", "Title", "Compound", "Compound ID")
-
-
-def scope_combo(ctx: ToolContext, default: str = "all") -> QComboBox:
-    combo = QComboBox()
-    for key, title in SCOPES.items():
-        combo.addItem(title, key)
-    combo.setCurrentIndex(max(0, combo.findData(default)))
-    selected = combo.findData("selected")
-    follow_rows(
-        combo,
-        ctx,
-        lambda: combo.setItemText(selected, f"{SCOPES['selected']} ({len(ctx.selection):,})"),
-    )
-    return combo
 
 
 def scope_oids(ctx: ToolContext, scope: str) -> np.ndarray:
@@ -97,9 +79,8 @@ class FeatureChooser(QWidget):
     """Fingerprints of a structure column, a set of number columns, or (with *both*) the two
     together.
 
-    Given a dialog *section* (see ``chemsuite.app.dialogs``), its rows go into that section,
-    sharing the dialog's label column, and "Compare by" is a segmented choice. Without one it
-    lays its rows out in its own form (dialogs not yet on the dialog kit).
+    Its rows go into a dialog *section* (see ``chemsuite.app.dialogs``), sharing the dialog's
+    label column, and "Compare by" is a segmented choice.
 
     With *both* there is no "Compare by": the Fingerprint field (which has a "None" choice) and
     the number columns are always shown, and any combination of the two is used.
@@ -113,40 +94,26 @@ class FeatureChooser(QWidget):
         *,
         metric: bool = True,
         numbers_allowed: bool = True,
-        section=None,
+        section,
         both: bool = False,
     ):
         super().__init__()
         self.ctx = ctx
         self.section = section
-        self._free = both and section is not None  # fingerprints and columns chosen freely
+        self._free = both  # fingerprints and columns chosen freely
         if self._free:
             self.compare = None
-            self.use_both = None
             # never shown: kept so callers can still ask which is chosen
             self.use_fingerprints = QRadioButton()
             self.use_numbers = QRadioButton()
-        elif section is not None:
+        else:
             from chemsuite.app.dialogs import Segmented
 
-            choices = [
-                ("fingerprints", "Fingerprints"),
-                ("numbers", "Numbers" if both else "Number columns"),
-            ]
-            if both:
-                choices.append(("both", "Both"))
-            self.compare = Segmented(tuple(choices))
+            self.compare = Segmented(
+                (("fingerprints", "Fingerprints"), ("numbers", "Number columns"))
+            )
             self.use_fingerprints = self.compare.buttons["fingerprints"]
             self.use_numbers = self.compare.buttons["numbers"]
-            self.use_both = self.compare.buttons.get("both")
-        else:
-            self.compare = None
-            self.use_both = None
-            self.use_fingerprints = QRadioButton("Fingerprints")
-            self.use_numbers = QRadioButton("Number columns")
-            group = QButtonGroup(self)
-            group.addButton(self.use_fingerprints)
-            group.addButton(self.use_numbers)
         self.use_fingerprints.setChecked(True)
         self.structure = QComboBox()
         self.structure.addItems(ctx.structure_columns())
@@ -177,31 +144,20 @@ class FeatureChooser(QWidget):
             item.setCheckState(Qt.CheckState.Unchecked)
             self.columns.addItem(item)
 
-        if section is not None:
-            self.form = None
-            if numbers_allowed and not self._free:
-                section.row("Compare by", self.compare)
-            section.row("Structures", self.structure)
-            section.row("Fingerprint", self.kind)
-            section.row("Similarity", self.metric)
-            section.row(
-                "Columns",
-                self.columns,
-                help="Tick the number columns to use, with or without fingerprints."
-                if self._free
-                else "Tick the number columns to compare by.",
-            )
-            self.columns.setMaximumHeight(120)
-        else:
-            self.form = QFormLayout(self)
-            self.form.setContentsMargins(0, 0, 0, 0)
-            if numbers_allowed:
-                self.form.addRow("Compare by:", self.use_fingerprints)
-                self.form.addRow("", self.use_numbers)
-            self.form.addRow("Structures:", self.structure)
-            self.form.addRow("Fingerprint:", self.kind)
-            self.form.addRow("Similarity:", self.metric)
-            self.form.addRow("Columns:", self.columns)
+        self.form = None
+        if numbers_allowed and not self._free:
+            section.row("Compare by", self.compare)
+        section.row("Structures", self.structure)
+        section.row("Fingerprint", self.kind)
+        section.row("Similarity", self.metric)
+        section.row(
+            "Columns",
+            self.columns,
+            help="Tick the number columns to use, with or without fingerprints."
+            if self._free
+            else "Tick the number columns to compare by.",
+        )
+        self.columns.setMaximumHeight(120)
         self._show_metric = metric
         if not ctx.structure_columns():
             if self._free:
@@ -209,11 +165,7 @@ class FeatureChooser(QWidget):
                 self.kind.setEnabled(False)
             self.use_numbers.setChecked(True)
             self.use_fingerprints.setEnabled(False)
-            if self.use_both is not None:
-                self.use_both.setEnabled(False)
         toggles = [self.use_fingerprints.toggled, self.use_numbers.toggled]
-        if self.use_both is not None:
-            toggles.append(self.use_both.toggled)
         for signal in (
             *toggles,
             self.structure.currentIndexChanged,
@@ -234,16 +186,12 @@ class FeatureChooser(QWidget):
             self._show(self.kind, bits)
             self._show(self.metric, self.fingerprints() and self._show_metric)
             self._show(self.columns, not self.fingerprints())
-        if self.section is not None:
-            kind = KINDS.get(self.kind.currentData())
-            self.section.set_help(self.kind, kind.help if kind is not None else "")
+        kind = KINDS.get(self.kind.currentData())
+        self.section.set_help(self.kind, kind.help if kind is not None else "")
         self.changed.emit()
 
     def _show(self, field: QWidget, visible: bool) -> None:
-        if self.section is not None:
-            self.section.set_row_visible(field, visible)
-        else:
-            self.form.setRowVisible(field, visible)
+        self.section.set_row_visible(field, visible)
 
     def fingerprints(self) -> bool:
         """Fingerprints alone (not with number columns: see ``both``)."""
@@ -254,7 +202,7 @@ class FeatureChooser(QWidget):
     def both(self) -> bool:
         if self._free:
             return self.kind.currentData() is not None and bool(self.number_columns())
-        return self.use_both is not None and self.use_both.isChecked()
+        return False
 
     def set_fingerprint(self, key: str | None) -> None:
         """Choose the fingerprint kind (None: no fingerprints; only with *both*)."""

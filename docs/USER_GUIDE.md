@@ -106,9 +106,9 @@ Tool dialogs do not block the window. While one is open you can still select row
 filters and scroll the table, and the dialog's row counts follow along. Opening another
 document closes any open tool dialogs.
 
-Tools are moving to one dialog layout. Cluster, Dimensionality Reduction and Predict pKa use it now,
-and the other tools will follow. The window title names the tool; every dialog on the layout
-reads the same way, top to bottom:
+Every tool dialog uses one layout, and so do Split Column, Join Columns, Number Format, Align
+Drawings and Structure Search. The window title names the tool, and every dialog reads the same
+way, top to bottom:
 
 - **Input.** What to work on: structures or number columns, and **Rows**.
   - Rows is **All · Shown · Selected**, with each option's count. The counts update as you
@@ -241,7 +241,10 @@ Right-click a column header for:
 - **Rename…**, **Duplicate Column** (a copy, with its formatting, to the right),
   **Insert Column Left/Right…**, **Delete Column**. Delete acts on all selected columns when you
   right-click one of them.
-- **Split Column…** and **Join Columns…**, each with a live preview.
+- **Split Column…** and **Join Columns…**, each with a live preview of the first rows shown.
+  Choose **All**, **Shown** or **Selected** rows; other rows stay blank. Split finds the
+  delimiter itself (**Auto**) or uses one you choose, and keeps every field or only the first,
+  last, largest or smallest; Join can skip blank cells so no delimiters are doubled.
 - **Logarithmic (log₁₀)** (Number columns). Converts the values to log₁₀; choose it again to
   convert them back (10ˣ). The header shows "(log₁₀)". It needs every value above zero. One
   step you can undo.
@@ -696,9 +699,10 @@ rows that match, and the count of matching rows appears beside the box.
 
 ### Find and Replace (Ctrl+H)
 
-A window that steps through matching cells, with **Replace** and **Replace All**. A replacement
-is one step you can undo. **Replace All includes hidden rows** controls whether rows hidden by
-filters or searches are changed too.
+A window that steps through matching cells, with **Previous**, **Next**, **Replace** and
+**Replace All**; the match count ("3 of 12") shows beside the buttons. A replacement is one
+step you can undo. **Hidden rows too** makes Replace All also change rows hidden by filters or
+searches.
 
 - **In** chooses where to look: **All columns**, **Selected columns** (the columns of the
   selected cells), **Selected cells**, or **Chosen columns** (tick them under **Columns…**).
@@ -751,10 +755,11 @@ Data ▸ Search ▸ Structure Search… searches a structure column.
 
 - **Query.** Draw (paste) or type the query as SMILES, a molfile or InChI. For substructure
   searches you can also type SMARTS, such as `[C,N]`.
-  - **Draw…** opens the sketcher. A plain drawing comes back as SMILES.
+  - The pencil opens the sketcher. A plain drawing comes back as SMILES. **Current Row** takes
+    the structure in the table's current row.
   - A drawing with query features comes back as SMARTS that keeps them: R-groups, `A`/`Q`/`X`/`M`,
     atom lists, and bond queries. An R-group or `*` matches any atom there.
-  - **Draw…** again reopens your drawing, not the SMARTS.
+  - Drawing again reopens your drawing, not the SMARTS.
   - The same applies in the Structure filter card and the structure conditions of Advanced
     Search.
 - **Modes:**
@@ -765,8 +770,9 @@ Data ▸ Search ▸ Structure Search… searches a structure column.
   | Exact | Rows that are the query, with or without stereochemistry. |
   | Similarity | Rows at or above a similarity threshold, using a fingerprint and metric you pick. |
 
-- **Results.** **Show** them alone (as a structure card in the Filters panel), **Select** them,
-  or **Add to List**.
+- **Matches.** **Filter** shows them alone (as a structure card in the Filters panel, so it
+  applies to every row), **Select** selects them, and **Add to List** adds them to the list you
+  name. Select and Add to List search **All**, **Shown** or **Selected** rows.
 - **Highlighting.** Substructure matches can be highlighted in the table's drawings. Data ▸ Search ▸ Clear
   Highlighting turns that off.
 - **Speed.** Searches are fast even on 200k rows: a fingerprint screen rules out most rows
@@ -995,7 +1001,8 @@ The 3D plots use the same toolbar as the 2D ones:
 ### MedChem plots
 
 The Data ▸ Plot ▸ MedChem menu has three plots. Each one first calculates any properties it needs that
-are not already columns, then plots them.
+are not already columns, then plots them. To calculate them again anyway, tick **Recalculate
+existing columns** under **More Options**. Hover over **Plot** for what the plot shows.
 
 | Plot | Axes | What it shows |
 |---|---|---|
@@ -1117,20 +1124,22 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 Generates 3D conformers with RDKit's ETKDG and optimises them with MMFF94 (UFF where MMFF has no
 parameters).
 
-- **Settings:** conformers per molecule, a minimum RMSD for two conformers to count as
-  distinct, an energy window ("drop conformers more than … kcal/mol above the lowest"), the
-  force field, and a random seed.
+- **Input:** the structure column and **All**, **Shown** or **Selected** rows.
+- **Method:** **Conformers** per molecule, **Distinct above** (the RMSD for two conformers to
+  count as distinct), the force field (**Optimise with**), and an **Energy window** (tick it to
+  drop conformers more than that many kcal/mol above the lowest). The random **Seed** is under
+  **More Options**.
 - **Output.** The conformers go into a new 3D structure column, lowest energy first, with
   columns **Conformers** (the count) and **Conformer Energy Range (kcal/mol)**.
   - Energies compare conformers of the same molecule only.
-  - **Replace an existing 3D column of the same name** controls whether a previous result is
-    overwritten.
+  - Running again writes new columns ("SMILES 3D (2)"); earlier conformers are kept.
 - **Cancelling** keeps the molecules already done.
 
 ### Export conformers (SDF)
 
-Writes every conformer as its own SD record, carrying the row's other columns. You can export
-all rows or only the selected ones.
+Writes every conformer as its own SD record, carrying the row's other columns. Choose **All**,
+**Shown** or **Selected** rows (Selected when rows are selected), then **Export** asks for the
+file.
 
 ### Retrosynthesis
 
@@ -1243,8 +1252,9 @@ selected rows, and recalculates as the data, filters or selection change.
 
 ### MPO Score
 
-Data ▸ Scoring ▸ MPO Score… combines several properties into one 0–1 score. Add one row per
-property, each with a weight and one of these desirability shapes:
+Data ▸ Scoring ▸ MPO Score… combines several properties into one 0–1 score for **All**,
+**Shown** or **Selected** rows. Add one row per property (**Add Property**), each with a weight
+and one of these desirability shapes:
 
 | Shape | Use it when |
 |---|---|
@@ -1260,18 +1270,23 @@ Then choose how the desirabilities combine:
 
 Options:
 
-- **Score rows missing a property on the others.**
-- **Also add a desirability column per property.**
+- **Missing values: Score on the other properties.** Rows missing a property are scored on the
+  rest (otherwise they get no score).
+- **Desirability: A column per property.** Also adds each property's desirability.
+- **Load…** and **Save…** keep a profile in a file to reuse.
 
 ### Selectivity
 
 Data ▸ Scoring ▸ Selectivity… takes a primary assay and its off-target assays, and works out
 log selectivity (1 = 10-fold).
 
-- Say whether the values are p-values (pIC50, pKi…; higher is more potent) or concentrations
-  (IC50, Ki… in one unit; lower is more potent).
+- Tick the **Off-targets**, and say whether the values are **p-Values** (pIC50, pKi…; higher
+  is more potent) or **Concentrations** (IC50, Ki… in one unit; lower is more potent).
+- Choose **All**, **Shown** or **Selected** rows.
 - It adds a selectivity column per off-target and a **Min logSel** column.
-- **Flag a narrow window** adds a **Narrow window** column for compounds below a threshold.
+- **Narrow Window.** **Flag** adds a **Narrow window** column marking potent compounds (at
+  least **Potent at**, or at most for concentrations) whose selectivity is below **Window
+  below**.
 
 ### Bin Values
 
@@ -1362,17 +1377,18 @@ cached per column, so a second run on the same column is much faster.
 
 ### Similarity Search
 
-Data ▸ Similarity Search… scores every row (or the shown or selected rows)
-against one of two references:
+Data ▸ Similarity Search… scores **All**, **Shown** or **Selected** rows against one of two
+references (**Compare With**):
 
-- a **structure** you type or paste; or
-- the **selected compounds**. Each row gets its similarity to the nearest selected compound, and
+- **A Structure** you type or paste, draw (the pencil), or take from the current row
+  (**Current Row**); or
+- **Selected Rows**. Each row gets its similarity to the nearest selected compound, and
   a column naming that compound. A selected row is never its own nearest neighbour.
 
 Options:
 
-- Sort the table, most similar first.
-- Select rows with similarity of at least a threshold.
+- **Sort: Most similar first** sorts the table by the new column.
+- **Select: At least** selects the rows at or above a similarity.
 
 Cancelling keeps the rows already scored.
 
@@ -1381,10 +1397,10 @@ Cancelling keeps the rows already scored.
 Data ▸ Diverse Subset… picks *N* compounds that cover the chemistry, using MaxMin:
 each pick is the compound farthest from all the earlier picks.
 
-- **Pick from** all, shown or selected rows.
-- You can start from the current selection, so the new picks complement compounds you have
-  already chosen.
-- The picks get a rank column, and can be selected.
+- **Pick from** all, shown or selected rows, and set **How many**.
+- **Start from: Add to the selected rows** starts from the current selection, so the new picks
+  complement compounds you have already chosen.
+- The picks get a rank column, and **Select: The picked rows** selects them.
 - Cancelling keeps the picks made so far. Each of them is as diverse as a full run would make
   it.
 
@@ -1420,7 +1436,9 @@ Chemistry ▸ R-Group Decomposition… splits a series onto a common core.
 - **Output.** A column per position (R1, R2…) and a match column.
   - Substituents are labelled by SMILES with `*` at the attachment (`*Cl`, `*OC`).
   - **H** means unsubstituted.
-- **Exhaustive matching** is slower; use it for symmetric cores.
+- **Suggest** fills in the core the selected compounds share (with fewer than two selected,
+  the first rows shown).
+- **Matching: Exhaustive** is slower; use it for symmetric cores.
 - **Cancelling** keeps the rows decomposed so far, but only with a numbered core. An unnumbered
   core must see every compound at once.
 
@@ -1437,6 +1455,9 @@ position makes pages.
 
 Data ▸ SAR ▸ Free-Wilson… fits activity as a sum of one contribution per substituent.
 
+- **Min. occurrences** leaves out compounds carrying a substituent seen fewer times (a
+  substituent seen once is fitted exactly). **Higher is better** sets which way the Best
+  Unmade tab ranks.
 - **Contributions** tab: each substituent's effect, both as Fujita-Ban (against a reference
   group) and as Free-Wilson (centred).
 - **Best Unmade** tab: the highest-scoring combinations not yet made. Set whether higher activity
@@ -1459,15 +1480,17 @@ Data ▸ SAR ▸ Hansch… regresses activity on substituent constants:
   and rows needing it are left out.
 - **Terms.** Choose the hydrophobic (π, π²), electronic (Hammett σ, which positions are meta)
   and steric terms.
-- **Coefficients** either sum over positions (classical Hansch) or are fitted one per position.
+- **Coefficients** are either **Summed** over positions (classical Hansch) or fitted **Per
+  Position**.
 
 ### Matched Molecular Pairs
 
 Data ▸ SAR ▸ Matched Pairs… finds pairs of compounds that differ by one small change
 at one place. H → X changes are included.
 
-- Set the largest change, in heavy atoms, and the minimum number of pairs a transformation needs
-  to be listed.
+- Set the **Largest change**, in heavy atoms, and **Min. pairs**, the number of pairs a
+  transformation needs to be listed. **Activity** is optional: "(none)" lists the pairs
+  without activity shifts.
 - Transformations (A → B) are summarised over all their pairs, with the activity shift.
 
 ### Activity Cliffs (SALI)
@@ -1476,8 +1499,8 @@ Data ▸ SAR ▸ Activity Cliffs… lists similar compounds with very different 
 
     SALI = |Δactivity| / (1 − similarity)
 
-- Only pairs at least the **minimum similarity** alike are considered.
-- **Skip identical fingerprints** ignores salts and stereoisomers, which would otherwise divide
+- Only pairs at least **Min. similarity** alike are considered.
+- **Identical: Skip identical fingerprints** ignores salts and stereoisomers, which would otherwise divide
   by zero.
 
 ---
@@ -1530,8 +1553,8 @@ are weighted equally so neither drowns out the other (distances are Euclidean).
 Data ▸ Chemical Space ▸ Self-Organizing Map… trains a grid of cells. Similar compounds land in
 the same or neighbouring cells.
 
-- **Size.** Set rows × columns and the number of training passes, or let the size follow the
-  number of compounds.
+- **Grid.** Set rows × columns, or tick **Automatic** to let the size follow the number of
+  compounds; **Training passes** sets how long it trains.
 - **Output.** Each compound's cell is written to a column. A panel shows the grid coloured by any
   column, with **Higher is better** for activity.
 

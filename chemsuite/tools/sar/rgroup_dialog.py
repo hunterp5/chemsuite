@@ -18,62 +18,41 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLabel, QVBoxLayout
 
+from chemsuite.app.dialogs import RowsChoice, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.sar.rgroups import Decomposition
-from chemsuite.tools.similarity.common import scope_combo, scope_oids
 
 from .common import CoreChooser
 
 MATCH_COLUMN = "Core Match"
 
 
-class RGroupDialog(QDialog):
+class RGroupDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("R-Group Decomposition")
+        super().__init__(ctx.parent, "R-Group Decomposition", guide="r-group-decomposition")
         self.ctx = ctx
-        self.job = None
-        self.core = CoreChooser(ctx)
-        self.rows = scope_combo(ctx, "shown")
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Decompose")
-        form = QFormLayout()
-        form.addRow("Rows:", self.rows)
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.core)
-        layout.addLayout(form)
-        layout.addWidget(
-            QLabel("Writes a column per position (R1, R2…). A missing substituent is H.")
-        )
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(620, 0)
-        self.core.core.textChanged.connect(lambda *_: self._update())
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        self._update()
+        inputs = self.section("Input")
+        self.core = CoreChooser(ctx, inputs)
+        self.rows = inputs.row("Rows", RowsChoice(ctx, "shown"))
+        self.core.core.textChanged.connect(lambda *_: self.refresh())
+        self.core.structure.currentIndexChanged.connect(lambda *_: self.refresh())
+        self.rows.changed.connect(lambda *_: self.refresh())
+        self.refresh()
 
-    def _update(self) -> None:
-        problem = (
-            self.core.problem() if self.core.core.text().strip() else "Enter or suggest a core."
-        )
-        self.status.setText(problem)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
+    def problem(self) -> str:
+        if not self.core.core.text().strip():
+            return "Enter or suggest a core."
+        return self.core.problem()
 
-    def accept(self) -> None:
-        if self.core.problem():
-            return
-        self.job = self.decompose()
-        super().accept()
+    def verb(self) -> str:
+        return f"Decompose {len(self.rows.oids()):,} Rows"
+
+    def run(self):
+        return self.decompose()
 
     def decompose(self):
-        oids = scope_oids(self.ctx, self.rows.currentData())
+        oids = self.rows.oids()
         work = self.core.task(oids)
         # After a cancel, d covers the first rows only (a numbered core decomposes in chunks).
         return self.ctx.run(

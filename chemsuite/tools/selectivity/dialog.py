@@ -19,19 +19,7 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QDoubleSpinBox,
-    QFormLayout,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QVBoxLayout,
-)
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QListWidget, QListWidgetItem
 
 from chemsuite.analysis.selectivity import (
     MIN_NAME,
@@ -40,80 +28,72 @@ from chemsuite.analysis.selectivity import (
     selectivity,
     selectivity_name,
 )
+from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import number_columns, numbers
 
-UNITS = {
-    False: "p-values: pIC50, pKi… (higher is more potent)",
-    True: "Concentrations: IC50, Ki… in one unit (lower is more potent)",
-}
 
-
-class SelectivityDialog(QDialog):
+class SelectivityDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Selectivity")
+        super().__init__(ctx.parent, "Selectivity", guide="selectivity")
         self.ctx = ctx
         self.columns = number_columns(ctx.table)
-        self.primary = QComboBox()
-        self.primary.addItems(self.columns)
+
+        inputs = self.section("Input")
+        self.assay = QComboBox()
+        self.assay.addItems(self.columns)
         first = next((c for c in self.columns if looks_like_assay(c)), None)
         if first:
-            self.primary.setCurrentText(first)
+            self.assay.setCurrentText(first)
+        inputs.row("Primary assay", self.assay)
         self.off_targets = QListWidget()
-        self.units = QComboBox()
-        for key, title in UNITS.items():
-            self.units.addItem(title, key)
-        self.flag = QCheckBox("Flag a narrow window")
+        self.off_targets.setMaximumHeight(120)
+        inputs.row("Off-targets", self.off_targets, help="Tick the off-target assays.")
+        self.units = Segmented((("p", "p-Values"), ("concentration", "Concentrations")))
+        inputs.row(
+            "Values are",
+            self.units,
+            help="p-Values: pIC50, pKi… (higher is more potent). Concentrations: IC50, Ki… "
+            "in one unit (lower is more potent).",
+        )
+        self.rows = inputs.row("Rows", RowsChoice(ctx))
+
+        narrow = self.section("Narrow Window")
+        self.flag = QCheckBox("Flag potent rows with a narrow window")
         self.flag.setChecked(True)
+        narrow.row("Flag", self.flag, help=f"Writes a “{WINDOW_NAME}” column: yes or no.")
         self.cutoff = QDoubleSpinBox()
         self.cutoff.setRange(-1e9, 1e9)
         self.cutoff.setDecimals(3)
         self.cutoff.setValue(7.0)
+        narrow.row("Potent at", self.cutoff)
         self.window = QDoubleSpinBox()
         self.window.setRange(0.0, 10.0)
         self.window.setDecimals(2)
         self.window.setValue(1.0)
         self.window.setSuffix(" log units")
-        self.selected_only = QCheckBox(f"Selected rows only ({len(ctx.selection):,})")
-        self.selected_only.setEnabled(len(ctx.selection) > 0)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        narrow.row(
+            "Window below",
+            self.window,
+            help="A potent row is flagged when its selectivity over any off-target is below this.",
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Add Columns")
+        self._narrow = narrow
 
-        window_row = QHBoxLayout()
-        window_row.addWidget(QLabel("potent rows (primary at least"))
-        window_row.addWidget(self.cutoff)
-        window_row.addWidget(QLabel(") with selectivity below"))
-        window_row.addWidget(self.window)
-        form = QFormLayout()
-        form.addRow("Primary assay:", self.primary)
-        form.addRow("Off-targets:", self.off_targets)
-        form.addRow("Values are:", self.units)
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(self.flag)
-        layout.addLayout(window_row)
-        layout.addWidget(self.selected_only)
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(620, 480)
-
-        self.primary.currentIndexChanged.connect(lambda _i: self._fill_off_targets())
+        self.assay.currentIndexChanged.connect(lambda _i: self._fill_off_targets())
         self.off_targets.itemChanged.connect(lambda _item: self._update())
-        self.units.currentIndexChanged.connect(self._units_changed)
+        self.units.changed.connect(self._units_changed)
         self.flag.toggled.connect(lambda _on: self._update())
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
+        self.rows.changed.connect(lambda *_: self._update())
+        self._units_changed()
         self._fill_off_targets()
+
+    def concentrations(self) -> bool:
+        return self.units.value() == "concentration"
 
     def _fill_off_targets(self) -> None:
         checked = set(self.chosen_off_targets())
-        primary = self.primary.currentText()
+        primary = self.assay.currentText()
         self.off_targets.blockSignals(True)
         self.off_targets.clear()
         for name in self.columns:
@@ -128,9 +108,14 @@ class SelectivityDialog(QDialog):
         self._update()
 
     def _units_changed(self, *_args) -> None:
-        concentrations = self.units.currentData()
+        concentrations = self.concentrations()
         self.cutoff.setValue(100.0 if concentrations else 7.0)
-        self.cutoff.setToolTip("At most this concentration" if concentrations else "")
+        self._narrow.set_help(
+            self.cutoff,
+            "Rows at most this concentration count as potent."
+            if concentrations
+            else "Rows with the primary assay at least this count as potent.",
+        )
         self._update()
 
     def set_off_targets(self, names: list[str]) -> None:
@@ -148,29 +133,28 @@ class SelectivityDialog(QDialog):
     def _update(self) -> None:
         for widget in (self.cutoff, self.window):
             widget.setEnabled(self.flag.isChecked())
-        targets = self.chosen_off_targets()
-        ok = bool(self.primary.currentText()) and bool(targets)
-        if not self.columns:
-            self.status.setText("Needs number columns with assay results.")
-        elif not targets:
-            self.status.setText("Tick at least one off-target.")
-        else:
-            self.status.setText("")
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(ok)
+        self.refresh()
 
-    def accept(self) -> None:
+    def problem(self) -> str:
+        if not self.columns:
+            return "Needs number columns with assay results."
         if not self.chosen_off_targets():
-            return
+            return "Tick at least one off-target."
+        return ""
+
+    def verb(self) -> str:
+        return f"Calculate {len(self.rows.oids()):,} Rows"
+
+    def run(self):
         self.apply()
-        super().accept()
 
     def apply(self) -> dict[str, str]:
         ctx = self.ctx
         table = ctx.table
-        oids = ctx.target_oids(self.selected_only.isChecked())
-        primary = self.primary.currentText()
+        oids = self.rows.oids()
+        primary = self.assay.currentText()
         targets = self.chosen_off_targets()
-        concentrations = bool(self.units.currentData())
+        concentrations = self.concentrations()
         result = selectivity(
             numbers(table, primary, oids),
             {t: numbers(table, t, oids) for t in targets},
