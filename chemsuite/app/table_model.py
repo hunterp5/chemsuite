@@ -58,6 +58,10 @@ _TOOLTIP_CHARS = 400
 Index = QModelIndex | QPersistentModelIndex
 
 
+_CELL_FLAGS = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
+_NO_FLAGS = Qt.ItemFlag.NoItemFlags
+
+
 class TableModel(QAbstractTableModel):
     def __init__(self, table: Table, parent=None) -> None:
         super().__init__(parent)
@@ -215,9 +219,8 @@ class TableModel(QAbstractTableModel):
         return None
 
     def flags(self, index: Index) -> Qt.ItemFlag:
-        if not index.isValid():
-            return Qt.ItemFlag.NoItemFlags
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
+        # Qt asks this for every cell a selection covers: no enum arithmetic per call.
+        return _CELL_FLAGS if index.isValid() else _NO_FLAGS
 
     def setData(self, index: Index, value: Any, role: int = Qt.ItemDataRole.EditRole) -> bool:
         if role != Qt.ItemDataRole.EditRole or not index.isValid():

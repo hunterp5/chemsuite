@@ -185,3 +185,29 @@ def test_regex_replacement_groups(table: Table) -> None:
     within = {"ID": [oids[2]]}
     assert replace_all(table, Query(r"CPD-(\d+)", "regex", True), "C$1", within=within) == 1
     assert [table.cell("ID", o) for o in oids] == ["CPD-1", "cpd-2", "C12", "X-9"]
+
+
+# -- kept between searches, refreshed by edits ----------------------------------------------------
+def test_search_follows_edits_to_number_cells(table: Table) -> None:
+    """A number column remembers its distinct values between searches until a cell changes."""
+    table.convert_column("pIC50", "number")
+    search = SearchFilter(Query("7.5"), column="pIC50")
+    assert search.mask(table).tolist() == [True, False, False, True]
+    table.set_cells("pIC50", [2], ["7.5"])
+    assert search.mask(table).tolist() == [True, True, False, True]
+    table.add_rows({"pIC50": ["17.5"]})
+    assert search.mask(table).tolist() == [True, True, False, True, True]
+    table.remove_rows([1])
+    assert search.mask(table).tolist() == [True, False, True, True]
+
+
+def test_filter_mask_follows_edits_with_an_all_columns_search(table: Table) -> None:
+    """The kept mask of a search over every column is renewed when any cell changes."""
+    table.set_filter("search", SearchFilter(Query("kinase")))
+    assert int(table.filter_mask("search").sum()) == 2
+    table.set_cells("ID", [3], ["kinase C"])
+    assert int(table.filter_mask("search").sum()) == 3
+    assert table.visible_oids().tolist() == [1, 2, 3]
+    assert table.filter_mask("missing") is None
+    with pytest.raises(ValueError):
+        table.filter_mask("search")[0] = False  # read-only: the table's own copy

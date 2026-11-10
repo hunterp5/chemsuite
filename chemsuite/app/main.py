@@ -28,6 +28,9 @@ from pathlib import Path
 
 def main(argv: list[str] | None = None) -> int:
     multiprocessing.freeze_support()  # required for the process pool in frozen builds
+    from chemsuite.core.jobs.parallel import limit_app_threads
+
+    limit_app_threads()  # before numpy and friends load: leave a core for the window
     argv = list(sys.argv if argv is None else argv)
     from chemsuite.core import logbook
 

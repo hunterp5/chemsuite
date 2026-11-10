@@ -1570,7 +1570,7 @@ keeps them and **Cancel** puts everything back.
 | Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colourful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
 | Keyboard | Change any command's shortcut. |
 | External Tools | Paths to optional programs (Open Babel, CONFORGE, Gnina, AmberTools, MAFFT, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
-| General | Processor cores to use (0 = automatic), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. |
+| General | Processor cores to use (0 = automatic: all but one, so the window stays responsive), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
 
 Your IT department can fix some settings for everyone. Those are shown greyed out with a
 padlock.

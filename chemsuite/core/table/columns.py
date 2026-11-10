@@ -143,11 +143,12 @@ class Column(ABC):
 
 class NumberColumn(Column):
     kind = NUMBER
-    __slots__ = ("_decimals", "_valid", "_values")
+    __slots__ = ("_decimals", "_distinct_cache", "_valid", "_values")
 
     def __init__(self, values: np.ndarray, valid: np.ndarray, decimals: np.ndarray) -> None:
         if not (len(values) == len(valid) == len(decimals)):
             raise ValueError("values, valid and decimals must have the same length")
+        self._distinct_cache: dict = {}  # see _distinct
         self._values = np.ascontiguousarray(values, dtype=np.float64)
         self._valid = np.ascontiguousarray(valid, dtype=np.bool_)
         self._decimals = np.ascontiguousarray(decimals, dtype=np.int8)
@@ -197,20 +198,15 @@ class NumberColumn(Column):
     def match_text(self, predicate: Callable[[str], bool]) -> np.ndarray:
         # The text depends only on (value, decimals): test each distinct pair once.
         out = np.zeros(len(self), dtype=np.bool_)
-        valid_slots = np.flatnonzero(self._valid)
+        style = self.style
+        valid_slots, values, pairs, pair_index = self._distinct(style.formats_numbers)
         if len(valid_slots):
-            values, value_index = np.unique(self._values[valid_slots], return_inverse=True)
-            decimals = self._decimals[valid_slots].astype(np.int64) + 128  # 0..255
-            style = self.style
-            if style.formats_numbers:  # every cell shows the column's format
-                decimals[:] = 128
 
             def text(value: float, code: int) -> str:
                 if style.formats_numbers:
                     return style.format_value(value)
                 return format_number(value, code)
 
-            pairs, pair_index = np.unique(value_index * 256 + decimals, return_inverse=True)
             hits = np.fromiter(
                 (
                     predicate(text(float(values[p >> 8]), int((p & 255) - 128)))
@@ -219,27 +215,49 @@ class NumberColumn(Column):
                 dtype=np.bool_,
                 count=len(pairs),
             )
-            out[valid_slots] = hits[pair_index.ravel()]
+            out[valid_slots] = hits[pair_index]
         if predicate(""):
             out[~self._valid] = True
         return out
+
+    def _distinct(self, formatted: bool):
+        """``(valid slots, distinct values, distinct (value, decimals) pairs, each valid
+        slot's pair)`` for :meth:`match_text`, kept until the column changes: a search runs on
+        every keystroke and sorting a large column each time is most of its cost."""
+        cache = self._distinct_cache
+        found = cache.get(formatted)
+        if found is None:
+            valid_slots = np.flatnonzero(self._valid)
+            values, value_index = np.unique(self._values[valid_slots], return_inverse=True)
+            decimals = self._decimals[valid_slots].astype(np.int64) + 128  # 0..255
+            if formatted:  # every cell shows the column's format
+                decimals[:] = 128
+            pairs, pair_index = np.unique(value_index * 256 + decimals, return_inverse=True)
+            found = cache[formatted] = (valid_slots, values, pairs, pair_index.ravel())
+        return found
+
+    def _changed(self) -> None:
+        self._distinct_cache = {}
 
     def take(self, slots: np.ndarray) -> NumberColumn:
         return NumberColumn(self._values[slots], self._valid[slots], self._decimals[slots])
 
     def put(self, slots: np.ndarray, source: Column) -> None:
         src = _require(source, NumberColumn)
+        self._changed()
         self._values[slots] = src._values
         self._valid[slots] = src._valid
         self._decimals[slots] = src._decimals
 
     def insert(self, positions: np.ndarray, source: Column) -> None:
         src = _require(source, NumberColumn)
+        self._changed()
         self._values = np.insert(self._values, positions, src._values)
         self._valid = np.insert(self._valid, positions, src._valid)
         self._decimals = np.insert(self._decimals, positions, src._decimals)
 
     def delete(self, slots: np.ndarray) -> None:
+        self._changed()
         self._values = np.delete(self._values, slots)
         self._valid = np.delete(self._valid, slots)
         self._decimals = np.delete(self._decimals, slots)

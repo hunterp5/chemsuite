@@ -242,23 +242,53 @@ def palette_for(appearance: Appearance, rng: random.Random | None = None) -> QPa
 _applied: tuple | None = None  # what is on screen now, so unchanged settings do nothing
 
 
+#: what a header section is drawn as (Qt draws a section and its label separately)
+_HEADER_PARTS = (
+    QStyle.ControlElement.CE_Header,
+    QStyle.ControlElement.CE_HeaderSection,
+    QStyle.ControlElement.CE_HeaderLabel,
+)
+
+
 class PolishStyle(QProxyStyle):
     """App-wide details on top of the platform or Fusion style.
 
     Horizontal headers whose text Qt would centre by default are left-aligned, as in native
     macOS tables; a header that asks for an alignment of its own keeps it.
+
+    A header listing sections in its ``highlighted_sections`` property draws them highlighted,
+    as Qt's own section highlighting would (which the table turns off: it is slow on large
+    tables).
     """
 
     def drawControl(self, element, option, painter, widget=None) -> None:
+        header = isinstance(option, QStyleOptionHeader)
+        lit = False
+        if header and widget is not None and element in _HEADER_PARTS:
+            highlighted = widget.property("highlighted_sections")
+            lit = bool(highlighted) and option.section in highlighted
+            if lit:
+                option = QStyleOptionHeader(option)
+                option.state |= QStyle.StateFlag.State_On
         if (
             element == QStyle.ControlElement.CE_HeaderLabel
-            and isinstance(option, QStyleOptionHeader)
+            and header
             and option.orientation == Qt.Orientation.Horizontal
             and option.textAlignment & Qt.AlignmentFlag.AlignHCenter
         ):
             option = QStyleOptionHeader(option)
             option.textAlignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        super().drawControl(element, option, painter, widget)
+        if not (lit and element == QStyle.ControlElement.CE_HeaderLabel):
+            super().drawControl(element, option, painter, widget)
+            return
+        painter.save()
+        font = painter.font()
+        font.setBold(True)  # as QHeaderView marks a highlighted section
+        painter.setFont(font)
+        try:
+            super().drawControl(element, option, painter, widget)
+        finally:
+            painter.restore()
 
 
 def _set_style(app: QApplication, name: str) -> None:

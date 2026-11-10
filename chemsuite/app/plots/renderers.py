@@ -58,6 +58,8 @@ from chemsuite.plotting.style import (
     scale_colors,
 )
 
+from .scatter_item import ScatterItem
+
 SCALE_STEPS = 24
 POINT_SIZE = 7.0
 HIGHLIGHT = (230, 70, 20)
@@ -106,7 +108,7 @@ class ScatterRenderer:
         self.sizes = np.empty(0)
         self._layers: list[pg.ScatterPlotItem] = []
         self._legend: pg.LegendItem | None = None
-        self._overlay = pg.ScatterPlotItem(
+        self._overlay = ScatterItem(
             pen=pg.mkPen(HIGHLIGHT, width=1.6), brush=_brush(HIGHLIGHT, 160), pxMode=True
         )
         self._overlay.setZValue(10)
@@ -159,7 +161,7 @@ class ScatterRenderer:
         for mask, rgb, label in groups:
             if not mask.any():
                 continue
-            layer = pg.ScatterPlotItem(
+            layer = ScatterItem(
                 x=self.x[mask],
                 y=self.y[mask],
                 # one size for all points is much faster than an array of equal sizes
@@ -479,7 +481,7 @@ class BoxRenderer(ScatterRenderer):
             self.codes, self.labels = np.zeros(len(self.oids), dtype=np.int64), [spec.y]
         self.x = self.codes + jitter(self.oids, self.JITTER)
         self.sizes = np.full(len(self.oids), POINT_SIZE - 2)
-        strip = pg.ScatterPlotItem(
+        strip = ScatterItem(
             x=self.x,
             y=self.y,
             size=POINT_SIZE - 2,
@@ -714,7 +716,7 @@ class DensityRenderer:
         self.grid = None
         self.spec = PlotSpec(kind="density")
         self._image: pg.ImageItem | None = None
-        self._overlay = pg.ScatterPlotItem(
+        self._overlay = ScatterItem(
             pen=pg.mkPen(HIGHLIGHT, width=1.2), brush=_brush(HIGHLIGHT, 160), pxMode=True
         )
         self._overlay.setZValue(10)
@@ -859,7 +861,7 @@ class RadarRenderer:
         ink = (150, 150, 150)
         angles = self._angles()
         # invisible corners: fitting the view to the data keeps room for the axis labels
-        room = pg.ScatterPlotItem(x=[-1.6, 1.6], y=[-1.25, 1.25], size=0, pen=None, brush=None)
+        room = ScatterItem(x=[-1.6, 1.6], y=[-1.25, 1.25], size=0, pen=None, brush=None)
         self.plot.addItem(room)
         self._frame.append(room)
         for ring in self.RINGS:

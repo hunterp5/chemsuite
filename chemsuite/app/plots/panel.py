@@ -30,6 +30,7 @@ elsewhere highlights the matching points here.
 from __future__ import annotations
 
 from dataclasses import replace
+from importlib.util import find_spec
 from pathlib import Path
 
 import numpy as np
@@ -74,8 +75,6 @@ from .cards import (
     pinned_size,
 )
 from .renderers import RENDERERS, Hover, PlotSpec
-from .scene3d import AVAILABLE as HAS_3D
-from .scene3d import KINDS_3D
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
 
 NONE = "(none)"
@@ -91,6 +90,9 @@ KINDS = {
     "landscape": "3D Landscape",
 }
 #: kinds plotting one number column against another
+#: drawn by ``scene3d``, imported (with OpenGL) only when one is first shown
+KINDS_3D = ("scatter3d", "landscape")
+HAS_3D = find_spec("OpenGL") is not None
 XY_KINDS = ("scatter", "line", "density", *KINDS_3D)
 #: what the first mode button does and looks like, in 2D and in 3D
 MOVE_MODE = {
@@ -628,7 +630,10 @@ class PlotPanel(QWidget):
             return True
         if not HAS_3D:  # pragma: no cover - only without PyOpenGL
             return False
-        from .scene3d import Scene3D, View3D
+        from .scene3d import AVAILABLE, Scene3D, View3D
+
+        if not AVAILABLE:  # pragma: no cover - a broken PyOpenGL install
+            return False
 
         self.view3d = View3D()
         self.view3d.mode = self.view_box.mode
