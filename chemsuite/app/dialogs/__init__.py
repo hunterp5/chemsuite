@@ -26,6 +26,7 @@ from .kit import (
     Segmented,
     ToolDialog,
     follow_rows,
+    inline,
     selected_only,
 )
 
@@ -37,5 +38,6 @@ __all__ = [
     "Segmented",
     "ToolDialog",
     "follow_rows",
+    "inline",
     "selected_only",
 ]

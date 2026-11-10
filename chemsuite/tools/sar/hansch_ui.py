@@ -26,10 +26,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
-    QFormLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -37,6 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog, inline
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import numbers
@@ -50,7 +48,6 @@ from chemsuite.sar.hansch import (
     hansch,
     load_constants,
 )
-from chemsuite.tools.similarity.common import scope_combo, scope_oids
 
 from .common import CoreChooser, RerunPanel, ResultTable, activity_combo, decompose_task, saved_rows
 from .free_wilson_ui import fit_summary
@@ -68,78 +65,88 @@ TEMPLATE = f"""# Substituent constants for chemsuite's Hansch analysis.
 _last_path = ""  # the constants file used last in this session
 
 
-class HanschDialog(QDialog):
+class HanschDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Hansch Analysis")
+        super().__init__(ctx.parent, "Hansch Analysis", guide="hansch-analysis")
         self.ctx = ctx
-        self.job = None
         self.panel: HanschPanel | None = None
-        self.core = CoreChooser(ctx)
-        self.activity = activity_combo(ctx)
-        self.rows = scope_combo(ctx, "shown")
+        inputs = self.section("Input")
+        self.core = CoreChooser(ctx, inputs)
+        self.activity = inputs.row("Activity", activity_combo(ctx))
+        self.rows = inputs.row("Rows", RowsChoice(ctx, "shown"))
+
+        constants = self.section("Constants")
         self.constants = QLineEdit(_last_path)
-        self.constants.setPlaceholderText("CSV of substituent constants")
+        self.constants.setPlaceholderText("CSV file")
         browse = QPushButton("Browse…")
-        browse.clicked.connect(self.browse)
+        browse.setAutoDefault(False)
+        browse.clicked.connect(lambda: self.browse())
+        constants.row(
+            "File",
+            inline(self.constants, browse, stretch=0),
+            help=f"A CSV of substituent constants with the columns {', '.join(FIELDS)}.",
+        )
         template = QPushButton("Save Template…")
-        template.setToolTip("Save an empty constants file with the expected columns.")
-        template.clicked.connect(self.save_template)
-        file_row = QHBoxLayout()
-        file_row.addWidget(self.constants, 1)
-        file_row.addWidget(browse)
-        file_row.addWidget(template)
-        self.pi = QCheckBox("π (hydrophobicity)")
+        template.setAutoDefault(False)
+        template.clicked.connect(lambda: self.save_template())
+        constants.row(
+            "",
+            inline(template),
+            help="Save an empty constants file with the expected columns, to fill in.",
+        )
+
+        terms = self.section("Terms")
+        self.pi = QCheckBox("π")
         self.pi.setChecked(True)
-        self.pi_squared = QCheckBox("π² (an optimum lipophilicity)")
+        self.pi.setToolTip("π: hydrophobicity")
+        self.pi_squared = QCheckBox("π²")
+        self.pi_squared.setToolTip("π²: an optimum lipophilicity")
+        terms.row("Hydrophobic", inline(self.pi, self.pi_squared))
         self.electronic = QComboBox()
         for key, title in ELECTRONIC.items():
             self.electronic.addItem(title, key)
+        terms.row("Electronic", self.electronic)
         self.sigma = QComboBox()
         self.sigma.addItem("para (σp)", "para")
         self.sigma.addItem("meta (σm)", "meta")
+        terms.row("Hammett σ", self.sigma, help="The σ used for positions not listed as meta.")
         self.meta_positions = QLineEdit()
-        self.meta_positions.setPlaceholderText("e.g. R2, R3")
-        self.meta_positions.setToolTip("Positions meta to the reaction centre use σm.")
+        self.meta_positions.setPlaceholderText("R2, R3")
+        terms.row(
+            "Meta positions",
+            self.meta_positions,
+            help="Positions meta to the reaction centre, which use σm.",
+        )
         self.steric = QComboBox()
         for key, title in STERIC.items():
             self.steric.addItem(title, key)
-        self.per_position = QCheckBox("One coefficient per position (instead of sums)")
-        self.output = QLineEdit(PREDICTED_COLUMN)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        terms.row("Steric", self.steric)
+        self.coefficients = Segmented((("sum", "Summed"), ("position", "Per Position")))
+        self.per_position = self.coefficients.buttons["position"]
+        terms.row(
+            "Coefficients",
+            self.coefficients,
+            help="Summed: one coefficient per term, over all positions (classical Hansch). "
+            "Per Position: one coefficient per term and position.",
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Analyse")
-        self.form = QFormLayout()
-        self.form.addRow("Activity:", self.activity)
-        self.form.addRow("Rows:", self.rows)
-        self.form.addRow("Constants:", file_row)
-        self.form.addRow("Hydrophobic:", self.pi)
-        self.form.addRow("", self.pi_squared)
-        self.form.addRow("Electronic:", self.electronic)
-        self.form.addRow("Hammett σ:", self.sigma)
-        self.form.addRow("Meta positions:", self.meta_positions)
-        self.form.addRow("Steric:", self.steric)
-        self.form.addRow("", self.per_position)
-        self.form.addRow("Prediction column:", self.output)
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.core)
-        layout.addLayout(self.form)
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(640, 0)
+        self._terms = terms
+
+        output = self.section("Output")
+        self.output = QLineEdit(PREDICTED_COLUMN)
+        output.row("Prediction column", self.output)
+
         for signal in (
             self.core.core.textChanged,
+            self.core.structure.currentIndexChanged,
+            self.activity.currentIndexChanged,
+            self.rows.changed,
             self.constants.textChanged,
             self.pi.toggled,
+            self.pi_squared.toggled,
             self.electronic.currentIndexChanged,
             self.steric.currentIndexChanged,
         ):
             signal.connect(lambda *_: self._update())
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
         self._update()
 
     def browse(self) -> None:
@@ -178,44 +185,43 @@ class HanschDialog(QDialog):
             return "There is no number column for activity."
         path = self.constants.text().strip()
         if not path:
-            return (
-                f"Choose a CSV of substituent constants ({', '.join(FIELDS)}). "
-                "Save Template makes an empty one to fill in."
-            )
+            return "Choose a CSV of substituent constants, or save a template to fill in."
         if not Path(path).is_file():
             return f"There is no file {path}."
         if not self.settings().terms():
             return "Choose at least one term."
         return self.core.problem()
 
+    def verb(self) -> str:
+        return f"Analyse {len(self.rows.oids()):,} Rows"
+
     def _update(self) -> None:
         sigma = self.electronic.currentData() == "sigma"
-        self.form.setRowVisible(self.sigma, sigma)
-        self.form.setRowVisible(self.meta_positions, sigma)
+        self._terms.set_row_visible(self.sigma, sigma)
+        self._terms.set_row_visible(self.meta_positions, sigma)
         self.pi_squared.setEnabled(self.pi.isChecked())
-        problem = self.problem()
-        self.status.setText(problem)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
+        self.refresh()
 
     def accept(self) -> None:
-        if self.problem():
+        if self._problem():
+            self.refresh()
             return
         try:
             constants = load_constants(self.constants.text().strip())
         except (OSError, ValueError) as err:
-            self.status.setText(str(err))
+            self.report(str(err))
             return
         global _last_path
         _last_path = self.constants.text().strip()
         self.job = self.analyse(constants)
-        super().accept()
+        QDialog.accept(self)
 
     def recipe(self, constants: dict) -> dict:
         """Everything the analysis needs, saved with its panel to rerun it on reopening. The
         constants themselves are kept, so reopening does not need the CSV file."""
         return {
             **self.core.recipe(),
-            "oids": scope_oids(self.ctx, self.rows.currentData()).tolist(),
+            "oids": self.rows.oids().tolist(),
             "activity": self.activity.currentText(),
             "constants": constants,
             "settings": asdict(self.settings()),

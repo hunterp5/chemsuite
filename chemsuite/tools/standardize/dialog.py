@@ -65,7 +65,7 @@ def output_name(source: str) -> str:
 
 class StandardizeDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent, "Standardize Structures", guide="standardize-structures")
+        super().__init__(ctx.parent, "Standardize Structures", guide="standardize")
         self.ctx = ctx
 
         inputs = self.section("Input")

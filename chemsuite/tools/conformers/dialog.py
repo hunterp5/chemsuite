@@ -23,16 +23,12 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
-    QFormLayout,
-    QLabel,
     QSpinBox,
-    QVBoxLayout,
 )
 
-from chemsuite.app.dialogs import selected_only
+from chemsuite.app.dialogs import RowsChoice, ToolDialog, inline
 from chemsuite.app.tools import ToolContext
 from chemsuite.conformers.etkdg import ConformerSettings, generate_conformers
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
@@ -52,13 +48,12 @@ def output_name(structure: str) -> str:
     return structure if structure.endswith(SUFFIX) else structure + SUFFIX
 
 
-class ConformerDialog(QDialog):
+class ConformerDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Generate Conformers")
+        super().__init__(ctx.parent, "Generate Conformers", guide="generate-conformers")
         self.ctx = ctx
-        self.job = None
 
+        inputs = self.section("Input")
         self.structure = QComboBox()
         # Generating from a 3D column again would only re-embed; prefer the 2D source.
         names = ctx.structure_columns()
@@ -68,57 +63,56 @@ class ConformerDialog(QDialog):
             default = default[: -len(SUFFIX)]
         if default:
             self.structure.setCurrentText(default)
+        inputs.row("Structures", self.structure)
+        self.rows = inputs.row("Rows", RowsChoice(ctx))
+
+        method = self.section("Method")
         self.count = QSpinBox()
         self.count.setRange(1, 300)
-        self.count.setToolTip("At most this many per molecule; rigid molecules get fewer.")
+        method.row(
+            "Conformers",
+            self.count,
+            help="At most this many per molecule; rigid molecules get fewer.",
+        )
         self.prune = QDoubleSpinBox()
         self.prune.setRange(0.0, 5.0)
         self.prune.setSingleStep(0.1)
         self.prune.setSuffix(" Å")
-        self.prune.setToolTip(
-            "Conformers closer than this heavy-atom RMSD count as one (0: keep all)."
+        method.row(
+            "Distinct above",
+            self.prune,
+            help="Conformers closer than this heavy-atom RMSD count as one (0: keep all).",
         )
         self.force_field = QComboBox()
         for key, title in FORCE_FIELDS.items():
             self.force_field.addItem(title, key)
-        self.use_window = QCheckBox("Drop conformers more than")
+        method.row("Optimise with", self.force_field)
+        self.use_window = QCheckBox()
         self.window = QDoubleSpinBox()
         self.window.setRange(0.5, 200.0)
-        self.window.setSuffix(" kcal/mol above the lowest")
+        self.window.setSuffix(" kcal/mol")
+        method.row(
+            "Energy window",
+            inline(self.use_window, self.window),
+            help="Drop conformers more than this above the molecule's lowest energy "
+            "(needs a force field).",
+        )
+
+        more = self.section("More Options", collapsed=True)
         self.seed = QSpinBox()
         self.seed.setRange(-1, 2**31 - 1)
         self.seed.setSpecialValueText("Random")
-        self.seed.setToolTip("The same seed gives the same conformers every time.")
-        self.selected_only = selected_only(ctx)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Generate")
-
-        form = QFormLayout()
-        form.addRow("Structures:", self.structure)
-        form.addRow("Conformers per molecule:", self.count)
-        form.addRow("Distinct if RMSD above:", self.prune)
-        form.addRow("Optimise with:", self.force_field)
-        form.addRow(self.use_window, self.window)
-        form.addRow("Random seed:", self.seed)
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(self.selected_only)
-        layout.addStretch(1)
-        layout.addWidget(self.buttons)
+        more.row("Seed", self.seed, help="The same seed gives the same conformers every time.")
 
         self.set_settings(_last)
         for signal in (
             self.structure.currentIndexChanged,
             self.count.valueChanged,
-            self.selected_only.toggled,
+            self.rows.changed,
             self.force_field.currentIndexChanged,
             self.use_window.toggled,
         ):
             signal.connect(lambda *_: self._update())
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
         self._update()
 
     # -- settings -----------------------------------------------------------------------------
@@ -140,33 +134,33 @@ class ConformerDialog(QDialog):
             seed=self.seed.value(),
         )
 
-    def _rows(self) -> int:
-        return len(self.ctx.selection) if self.selected_only.isChecked() else len(self.ctx.table)
-
     def _update(self) -> None:
         optimize = self.force_field.currentData() is not None
         self.use_window.setEnabled(optimize)
         self.window.setEnabled(optimize and self.use_window.isChecked())
-        rows = self._rows()
-        structure = self.structure.currentText()
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
-            rows > 0 and bool(structure)
-        )
+        self.refresh()
+
+    def problem(self) -> str:
+        if not self.structure.currentText():
+            return "There is no structure column."
+        if not len(self.rows.oids()):
+            return "There are no rows to work on."
+        return ""
+
+    def verb(self) -> str:
+        return f"Generate for {len(self.rows.oids()):,} Rows"
 
     # -- running ------------------------------------------------------------------------------
-    def accept(self) -> None:
-        if not self._rows() or not self.structure.currentText():
-            return
+    def run(self):
         global _last
         _last = self.settings()
-        self.job = self.generate(_last)
-        super().accept()
+        return self.generate(_last)
 
     def generate(self, settings: ConformerSettings):
         ctx = self.ctx
         table = ctx.table
         name = self.structure.currentText()
-        oids = ctx.target_oids(self.selected_only.isChecked())
+        oids = self.rows.oids()
         column = table.column(name)
         slots = table.slots_of(oids)
         cells = [
@@ -204,14 +198,13 @@ class ConformerDialog(QDialog):
         return ctx.run("Generating conformers…", work, done, keep_partial=True)
 
 
-class ExportConformersDialog(QDialog):
+class ExportConformersDialog(ToolDialog):
     """Pick the 3D column and rows, then a file: every conformer becomes an SD record."""
 
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Export Conformers to SDF")
+        super().__init__(ctx.parent, "Export Conformers to SDF", guide="export-conformers-sdf")
         self.ctx = ctx
-        self.job = None
+        inputs = self.section("Input")
         self.structure = QComboBox()
         names = ctx.structure_columns()
         self.structure.addItems(names)
@@ -219,41 +212,41 @@ class ExportConformersDialog(QDialog):
         default = three_d[-1] if three_d else ctx.default_structure_column()
         if default:
             self.structure.setCurrentText(default)
-        self.selected_only = selected_only(ctx)
-        self.selected_only.setChecked(len(ctx.selection) > 0)
-        note = QLabel(
-            "Each conformer is written as its own record, lowest energy first, with a "
-            "“Conformer” field and the row's other columns as data fields."
+        inputs.row(
+            "Structures",
+            self.structure,
+            help="Each conformer is written as its own record, lowest energy first, with a "
+            "“Conformer” field and the row's other columns as data fields.",
         )
-        note.setWordWrap(True)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Export…")
-        form = QFormLayout()
-        form.addRow("Structures:", self.structure)
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(self.selected_only)
-        layout.addWidget(note)
-        layout.addWidget(buttons)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        self.rows = inputs.row("Rows", RowsChoice(ctx, "selected" if len(ctx.selection) else "all"))
+        self.rows.changed.connect(lambda *_: self.refresh())
+        self.refresh()
+
+    def problem(self) -> str:
+        if not self.structure.currentText():
+            return "There is no structure column."
+        return ""
+
+    def verb(self) -> str:
+        return f"Export {len(self.rows.oids()):,} Rows…"
 
     def accept(self) -> None:
+        if self._problem():
+            self.refresh()
+            return
         path, _ = QFileDialog.getSaveFileName(self, "Export Conformers", "", "SD files (*.sdf)")
         if not path:
             return
         if not path.lower().endswith(".sdf"):
             path += ".sdf"
         self.job = self.export(Path(path))
-        super().accept()
+        QDialog.accept(self)
 
     def export(self, path: Path):
         from chemsuite.core.io.sdf import write_sdf
 
         ctx = self.ctx
-        oids = ctx.target_oids(self.selected_only.isChecked())
+        oids = self.rows.oids()
         structure = self.structure.currentText()
         snapshot = ctx.table.snapshot()
 

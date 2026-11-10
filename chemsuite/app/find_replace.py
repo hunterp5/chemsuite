@@ -34,9 +34,10 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QMenu,
     QPushButton,
@@ -56,6 +57,8 @@ from chemsuite.core.table.search import (
     searchable_columns,
 )
 
+from .dialogs import Section, inline
+from .dialogs.kit import muted
 from .table_view import TableView
 
 MODES = {"contains": "Contains", "whole": "Whole cell", "regex": "Regular expression"}
@@ -97,21 +100,23 @@ class FindReplaceDialog(QDialog):
             "In regular-expression mode, $1 or \\1 is the first group, ${name} or \\g<name> "
             "a named one, and $$ a dollar sign."
         )
-        self.hidden = QCheckBox("Replace All includes hidden rows")
+        self.hidden = QCheckBox("Hidden rows too")
+        self.case.setToolTip("Upper and lower case must match")
         self.status = QLabel(" ")
+        muted(self.status)
 
-        form = QFormLayout()
-        form.addRow("Find:", self.find_edit)
-        form.addRow("Replace with:", self.replace_edit)
-        form.addRow("Match:", self.mode)
-        scope_row = QHBoxLayout()
-        scope_row.addWidget(self.scope, 1)
-        scope_row.addWidget(self.columns_button)
-        form.addRow("In:", scope_row)
-        options = QHBoxLayout()
-        options.addWidget(self.case)
-        options.addWidget(self.hidden)
-        options.addStretch(1)
+        find = Section("Find")
+        find.row("Find", self.find_edit)
+        find.row("Replace with", self.replace_edit, help=self.replace_edit.toolTip())
+        find.row("Match", self.mode)
+        find.row(
+            "In",
+            inline(self.scope, self.columns_button, stretch=0),
+            help="Where to look. The selection is read when the search starts, so moving from "
+            "match to match does not change it.",
+        )
+        find.row("Options", inline(self.case, self.hidden))
+        find.set_help(self.hidden, "Replace All also changes rows hidden by filters.")
 
         self.previous_button = QPushButton("Previous")
         self.next_button = QPushButton("Next")
@@ -119,6 +124,8 @@ class FindReplaceDialog(QDialog):
         self.replace_all_button = QPushButton("Replace All")
         self.next_button.setDefault(True)
         buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        buttons.addWidget(self.status, 1)
         for button in (
             self.previous_button,
             self.next_button,
@@ -126,12 +133,19 @@ class FindReplaceDialog(QDialog):
             self.replace_all_button,
         ):
             buttons.addWidget(button)
+        rule = QFrame()
+        rule.setFrameShape(QFrame.Shape.HLine)
+        rule.setFrameShadow(QFrame.Shadow.Plain)
+        rule.setEnabled(False)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addLayout(options)
-        layout.addWidget(self.status)
+        layout.setContentsMargins(18, 16, 18, 14)
+        layout.setSpacing(6)
+        layout.addWidget(find)
+        layout.addSpacing(4)
+        layout.addWidget(rule)
         layout.addLayout(buttons)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
 
         for signal in (
             self.find_edit.textChanged,

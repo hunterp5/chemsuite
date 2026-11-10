@@ -29,20 +29,14 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from PySide6.QtCore import QEvent, Signal
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QDoubleSpinBox,
-    QFormLayout,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QPushButton,
-    QRadioButton,
     QToolButton,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -63,6 +57,7 @@ from chemsuite.core.lists import ListError
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import STRUCTURE
 
+from .dialogs import FIELD_WIDTH, RowsChoice, Segmented, ToolDialog
 from .jobs import QUICK, Job
 from .table_view import Highlight
 
@@ -212,7 +207,7 @@ class QueryInput(QWidget):
         self.edit = QLineEdit()
         self.edit.setPlaceholderText("SMILES or SMARTS")
         self.edit.setClearButtonEnabled(True)
-        if compact:  # a pencil glyph (filter cards); dialogs keep the labelled button
+        if compact:  # a pencil glyph, leaving the text box room in a narrow field
             self.draw_button = QToolButton()
             self.draw_button.setAutoRaise(True)
             self.draw_button.setFixedSize(22, 22)
@@ -295,90 +290,79 @@ def describe_query(query: StructureQuery) -> tuple[str, bool]:
     return f"Structure {rdMolDescriptors.CalcMolFormula(parsed.mol)}", True
 
 
-SCOPES = {"all": "All rows", "shown": "Shown rows", "selected": "Selected rows"}
-ACTIONS = {
-    "show": "Show only the matches (adds a filter)",
-    "select": "Select the matches",
-    "list": "Add the matches to a list:",
-}
+ACTIONS = {"show": "Filter", "select": "Select", "list": "Add to List"}
 
 
-class StructureSearchDialog(QDialog):
+class StructureSearchDialog(ToolDialog):
     """Asks for a query and what to do with the matches; the search runs after OK."""
 
     def __init__(self, window: MainWindow, last: StructureQuery | None = None) -> None:
-        super().__init__(window)
-        self.setWindowTitle("Structure Search")
+        super().__init__(window, "Structure Search", guide="structure-search-ctrlshiftm")
         self.window_ = window
-        self.job: Job | None = None
         workspace = window.workspace
         self.table = workspace.table
 
+        inputs = self.section("Input")
         self.column = QComboBox()
         self.column.addItems(structure_columns(self.table))
         current = window.current_column_name()
         if current in structure_columns(self.table):
             self.column.setCurrentText(current)
-        self.query = QueryInput(self._current_structure)
-        self.query_info = QLabel()
-        self.query_info.setWordWrap(True)
+        inputs.row("Structures", self.column)
+        self.query = QueryInput(self._current_structure, compact=True)
+        self.query.setFixedWidth(FIELD_WIDTH)
+        inputs.row(
+            "Query",
+            self.query,
+            help="SMILES or SMARTS: type it, draw it, or use the structure in the current row.",
+        )
+        self.rows = inputs.row(
+            "Rows",
+            RowsChoice(workspace),
+            help="A filter applies to every row (with the other filters), so it has no rows "
+            "choice.",
+        )
+        self._inputs = inputs
+
+        method = self.section("Method")
         self.mode = QComboBox()
         for key, title in MODES.items():
             self.mode.addItem(title, key)
+        method.row("Search for", self.mode)
         self.stereo = QCheckBox("Match stereochemistry")
+        method.row("Stereo", self.stereo)
         self.threshold = QDoubleSpinBox()
         self.threshold.setRange(0.05, 1.0)
         self.threshold.setSingleStep(0.05)
         self.threshold.setValue(0.7)
+        method.row("At least", self.threshold, help="The lowest similarity that counts as a match.")
         self.fingerprint = QComboBox()
         for kind in KINDS.values():
             if kind.listed:
                 self.fingerprint.addItem(kind.title, kind.key)
         self.fingerprint.setCurrentIndex(self.fingerprint.findData(DEFAULT_KIND))
-        self.rows = QComboBox()
-        for key, title in SCOPES.items():
-            if key == "selected":
-                title += f" ({len(workspace.selection):,})"
-            self.rows.addItem(title, key)
-        self.actions: dict[str, QRadioButton] = {}
-        group = QButtonGroup(self)
-        for key, title in ACTIONS.items():
-            self.actions[key] = QRadioButton(title)
-            group.addButton(self.actions[key])
-        self.actions["show"].setChecked(True)
+        method.row("Fingerprint", self.fingerprint)
+        self._method = method
+
+        output = self.section("Output")
+        self.then = Segmented(tuple(ACTIONS.items()))
+        self.actions = self.then.buttons
+        output.row(
+            "Matches",
+            self.then,
+            help="Filter: show only the matches (adds a structure filter). Select: select "
+            "them. Add to List: add them to a named list.",
+        )
         self.list_name = QComboBox()
         self.list_name.setEditable(True)
         self.list_name.addItems(workspace.lists.names)
         self.list_name.setCurrentText(workspace.lists.names[0] if len(workspace.lists) else "")
         self.list_name.lineEdit().setPlaceholderText("List name")
-        self.highlight = QCheckBox("Highlight the matched atoms in the table")
+        output.row("List", self.list_name)
+        self.highlight = QCheckBox("Matched atoms in the table")
         self.highlight.setChecked(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Search")
-
-        self.form = QFormLayout()
-        self.form.addRow("Structures:", self.column)
-        self.form.addRow("Query:", self.query)
-        self.form.addRow("", self.query_info)
-        self.form.addRow("Search for:", self.mode)
-        self.form.addRow("", self.stereo)
-        self.form.addRow("At least:", self.threshold)
-        self.form.addRow("Fingerprint:", self.fingerprint)
-        self.form.addRow("Rows:", self.rows)
-        list_row = QHBoxLayout()
-        list_row.addWidget(self.actions["list"])
-        list_row.addWidget(self.list_name, 1)
-        layout = QVBoxLayout(self)
-        layout.addLayout(self.form)
-        layout.addWidget(QLabel("Then:"))
-        layout.addWidget(self.actions["show"])
-        layout.addWidget(self.actions["select"])
-        layout.addLayout(list_row)
-        layout.addWidget(self.highlight)
-        layout.addWidget(self.buttons)
-        self.resize(560, 0)
+        output.row("Highlight", self.highlight)
+        self._output = output
 
         if last is not None:
             self.set_query(last)
@@ -386,11 +370,10 @@ class StructureSearchDialog(QDialog):
             self.query.use_current_row()
         self.query.changed.connect(self._update)
         self.mode.currentIndexChanged.connect(lambda _i: self._update())
-        for button in self.actions.values():
-            button.toggled.connect(lambda _on: self._update())
+        self.then.changed.connect(lambda _k: self._update())
+        self.rows.changed.connect(lambda _k: self._update())
+        self.column.currentIndexChanged.connect(lambda _i: self._update())
         self.list_name.editTextChanged.connect(lambda _t: self._update())
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
         self._update()
 
     def _current_structure(self) -> str:
@@ -416,31 +399,44 @@ class StructureSearchDialog(QDialog):
             self.fingerprint.setCurrentIndex(index)
 
     def action(self) -> str:
-        return next(key for key, button in self.actions.items() if button.isChecked())
+        return self.then.value()
 
     def _update(self) -> None:
         mode = self.mode.currentData()
         similar = mode == "similarity"
-        self.form.setRowVisible(self.stereo, not similar)
-        self.form.setRowVisible(self.threshold, similar)
-        self.form.setRowVisible(self.fingerprint, similar)
+        self._method.set_row_visible(self.stereo, not similar)
+        self._method.set_row_visible(self.threshold, similar)
+        self._method.set_row_visible(self.fingerprint, similar)
         # A filter applies to every row (ANDed with the other filters), so no row choice.
-        self.rows.setEnabled(self.action() != "show")
-        self.list_name.setEnabled(self.action() == "list")
-        self.highlight.setVisible(mode == "substructure")
+        self._inputs.set_row_visible(self.rows, self.action() != "show")
+        self._output.set_row_visible(self.list_name, self.action() == "list")
+        self._output.set_row_visible(self.highlight, mode == "substructure")
         info, ok = describe_query(self.current_query())
-        if ok and not self.column.count():
-            info, ok = "The table has no structure column.", False
-        if ok and self.action() == "list" and not self.list_name.currentText().strip():
-            ok = False
-        self.query_info.setText(info)
-        self.query_info.setStyleSheet("" if ok or not self.query.text() else "color: #d33")
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(ok)
+        self.query.edit.setToolTip(info if ok else "")
+        self.refresh()
+
+    def problem(self) -> str:
+        if not self.column.count():
+            return "The table has no structure column."
+        info, ok = describe_query(self.current_query())
+        if not ok:
+            return info
+        if self.action() == "list" and not self.list_name.currentText().strip():
+            return "Name the list to add the matches to."
+        return ""
+
+    def verb(self) -> str:
+        if self.action() == "show":
+            return "Search"
+        return f"Search {len(self.rows.oids()):,} Rows"
 
     # -- running ------------------------------------------------------------------------------
     def accept(self) -> None:
+        if self._problem():
+            self.refresh()
+            return
         if self.start():
-            super().accept()
+            QDialog.accept(self)
 
     def start(self) -> bool:
         """Start the search; False (dialog stays open) when the query cannot be searched."""
@@ -450,7 +446,7 @@ class StructureSearchDialog(QDialog):
         try:
             parse_query(query)
         except QueryError as err:
-            self.query_info.setText(str(err))
+            self.report(str(err))
             return False
         window.remember_structure_query(query)
         highlight = self.highlight.isChecked() and query.mode == "substructure"
@@ -461,13 +457,7 @@ class StructureSearchDialog(QDialog):
             self.job = card.job
             return True
         workspace = window.workspace
-        scope = self.rows.currentData()
-        if scope == "selected":
-            oids = workspace.selection.as_array()
-        elif scope == "shown":
-            oids = self.table.oids[self.table.view()]
-        else:
-            oids = None
+        oids = None if self.rows.value() == "all" else self.rows.oids()
         list_name = self.list_name.currentText().strip()
         searcher = window.structure_searcher
 

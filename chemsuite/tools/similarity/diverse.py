@@ -18,81 +18,74 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QLabel,
-    QLineEdit,
-    QSpinBox,
-    QVBoxLayout,
-)
+from PySide6.QtWidgets import QCheckBox, QLineEdit, QSpinBox
 
 from chemsuite.analysis.diversity import Picks, maxmin_fingerprints, maxmin_numeric
-from chemsuite.app.dialogs import selected_only
+from chemsuite.app.dialogs import RowsChoice, ToolDialog, selected_only
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.table.columns import NumberColumn
 
-from .common import FeatureChooser, fingerprint_task, scope_combo, scope_oids
+from .common import FeatureChooser, fingerprint_task
 
 RANK_COLUMN = "Diversity Rank"
 
 
-class DiverseSubsetDialog(QDialog):
+class DiverseSubsetDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Diverse Subset")
+        super().__init__(ctx.parent, "Diverse Subset", guide="diverse-subset")
         self.ctx = ctx
-        self.job = None
-        self.features = FeatureChooser(ctx)
-        self.rows = scope_combo(ctx, "shown")
+
+        inputs = self.section("Input")
+        self.features = FeatureChooser(ctx, section=inputs)
+        self.rows = inputs.row(
+            "Pick from", RowsChoice(ctx, "shown"), help="The rows the picks are taken from."
+        )
+
+        method = self.section("Method")
         self.count = QSpinBox()
         self.count.setRange(1, 1_000_000)
         self.count.setValue(min(50, max(1, len(ctx.table))))
-        self.seeded = selected_only(ctx, "Add to the selected rows")
-        self.seeded.setToolTip("Pick the compounds the selected rows do not already cover.")
-        self.output = QLineEdit(RANK_COLUMN)
-        self.select = QCheckBox("Select the picked rows")
-        self.select.setChecked(True)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        method.row(
+            "How many",
+            self.count,
+            help="MaxMin: each pick is the compound farthest from all the earlier picks.",
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Pick")
-        form = QFormLayout()
-        form.addRow("Pick from:", self.rows)
-        form.addRow("How many:", self.count)
-        form.addRow("Result column:", self.output)
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.features)
-        layout.addLayout(form)
-        layout.addWidget(self.seeded)
-        layout.addWidget(self.select)
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(520, 0)
-        self.features.changed.connect(self._update)
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        self._update()
+        self.seeded = selected_only(ctx, "Add to the selected rows")
+        method.row(
+            "Start from",
+            self.seeded,
+            help="Pick the compounds the selected rows do not already cover.",
+        )
 
-    def _update(self) -> None:
+        output = self.section("Output")
+        self.output = QLineEdit(RANK_COLUMN)
+        output.row("Column name", self.output, help="Each pick's rank: 1 is the first pick.")
+        self.select = QCheckBox("The picked rows")
+        self.select.setChecked(True)
+        output.row("Select", self.select)
+
+        for signal in (self.features.changed, self.rows.changed, self.count.valueChanged):
+            signal.connect(lambda *_: self.refresh())
+        self.refresh()
+
+    def problem(self) -> str:
         problem = self.features.problem()
-        self.status.setText(problem)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
+        if problem:
+            return problem
+        if not len(self.rows.oids()):
+            return "There are no rows to pick from."
+        return ""
 
-    def accept(self) -> None:
-        if self.features.problem():
-            return
-        self.job = self.pick()
-        super().accept()
+    def verb(self) -> str:
+        return f"Pick {self.count.value():,} of {len(self.rows.oids()):,} Rows"
+
+    def run(self):
+        return self.pick()
 
     def pick(self):
         ctx = self.ctx
-        pool = scope_oids(ctx, self.rows.currentData())
+        pool = self.rows.oids()
         seeds = ctx.selection.as_array() if self.seeded.isChecked() else np.empty(0, np.int64)
         everything = np.union1d(pool, seeds)
         seed_rows = np.searchsorted(everything, seeds)

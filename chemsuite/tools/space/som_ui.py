@@ -26,10 +26,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QHBoxLayout,
     QHeaderView,
     QLabel,
     QSpinBox,
@@ -40,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.som import MAX_SIDE, Som, default_size, som
+from chemsuite.app.dialogs import RowsChoice, ToolDialog, inline
 from chemsuite.app.flow_layout import FlowRow, compact, field
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table import Changed
@@ -48,7 +45,7 @@ from chemsuite.plotting.data import number_columns, numbers, shown_oids
 from chemsuite.sar.matrix import AGGREGATES
 from chemsuite.tools.sar.common import activity_combo
 from chemsuite.tools.sar.matrix_panel import heat
-from chemsuite.tools.similarity.common import FeatureChooser, scope_combo, scope_oids
+from chemsuite.tools.similarity.common import FeatureChooser
 
 from .common import features_task
 
@@ -59,55 +56,35 @@ DELAY_MS = 300
 OIDS_ROLE = Qt.ItemDataRole.UserRole
 
 
-class SomDialog(QDialog):
+class SomDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Self-Organizing Map")
+        super().__init__(ctx.parent, "Self-Organizing Map", guide="self-organizing-map")
         self.ctx = ctx
-        self.job = None
         self.panel: SomPanel | None = None
-        self.features = FeatureChooser(ctx, metric=False)
-        self.auto = QCheckBox("Size from the number of compounds")
-        self.auto.setChecked(True)
+        inputs = self.section("Input")
+        self.features = FeatureChooser(ctx, metric=False, section=inputs)
+        self.rows = inputs.row("Rows", RowsChoice(ctx))
+
+        method = self.section("Method")
         self.grid_rows = QSpinBox()
         self.grid_columns = QSpinBox()
         for spin in (self.grid_rows, self.grid_columns):
             spin.setRange(2, MAX_SIDE)
+        self.auto = QCheckBox("Automatic")
+        self.auto.setChecked(True)
+        method.row(
+            "Grid",
+            inline(self.grid_rows, QLabel("×"), self.grid_columns, self.auto),
+            help="Rows × columns of cells. Automatic: a size that suits the number of compounds.",
+        )
         self.epochs = QSpinBox()
         self.epochs.setRange(2, 200)
         self.epochs.setValue(20)
-        self.epochs.setToolTip("Training passes over the data.")
-        self.rows = scope_combo(ctx)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Train")
-        size = QHBoxLayout()
-        size.addWidget(self.grid_rows)
-        size.addWidget(QLabel("×"))
-        size.addWidget(self.grid_columns)
-        size.addStretch(1)
-        form = QFormLayout()
-        form.addRow("Grid:", self.auto)
-        form.addRow("Rows × columns:", size)
-        form.addRow("Training passes:", self.epochs)
-        form.addRow("Rows:", self.rows)
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.features)
-        layout.addLayout(form)
-        layout.addWidget(
-            QLabel(f"Writes {ROW_COLUMN} and {COLUMN_COLUMN} columns, and shows the grid.")
-        )
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(500, 0)
+        method.row("Training passes", self.epochs, help="Passes over the data while training.")
+
         self.auto.toggled.connect(lambda *_: self._update())
-        self.rows.currentIndexChanged.connect(lambda *_: self._update())
+        self.rows.changed.connect(lambda *_: self._update())
         self.features.changed.connect(self._update)
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
         self._update()
 
     def size(self) -> tuple[int, int] | None:
@@ -117,24 +94,25 @@ class SomDialog(QDialog):
 
     def _update(self) -> None:
         if self.auto.isChecked():
-            rows, columns = default_size(len(scope_oids(self.ctx, self.rows.currentData())))
+            rows, columns = default_size(len(self.rows.oids()))
             self.grid_rows.setValue(rows)
             self.grid_columns.setValue(columns)
         for spin in (self.grid_rows, self.grid_columns):
             spin.setEnabled(not self.auto.isChecked())
-        problem = self.features.problem()
-        self.status.setText(problem)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
+        self.refresh()
 
-    def accept(self) -> None:
-        if self.features.problem():
-            return
-        self.job = self.train()
-        super().accept()
+    def problem(self) -> str:
+        return self.features.problem()
+
+    def verb(self) -> str:
+        return f"Train on {len(self.rows.oids()):,} Rows"
+
+    def run(self):
+        return self.train()
 
     def train(self):
         ctx = self.ctx
-        oids = scope_oids(ctx, self.rows.currentData())
+        oids = self.rows.oids()
         build, remember = features_task(ctx, self.features, oids)
         size = self.size() or (None, None)
         epochs = self.epochs.value()

@@ -72,7 +72,7 @@ from .commands import Portable, all_shortcuts, commands, conflicts
 from .settings_hub import settings_hub
 
 LOCK = "🔒 "
-LOCKED_TIP = "Set by your IT department (machine policy)."
+LOCKED_TIP = "Set by your IT department (machine policy)"
 THEME_TITLES = {"system": "System", "light": "Light", "dark": "Dark", "groovy": "Groovy"}
 
 
@@ -111,19 +111,11 @@ class SettingsDialog(QDialog):
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        policy = self.hub.store.policy
-        note = QLabel(
-            f"{LOCK}Some settings are fixed by your IT department ({policy.path})."
-            if policy.settings
-            else ""
-        )
-        note.setVisible(bool(policy.settings))
         body = QHBoxLayout()
         body.addWidget(self.pages)
         body.addWidget(self.stack, 1)
         layout = QVBoxLayout(self)
         layout.addLayout(body, 1)
-        layout.addWidget(note)
         layout.addWidget(buttons)
         self.resize(820, 560)
 
@@ -132,7 +124,7 @@ class SettingsDialog(QDialog):
         locked = self.hub.locked(key)
         if locked:
             widget.setEnabled(False)
-            widget.setToolTip(LOCKED_TIP)
+            widget.setToolTip(f"{LOCKED_TIP}: {self.hub.store.policy.path}")
         return locked
 
     def changed(self) -> None:
@@ -202,6 +194,8 @@ class AppearancePage(QWidget):
         self.row_height.setRange(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT)
         self.row_height.setSuffix(" px")
         self.status_bar = QCheckBox("Show the status bar")
+        for combo in (self.align_h, self.align_v):
+            combo.setToolTip("Applies to text cells; numbers stay right-aligned.")
         align = QHBoxLayout()
         align.addWidget(self.align_h)
         align.addWidget(self.align_v)
@@ -212,7 +206,6 @@ class AppearancePage(QWidget):
         form.addRow("Text alignment:", align)
         form.addRow("Structure row height:", self.row_height)
         form.addRow("", self.status_bar)
-        form.addRow(QLabel("Numbers stay right-aligned; alignment applies to text cells."))
         self.load(a)
         for widget, key in (
             (self.theme, "appearance.theme"),

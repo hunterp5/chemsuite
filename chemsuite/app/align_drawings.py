@@ -24,14 +24,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QWidget
 
 from chemsuite.core.depict import alignment_core
 
+from .dialogs import FIELD_WIDTH, ToolDialog
 from .structure_search import QueryInput
 
 
-class AlignDrawingsDialog(QDialog):
+class AlignDrawingsDialog(ToolDialog):
     """Ask for the core (typed, drawn or from the current row) and apply it on OK."""
 
     def __init__(
@@ -42,41 +43,36 @@ class AlignDrawingsDialog(QDialog):
         current_structure: Callable[[], str] | None = None,
         start: str = "",
     ) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(f"Align Drawings: {column}")
+        super().__init__(parent, f"Align Drawings — {column}", guide="columns")
         self.column = column
         self._apply = apply
-        self.core = QueryInput(current_structure)
+        section = self.section("Input")
+        self.core = QueryInput(current_structure, compact=True)
         self.core.set_text(start)
-        self.core.setToolTip(
-            "Rows containing this core are drawn with it in the same place and orientation; "
-            "other rows keep their usual drawing."
+        self.core.setFixedWidth(FIELD_WIDTH)
+        section.row(
+            "Core",
+            self.core,
+            help="Rows containing this core are drawn with it in the same place and "
+            "orientation; other rows keep their usual drawing.",
         )
-        self.problem = QLabel()
-        self.problem.hide()
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        form = QFormLayout()
-        form.addRow("Core:", self.core)
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(self.problem)
-        layout.addWidget(self.buttons)
-        self.core.changed.connect(self._check)
-        self._check()
-        self.resize(460, self.sizeHint().height())
+        self.core.changed.connect(self.refresh)
+        self.refresh()
 
-    def _check(self) -> None:
+    def problem(self) -> str:
         text = self.core.text().strip()
-        problem = "" if not text or alignment_core(text) is not None else "⚠ Not SMILES or SMARTS"
-        self.problem.setText(problem)
-        self.problem.setVisible(bool(problem))
-        ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
-        ok.setEnabled(bool(text) and not problem)
+        if not text:
+            return "Enter, draw or take a core from the current row."
+        if alignment_core(text) is None:
+            return "The core is not SMILES or SMARTS."
+        return ""
+
+    def verb(self) -> str:
+        return "Align"
 
     def accept(self) -> None:
+        if self._problem():
+            self.refresh()
+            return
         if self._apply(self.column, self.core.text().strip()):
-            super().accept()
+            super(ToolDialog, self).accept()

@@ -162,10 +162,21 @@ class Section(QWidget):
         self.set_help(field, help)
         return field
 
+    def wide(self, widget: QWidget) -> QWidget:
+        """Add *widget* across the whole section, label column included (a grid of settings,
+        a row of buttons under it). Returns *widget*."""
+        self.form.addRow(widget)
+        return widget
+
     def set_help(self, field: QWidget, text: str) -> None:
         """The explanation shown when hovering *field* or its label ("" for none)."""
         field.setToolTip(text)
-        self._captions[field].setToolTip(text)
+        if field in self._captions:
+            self._captions[field].setToolTip(text)
+
+    def caption(self, field: QWidget) -> QLabel:
+        """The label in front of *field* (to rename it as other settings change)."""
+        return self._captions[field]
 
     def help(self, field: QWidget) -> str:
         return field.toolTip()
@@ -175,6 +186,25 @@ class Section(QWidget):
 
     def is_row_visible(self, field: QWidget) -> bool:
         return self.form.isRowVisible(field)
+
+
+def inline(
+    *widgets: QWidget, stretch: int | None = None, width: int | None = FIELD_WIDTH
+) -> QWidget:
+    """Several widgets side by side as one field (a box and its number, a text box and its
+    buttons). The widget at index *stretch* takes the spare width; without one, they sit at
+    the left. *width* None leaves the field at its natural width."""
+    field = QWidget()
+    line = QHBoxLayout(field)
+    line.setContentsMargins(0, 0, 0, 0)
+    line.setSpacing(6)
+    for i, widget in enumerate(widgets):
+        line.addWidget(widget, 1 if i == stretch else 0)
+    if stretch is None:
+        line.addStretch(1)
+    if width:
+        field.setFixedWidth(width)
+    return field
 
 
 class Segmented(QWidget):
@@ -384,7 +414,8 @@ class ToolDialog(QDialog):
         footer.setContentsMargins(0, 0, 0, 0)
         footer.setSpacing(8)
         footer.addWidget(self.warning_mark)
-        footer.addWidget(self.status, 1)
+        footer.addWidget(self.status)
+        footer.addStretch(1)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 14)
@@ -440,6 +471,12 @@ class ToolDialog(QDialog):
         self.primary.setText(self.verb())
         self.primary.setEnabled(not problem)
 
+    def report(self, problem: str) -> None:
+        """Show a problem found only on running (a file that does not load); the dialog
+        stays open so it can be fixed."""
+        self.status.setText(problem)
+        self.footer.setVisible(bool(problem))
+
     def accept(self) -> None:
         if self._problem():
             self.refresh()
@@ -467,5 +504,6 @@ __all__ = [
     "Segmented",
     "ToolDialog",
     "follow_rows",
+    "inline",
     "selected_only",
 ]

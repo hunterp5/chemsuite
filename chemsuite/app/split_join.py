@@ -25,18 +25,12 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QHBoxLayout,
     QHeaderView,
-    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QTableWidget,
     QTableWidgetItem,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -53,6 +47,8 @@ from chemsuite.core.table.split_join import (
     split_names,
     unescape,
 )
+
+from .dialogs import FIELD_WIDTH, LABEL_WIDTH, RowsChoice, ToolDialog, inline
 
 PREVIEW_ROWS = 8
 SPLIT_TITLES = {
@@ -88,45 +84,50 @@ def _describe(delimiter: str) -> str:
     return {"\t": "tab", " ": "spaces"}.get(delimiter, f"“{delimiter}”")
 
 
-class _Base(QDialog):
-    """Shared pieces: delimiter choice with a custom field, scope, preview, debounce."""
+class _Rows:
+    """What the rows choice needs from a tool context: the table and the selection."""
 
-    def __init__(self, table: Table, selection: Selection, title: str, parent: QWidget | None):
-        super().__init__(parent)
-        self.setWindowTitle(title)
+    def __init__(self, table: Table, selection: Selection) -> None:
         self.table = table
         self.selection = selection
+
+
+class _Base(ToolDialog):
+    """Shared pieces: delimiter choice with a custom field, rows, preview, debounce."""
+
+    def __init__(
+        self, table: Table, selection: Selection, title: str, guide: str, parent: QWidget | None
+    ):
+        super().__init__(parent, title, guide=guide)
+        self.table = table
+        self.selection = selection
+        self.rows = RowsChoice(_Rows(table, selection))
         self.delimiter = QComboBox()
         self.custom = QLineEdit()
-        self.custom.setPlaceholderText(r"e.g. :  or  \t")
-        self.custom.setMaximumWidth(120)
-        self.selected_only = QCheckBox(f"Selected rows only ({len(selection):,})")
-        self.selected_only.setEnabled(len(selection) > 0)
+        self.custom.setPlaceholderText(r":  or  \t")
+        self.custom.setFixedWidth(90)
+        self.custom.setToolTip(r"The delimiter: any text; \t is a tab.")
+        self.delimiter_field = inline(self.delimiter, self.custom, stretch=0)
         self.preview = QTableWidget()
         self.preview.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.preview.verticalHeader().hide()
+        self.preview.verticalHeader().setDefaultSectionSize(22)
+        self.preview.setShowGrid(False)
+        self.preview.setAlternatingRowColors(True)
         self.preview.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.preview.setMinimumHeight(180)
-        self.note = QLabel(" ")
-        self.note.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
+        self.preview.setFixedSize(LABEL_WIDTH + 10 + FIELD_WIDTH, 180)
+        self.preview.setToolTip("The first rows shown, as they will be")
+        self._problem_text = ""
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(120)
         self._timer.timeout.connect(self.update_preview)
         self.delimiter.currentIndexChanged.connect(self._delimiter_changed)
         self.custom.textChanged.connect(self.schedule)
-        self.selected_only.toggled.connect(self.schedule)
+        self.rows.changed.connect(self.schedule)
 
-    def _delimiter_row(self) -> QHBoxLayout:
-        row = QHBoxLayout()
-        row.addWidget(self.delimiter, 1)
-        row.addWidget(self.custom)
-        return row
+    def _preview_section(self) -> None:
+        self.section("Preview").wide(self.preview)
 
     def _delimiter_changed(self) -> None:
         self.custom.setVisible(self.delimiter.currentData() == "custom")
@@ -136,20 +137,23 @@ class _Base(QDialog):
         self._timer.start()
 
     def oids(self):
-        """Rows to work on: the selection (in storage order) or every row."""
-        return self.selection.as_array() if self.selected_only.isChecked() else None
+        """Rows to work on (in storage order), or None for every row."""
+        return None if self.rows.value() == "all" else self.rows.oids()
 
     def _sample(self) -> np.ndarray:
         """Oids of the first rows shown (and in scope), for the preview."""
         oids = self.table.oids[self.table.view()]
-        if self.selected_only.isChecked():
-            oids = oids[np.isin(oids, self.selection.as_array())]
+        scope = self.oids()
+        if scope is not None:
+            oids = oids[np.isin(oids, scope)]
         return oids[:PREVIEW_ROWS]
 
-    def _say(self, text: str, error: bool = False) -> None:
-        self.note.setText(text or " ")
-        self.note.setStyleSheet("color: #c62828" if error else "")
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not error)
+    def _say(self, problem: str) -> None:
+        self._problem_text = problem
+        self.refresh()
+
+    def problem(self) -> str:
+        return self._problem_text
 
     def _fill(self, headers: list[str], rows: list[list[str]]) -> None:
         self.preview.clear()
@@ -168,14 +172,14 @@ class _Base(QDialog):
 
     def accept(self) -> None:
         self.update_preview()
-        if not self.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled():
+        if self._problem():
             return
         try:
             self.apply()
         except ValueError as err:
-            QMessageBox.warning(self, self.windowTitle(), str(err))
+            self.report(str(err))
             return
-        super().accept()
+        QDialog.accept(self)
 
     def apply(self) -> None:
         raise NotImplementedError
@@ -189,32 +193,37 @@ class SplitColumnDialog(_Base):
         column: str | None = None,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(table, selection, "Split Column", parent)
+        super().__init__(table, selection, "Split Column", "columns", parent)
         self.result_names: list[str] = []
+        inputs = self.section("Input")
         self.column = QComboBox()
         self.column.addItems(table.column_names)
         if column in table:
             self.column.setCurrentText(column)
+        inputs.row("Column", self.column)
+        inputs.row("Rows", self.rows)
+
+        method = self.section("Method")
         for key, title in SPLIT_TITLES.items():
             self.delimiter.addItem(title, key)
+        method.row(
+            "Split on",
+            self.delimiter_field,
+            help="Auto finds the delimiter the cells share.",
+        )
         self.keep = QComboBox()
         for key, title in KEEP_TITLES.items():
             self.keep.addItem(title, key)
-        self.prefix = QLineEdit()
+        method.row("Keep", self.keep)
 
-        form = QFormLayout()
-        form.addRow("Column:", self.column)
-        form.addRow("Split on:", self._delimiter_row())
-        form.addRow("Keep:", self.keep)
-        form.addRow("New column names:", self.prefix)
-        form.addRow("", self.selected_only)
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(QLabel("Preview (first shown rows):"))
-        layout.addWidget(self.preview, 1)
-        layout.addWidget(self.note)
-        layout.addWidget(self.buttons)
-        self.resize(620, 480)
+        output = self.section("Output")
+        self.prefix = QLineEdit()
+        output.row(
+            "Column names",
+            self.prefix,
+            help="The new columns are named after this: “Name_1”, “Name_2”…",
+        )
+        self._preview_section()
 
         self.column.currentIndexChanged.connect(self._column_changed)
         self.keep.currentIndexChanged.connect(self.schedule)
@@ -222,6 +231,9 @@ class SplitColumnDialog(_Base):
         self._delimiter_changed()
         self._column_changed()
         self.update_preview()
+
+    def verb(self) -> str:
+        return "Split"
 
     def _column_changed(self, *_args) -> None:
         self.prefix.setPlaceholderText(self.column.currentText())
@@ -244,7 +256,7 @@ class SplitColumnDialog(_Base):
         name = self.column.currentText()
         if not name:
             self._fill([], [])
-            self._say("The table has no columns.", error=True)
+            self._say("The table has no columns.")
             return
         try:
             delimiter = self.chosen_delimiter()
@@ -257,7 +269,7 @@ class SplitColumnDialog(_Base):
             )
         except ValueError as err:
             self._fill([], [])
-            self._say(str(err), error=True)
+            self._say(str(err))
             return
         prefix = self.prefix.text().strip() or name
         keep = self.keep.currentData()
@@ -270,12 +282,11 @@ class SplitColumnDialog(_Base):
         ]
         self._fill([name, *headers], rows)
         if not width:
-            self._say("Nothing to split: the cells are blank.", error=True)
+            self._say("Nothing to split: the cells are blank.")
         elif width > MAX_SPLIT_COLUMNS:
             self._say(
                 f"Splitting on {_describe(full.delimiter)} would make {width:,} columns; "
-                "check the delimiter.",
-                error=True,
+                "check the delimiter."
             )
         else:
             self._say("")
@@ -299,12 +310,12 @@ class JoinColumnsDialog(_Base):
         columns: list[str] | None = None,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(table, selection, "Join Columns", parent)
+        super().__init__(table, selection, "Join Columns", "columns", parent)
         self.result_name = ""
         chosen = list(columns or [])
+        inputs = self.section("Input")
         self.columns = QListWidget()
         self.columns.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-        self.columns.setToolTip("Tick the columns to join; drag to change their order.")
         order = [n for n in chosen if n in table] + [
             n for n in table.column_names if n not in chosen
         ]
@@ -314,25 +325,21 @@ class JoinColumnsDialog(_Base):
             item.setCheckState(Qt.CheckState.Checked if name in chosen else Qt.CheckState.Unchecked)
             self.columns.addItem(item)
         self.columns.setMaximumHeight(150)
+        inputs.row("Columns", self.columns, help="Tick the columns to join; drag to reorder them.")
+        inputs.row("Rows", self.rows)
+
+        method = self.section("Method")
         for key, title in JOIN_TITLES.items():
             self.delimiter.addItem(title, key)
-        self.name = QLineEdit()
-        self.skip_blank = QCheckBox("Skip blank cells (no doubled delimiters)")
+        method.row("Join with", self.delimiter_field)
+        self.skip_blank = QCheckBox("Skip blank cells")
         self.skip_blank.setChecked(True)
+        method.row("Blanks", self.skip_blank, help="Leave blank cells out: no doubled delimiters.")
 
-        form = QFormLayout()
-        form.addRow("Columns:", self.columns)
-        form.addRow("Join with:", self._delimiter_row())
-        form.addRow("New column name:", self.name)
-        form.addRow("", self.skip_blank)
-        form.addRow("", self.selected_only)
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(QLabel("Preview (first shown rows):"))
-        layout.addWidget(self.preview, 1)
-        layout.addWidget(self.note)
-        layout.addWidget(self.buttons)
-        self.resize(560, 560)
+        output = self.section("Output")
+        self.name = QLineEdit()
+        output.row("Column name", self.name)
+        self._preview_section()
 
         self.columns.itemChanged.connect(self.schedule)
         self.columns.model().rowsMoved.connect(self.schedule)
@@ -340,6 +347,9 @@ class JoinColumnsDialog(_Base):
         self.skip_blank.toggled.connect(self.schedule)
         self._delimiter_changed()
         self.update_preview()
+
+    def verb(self) -> str:
+        return "Join"
 
     def chosen_columns(self) -> list[str]:
         items = (self.columns.item(i) for i in range(self.columns.count()))
@@ -363,7 +373,7 @@ class JoinColumnsDialog(_Base):
         self.name.setPlaceholderText("_".join(names) if names else "New column")
         if len(names) < 2:
             self._fill(names, [])
-            self._say("Tick at least two columns to join.", error=True)
+            self._say("Tick at least two columns to join.")
             return
         oids, joined = plan_join(
             self.table,

@@ -20,17 +20,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QLabel,
-    QVBoxLayout,
-)
+from PySide6.QtWidgets import QCheckBox, QComboBox
 
 from chemsuite.analysis import medchem_space as ms
+from chemsuite.app.dialogs import ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.descriptors.catalog import CATALOG
@@ -87,45 +80,39 @@ def title_of(key: str) -> str:
     return CATALOG[key].title
 
 
-class MedChemPlotDialog(QDialog):
+class MedChemPlotDialog(ToolDialog):
     def __init__(self, ctx: ToolContext, kind: str) -> None:
-        super().__init__(ctx.parent)
-        self.ctx = ctx
         self.kind_key = kind
         self.kind = KINDS[kind]
-        self.setWindowTitle(self.kind.title)
-        self.job = None
+        super().__init__(ctx.parent, self.kind.title, guide="medchem-plots")
+        self.ctx = ctx
         self.plot = None
+        inputs = self.section("Input")
         self.structure = QComboBox()
         self.structure.addItems(ctx.structure_columns())
         default = ctx.default_structure_column()
         if default:
             self.structure.setCurrentText(default)
+        inputs.row("Structures", self.structure)
         self.activity = activity_combo(ctx)
-        self.recalculate = QCheckBox("Recalculate descriptors that are already columns")
-        about = QLabel(self.kind.about)
-        about.setWordWrap(True)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Plot")
-        form = QFormLayout()
-        form.addRow("Structures:", self.structure)
         if kind == "lipe":
-            form.addRow("pActivity:", self.activity)
-        form.addRow("", self.recalculate)
-        layout = QVBoxLayout(self)
-        layout.addWidget(about)
-        layout.addLayout(form)
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(480, 0)
-        self.recalculate.toggled.connect(lambda *_: self._update())
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        self._update()
+            inputs.row("pActivity", self.activity, help="Potency as a p-value: pIC50, pKi…")
+        more = self.section("More Options", collapsed=True)
+        self.recalculate = QCheckBox("Recalculate existing columns")
+        more.row(
+            "Descriptors",
+            self.recalculate,
+            help="Descriptors the plot needs are calculated only when they are not already "
+            "columns; tick to calculate them again.",
+        )
+        self.primary.setToolTip(self.kind.about)
+        for signal in (
+            self.recalculate.toggled,
+            self.structure.currentIndexChanged,
+            self.activity.currentIndexChanged,
+        ):
+            signal.connect(lambda *_: self.refresh())
+        self.refresh()
 
     def missing(self) -> list[str]:
         table = self.ctx.table
@@ -140,16 +127,8 @@ class MedChemPlotDialog(QDialog):
             return "There is no number column for activity (pIC50, pKi…)."
         return ""
 
-    def _update(self) -> None:
-        problem = self.problem()
-        self.status.setText(problem)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
-
-    def accept(self) -> None:
-        if self.problem():
-            return
-        self.job = self.run()
-        super().accept()
+    def verb(self) -> str:
+        return "Plot"
 
     def run(self):
         ctx = self.ctx

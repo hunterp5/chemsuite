@@ -27,8 +27,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
-    QFormLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -128,9 +126,14 @@ def cell_mol(cell):
 
 
 class CoreChooser(QWidget):
-    """A structure column and a core (typed, or suggested from the selected compounds)."""
+    """A structure column and a core (typed, or suggested from the selected compounds).
 
-    def __init__(self, ctx: ToolContext) -> None:
+    Its rows go into a dialog *section* (see ``chemsuite.app.dialogs``).
+    """
+
+    def __init__(self, ctx: ToolContext, section) -> None:
+        from chemsuite.app.dialogs import inline
+
         super().__init__()
         self.ctx = ctx
         self.structure = QComboBox()
@@ -139,23 +142,28 @@ class CoreChooser(QWidget):
         if default:
             self.structure.setCurrentText(default)
         self.core = QLineEdit()
-        self.core.setPlaceholderText("e.g. [*:1]c1ccc(C(N)=O)cc1[*:2]  (SMILES or SMARTS)")
-        self.core.setToolTip(
-            "Number the attachment points [*:1], [*:2]… to fix which position is R1, R2…\n"
-            "Without numbers, every open position on the core becomes an R-group."
+        self.core.setPlaceholderText("SMILES or SMARTS")
+        suggest = QPushButton("Suggest")
+        suggest.setAutoDefault(False)
+        suggest.setToolTip(
+            "The largest substructure the selected compounds share (MCS); with fewer than two "
+            "selected, the first rows shown."
         )
-        suggest = QPushButton("Suggest from Selection")
-        suggest.setToolTip("The largest substructure the selected compounds share (MCS).")
         suggest.clicked.connect(self.suggest)
-        self.exhaustive = QCheckBox("Exhaustive matching (slower; for symmetric cores)")
-        row = QHBoxLayout()
-        row.addWidget(self.core, 1)
-        row.addWidget(suggest)
-        form = QFormLayout(self)
-        form.setContentsMargins(0, 0, 0, 0)
-        form.addRow("Structures:", self.structure)
-        form.addRow("Core:", row)
-        form.addRow("", self.exhaustive)
+        self.exhaustive = QCheckBox("Exhaustive")
+        section.row("Structures", self.structure)
+        core_help = (
+            "The common core, for example [*:1]c1ccc(C(N)=O)cc1[*:2]. Number the attachment "
+            "points [*:1], [*:2]… to fix which position is R1, R2…; without numbers, every "
+            "open position on the core becomes an R-group."
+        )
+        section.row("Core", inline(self.core, suggest, stretch=0), help=core_help)
+        self.core.setToolTip(core_help)
+        section.row(
+            "Matching",
+            self.exhaustive,
+            help="Exhaustive matching tries every way the core fits: slower, for symmetric cores.",
+        )
         self.message = ""
 
     def suggest(self) -> str:

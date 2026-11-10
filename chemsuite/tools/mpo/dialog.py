@@ -25,24 +25,19 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
-    QDialog,
-    QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
-    QFormLayout,
     QHBoxLayout,
     QHeaderView,
-    QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
     QTableWidget,
-    QVBoxLayout,
     QWidget,
 )
 
 from chemsuite.analysis.mpo import COMBINE, SHAPES, Desirability, MpoProfile
-from chemsuite.app.dialogs import selected_only
+from chemsuite.app.dialogs import RowsChoice, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import number_columns, numbers
@@ -65,17 +60,21 @@ def _spin(value: float = 0.0, *, minimum: float = -1e9) -> QDoubleSpinBox:
     return spin
 
 
-class MpoDialog(QDialog):
+class MpoDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("MPO Score")
+        super().__init__(ctx.parent, "MPO Score", guide="mpo-score")
         self.ctx = ctx
         self.columns = number_columns(ctx.table)
 
+        inputs = self.section("Input")
+        self.rows = inputs.row("Rows", RowsChoice(ctx))
+
+        properties = self.section("Properties")
         self.grid = QTableWidget(0, len(HEADERS))
         self.grid.setHorizontalHeaderLabels(HEADERS)
         self.grid.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.grid.verticalHeader().hide()
+        self.grid.setMinimumSize(860, 200)
         header = self.grid.horizontalHeader()
         # Cell widgets do not size their columns: give each a fixed width.
         widths = {SHAPE: 230, LOW: 84, HIGH: 84, TARGET: 84, WIDTH: 84, WEIGHT: 70, HARD: 44}
@@ -93,56 +92,60 @@ class MpoDialog(QDialog):
         }
         for column, tip in tips.items():
             self.grid.horizontalHeaderItem(column).setToolTip(tip)
+        properties.wide(self.grid)
         add = QPushButton("Add Property")
+        add.setToolTip("Add a row for another property")
         remove = QPushButton("Remove")
+        remove.setToolTip("Remove the chosen rows (or the last one)")
         load = QPushButton("Load…")
+        load.setToolTip("Load a saved profile")
         save = QPushButton("Save…")
-        row_buttons = QHBoxLayout()
+        save.setToolTip("Save these properties as a profile to reuse")
+        for button in (add, remove, load, save):
+            button.setAutoDefault(False)
+        bar = QWidget()
+        row_buttons = QHBoxLayout(bar)
+        row_buttons.setContentsMargins(0, 0, 0, 0)
+        row_buttons.setSpacing(6)
         for button in (add, remove):
             row_buttons.addWidget(button)
         row_buttons.addStretch(1)
         for button in (load, save):
             row_buttons.addWidget(button)
+        properties.wide(bar)
 
+        method = self.section("Method")
         self.method = QComboBox()
         for key, title in COMBINE.items():
             self.method.addItem(title, key)
-        self.method.setToolTip(
-            "Geometric: one property scoring 0 makes the whole score 0.\n"
-            "Arithmetic: a good property can make up for a poor one."
+        method.row(
+            "Combine with",
+            self.method,
+            help="Geometric: one property scoring 0 makes the whole score 0. "
+            "Arithmetic: a good property can make up for a poor one.",
         )
-        self.skip_missing = QCheckBox("Score rows missing a property on the others")
-        self.output = QLineEdit(_last_output)
-        self.per_property = QCheckBox("Also add a desirability column per property")
-        self.selected_only = selected_only(ctx)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        self.skip_missing = QCheckBox("Score on the other properties")
+        method.row(
+            "Missing values",
+            self.skip_missing,
+            help="Rows missing a property are scored on the others (otherwise not scored).",
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Score")
 
-        form = QFormLayout()
-        form.addRow("Combine with:", self.method)
-        form.addRow("", self.skip_missing)
-        form.addRow("Result column:", self.output)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Properties:"))
-        layout.addWidget(self.grid, 1)
-        layout.addLayout(row_buttons)
-        layout.addLayout(form)
-        layout.addWidget(self.per_property)
-        layout.addWidget(self.selected_only)
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(960, 520)
+        output = self.section("Output")
+        self.output = QLineEdit(_last_output)
+        output.row("Column name", self.output)
+        self.per_property = QCheckBox("A column per property")
+        output.row(
+            "Desirability",
+            self.per_property,
+            help="Also add each property's desirability (0 to 1) as its own column.",
+        )
 
         add.clicked.connect(lambda: self.add_property())
         remove.clicked.connect(self.remove_selected)
         load.clicked.connect(self.load_dialog)
         save.clicked.connect(self.save_dialog)
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
+        self.rows.changed.connect(lambda *_: self.refresh())
         if _last is not None:
             self.set_profile(_last)
         self._update()
@@ -292,14 +295,17 @@ class MpoDialog(QDialog):
                 self._widget(row, col).setEnabled(not bell)
             self._widget(row, TARGET).setEnabled(shape in ("target", "gaussian"))
             self._widget(row, WIDTH).setEnabled(bell)
+        self.refresh()
+
+    def problem(self) -> str:
         try:
             self.profile()
         except ValueError as err:
-            self.status.setText(str(err))
-            self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(False)
-            return
-        self.status.setText("")
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(True)
+            return str(err)
+        return ""
+
+    def verb(self) -> str:
+        return f"Score {len(self.rows.oids()):,} Rows"
 
     def load_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Load MPO Profile", "", FILE_FILTER)
@@ -322,21 +328,16 @@ class MpoDialog(QDialog):
             )
 
     # -- scoring ------------------------------------------------------------------------------
-    def accept(self) -> None:
-        try:
-            profile = self.profile()
-        except ValueError as err:
-            self.status.setText(str(err))
-            return
+    def run(self):
+        profile = self.profile()
         name = self.output.text().strip() or DEFAULT_OUTPUT
         global _last, _last_output
         _last, _last_output = profile, name
         self.score(profile, name)
-        super().accept()
 
     def score(self, profile: MpoProfile, name: str = DEFAULT_OUTPUT) -> dict[str, str]:
         ctx = self.ctx
-        oids = ctx.target_oids(self.selected_only.isChecked())
+        oids = self.rows.oids()
         values = {s.column: numbers(ctx.table, s.column, oids) for s in profile.properties}
         overall, parts = profile.score(values)
         results = {name: (oids, NumberColumn.from_floats(overall, 3))}

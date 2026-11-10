@@ -21,10 +21,7 @@ import numpy as np
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
-    QDialog,
-    QDialogButtonBox,
     QDoubleSpinBox,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -32,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from chemsuite.app.dialogs import RowsChoice, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import numbers
@@ -40,8 +38,6 @@ from chemsuite.tools.similarity.common import (
     FeatureChooser,
     fingerprint_task,
     labels,
-    scope_combo,
-    scope_oids,
 )
 
 from .common import RerunPanel, ResultTable, activity_combo, saved_rows
@@ -51,64 +47,54 @@ PARTNER_COLUMN = "Cliff Partner"
 SHOWN_PAIRS = 2000
 
 
-class SaliDialog(QDialog):
+class SaliDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Activity Cliffs (SALI)")
+        super().__init__(ctx.parent, "Activity Cliffs (SALI)", guide="activity-cliffs-sali")
         self.ctx = ctx
-        self.job = None
         self.panel: SaliPanel | None = None
-        self.features = FeatureChooser(ctx, numbers_allowed=False)
-        self.activity = activity_combo(ctx)
-        self.rows = scope_combo(ctx, "shown")
+        inputs = self.section("Input")
+        self.features = FeatureChooser(ctx, numbers_allowed=False, section=inputs)
+        self.activity = inputs.row("Activity", activity_combo(ctx))
+        self.rows = inputs.row("Rows", RowsChoice(ctx, "shown"))
+
+        method = self.section("Method")
         self.min_similarity = QDoubleSpinBox()
         self.min_similarity.setRange(0.3, 1.0)
         self.min_similarity.setSingleStep(0.05)
         self.min_similarity.setValue(0.6)
-        self.min_similarity.setToolTip("Only pairs at least this similar are compared.")
-        self.skip_identical = QCheckBox("Skip identical fingerprints (salts, stereoisomers)")
+        method.row(
+            "Min. similarity",
+            self.min_similarity,
+            help="Only pairs at least this similar are compared. "
+            "SALI = |Δ activity| / (1 − similarity).",
+        )
+        self.skip_identical = QCheckBox("Skip identical fingerprints")
         self.skip_identical.setChecked(True)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        method.row(
+            "Identical",
+            self.skip_identical,
+            help="Salts and stereoisomers share a fingerprint and would divide by zero.",
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Find Cliffs")
-        form = QFormLayout()
-        form.addRow("Activity:", self.activity)
-        form.addRow("Rows:", self.rows)
-        form.addRow("Minimum similarity:", self.min_similarity)
-        form.addRow("", self.skip_identical)
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.features)
-        layout.addLayout(form)
-        layout.addWidget(
-            QLabel("SALI = |Δ activity| / (1 − similarity). Writes Max SALI and Cliff Partner.")
-        )
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(500, 0)
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        problem = self.problem()
-        self.status.setText(problem)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
+
+        for signal in (self.features.changed, self.activity.currentIndexChanged, self.rows.changed):
+            signal.connect(lambda *_: self.refresh())
+        self.refresh()
 
     def problem(self) -> str:
         if not self.activity.currentText():
             return "There is no number column for activity."
         return self.features.problem()
 
-    def accept(self) -> None:
-        if self.problem():
-            return
-        self.job = self.find()
-        super().accept()
+    def verb(self) -> str:
+        return f"Find Cliffs in {len(self.rows.oids()):,} Rows"
+
+    def run(self):
+        return self.find()
 
     def recipe(self) -> dict:
         """Everything the analysis needs, saved with its panel to rerun it on reopening."""
         return {
-            "oids": scope_oids(self.ctx, self.rows.currentData()).tolist(),
+            "oids": self.rows.oids().tolist(),
             "activity": self.activity.currentText(),
             "structure": self.features.structure.currentText(),
             "fingerprint": self.features.kind.currentData(),

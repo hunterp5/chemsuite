@@ -473,12 +473,12 @@ def test_align_drawings_from_the_column_menu_and_saved_with_the_layout(structure
     assert "Stop Aligning Drawings" not in menu_titles(window.columns.build_menu("SMILES", [], 1))
 
     dialog = window.align_drawings("SMILES")
-    ok = dialog.buttons.button(dialog.buttons.StandardButton.Ok)
+    ok = dialog.primary
     assert not ok.isEnabled()  # nothing typed yet
     dialog.core.set_text("not [[ a structure")
-    assert not ok.isEnabled() and dialog.problem.text().startswith("⚠")
+    assert not ok.isEnabled() and "not SMILES" in dialog.status.text()
     dialog.core.set_text("c1ccccc1")
-    assert ok.isEnabled() and dialog.problem.isHidden()
+    assert ok.isEnabled() and not dialog.footer.isVisibleTo(dialog)
     ok.click()
     assert view.alignments() == {"SMILES": "c1ccccc1"}
     assert "Stop Aligning Drawings" in menu_titles(window.columns.build_menu("SMILES", [], 1))

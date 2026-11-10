@@ -65,8 +65,9 @@ def test_similarity_to_a_structure(chem, qtbot) -> None:
     assert values[1] == "1.000" and values[-1] == ""
     assert chem.workspace.selection.as_array().tolist() == [int(table.oids[1])]
     assert table.sort_keys[0] == ("Similarity", False)
+    assert dialog.primary.text() == "Compare 9 Rows"
     dialog.query.setText("not smiles")
-    assert not dialog.buttons.button(dialog.buttons.StandardButton.Ok).isEnabled()
+    assert not dialog.primary.isEnabled() and dialog.status.text()
     dialog.reject()
 
 
@@ -74,7 +75,9 @@ def test_similarity_to_the_selection(chem, qtbot) -> None:
     table = chem.workspace.table
     chem.workspace.selection.set(table.oids[[0, 3]].tolist(), "test")
     dialog = chem.open_tool("similarity")
+    assert dialog.reference.buttons["selection"].text() == "Selected Rows (2)"
     dialog.to_selection.setChecked(True)
+    assert not dialog._reference.is_row_visible(dialog.query_field)
     assert dialog.output.text() == "Max Similarity to Selection"
     dialog.sort.setChecked(False)
     job = dialog.calculate()
@@ -195,10 +198,9 @@ def test_older_dialogs_follow_the_selection_and_close_with_the_document(chem) ->
     table = chem.workspace.table
     dialog = chem.open_tool("diverse_subset")
     assert not dialog.isModal() and not dialog.seeded.isEnabled()
-    selected = dialog.rows.findData("selected")
     chem.workspace.selection.set([int(o) for o in table.oids[:3]], "test")
     assert dialog.seeded.isEnabled() and "(3)" in dialog.seeded.text()
-    assert dialog.rows.itemText(selected) == "Selected rows (3)"
+    assert dialog.rows.buttons["selected"].text() == "Selected (3)"
     dialog.seeded.setChecked(True)
     chem.workspace.selection.set([], "test")
     assert not dialog.seeded.isEnabled() and not dialog.seeded.isChecked()

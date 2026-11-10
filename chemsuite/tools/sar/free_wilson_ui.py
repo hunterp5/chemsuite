@@ -21,9 +21,6 @@ import numpy as np
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -34,13 +31,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from chemsuite.app.dialogs import RowsChoice, ToolDialog
 from chemsuite.app.tools import ToolContext
 from chemsuite.core.mols import mol_to_blob, smiles_of
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 from chemsuite.plotting.data import numbers
 from chemsuite.sar.free_wilson import FreeWilson, free_wilson
 from chemsuite.sar.rgroups import HYDROGEN, Decomposition, assemble
-from chemsuite.tools.similarity.common import scope_combo, scope_oids
 
 from .common import (
     CoreChooser,
@@ -67,48 +64,46 @@ def fit_summary(fit, skipped) -> str:
     return text
 
 
-class FreeWilsonDialog(QDialog):
+class FreeWilsonDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent)
-        self.setWindowTitle("Free-Wilson Analysis")
+        super().__init__(ctx.parent, "Free-Wilson Analysis", guide="free-wilson")
         self.ctx = ctx
-        self.job = None
         self.panel: FreeWilsonPanel | None = None
-        self.core = CoreChooser(ctx)
-        self.activity = activity_combo(ctx)
-        self.rows = scope_combo(ctx, "shown")
+        inputs = self.section("Input")
+        self.core = CoreChooser(ctx, inputs)
+        self.activity = inputs.row("Activity", activity_combo(ctx))
+        self.rows = inputs.row("Rows", RowsChoice(ctx, "shown"))
+
+        method = self.section("Method")
         self.min_count = QSpinBox()
         self.min_count.setRange(1, 100)
         self.min_count.setValue(2)
-        self.min_count.setToolTip(
-            "Leave out compounds carrying a substituent seen fewer times than this:\n"
-            "a substituent seen once is fitted exactly and its contribution means nothing."
+        method.row(
+            "Min. occurrences",
+            self.min_count,
+            help="Leave out compounds carrying a substituent seen fewer times than this: a "
+            "substituent seen once is fitted exactly and its contribution means nothing.",
         )
-        self.higher_is_better = QCheckBox("Higher activity is better")
+        self.higher_is_better = QCheckBox("Higher is better")
         self.higher_is_better.setChecked(True)
-        self.output = QLineEdit(PREDICTED_COLUMN)
-        self.status = QLabel()
-        self.status.setWordWrap(True)
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        method.row(
+            "Activity",
+            self.higher_is_better,
+            help="Which way the Best Unmade tab ranks combinations.",
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Analyse")
-        form = QFormLayout()
-        form.addRow("Activity:", self.activity)
-        form.addRow("Rows:", self.rows)
-        form.addRow("Minimum occurrences:", self.min_count)
-        form.addRow("", self.higher_is_better)
-        form.addRow("Prediction column:", self.output)
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.core)
-        layout.addLayout(form)
-        layout.addWidget(self.status)
-        layout.addWidget(self.buttons)
-        self.resize(620, 0)
-        self.core.core.textChanged.connect(lambda *_: self._update())
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        self._update()
+
+        output = self.section("Output")
+        self.output = QLineEdit(PREDICTED_COLUMN)
+        output.row("Prediction column", self.output)
+
+        for signal in (
+            self.core.core.textChanged,
+            self.core.structure.currentIndexChanged,
+            self.activity.currentIndexChanged,
+            self.rows.changed,
+        ):
+            signal.connect(lambda *_: self.refresh())
+        self.refresh()
 
     def problem(self) -> str:
         if not self.core.core.text().strip():
@@ -117,22 +112,17 @@ class FreeWilsonDialog(QDialog):
             return "There is no number column for activity."
         return self.core.problem()
 
-    def _update(self) -> None:
-        problem = self.problem()
-        self.status.setText(problem)
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not problem)
+    def verb(self) -> str:
+        return f"Analyse {len(self.rows.oids()):,} Rows"
 
-    def accept(self) -> None:
-        if self.problem():
-            return
-        self.job = self.analyse()
-        super().accept()
+    def run(self):
+        return self.analyse()
 
     def recipe(self) -> dict:
         """Everything the analysis needs, saved with its panel to rerun it on reopening."""
         return {
             **self.core.recipe(),
-            "oids": scope_oids(self.ctx, self.rows.currentData()).tolist(),
+            "oids": self.rows.oids().tolist(),
             "activity": self.activity.currentText(),
             "min_count": self.min_count.value(),
             "higher_is_better": self.higher_is_better.isChecked(),

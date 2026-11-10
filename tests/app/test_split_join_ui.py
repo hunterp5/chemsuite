@@ -52,7 +52,7 @@ def test_split_dialog_previews_and_splits(assays) -> None:
     dialog = window.split_column("Assay")
     assert preview_headers(dialog) == ["Assay", "Assay_1", "Assay_2"]
     assert dialog.preview.item(0, 2).text() == "5.2"
-    assert not dialog.note.text().strip()
+    assert not dialog.status.text().strip()
     dialog.prefix.setText("Data")
     dialog.update_preview()
     assert preview_headers(dialog)[1:] == ["Data_1", "Data_2"]
@@ -66,12 +66,12 @@ def test_split_dialog_custom_delimiter_and_errors(assays) -> None:
     dialog = assays.split_column("Assay")
     dialog.delimiter.setCurrentIndex(dialog.delimiter.findData("custom"))
     dialog.update_preview()
-    assert "custom delimiter" in dialog.note.text()
-    ok = dialog.buttons.button(dialog.buttons.StandardButton.Ok)
+    assert "custom delimiter" in dialog.status.text()
+    ok = dialog.primary
     assert not ok.isEnabled()
     dialog.custom.setText("C")
     dialog.update_preview()
-    assert ok.isEnabled() and not dialog.note.text().strip()
+    assert ok.isEnabled() and not dialog.status.text().strip()
     dialog.keep.setCurrentIndex(dialog.keep.findData("last"))
     dialog.update_preview()
     assert preview_headers(dialog) == ["Assay", "Assay_last"]
@@ -83,7 +83,7 @@ def test_split_selected_rows_only(assays) -> None:
     table = window.workspace.table
     window.workspace.selection.set([int(table.oids[1])], "test")
     dialog = window.split_column("Assay")
-    dialog.selected_only.setChecked(True)
+    dialog.rows.set_value("selected")
     dialog.update_preview()
     assert dialog.preview.rowCount() == 1
     dialog.accept()
@@ -109,7 +109,7 @@ def test_join_dialog_uses_selected_columns_and_order(assays, qtbot) -> None:
 def test_join_needs_two_ticked_columns(assays) -> None:
     dialog = assays.join_columns()
     dialog.set_checked(["ID"])
-    assert "at least two" in dialog.note.text()
+    assert "at least two" in dialog.status.text()
     dialog.accept()  # refused
     assert dialog.isVisible()
     dialog.reject()
