@@ -23,7 +23,8 @@ from PySide6.QtCore import QMimeData, QSize, Qt
 from PySide6.QtGui import QGuiApplication
 
 from chemsuite.app.table_model import KIND_ROLE, STATUS_ROLE
-from chemsuite.core.reactions import reaction_from_text, rxn_block
+from chemsuite.core.io.rdf import rxn_block
+from chemsuite.core.reactions import reaction_from_text
 from chemsuite.core.table.columns import REACTION
 from chemsuite.sketch import convert, reaction
 

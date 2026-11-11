@@ -359,9 +359,7 @@ class RowsChoice(Segmented):
         return ""
 
     def oids(self) -> np.ndarray:
-        from chemsuite.tools.similarity.common import scope_oids
-
-        return scope_oids(self.ctx, self.value())
+        return self.ctx.scope_oids(self.value())
 
     def describe(self) -> str:
         return {"all": "", "shown": "shown ", "selected": "selected "}[self.value()]

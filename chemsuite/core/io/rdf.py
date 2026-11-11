@@ -41,15 +41,16 @@ from pathlib import Path
 
 import numpy as np
 from rdkit import Chem, rdBase
+from rdkit.Chem import rdChemReactions
 
 from chemsuite.core.jobs import CancelToken, Progress, check
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_to_blob, smiles_of
 from chemsuite.core.reactions import (
+    kekule_reaction,
     looks_like_rxn_block,
     parse_reaction,
     reaction_from_blob,
-    rxn_block,
 )
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import ReactionColumn, StructureColumn
@@ -261,6 +262,24 @@ def write_rxn(table: Table, path: str | Path, oid: int, reaction: str | None = N
         handle.write(rxn_blocks((column.blobs(slots), column.displays(slots)))[0] + "\n")
 
 
+def rxn_block(rxn: rdChemReactions.ChemicalReaction) -> str:
+    """An RXN file (V2000; V3000 when a component needs it) with agents kept separate, written
+    with Kekulé bonds as molfiles are, laid out if it has no coordinates."""
+    from chemsuite.sketch import reaction as sketch_reaction  # its layout; core.io sits above it
+
+    templates = (*rxn.GetReactants(), *rxn.GetAgents(), *rxn.GetProducts())
+    if all(t.GetNumConformers() for t in templates):
+        copy = rdChemReactions.ChemicalReaction(rxn)
+        with rdBase.BlockLogs():
+            try:
+                return rdChemReactions.ReactionToRxnBlock(
+                    kekule_reaction(copy), separateAgents=True
+                )
+            except (RuntimeError, ValueError):
+                pass
+    return sketch_reaction.to_rxn_block(sketch_reaction.from_reaction(rxn))
+
+
 def rxn_blocks(cells: tuple[list[bytes | None], list[str]]) -> list[str]:
     """RXN blocks for ``(blobs, texts)`` of reaction cells (worker-process entry point). A cell
     not parsed yet is parsed here; one that does not parse is written back as read if it is an
@@ -287,6 +306,7 @@ __all__ = [
     "first_reaction_column",
     "parse_block",
     "read_rdf",
+    "rxn_block",
     "rxn_blocks",
     "write_rdf",
     "write_rxn",

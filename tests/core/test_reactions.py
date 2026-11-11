@@ -24,12 +24,8 @@ import pytest
 from chemsuite.core import document
 from chemsuite.core.io import rdf
 from chemsuite.core.io.load import load_table, parse_pending_structures, save_table
-from chemsuite.core.reactions import (
-    parse_reaction,
-    reaction_from_text,
-    reaction_smiles,
-    rxn_block,
-)
+from chemsuite.core.io.rdf import rxn_block
+from chemsuite.core.reactions import parse_reaction, reaction_from_text, reaction_smiles
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import (
     REACTION,

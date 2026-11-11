@@ -5,6 +5,24 @@ other machine can pick it up. Update it at the end of a session that leaves work
 
 ## In progress
 
+- **Architecture refactor** (plan approved 2026-11-11; a copy is in Claude's plan file on the
+  Windows PC, summarised here). The Protein Viewer becomes a subproject: a Qt-free engine and
+  workspace (`chemsuite/protein`, with its own `.cspx` session format), a Qt workbench UI
+  (`chemsuite/protein/ui`), and one bridge to the table (`chemsuite/tools/protein`). The app
+  around it gets a shared shell.
+  - Phase A, done: protein-only documents ask to save; reopened proteins keep their look;
+    custom colours saved; `ToolPanel` base and `DocumentPanels`; `JobHost`; layering tests
+    (`core` imports no domain package except `core.io` → `sketch`, and `app` never imports a
+    tool).
+  - Phase B, next: the big mechanical move. `app/{shell,widgets,render3d,document,table}`,
+    `protein/{structure,chem,look,workspace,ui}`, `core/io` → `chemsuite/io`; the full suite on
+    each move commit.
+  - Then Phase C (`core/{history,assets,container}.py`, the protein workspace engine and its
+    document Part), Phase D (`.cspx`, the shared start-up, scoped commands, standalone
+    `chemsuite --protein`), and Phase E (ToolContext helpers, one 3D stack, tool hooks and
+    external workers, splitting long files). After that, viewer Phases 3–5 (presets and views,
+    look undo, analysis).
+  - Several tables in one window was considered and set aside (2026-11-11).
 - **By-hand check of Protein Viewer Phase 1 on Windows** (ROADMAP §7.0c).
   Done 2026-11-11 by script:
   - 5GNK: 80U's bond orders come from the file's own component table, and from the CCD when
@@ -31,6 +49,10 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - A kept row whose protein was removed is not yet marked in the table.
   - Save Protein As (mmCIF) drops the file's `_chem_comp_*` tables, so a ligand with no CCD
     entry reopened offline falls back to a geometry guess. Document saves keep them.
+  - Test order: run after the viewer, sketcher and space tests (e.g. `pytest tests/core
+    tests/sketch tests/app/test_structure_viewer.py … tests/app/test_sar_ui.py`), the SAR
+    tests' result-table selections come up empty (`test_free_wilson`, `test_mmp`,
+    `test_sali`). They also fail like this at `aab4e91`; the suite's normal order passes.
 
 ## Next
 
@@ -39,23 +61,26 @@ other machine can pick it up. Update it at the end of a session that leaves work
 
 Still owed by the user: the ChemDraw hotkey list.
 
-## Protein code map
+## Protein code map (until Phase B moves it)
 
 - `chemsuite/protein/` (Qt-free):
-  - `model.Structure`: a struct-of-arrays, keyed by atom uids.
-  - `io`: reading and writing files.
-  - `bonds`, `components`: bond orders from the file, the CCD cache or templates.
-  - `ligands`: ligand rows.
-  - `display`: background `Build`s with `pending()`/`accept()`.
-  - `scenes`, `cartoons`, `surfaces`, `mesh`: what is drawn.
-  - `contacts`, `profile`: interactions and the PLIF columns.
-  - `poses`.
+  - `model.Structure`: a struct-of-arrays, keyed by atom uids; `store`: its bytes.
+  - `io`, `fetch`: reading, writing and downloading files.
+  - `bonds`, `bond_orders`, `components`, `classify`: bonds, bond orders (file, CCD cache,
+    geometry), residue kinds.
+  - `ligands`, `poses`, `interactions`, `profile`: ligands, poses, contacts, the PLIF columns.
+  - `select`, `sequence`, `secondary`.
+  - `display`: how each protein looks, with background `Build`s (`pending()`/`accept()`);
+    `scene`, `cartoon`, `surface`, `mesh`, `colours`, `pick`: what is drawn.
 - `chemsuite/app/protein/`:
-  - `session.py`: the one object that every other part talks to.
-  - `panel.py`, `tree.py`, `sequence_view.py`, `toolbar.py`, `pocket.py`, `labels.py`,
-    `models_bar.py`.
+  - `session.py`: the one object every other part talks to.
+  - `panel.py` (a `ToolPanel`), `menubar.py`, `menus.py`, `export.py`, `tree.py`,
+    `sequence_view.py`, `selection_bar.py`, `models_bar.py`, `pocket.py`, `labels.py`,
+    `overlay.py`.
   - `builds.py`: runs builds as background jobs and drops stale results.
   - `view.py`: on `RhiView`.
-- `chemsuite/tools/protein/`: the tool, its dialogs and the menubar.
-- Tests: `tests/protein/`, `tests/app/test_protein_ui.py`, `test_protein_view.py`, and the
-  benchmarks (`pytest -m bench tests/protein/test_bench_protein.py`).
+- `chemsuite/tools/protein/`: the tool (window, open/fetch/remove, ligands and interactions
+  to the table) and its dialogs.
+- Tests: `tests/protein/`, `tests/app/test_protein_ui.py`, `test_protein_tool.py`,
+  `test_protein_view.py`, and the benchmarks (`pytest -m bench
+  tests/protein/test_bench_protein.py`).

@@ -39,14 +39,15 @@ added to an ``rdChemReactions.ChemicalReaction``, and written by RDKit's RXN and
 
 from __future__ import annotations
 
-import contextlib
 import math
-import re
 from dataclasses import dataclass, field
 
 from rdkit import Chem, rdBase
 from rdkit.Chem import rdChemReactions
 
+from chemsuite.core.reactions import kekule_reaction as _kekule
+from chemsuite.core.reactions import looks_like_reaction
+from chemsuite.core.reactions import read_reaction as reaction_from_text
 from chemsuite.sketch import convert
 from chemsuite.sketch.model import Arrow, ArrowKind, Atom, Bond, Group, Plus, Sketch
 
@@ -183,58 +184,7 @@ def to_rxn_block(sketch: Sketch) -> str:
         return rdChemReactions.ReactionToRxnBlock(rxn, separateAgents=True, forceV3000=big)
 
 
-def _kekule(rxn: rdChemReactions.ChemicalReaction) -> rdChemReactions.ChemicalReaction:
-    out = rdChemReactions.ChemicalReaction()
-    for mols, add in (
-        (rxn.GetReactants(), out.AddReactantTemplate),
-        (rxn.GetAgents(), out.AddAgentTemplate),
-        (rxn.GetProducts(), out.AddProductTemplate),
-    ):
-        for mol in mols:
-            mol = Chem.Mol(mol)
-            # keep aromatic bonds that cannot be made alternating
-            with rdBase.BlockLogs(), contextlib.suppress(ValueError, RuntimeError):
-                Chem.Kekulize(mol, clearAromaticFlags=True)
-            add(mol)
-    return out
-
-
 # -- reading ----------------------------------------------------------------------------------
-_BRACKETS = re.compile(r"\[[^\]]*\]")
-
-
-def looks_like_reaction(text: str) -> bool:
-    """RXN text, or one line with the two ``>`` of reaction SMILES/SMARTS outside brackets."""
-    text = text.strip()
-    if text.startswith("$RXN"):
-        return True
-    if not text or "\n" in text:
-        return False
-    return _BRACKETS.sub("", text.split()[0]).count(">") == 2
-
-
-def reaction_from_text(text: str) -> rdChemReactions.ChemicalReaction | None:
-    """An RDKit reaction from RXN text, reaction SMILES or reaction SMARTS; None if not one."""
-    if not looks_like_reaction(text):
-        return None
-    text = text.strip()
-    with rdBase.BlockLogs():
-        try:
-            if text.startswith("$RXN"):
-                try:
-                    return rdChemReactions.ReactionFromRxnBlock(text, sanitize=True)
-                except (ValueError, RuntimeError):  # e.g. aromatic bonds RDKit cannot kekulize:
-                    # read as drawn; each component is sanitised as far as it can be
-                    return rdChemReactions.ReactionFromRxnBlock(text, sanitize=False)
-            line = text.split()[0]
-            try:
-                return rdChemReactions.ReactionFromSmarts(line, useSmiles=True)
-            except ValueError:
-                return rdChemReactions.ReactionFromSmarts(line)
-        except (ValueError, RuntimeError):
-            return None
-
-
 def _template_sketch(mol: Chem.Mol) -> Sketch:
     mol = Chem.Mol(mol)
     with rdBase.BlockLogs():

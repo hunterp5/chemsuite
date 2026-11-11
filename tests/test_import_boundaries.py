@@ -70,6 +70,43 @@ def test_qt_free_packages_do_not_import_qt_or_the_app() -> None:
     assert not offenders, "Qt-free package imports Qt or the GUI:\n" + "\n".join(offenders)
 
 
+#: Domain packages sit above core: core never imports them. core.io writes reaction files laid
+#: out by the sketcher's model, so it may import sketch (it moves above both in the planned
+#: chemsuite/io).
+DOMAIN = tuple(p for p in QT_FREE if p != "core")
+CORE_EXCEPTIONS = {"io": ("chemsuite.sketch",)}
+
+
+def _offenders(paths, forbidden) -> list[str]:
+    found = []
+    for path in paths:
+        for module in _imported_modules(path):
+            if any(module == bad or module.startswith(bad + ".") for bad in forbidden):
+                found.append(f"{path.relative_to(PACKAGE.parent).as_posix()}: {module}")
+    return found
+
+
+def test_core_imports_no_domain_package() -> None:
+    offenders = []
+    for path in sorted((PACKAGE / "core").rglob("*.py")):
+        sub = path.relative_to(PACKAGE / "core").parts[0]
+        allowed = CORE_EXCEPTIONS.get(sub, ())
+        forbidden = [f"chemsuite.{p}" for p in DOMAIN if f"chemsuite.{p}" not in allowed]
+        offenders += _offenders([path], forbidden)
+    assert not offenders, "core imports a package above it:\n" + "\n".join(offenders)
+
+
+def test_the_app_never_imports_a_tool() -> None:
+    """Tools plug into the app (the registry in chemsuite.tools lists them); the app reaches a
+    tool only through its Tool declaration, never by importing it."""
+    found = []
+    for path in sorted((PACKAGE / "app").rglob("*.py")):
+        for module in _imported_modules(path):
+            if module.startswith("chemsuite.tools."):
+                found.append(f"{path.relative_to(PACKAGE.parent).as_posix()}: {module}")
+    assert not found, "app imports a tool:\n" + "\n".join(found)
+
+
 def test_importing_core_does_not_load_qt() -> None:
     """Catches indirect imports the static scan cannot see (e.g. via a third-party module)."""
     code = (

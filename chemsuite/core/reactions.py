@@ -24,11 +24,64 @@ coordinates read from an RXN file.
 
 from __future__ import annotations
 
+import contextlib
+import re
+
 from rdkit import Chem, rdBase
 from rdkit.Chem import rdChemReactions
 
-from chemsuite.sketch import reaction as sketch_reaction
-from chemsuite.sketch.reaction import looks_like_reaction
+_BRACKETS = re.compile(r"\[[^\]]*\]")
+
+
+def looks_like_reaction(text: str) -> bool:
+    """RXN text, or one line with the two ``>`` of reaction SMILES/SMARTS outside brackets."""
+    text = text.strip()
+    if text.startswith("$RXN"):
+        return True
+    if not text or "\n" in text:
+        return False
+    return _BRACKETS.sub("", text.split()[0]).count(">") == 2
+
+
+def read_reaction(text: str) -> rdChemReactions.ChemicalReaction | None:
+    """An RDKit reaction from RXN text, reaction SMILES or reaction SMARTS, as RDKit reads it
+    (unchecked: see :func:`reaction_from_text`); None if not one."""
+    if not looks_like_reaction(text):
+        return None
+    text = text.strip()
+    with rdBase.BlockLogs():
+        try:
+            if text.startswith("$RXN"):
+                try:
+                    return rdChemReactions.ReactionFromRxnBlock(text, sanitize=True)
+                except (ValueError, RuntimeError):  # e.g. aromatic bonds RDKit cannot kekulize:
+                    # read as drawn; each component is sanitised as far as it can be
+                    return rdChemReactions.ReactionFromRxnBlock(text, sanitize=False)
+            line = text.split()[0]
+            try:
+                return rdChemReactions.ReactionFromSmarts(line, useSmiles=True)
+            except ValueError:
+                return rdChemReactions.ReactionFromSmarts(line)
+        except (ValueError, RuntimeError):
+            return None
+
+
+def kekule_reaction(rxn: rdChemReactions.ChemicalReaction) -> rdChemReactions.ChemicalReaction:
+    """A copy with Kekulé bonds, as molfiles are written (aromatic bond type 4 cannot be read
+    back for an aromatic [nH])."""
+    out = rdChemReactions.ChemicalReaction()
+    for mols, add in (
+        (rxn.GetReactants(), out.AddReactantTemplate),
+        (rxn.GetAgents(), out.AddAgentTemplate),
+        (rxn.GetProducts(), out.AddProductTemplate),
+    ):
+        for mol in mols:
+            mol = Chem.Mol(mol)
+            # keep aromatic bonds that cannot be made alternating
+            with rdBase.BlockLogs(), contextlib.suppress(ValueError, RuntimeError):
+                Chem.Kekulize(mol, clearAromaticFlags=True)
+            add(mol)
+    return out
 
 
 def looks_like_rxn_block(text: str) -> bool:
@@ -64,9 +117,7 @@ def reaction_from_text(text: str) -> rdChemReactions.ChemicalReaction | None:
 
 
 def _read(text: str) -> rdChemReactions.ChemicalReaction | None:
-    if not looks_like_reaction(text):
-        return None
-    return sketch_reaction.reaction_from_text(text)
+    return read_reaction(text) if looks_like_reaction(text) else None
 
 
 def _is_smiles(text: str) -> bool:
@@ -96,23 +147,6 @@ def reaction_smiles(rxn: rdChemReactions.ChemicalReaction) -> str:
             return ""
 
 
-def rxn_block(rxn: rdChemReactions.ChemicalReaction) -> str:
-    """An RXN file (V2000; V3000 when a component needs it) with agents kept separate, written
-    with Kekulé bonds as molfiles are, laid out if it has no coordinates."""
-    from chemsuite.sketch import reaction as sketch_reaction
-
-    if all(t.GetNumConformers() for t in _templates(rxn)):
-        copy = rdChemReactions.ChemicalReaction(rxn)
-        with rdBase.BlockLogs():
-            try:
-                return rdChemReactions.ReactionToRxnBlock(
-                    sketch_reaction._kekule(copy), separateAgents=True
-                )
-            except (RuntimeError, ValueError):
-                pass
-    return sketch_reaction.to_rxn_block(sketch_reaction.from_reaction(rxn))
-
-
 def parse_reaction(text: str) -> tuple[bytes, str]:
     """``(blob, display text)`` for one reaction cell; ``(b"", text)`` when it does not parse.
 
@@ -138,13 +172,14 @@ def is_reaction_text(text: str) -> bool:
 
 __all__ = [
     "is_reaction_text",
+    "kekule_reaction",
     "looks_like_reaction",
     "looks_like_rxn_block",
     "parse_reaction",
     "parse_reactions",
     "reaction_from_blob",
+    "read_reaction",
     "reaction_from_text",
     "reaction_smiles",
     "reaction_to_blob",
-    "rxn_block",
 ]

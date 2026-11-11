@@ -15,6 +15,7 @@ changing code.
 | Rule | Why | Enforced by |
 |---|---|---|
 | `core`, `analysis`, `molview`, `sketch` and the other domain packages never import Qt or the app. | They stay testable, scriptable and fast to import. | `tests/test_import_boundaries.py` |
+| `core` imports no domain package (`core.io` may use `sketch` to lay out reactions it writes), and the app never imports a tool: it reaches one through its `Tool` declaration (`open_at` for Data ▸ Browser). | Layers only point down; tools plug in. | `test_core_imports_no_domain_package`, `test_the_app_never_imports_a_tool` |
 | Tools use the app only through `ToolContext` (`chemsuite.app.tools`) and a short list of shared widgets. | Tools never depend on the window, so adding one never means editing it. | `test_tools_use_the_app_only_through_its_tool_api` (`TOOL_APP_IMPORTS`) |
 | Tools never reach into the window or the context's private members. | MolManager's 271 `app._x` reaches. | `test_tools_never_reach_into_the_window` |
 | Tools read the table through `ToolContext` (`structure_inputs`, `table.read`) and write results only through `ctx.apply_results`. | One place handles undo, name clashes, deleted rows, and speed at 200k rows. | `test_tools_use_the_table_through_the_context` (ratchet) |

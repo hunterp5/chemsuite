@@ -49,12 +49,17 @@ from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import REACTION, STRUCTURE, Column, StructureColumn
 from chemsuite.core.table.history import Op
+from chemsuite.plotting.data import shown_oids
 
 from .jobs import QUEUE, Job
 from .widgets.panel import ToolPanel as ToolPanel  # what a tool's panel is built on
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
+
+
+#: the tool behind Data ▸ Browser and a cell's Browse (its ``open_at``)
+BROWSER_TOOL = "viewer"
 
 
 @dataclass(frozen=True)
@@ -65,9 +70,11 @@ class Tool:
     ``requires`` names importable modules; a tool whose module is missing is shown disabled
     with the reason. ``needs_structures`` disables the tool while the table has no structure
     column, ``needs_reactions`` while it has no reaction column. ``restore`` reopens a panel
-    saved with the document: a panel that should be saved has ``state() -> dict`` and a
-    ``tool_id`` naming the tool whose ``restore`` takes that dict. ``aliases`` are former ids
-    whose saved panels this tool restores (a tool that was renamed or merged into another).
+    saved with the document: a panel that should be saved is a ``ToolPanel`` whose ``tool_id``
+    names the tool whose ``restore`` takes its ``state()``. ``aliases`` are former ids whose
+    saved panels this tool restores (a tool that was renamed or merged into another).
+    ``open_at`` opens the tool at a row (a cell's Browse) or, given None, as Data ▸ Browser
+    does: the window asks the tool with :data:`BROWSER_TOOL`'s id, never importing it.
     """
 
     id: str
@@ -83,6 +90,7 @@ class Tool:
     aliases: tuple[str, ...] = ()
     #: a separator follows this tool in its menu (ends a group)
     separator_after: bool = False
+    open_at: Callable[[ToolContext, int | None], Any] | None = None
 
     def missing(self) -> list[str]:
         """Required modules that cannot be imported."""
@@ -182,6 +190,15 @@ class ToolContext:
     def target_oids(self, selected_only: bool) -> np.ndarray:
         """The rows a tool works on: the selected rows, or every row (storage order)."""
         return self.selection.as_array() if selected_only else self.table.oids.copy()
+
+    def scope_oids(self, scope: str) -> np.ndarray:
+        """The rows in *scope*: ``"selected"``, ``"shown"`` (passing the filters, in view
+        order) or ``"all"`` (storage order)."""
+        if scope == "selected":
+            return self.selection.as_array()
+        if scope == "shown":
+            return shown_oids(self.table)
+        return self.table.oids.copy()
 
     # -- work ---------------------------------------------------------------------------------
     def run(

@@ -37,17 +37,9 @@ from chemsuite.analysis.fingerprints import (
 )
 from chemsuite.analysis.fingerprints import fingerprint_task as cached_fingerprint_task
 from chemsuite.app.tools import ToolContext
-from chemsuite.plotting.data import number_columns, numbers, shown_oids
+from chemsuite.plotting.data import number_columns, numbers
 
 LABEL_COLUMNS = ("ID", "Name", "Title", "Compound", "Compound ID")
-
-
-def scope_oids(ctx: ToolContext, scope: str) -> np.ndarray:
-    if scope == "selected":
-        return ctx.selection.as_array()
-    if scope == "shown":
-        return shown_oids(ctx.table)
-    return ctx.table.oids.copy()
 
 
 def label_column(ctx: ToolContext) -> str | None:

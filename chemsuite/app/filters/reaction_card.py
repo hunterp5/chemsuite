@@ -50,7 +50,7 @@ class ReactionCard(FilterCard):
         searcher: StructureSearcher,
         parent: QWidget | None = None,
     ) -> None:
-        from chemsuite.tools.reactions.common import ReactionText
+        from chemsuite.app.widgets.reaction_text import ReactionText
 
         super().__init__(table, column, parent)
         self.searcher = searcher

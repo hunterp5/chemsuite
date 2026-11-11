@@ -93,7 +93,7 @@ from .structure_copy import REACTION_FORMATS, copy_reactions, copy_structures
 from .structure_search import StructureSearchDialog, StructureSearcher
 from .table_model import TableModel
 from .table_view import StructureImages, TableView
-from .tools import Tool, ToolContext, load_tools
+from .tools import BROWSER_TOOL, Tool, ToolContext, load_tools
 from .widgets.panel import ToolPanel
 
 log = logging.getLogger(__name__)
@@ -579,9 +579,9 @@ class MainWindow(QMainWindow):
 
     def show_browser(self, oid: int | None = None) -> QWidget:
         """Data ▸ Browser: the Structure Viewer in 2D; a cell's Browse: at *oid*, as it is."""
-        from chemsuite.tools.viewer.tool import open_viewer
-
-        return open_viewer(ToolContext(self), "2d" if oid is None else None, at=oid)
+        tool = next(t for t in registered_tools() if t.id == BROWSER_TOOL)
+        assert tool.open_at is not None
+        return tool.open_at(ToolContext(self), oid)
 
     def show_all_rows(self) -> None:
         with self.workspace.table.batch():

@@ -76,4 +76,6 @@ TOOL = Tool(
     shortcut="Ctrl+Shift+3",
     tip="Browse the table's structures one row at a time, in 2D or 3D: step through or "
     "overlay conformers, measure, show column values over the structure.",
+    # Data ▸ Browser opens it in 2D; a cell's Browse brings it to that row, as it is
+    open_at=lambda ctx, oid: open_viewer(ctx, "2d" if oid is None else None, at=oid),
 )
