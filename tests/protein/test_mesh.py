@@ -149,3 +149,33 @@ def test_dashes_are_centred_and_owned_by_their_line() -> None:
     assert np.allclose(radial, mesh.DASH_RADIUS, atol=1e-6)
     assert lines.triangles.max() < len(lines)
     assert len(mesh.dashes(np.zeros((0, 3)), np.zeros((0, 3)))) == 0
+
+
+@pytest.mark.parametrize("limit", [65535, 300, 7])
+def test_chunks_together_hold_every_triangle_once(lysozyme, limit: int) -> None:
+    for built in (
+        cartoon.build(lysozyme),
+        surface.build(lysozyme, np.flatnonzero(lysozyme.element != 1)),
+    ):
+        parts = mesh.chunks(built, limit)
+        assert all(len(c.vertex_map) <= limit and c.triangles.dtype == np.uint16 for c in parts)
+        assert all(int(c.triangles.max()) < len(c.vertex_map) for c in parts)
+        assert _rows(parts) == _rows([mesh.Chunk(np.arange(len(built)), built.triangles)])
+        if limit == mesh.SHORT_INDICES:  # few chunks for a mesh built in order
+            assert len(parts) <= 2 * len(built) // limit + 2
+
+
+def test_a_scrambled_mesh_still_chunks() -> None:
+    rng = np.random.default_rng(1)
+    triangles = rng.integers(0, 1000, (500, 3)).astype(np.uint32)
+    scrambled = mesh.Mesh(np.zeros((1000, 6), np.float32), triangles, np.zeros(1000, np.int64))
+    parts = mesh.chunks(scrambled, 10)
+    assert all(len(c.vertex_map) <= 10 for c in parts)
+    assert _rows(parts) == _rows([mesh.Chunk(np.arange(1000), triangles)])
+    assert mesh.chunks(mesh.Mesh.empty()) == []
+
+
+def _rows(parts) -> list[tuple[int, int, int]]:
+    """Every triangle of the chunks, in the mesh's own vertex numbers, sorted."""
+    whole = np.concatenate([c.vertex_map[c.triangles.astype(np.int64)] for c in parts])
+    return sorted(map(tuple, whole.tolist()))
