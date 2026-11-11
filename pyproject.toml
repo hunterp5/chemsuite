@@ -44,6 +44,7 @@ include = ["chemsuite*"]
 [tool.setuptools.package-data]
 "chemsuite.ionisation" = ["data/*"]  # MolGpKa weights, site templates, licence
 "chemsuite.sketch" = ["data/*"]  # Ketcher licence and notice; templates from P2
+"chemsuite.protein" = ["data/*"]  # residue templates from the wwPDB CCD (public domain)
 "chemsuite.app.molview" = ["shaders/*"]  # 3D Viewer shaders: sources and compiled .qsb
 
 [tool.pytest.ini_options]

@@ -42,6 +42,7 @@ QT_FREE = (
     "ionisation",
     "sketch",
     "retro",
+    "protein",
 )
 FORBIDDEN_FOR_QT_FREE = ("PySide6", "shiboken6", "pyqtgraph", "chemsuite.app", "chemsuite.tools")
 
