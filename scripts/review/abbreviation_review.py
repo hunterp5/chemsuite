@@ -43,7 +43,7 @@ def _canon(smiles: str) -> str:
 def ketcher_records(path: Path) -> dict[str, str]:
     """name -> canonical group SMILES on [*], or a reason the record is unusable."""
     out: dict[str, str] = {}
-    for block in path.read_text().split("$$$$\n"):
+    for block in path.read_text(encoding="utf-8").split("$$$$\n"):
         block = block.lstrip("\n")  # Ketcher puts a blank line after each $$$$
         if "M  END" not in block:
             continue

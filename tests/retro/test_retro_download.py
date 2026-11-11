@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import io
+import json
 import urllib.error
 
 import pytest
@@ -77,13 +78,13 @@ def test_every_file_is_fetched_and_the_config_written(tmp_path) -> None:
         assert not (folder / (item.name + ".part")).exists()
     assert all(r.full_url.startswith("https://") for r in opener.requests)
     assert seen  # progress was reported
-    body = path.read_text()
+    body = path.read_text(encoding="utf-8")
     assert config_problem(body) == ""
     found = catalogue(path)
     assert found.policies == ("uspto", "ringbreaker")
     assert found.filters == ("uspto",)
     assert found.stocks == ("zinc",)
-    assert f'"{folder / "zinc_stock.hdf5"}"' in body
+    assert json.dumps(str(folder / "zinc_stock.hdf5")) in body  # backslashes escaped
 
 
 def test_files_already_there_are_not_fetched_again(tmp_path) -> None:

@@ -1,0 +1,4 @@
+# Shader sources are hashed (shaders/manifest.json) and must read the same on every system.
+chemsuite/app/molview/shaders/*.vert text eol=lf
+chemsuite/app/molview/shaders/*.frag text eol=lf
+chemsuite/app/molview/shaders/*.qsb binary

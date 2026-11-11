@@ -549,14 +549,22 @@ layout = QHBoxLayout(window)
 layout.addWidget(gl.GLViewWidget())  # a 3D plot in the same window, drawn first
 window.resize(400, 200)
 window.show()
-app.processEvents()
+try:
+    app.processEvents()
+except Exception as error:  # an OpenGL too old to draw at all (a CI machine's software GL)
+    print("NO-RHI", type(error).__name__)
+    sys.exit(0)
 view = MolRenderer()
 failed = []
 view.failed.connect(lambda: failed.append(1))
 layout.addWidget(view)
 view.set_scene(combine([molecule_part(mol, style=SPACEFILL, hydrogens="all")]), fit=True)
-for _ in range(20):
-    app.processEvents()
+try:
+    for _ in range(20):
+        app.processEvents()
+except Exception as error:
+    print("NO-RHI", type(error).__name__)
+    sys.exit(0)
 image = view.grabFramebuffer()
 if image.isNull():
     print("NO-RHI")

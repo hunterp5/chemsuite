@@ -67,7 +67,7 @@ def check(text: str) -> tuple[str, str]:
 
 def main() -> None:
     path, limit = sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else None
-    with open(path, newline="") as handle:
+    with open(path, newline="", encoding="utf-8") as handle:
         texts = [row["rxn_smiles"] for row in csv.DictReader(handle)][:limit]
     start = time.time()
     tally: Counter[str] = Counter()

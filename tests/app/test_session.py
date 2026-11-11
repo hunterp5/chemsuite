@@ -129,7 +129,7 @@ def test_every_tool_panel_is_saved_with_the_document() -> None:
         )
     # every module that adds a panel defines (or uses) a panel class
     for path in TOOLS.rglob("*.py"):
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(path.read_text(encoding="utf-8"))
         adds = [
             node
             for node in ast.walk(tree)
@@ -138,7 +138,7 @@ def test_every_tool_panel_is_saved_with_the_document() -> None:
             and node.func.attr == "add_panel"
         ]
         if adds:
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             assert "tool_id" in text or "restore=" in text, (
                 f"{path} adds a panel that is never saved"
             )
