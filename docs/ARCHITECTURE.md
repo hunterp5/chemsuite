@@ -69,6 +69,11 @@ is usually better than an exemption.
   bar and view read and change, never each other.
 - **One `RhiView` base for 3D views** (`app/molview/rhi_view.py`): camera, picking, slab and
   fog. Meshes fall back to 16-bit index chunks where the GPU lacks 32-bit indices.
+- **A workspace of its own is a window, not a dock.** `ToolContext.add_window` hosts a tool's
+  widget in a top-level `ToolWindow` (`app/document_windows.py`) with the tool's own menu bar
+  and no toolbar: the Protein Viewer. It belongs to the document (closes with it, saved and
+  reopened with it, geometry included) and its shortcuts are its own. Docks
+  (`add_panel`) stay for panels that sit beside the table.
 - **Slow protein parts build in the background, never stale.** Surfaces, interactions, pocket
   skins and large cartoons are `Build`s from `Display.pending()`, run as quick background jobs
   (`app/protein/builds.py`); a result is kept only if the display is still shown, still holds

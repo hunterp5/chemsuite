@@ -13,18 +13,19 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Protein ▸ Protein Viewer: a workspace of its own for proteins, opened as its own window.
+"""Protein ▸ Protein Viewer: a workspace of its own for proteins, in a window of its own.
 
-Proteins are opened, fetched and turned into ligand rows from the viewer's File and Pocket
-menus (this module hands it those commands). A protein is stored in the document as an asset
-(``protein``, see :mod:`chemsuite.protein`); its ligands become rows linked to it by the
-``Protein`` column, so the viewer shows a row's ligand in its pocket when that row is current.
-Adding a protein and its ligand rows is one undo step. Reading and fetching run in the
-background.
+Proteins are opened and fetched from the viewer's File menu (this module hands it those
+commands). A protein is stored in the document as an asset (``protein``, see
+:mod:`chemsuite.protein`). Loading one does not touch the table: its ligands become rows, linked
+to it by the ``Protein`` column, only when asked (Ligand ▸ Ligands to Table, Add Ligand to
+Table, Interactions to Table); the viewer then shows a row's ligand in its pocket when that row
+is current. Reading, fetching and working out ligands' bond orders run in the background.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -54,13 +55,13 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         OPEN,
         PROFILE,
         REMOVE,
+        SHOW_TABLE,
         ProteinPanel,
     )
 
     if state is None:
         panel = ctx.find_panel(TOOL_ID)
         if panel is not None:
-            panel.setFocus()
             return panel
     commands = {
         OPEN: lambda: open_protein(ctx),
@@ -69,6 +70,7 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         LIGAND: lambda protein, residue: add_ligand(ctx, protein, residue),
         PROFILE: lambda: interactions_to_table(ctx),
         REMOVE: lambda protein: remove_protein(ctx, protein),
+        SHOW_TABLE: lambda: show_table(ctx),
     }
 
     def run(label, work, on_done):  # surfaces and interactions: never hold up closing
@@ -83,20 +85,36 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
     )
     if state is not None:
         panel.set_state(state)
-    dock = ctx.add_panel(panel, panel.title())
+    window = ctx.add_window(panel, panel.title(), menu_bar=panel.menu_bar,
+                            on_close=panel.close_panel)  # fmt: skip
     if state is None:
-        float_over(dock, ctx.parent)
+        centre_over(window, ctx.parent)
     panel.setFocus()
     return panel
 
 
-def float_over(dock, window) -> None:
-    """Undock *dock* as its own window, most of *window*'s size, centred over it."""
-    dock.setFloating(True)
-    frame = window.geometry()
+def centre_over(window, parent) -> None:
+    """Size *window* to most of *parent*'s size, centred over it."""
+    frame = parent.geometry()
     width, height = int(frame.width() * WINDOW_SHARE), int(frame.height() * WINDOW_SHARE)
-    dock.setGeometry(frame.x() + (frame.width() - width) // 2,
-                     frame.y() + (frame.height() - height) // 2, width, height)  # fmt: skip
+    window.setGeometry(frame.x() + (frame.width() - width) // 2,
+                       frame.y() + (frame.height() - height) // 2, width, height)  # fmt: skip
+
+
+def show_table(ctx: ToolContext) -> None:
+    """Bring the document's table window forward (Window ▸ Show Table in the viewer)."""
+    window = ctx.parent
+    if window.isMinimized():
+        window.showNormal()
+    window.raise_()
+    window.activateWindow()
+
+
+def dialog_parent(ctx: ToolContext):
+    """The viewer's window when it is open (dialogs opened from it appear over it), else the
+    document's."""
+    panel = ctx.find_panel(TOOL_ID)
+    return panel.window() if panel is not None else ctx.parent
 
 
 def unique_id(ctx: ToolContext, name: str) -> str:
@@ -133,22 +151,19 @@ def add_protein(
     source: str,
     rows: dict[str, list[str]] | None = None,
 ) -> str:
-    """Add the protein and its ligands (as rows, from :func:`ligand_work` when given) in one
-    undo step, show it, and return its id."""
+    """Add the protein to the document (one undo step), show it, and return its id.
+
+    The table is not touched: *rows* (from :func:`ligand_work`, worked out in the background)
+    only say which ligands' bond orders are a guess, for the ⚠ in the proteins list."""
     protein = unique_id(ctx, name)
     if rows is None:
         rows = ligands.ligand_rows(structure, protein, ccd=ccd(ctx, offline=True))
-    rows[ligands.PROTEIN_COLUMN] = [protein] * len(rows[ligands.PROTEIN_COLUMN])
     meta = {k: str(v) for k, v in structure.meta.items() if v and k != META_KEY}
     meta["source"] = source
     if guessed := ligands.guessed(rows):
         meta[ligands.GUESSED] = "\n".join(guessed)
-    op = PutAsset(protein, None, Asset(protein, KIND, protein, structure, meta))
-    label = f"Add protein {protein}"
-    if rows[ligands.PROTEIN_COLUMN]:
-        ctx.add_rows(rows, label, structures=(ligands.LIGAND_COLUMN,), extra_ops=[op])
-    else:
-        ctx.edit(label, [op])
+    ctx.edit(f"Add protein {protein}",
+             [PutAsset(protein, None, Asset(protein, KIND, protein, structure, meta))])  # fmt: skip
     count = len(rows[ligands.PROTEIN_COLUMN])
     ctx.show_message(f"Added {protein} ({structure.n_atoms:,} atoms, {count} ligand(s))")
     open_viewer(ctx)
@@ -160,7 +175,7 @@ def open_protein(ctx: ToolContext, paths: list[str] | None = None):
     if paths is None:
         from PySide6.QtWidgets import QFileDialog
 
-        paths, _ = QFileDialog.getOpenFileNames(ctx.parent, "Open Protein", "", FILE_FILTER)
+        paths, _ = QFileDialog.getOpenFileNames(dialog_parent(ctx), "Open Protein", "", FILE_FILTER)
     files = io.readable(paths)
     if not files:
         return None
@@ -204,24 +219,38 @@ def fetch_from_pdb(ctx: ToolContext):
     return ctx.show_dialog(FetchDialog(ctx))
 
 
-def extract_ligands(ctx: ToolContext) -> int:
-    """Add rows for the ligands of every protein that has none in the table yet."""
+def extract_ligands(ctx: ToolContext, then: Callable[[], object] | None = None):
+    """Ligand ▸ Ligands to Table: add rows for the ligands of every protein that has none in
+    the table yet. A background job (the CCD may be asked for bond orders); *then* runs once
+    the rows are in. Returns the job, or None when there is nothing to add."""
     table = ctx.table
     linked = set()
     if ligands.PROTEIN_COLUMN in table:
         linked = {table.cell(ligands.PROTEIN_COLUMN, int(o)) for o in table.oids}
-    added = 0
-    for asset in list(table.assets.values()):
-        if asset.kind != KIND or asset.id in linked:
-            continue
-        rows = ligands.ligand_rows(store.as_structure(asset.payload), asset.id,
-                                   ccd=ccd(ctx, offline=True))  # fmt: skip
-        if rows[ligands.PROTEIN_COLUMN]:
-            ctx.add_rows(rows, f"Extract ligands of {asset.id}",
-                         structures=(ligands.LIGAND_COLUMN,))  # fmt: skip
-            added += len(rows[ligands.PROTEIN_COLUMN])
-    ctx.show_message(f"Added {added} ligand row(s)" if added else "No new ligands to add")
-    return added
+    pending = [(asset.id, store.as_structure(asset.payload)) for asset in table.assets.values()
+               if asset.kind == KIND and asset.id not in linked]  # fmt: skip
+    if not pending:
+        ctx.show_message("No new ligands to add")
+        return None
+    cache = ccd(ctx)
+
+    def work(job):
+        return [(protein, ligands.ligand_rows(structure, protein, ccd=cache,
+                                              cancel=job.cancel_token))
+                for protein, structure in pending]  # fmt: skip
+
+    def done(found) -> None:
+        added = 0
+        for protein, rows in found:
+            if protein in ctx.table.assets and rows[ligands.PROTEIN_COLUMN]:
+                ctx.add_rows(rows, f"Ligands of {protein} to table",
+                             structures=(ligands.LIGAND_COLUMN,))  # fmt: skip
+                added += len(rows[ligands.PROTEIN_COLUMN])
+        ctx.show_message(f"Added {added} ligand row(s)" if added else "No ligands to add")
+        if then is not None and added:
+            then()
+
+    return ctx.run("Reading ligands…", work, done)
 
 
 def add_ligand(ctx: ToolContext, protein: str, residue: int) -> int:
@@ -285,7 +314,9 @@ def _ask_rows(ctx: ToolContext, name: str, count: int) -> str | None:
     from PySide6.QtWidgets import QMessageBox
 
     question = f"Remove {name} and its {count} ligand row(s)?"
-    box = QMessageBox(QMessageBox.Icon.Question, "Remove Protein", question, parent=ctx.parent)
+    box = QMessageBox(
+        QMessageBox.Icon.Question, "Remove Protein", question, parent=dialog_parent(ctx)
+    )
     delete = box.addButton("Delete Rows", QMessageBox.ButtonRole.DestructiveRole)
     keep = box.addButton("Keep Rows", QMessageBox.ButtonRole.AcceptRole)
     box.addButton(QMessageBox.StandardButton.Cancel)
@@ -299,9 +330,8 @@ def interactions_to_table(ctx: ToolContext):
     """Count each ligand row's interactions with its protein, by kind, and name the residues
     (the selected rows, or every row): a queued job that keeps the rows finished if cancelled."""
     table = ctx.table
-    if ligands.PROTEIN_COLUMN not in table:
-        ctx.show_message("No ligand rows: add a protein first")
-        return None
+    if ligands.PROTEIN_COLUMN not in table:  # no ligand rows yet: asking for this adds them
+        return extract_ligands(ctx, then=lambda: interactions_to_table(ctx))
     structures: dict[str, Structure] = {}
     oids, names = [], []
     for oid in ctx.target_oids(selected_only=len(ctx.selection) > 0).tolist():

@@ -41,6 +41,7 @@ def main(argv: list[str]) -> int:
 
     app = QApplication([argv[0]])
     from chemsuite.app import theme
+    from chemsuite.app.document_windows import ToolWindow
     from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.core.settings import DARK, LIGHT, Appearance
     from chemsuite.core.table import Asset, PutAsset, Table
@@ -54,8 +55,9 @@ def main(argv: list[str]) -> int:
     table = Table()
     table.edit("Open", [PutAsset(name, None, Asset(name, "protein", name, structure, {}))])
     panel = ProteinPanel(table)
-    panel.resize(1400, 900)
-    panel.show()
+    window = ToolWindow(panel, "Protein Viewer", name=lambda: name, menu_bar=panel.menu_bar)
+    window.resize(1400, 900)
+    window.show()
 
     def settle() -> None:
         for _ in range(40):
@@ -66,14 +68,14 @@ def main(argv: list[str]) -> int:
         theme.apply_appearance(app, Appearance(theme=look))  # Fusion, as the app's own themes
         panel.session.clear_focus()
         settle()
-        panel.grab().save(str(out / f"protein-{look}.png"))
+        window.grab().save(str(out / f"protein-{look}.png"))
         if found:
             panel.session.focus(name, found[0])
             settle()
-            panel.grab().save(str(out / f"protein-{look}-focus.png"))
+            window.grab().save(str(out / f"protein-{look}-focus.png"))
     for path in sorted(out.glob("protein-*.png")):
         print(path)
-    panel.close()
+    window.close()
     return 0
 
 

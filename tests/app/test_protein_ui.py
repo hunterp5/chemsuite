@@ -50,6 +50,17 @@ def table() -> Table:
     return t
 
 
+def menu_of(panel, title: str):
+    """The viewer's menu-bar menu *title*, filled as when it opens."""
+    menu = next(a.menu() for a in panel.menu_bar.actions() if a.text() == title)
+    menu.aboutToShow.emit()
+    return menu
+
+
+def action_in(menu, text: str):
+    return next(a for a in menu.actions() if a.text() == text)
+
+
 @pytest.fixture
 def panel(qtbot, table, monkeypatch):
     from chemsuite.app import graphics
@@ -367,13 +378,12 @@ def test_around_adds_what_lies_near_the_selection(panel) -> None:
     from chemsuite.app.protein.selection_bar import AROUND
 
     bar, session = panel.selection_bar, panel.session
-    bar._fill_menu()
-    around = next(a for a in bar.menu.actions() if a.text() == "Around")
+    around = action_in(menu_of(panel, "Select"), "Around")
     assert not around.isEnabled()  # nothing selected
-    bar._pick("resn ATP")
+    bar.pick("resn ATP")
+    assert bar.field.text() == "resn ATP"
     atp = session.selected_count()
-    bar._fill_menu()
-    around = next(a for a in bar.menu.actions() if a.text() == "Around").menu()
+    around = action_in(menu_of(panel, "Select"), "Around").menu()
     titles = [a.text() for a in around.actions() if a.text()]
     assert len(titles) == 2 * len(AROUND) and titles[1] == "Residues Within 5 Å"
     next(a for a in around.actions() if a.text() == "Residues Within 5 Å").trigger()
@@ -652,8 +662,8 @@ def _atp_atom(name: str) -> int:
 
 def test_interactions_of_the_ligands_or_the_selection(panel) -> None:
     session = panel.session
-    panel.interactions_action.trigger()  # nothing selected: every ligand
-    assert panel.interactions_action.isChecked()
+    action_in(menu_of(panel, "Ligand"), "Interactions").trigger()  # nothing selected: ligands
+    assert action_in(menu_of(panel, "Ligand"), "Interactions").isChecked()
     shown = session.display("1ATP")
     s = shown.structure
     assert np.array_equal(shown.query, s.res_kind[s.residue_of] == 2)
@@ -662,8 +672,9 @@ def test_interactions_of_the_ligands_or_the_selection(panel) -> None:
     session.select_text("chain I")
     session.show_interactions()
     assert np.array_equal(shown.query, s.atom_chain == 1)
-    panel.interactions_action.trigger()
-    assert not panel.interactions_action.isChecked() and not shown.query.any()
+    action_in(menu_of(panel, "Ligand"), "Interactions").trigger()
+    assert not action_in(menu_of(panel, "Ligand"), "Interactions").isChecked()
+    assert not shown.query.any()
     assert len(session.scene.lines) == 0
 
 
@@ -759,18 +770,15 @@ def test_the_binding_site_picks_whole_residues(panel) -> None:
 
 
 def test_the_focus_menu_lists_the_ligands(panel) -> None:
-    from PySide6.QtWidgets import QMenu
-
-    from chemsuite.app.protein.toolbar import fill_focus
-
-    menu = QMenu()
-    fill_focus(menu, panel.session)
-    titles = [a.text() for a in menu.actions() if a.text()]
-    assert titles == ["E/ATP 355", "Pocket Surface", "Clear Focus"]
-    menu.actions()[0].trigger()
+    ligand = menu_of(panel, "Ligand")
+    focus = action_in(ligand, "Focus").menu()
+    assert [a.text() for a in focus.actions()] == ["E/ATP 355"]
+    assert not action_in(ligand, "Clear Focus").isEnabled()
+    focus.actions()[0].trigger()
     assert panel.session.focused_residue() is not None
-    fill_focus(menu, panel.session)
-    assert menu.actions()[0].isChecked() and menu.actions()[-1].isEnabled()
+    ligand = menu_of(panel, "Ligand")
+    assert action_in(ligand, "Focus").menu().actions()[0].isChecked()
+    assert action_in(ligand, "Clear Focus").isEnabled()
 
 
 def test_measuring_takes_the_clicks(panel) -> None:
@@ -854,9 +862,12 @@ def test_the_viewers_own_keys_while_focus_is_inside(panel, qtbot) -> None:
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QGuiApplication
 
-    with qtbot.waitActive(panel):  # a shortcut needs its window active
-        panel.show()
-        panel.activateWindow()
+    from chemsuite.app.document_windows import ToolWindow
+
+    window = ToolWindow(panel, "Protein Viewer", name=lambda: "", menu_bar=panel.menu_bar)
+    with qtbot.waitActive(window):  # a shortcut needs its window active
+        window.show()
+        window.activateWindow()
     panel.tree.setFocus()
     qtbot.keyClick(panel.tree, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
     shown = panel.session.display("1ATP")
@@ -869,9 +880,12 @@ def test_the_viewers_own_keys_while_focus_is_inside(panel, qtbot) -> None:
     qtbot.keyClick(panel.tree, Qt.Key.Key_F)
     assert framed == [1]
     field = panel.selection_bar.field  # a text field keeps its own ⌘A and its letters
+    assert field.text() == "all"  # Select ▸ All shows what it selected, as the other picks do
+    field.clear()
     field.setFocus()
     qtbot.keyClicks(field, "f")
     assert field.text() == "f" and framed == [1]
+    panel.setParent(None)  # the fixture's panel outlives the window
 
 
 def test_the_sequence_strip_by_keyboard(panel, qtbot) -> None:
@@ -910,25 +924,38 @@ def test_the_view_follows_light_and_dark(panel) -> None:
 
 
 def test_closing_the_viewer_window_lets_go_of_the_document(qtbot, table, monkeypatch) -> None:
-    """Closing the dock (as the window's close button does) must unsubscribe the session: a
-    deleted session left listening raised on the next table change, and the listeners after it
-    never heard of the change."""
+    """Closing the window must unsubscribe the session: a deleted session left listening
+    raised on the next table change, and the listeners after it never heard of the change."""
     from PySide6.QtCore import QCoreApplication, QEvent
 
     from chemsuite.app import graphics
-    from chemsuite.app.panel_dock import PanelDock
+    from chemsuite.app.document_windows import ToolWindow
     from chemsuite.app.protein.panel import ProteinPanel
 
     monkeypatch.setattr(graphics, "_problem", None)
     stopped = []
     panel = ProteinPanel(table, watch_current=lambda follow: lambda: stopped.append(True))
-    dock = PanelDock("Protein Viewer")
-    dock.setWidget(panel)
-    dock.show()
-    dock.close()
+    window = ToolWindow(panel, "Protein Viewer", name=lambda: "Kinases",
+                        menu_bar=panel.menu_bar, on_close=panel.close_panel)  # fmt: skip
+    assert window.windowTitle() == "Protein Viewer — Kinases"
+    assert window.menuBar() is panel.menu_bar
+    window.show()
+    window.close()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     assert stopped == [True]
     heard = []
     table.subscribe(heard.append)
     add_protein(table, "2ATP", "1atp.cif.gz")
     assert heard
+
+
+def test_the_menu_bar_holds_every_command(panel) -> None:
+    from chemsuite.app.protein.menubar import MENUS
+
+    assert [a.text() for a in panel.menu_bar.actions()] == list(MENUS)
+    display = [a.text() for a in menu_of(panel, "Display").actions() if a.text()]
+    assert display == ["Show", "Hide", "Colour", "Label", "Hydrogens", "Surface Transparency"]
+    select = menu_of(panel, "Select")
+    action_in(select, "All").trigger()
+    assert panel.session.selected_count() == panel.session.display("1ATP").active.sum()
+    assert action_in(menu_of(panel, "Edit"), "Copy").isEnabled()

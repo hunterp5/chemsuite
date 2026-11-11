@@ -13,14 +13,18 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The Protein Viewer's own menu bar: it is a workspace of its own, so its files, editing,
-display and pocket work live here rather than in the main window's menus.
+"""The Protein Viewer's menu bar: the viewer is a window of its own, so everything it does is
+here (and in the right-click menu), not in toolbar buttons.
 
-File: Open Protein…, Fetch from PDB…, Save Selection As…, Close. Edit: copying, selecting.
-View: Show, Hide, Colour, Label, Hydrogens, Surface Transparency, the camera, which areas
-show.
-Pocket: interactions, focus, measurements, ligands to the table. Menus are filled when they
-open, so they always match the session.
+- File: open, fetch, remove and save proteins; save the selection; close the window.
+- Edit: copy the selection.
+- Select: everything, kinds, chains, around the selection, saved selections.
+- Display: Show, Hide, Colour, Label (on the selection); Hydrogens, Surface Transparency.
+- Ligand: focus a ligand in its pocket, interactions, measurements, ligands to the table.
+- View: the camera, which areas show, full screen.
+- Window: minimise, the table's window.
+
+Menus are filled when they open, so they always match the session.
 """
 
 from __future__ import annotations
@@ -34,7 +38,7 @@ from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar
 
 from chemsuite.protein import io as protein_io
 
-from . import menus, toolbar
+from . import menus
 
 if TYPE_CHECKING:
     from .panel import ProteinPanel
@@ -46,110 +50,157 @@ EXTRACT = "extract"
 LIGAND = "ligand"  # add one ligand's row: (protein id, residue)
 PROFILE = "profile"  # each ligand row's interactions, as columns
 REMOVE = "remove"  # remove a protein: (protein id)
+SHOW_TABLE = "show_table"  # bring the document's table window forward
 Commands = Mapping[str, Callable[..., object]]
+MENUS = ("File", "Edit", "Select", "Display", "Ligand", "View", "Window")
 
 
 def build(panel: ProteinPanel, commands: Commands) -> QMenuBar:
+    """The menu bar; its window shows it (it stays hidden while the panel has no window)."""
     bar = QMenuBar(panel)
-    bar.setNativeMenuBar(False)  # in the viewer's own window, not the app's menu bar
-    _file(bar.addMenu("File"), panel, commands)
-    _edit(bar.addMenu("Edit"), panel)
-    _view(bar.addMenu("View"), panel)
-    _pocket(bar.addMenu("Pocket"), panel, commands)
+    bar.hide()
+    fills = (
+        lambda m: _file(m, panel, commands),
+        lambda m: _edit(m, panel),
+        lambda m: _select(m, panel),
+        lambda m: _display(m, panel),
+        lambda m: _ligand(m, panel, commands),
+        lambda m: _view(m, panel),
+        lambda m: _window(m, panel, commands),
+    )
+    filled = []
+    for title, fill in zip(MENUS, fills, strict=True):
+        menu = bar.addMenu(title)
+        menu.aboutToShow.connect(lambda m=menu, f=fill: (m.clear(), f(m)))
+        filled.append((menu, fill))
+
+    def refresh() -> None:
+        """Fill the closed menus again, so their shortcuts are enabled as the session allows
+        (a disabled action's shortcut does nothing)."""
+        for menu, fill in filled:
+            if not menu.isVisible():
+                menu.clear()
+                fill(menu)
+
+    session = panel.session
+    for signal in (session.selectionChanged, session.proteinsChanged, session.sceneChanged):
+        signal.connect(refresh)
+    refresh()
     return bar
 
 
-def _file(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
-    def fill() -> None:
-        menu.clear()
-        opening = menu.addAction("Open Protein…", commands.get(OPEN, lambda: None))
-        opening.setShortcut(QKeySequence.StandardKey.Open)
-        opening.setEnabled(OPEN in commands)
-        menu.addAction("Fetch from PDB…", commands.get(FETCH, lambda: None)).setEnabled(
-            FETCH in commands
-        )
-        removing = menu.addMenu("Remove Protein")
-        for shown in panel.session.displays:
-            removing.addAction(shown.name, lambda p=shown.id: commands[REMOVE](p))
-        removing.setEnabled(REMOVE in commands and bool(panel.session.displays))
-        menu.addSeparator()
-        saving = menu.addMenu("Save Protein As")
-        for shown in panel.session.displays:
-            saving.addAction(f"{shown.name}…", lambda p=shown.id: save_protein(panel, p))
-        saving.setEnabled(bool(panel.session.displays))
-        save = menu.addAction("Save Selection As…", lambda: save_selection(panel))
-        save.setEnabled(panel.session.selected_count() > 0)
-        menu.addSeparator()
-        menu.addAction("Close Viewer", panel.close_viewer)
+def _command(menu: QMenu, title: str, commands: Commands, key: str, *args):
+    action = menu.addAction(title, lambda: commands[key](*args) if key in commands else None)
+    action.setEnabled(key in commands)
+    return action
 
-    menu.aboutToShow.connect(fill)
-    fill()
+
+def _file(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
+    shown = panel.session.displays
+    _command(menu, "Open Protein…", commands, OPEN).setShortcut(QKeySequence.StandardKey.Open)
+    _command(menu, "Fetch from PDB…", commands, FETCH).setShortcut(QKeySequence("Ctrl+Shift+O"))
+    menu.addSeparator()
+    saving = menu.addMenu("Save Protein As")
+    for display in shown:
+        saving.addAction(f"{display.name}…", lambda p=display.id: save_protein(panel, p))
+    saving.setEnabled(bool(shown))
+    save = menu.addAction("Save Selection As…", lambda: save_selection(panel))
+    save.setEnabled(panel.session.selected_count() > 0)
+    menu.addSeparator()
+    removing = menu.addMenu("Remove Protein")
+    for display in shown:
+        _command(removing, display.name, commands, REMOVE, display.id)
+    removing.setEnabled(REMOVE in commands and bool(shown))
+    menu.addSeparator()
+    close = menu.addAction("Close Window", panel.close_viewer)
+    close.setShortcut(QKeySequence.StandardKey.Close)
 
 
 def _edit(menu: QMenu, panel: ProteinPanel) -> None:
+    selected = panel.session.selected_count() > 0
+    copy = menu.addAction("Copy", lambda: panel.copy_selection(protein_io.PDB))
+    copy.setShortcut(QKeySequence.StandardKey.Copy)
+    copy.setToolTip("Copy the selected atoms as PDB text")
+    copy.setEnabled(selected)
+    copying = menu.addMenu("Copy Selection As")
+    copying.addAction("PDB", lambda: panel.copy_selection(protein_io.PDB))
+    copying.addAction("mmCIF", lambda: panel.copy_selection(protein_io.MMCIF))
+    copying.setEnabled(selected)
+
+
+def _select(menu: QMenu, panel: ProteinPanel) -> None:
     session = panel.session
+    everything = menu.addAction("All", lambda: panel.selection_bar.pick("all"))
+    everything.setShortcut(QKeySequence.StandardKey.SelectAll)
+    menu.addSeparator()
+    panel.selection_bar.fill_menu(menu)
+    menu.addSeparator()
+    clear = menu.addAction("Clear Selection", session.clear_selection)
+    clear.setEnabled(session.selected_count() > 0)
 
-    def fill() -> None:
-        menu.clear()
-        selected = session.selected_count() > 0
-        copying = menu.addMenu("Copy Selection As")
-        copying.addAction("PDB", lambda: panel.copy_selection(protein_io.PDB))
-        copying.addAction("mmCIF", lambda: panel.copy_selection(protein_io.MMCIF))
-        copying.setEnabled(selected)
-        menu.addSeparator()
-        menu.addAction("Select All", lambda: session.select_text("all"))
-        clear = menu.addAction("Clear Selection", session.clear_selection)
-        clear.setEnabled(selected)
-        save = menu.addAction("Save Selection…", panel.selection_bar.save)
-        save.setEnabled(selected)
 
-    menu.aboutToShow.connect(fill)
-    fill()
+def _display(menu: QMenu, panel: ProteinPanel) -> None:
+    session = panel.session
+    menus.fill_show(menu.addMenu("Show"), session)
+    menus.fill_hide(menu.addMenu("Hide"), session)
+    menus.fill_colour(menu.addMenu("Colour"), session, panel)
+    menus.fill_label(menu.addMenu("Label"), session)
+    menu.addSeparator()
+    menus.fill_hydrogens(menu.addMenu("Hydrogens"), session)
+    menus.fill_transparency(menu.addMenu("Surface Transparency"), session)
+
+
+def _ligand(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
+    session = panel.session
+    menus.fill_focus(menu.addMenu("Focus"), session)
+    skin = menu.addAction(
+        "Pocket Surface", lambda: session.show_pocket_surface(not session.pocket_surface)
+    )
+    skin.setCheckable(True)
+    skin.setChecked(session.pocket_surface)
+    skin.setToolTip("Draw a see-through skin over the focused pocket, by hydrophobicity")
+    clear = menu.addAction("Clear Focus", session.clear_focus)
+    clear.setEnabled(session.focused is not None)
+    menu.addSeparator()
+    shown = menu.addAction(
+        "Interactions", lambda: session.show_interactions(not session.interactions_shown)
+    )
+    shown.setCheckable(True)
+    shown.setChecked(session.interactions_shown)
+    shown.setToolTip(
+        "Show the interactions of the selection, or of every ligand when nothing is selected"
+    )
+    menus.fill_measure(menu.addMenu("Measure"), session)
+    menu.addSeparator()
+    have = bool(session.displays)
+    _command(menu, "Ligands to Table", commands, EXTRACT).setEnabled(EXTRACT in commands and have)
+    _command(menu, "Interactions to Table", commands, PROFILE).setEnabled(
+        PROFILE in commands and have
+    )
 
 
 def _view(menu: QMenu, panel: ProteinPanel) -> None:
-    session = panel.session
-
-    def fill() -> None:
-        menu.clear()
-        menus.fill_show(menu.addMenu("Show"), session)
-        menus.fill_hide(menu.addMenu("Hide"), session)
-        menus.fill_colour(menu.addMenu("Colour"), session, panel)
-        menus.fill_label(menu.addMenu("Label"), session)
-        menus.fill_hydrogens(menu.addMenu("Hydrogens"), session)
-        menus.fill_transparency(menu.addMenu("Surface Transparency"), session)
-        menu.addSeparator()
-        menu.addAction("Frame Selection", panel.frame_selection)
-        menu.addAction("Reset View", panel.reset_view)
-        menu.addSeparator()
-        for title, widget in (("Proteins List", panel.tree), ("Sequence", panel.sequence)):
-            action = menu.addAction(title, lambda w=widget: w.setVisible(not w.isVisible()))
-            action.setCheckable(True)
-            action.setChecked(widget.isVisibleTo(panel))
-
-    menu.aboutToShow.connect(fill)
-    fill()
+    menu.addAction("Frame Selection", panel.frame_selection).setToolTip(
+        "Fit the selection (everything, when nothing is selected) to the view (F)"
+    )
+    menu.addAction("Reset View", panel.reset_view)
+    menu.addSeparator()
+    for title, widget in (("Proteins List", panel.tree), ("Sequence", panel.sequence)):
+        action = menu.addAction(title, lambda w=widget: w.setVisible(not w.isVisible()))
+        action.setCheckable(True)
+        action.setChecked(not widget.isHidden())
+    menu.addSeparator()
+    full = menu.addAction("Full Screen", panel.toggle_full_screen)
+    full.setShortcut(QKeySequence.StandardKey.FullScreen)
+    full.setCheckable(True)
+    full.setChecked(panel.window().isFullScreen())
 
 
-def _pocket(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
-    session = panel.session
-
-    def fill() -> None:
-        menu.clear()
-        shown = menu.addAction("Interactions", lambda: session.show_interactions(
-            not session.interactions_shown))  # fmt: skip
-        shown.setCheckable(True)
-        shown.setChecked(session.interactions_shown)
-        toolbar.fill_focus(menu.addMenu("Focus"), session)
-        toolbar.fill_measure(menu.addMenu("Measure"), session)
-        menu.addSeparator()
-        extract = menu.addAction("Extract Ligands to Table", commands.get(EXTRACT, lambda: None))
-        extract.setEnabled(EXTRACT in commands and bool(session.displays))
-        profile = menu.addAction("Interactions to Table", commands.get(PROFILE, lambda: None))
-        profile.setEnabled(PROFILE in commands and bool(session.displays))
-
-    menu.aboutToShow.connect(fill)
-    fill()
+def _window(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
+    minimise = menu.addAction("Minimize", lambda: panel.window().showMinimized())
+    minimise.setShortcut(QKeySequence("Ctrl+M"))
+    menu.addSeparator()
+    _command(menu, "Show Table", commands, SHOW_TABLE)
 
 
 def save_selection(panel: ProteinPanel, path: str | None = None) -> str:

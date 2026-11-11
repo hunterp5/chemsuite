@@ -35,7 +35,14 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from PySide6.QtCore import QItemSelectionModel, QSize
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QAbstractItemView, QDialog, QDockWidget, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QDialog,
+    QDockWidget,
+    QMainWindow,
+    QMenuBar,
+    QWidget,
+)
 
 from chemsuite.core.lists import RowLists
 from chemsuite.core.selection import Selection
@@ -328,13 +335,35 @@ class ToolContext:
         A tool that produces more results of the same kind (further retrosynthetic routes,
         say) fills the panel it already has instead of opening a second one.
         """
-        for dock in self._window._panels:
-            widget = dock.widget()
+        holders = [(dock.widget(), dock) for dock in self._window._panels]
+        holders += [(shown.panel, shown) for shown in self._window._windows]
+        for widget, holder in holders:
             if getattr(widget, "tool_id", None) == tool_id:
-                dock.show()
-                dock.raise_()
+                if holder in self._window._windows:
+                    holder.bring_forward()
+                else:
+                    holder.show()
+                    holder.raise_()
                 return widget
         return None
+
+    def add_window(
+        self,
+        widget: QWidget,
+        title: str,
+        *,
+        menu_bar: QMenuBar | None = None,
+        on_close: Callable[[], None] | None = None,
+    ) -> QMainWindow:
+        """Show *widget* in a window of its own (not dockable), with *menu_bar* as its menus.
+
+        The window is titled "*title* — document", closes with the document (calling
+        *on_close* first) and, when the widget has ``tool_id`` and ``state()``, is saved and
+        reopened with it, in the same size and place.
+        """
+        from .document_windows import add_window
+
+        return add_window(self._window, widget, title, menu_bar, on_close)
 
     def show_dialog(self, dialog: QDialog) -> QDialog:
         """Show a tool's dialog without blocking the window.

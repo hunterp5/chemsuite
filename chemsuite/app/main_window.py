@@ -68,7 +68,7 @@ from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import REACTION, STRUCTURE
 
-from . import dock_layout, session
+from . import dock_layout, document_windows, session
 from .advanced_search import AdvancedSearchPanel
 from .column_actions import ColumnActions
 from .commands import apply_shortcuts, register
@@ -244,6 +244,7 @@ class MainWindow(QMainWindow):
         self._last_structure_query: StructureQuery | None = None
         self._lists: ListActions | None = None
         self._panels: list[PanelDock] = []
+        self._windows: list[document_windows.ToolWindow] = []  # tool windows
         self._dialogs: list[QDialog] = []  # open tool dialogs (they do not block the table)
         self.filter_dock = QDockWidget("Filters", self)
         self.filter_dock.setObjectName("FilterDock")
@@ -420,6 +421,7 @@ class MainWindow(QMainWindow):
         for dock in list(self._panels):
             dock.close()
         self._panels.clear()
+        document_windows.close_windows(self)
         if self._find is not None:
             self._find.close_dialog()
             self._find = None
@@ -991,38 +993,10 @@ class MainWindow(QMainWindow):
         return dock
 
     def panel_states(self) -> list[dict]:
-        """Saved form of the open panels that can be restored (see ``Tool.restore``).
-
-        The saved panels are named ``Panel0``… in this order, which the saved arrangement
-        refers to.
-        """
-        states, docks = [], []
-        for dock in self._panels:
-            widget = dock.widget()
-            if hasattr(widget, "state") and getattr(widget, "tool_id", None):
-                states.append({"tool": widget.tool_id, "state": widget.state()})
-                docks.append(dock)
-        dock_layout.name_panels(self, docks)
-        return states
+        return document_windows.panel_states(self)
 
     def _restore_panels(self, saved: list[dict]) -> None:
-        tools = {}
-        for tool in registered_tools():
-            tools.update(dict.fromkeys((*tool.aliases, tool.id), tool))
-        for i, entry in enumerate(saved):
-            tool = tools.get(entry.get("tool")) if isinstance(entry, dict) else None
-            if tool is None or tool.restore is None or tool.missing():
-                log.warning("cannot restore saved panel %r", entry)
-                continue
-            before = list(self._panels)
-            try:
-                tool.restore(ToolContext(self), dict(entry.get("state") or {}))
-            except (KeyError, ValueError, TypeError):  # a damaged or outdated entry
-                log.exception("failed to restore panel %r", entry)
-                continue
-            added = [d for d in self._panels if d not in before]
-            if added:
-                added[-1].setObjectName(f"Panel{i}")  # as named when saved
+        document_windows.restore_panels(self, saved, registered_tools())
 
     def _forget_panel(self, dock: PanelDock) -> None:
         if dock in self._panels:
@@ -1030,7 +1004,7 @@ class MainWindow(QMainWindow):
 
     @property
     def panels(self) -> list[QWidget]:
-        return [dock.widget() for dock in self._panels]
+        return [dock.widget() for dock in self._panels] + [w.panel for w in self._windows]
 
     def _update_actions(self) -> None:
         if self._workspace is None:

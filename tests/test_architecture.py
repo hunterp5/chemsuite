@@ -177,7 +177,7 @@ def test_fallbacks_and_blind_excepts_do_not_grow() -> None:
 #: of the window) rather than raise its budget.
 MAX_LINES = 1000
 LONG_FILES = {
-    "chemsuite/app/main_window.py": 1796,
+    "chemsuite/app/main_window.py": 1770,
     "chemsuite/app/sketcher/canvas.py": 1341,
     "chemsuite/app/table_view.py": 1139,
     "chemsuite/app/viewer/panel.py": 1021,

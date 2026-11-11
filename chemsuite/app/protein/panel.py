@@ -15,11 +15,9 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """The Protein Viewer panel: layout and wiring only.
 
-The viewer is a workspace of its own (it opens as its own window): a menu bar
-(:mod:`.menubar`: opening and fetching proteins, saving, copying, display, pocket work), a
-toolbar (:mod:`.toolbar`: Show, Hide, Colour, Hydrogens, Transparency; Interactions, Focus,
-Measure; Frame, Reset View) and the
-selection bar run across the top; below, the proteins list beside the 3D view (with the
+The viewer is a workspace of its own, in a window of its own (``ToolContext.add_window``) whose
+menu bar is :mod:`.menubar` (files, copying, selecting, display, ligand work, the camera). The
+selection field runs across the top; below, the proteins list beside the 3D view (with the
 models bar under it while a shown protein has several models), and the sequence strip under
 them. Everything reads and changes one :class:`~.session.ProteinSession`.
 
@@ -40,9 +38,8 @@ from collections.abc import Callable
 
 import numpy as np
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QGuiApplication, QKeyEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QDockWidget,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -59,7 +56,7 @@ from chemsuite.molview.camera import Camera
 from chemsuite.protein import io as protein_io
 from chemsuite.protein import ligands
 
-from . import menubar, menus, toolbar
+from . import menubar, menus
 from .builds import Run
 from .models_bar import ModelsBar
 from .pocket import PocketCamera, follow_row, missing_protein
@@ -75,7 +72,7 @@ LINES = "interactions"
 POCKET = "pocket"
 #: the commands a tool gives the viewer (see :mod:`.menubar`)
 OPEN, FETCH, EXTRACT, LIGAND = menubar.OPEN, menubar.FETCH, menubar.EXTRACT, menubar.LIGAND
-PROFILE, REMOVE = menubar.PROFILE, menubar.REMOVE
+PROFILE, REMOVE, SHOW_TABLE = menubar.PROFILE, menubar.REMOVE, menubar.SHOW_TABLE
 
 
 class ProteinPanel(QWidget):
@@ -102,7 +99,6 @@ class ProteinPanel(QWidget):
         self.pocket_camera = PocketCamera(self)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        self.toolbar = toolbar.build(self)
         self.selection_bar = SelectionBar(self.session)
 
         self.tree = ProteinTree(self.session)
@@ -135,10 +131,8 @@ class ProteinPanel(QWidget):
         self.rows.setStretchFactor(0, 1)
         self.rows.setSizes([700, self.sequence.sizeHint().height()])
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 0, 6, 6)
+        layout.setContentsMargins(8, 8, 8, 8)
         self.menu_bar = menubar.build(self, commands)
-        layout.setMenuBar(self.menu_bar)
-        layout.addWidget(self.toolbar)
         layout.addWidget(self.selection_bar)
         layout.addWidget(self.rows, 1)
         layout.addWidget(self.status)
@@ -164,26 +158,6 @@ class ProteinPanel(QWidget):
         QWidget.setTabOrder(self.tree, self.views)
         QWidget.setTabOrder(self.views, self.sequence.strip)
 
-    # keys: the viewer's own while focus is inside it (the main window has ⌘A and ⌘C too)
-    def _own_key(self, event: QKeyEvent) -> bool:
-        return event.matches(QKeySequence.StandardKey.SelectAll) or event.matches(
-            QKeySequence.StandardKey.Copy
-        )
-
-    def event(self, event: QEvent) -> bool:
-        if event.type() == QEvent.Type.ShortcutOverride and self._own_key(event):
-            event.accept()  # a text field inside takes these first: it accepts them itself
-            return True
-        return super().event(event)
-
-    def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.matches(QKeySequence.StandardKey.SelectAll):
-            self.session.select_text("all")
-        elif event.matches(QKeySequence.StandardKey.Copy):
-            self.copy_selection(protein_io.PDB)
-        else:
-            super().keyPressEvent(event)
-
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
         if event.type() == QEvent.Type.PaletteChange and self.view is not None:
@@ -199,11 +173,14 @@ class ProteinPanel(QWidget):
         return "Protein Viewer"
 
     def close_viewer(self) -> None:
-        """Close the viewer's window (its dock)."""
-        parent = self.parentWidget()
-        while parent is not None and not isinstance(parent, QDockWidget):
-            parent = parent.parentWidget()
-        (parent or self).close()
+        """Close the viewer's window."""
+        self.window().close()
+
+    def toggle_full_screen(self) -> None:
+        window = self.window()
+        if window is self:
+            return  # not in a window of its own
+        window.showNormal() if window.isFullScreen() else window.showFullScreen()
 
     # what the middle shows: the view, why there is none, or ways to add a protein
     def _empty_page(self, commands: menubar.Commands) -> QWidget:
@@ -267,7 +244,6 @@ class ProteinPanel(QWidget):
 
     # redrawing
     def _redraw(self) -> None:
-        self.interactions_action.setChecked(self.session.interactions_shown)
         if self.view is None:
             return
         from .view import ATOM
@@ -466,7 +442,7 @@ class ProteinPanel(QWidget):
             self._fitted = {d.id for d in self.session.displays if d.visible}
 
     def close_panel(self) -> None:
-        """Let go of the document: its dock calls this when closed, then deletes the panel,
+        """Let go of the document: its window calls this when closed, then deletes the panel,
         so a session left listening would fail on the next table change."""
         self._stop_watching()
         self._stop_watching = lambda: None

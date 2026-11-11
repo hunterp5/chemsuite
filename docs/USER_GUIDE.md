@@ -1204,35 +1204,52 @@ tooltips give the reason. Settings ▸ General ▸ 3D graphics can force softwar
 
 ### Proteins
 
-**Protein ▸ Protein Viewer** (Ctrl+Shift+R) opens a workspace for proteins in its own
-window (dock it beside the table with the button in its title bar if you prefer). It has its
-own menus:
+**Protein ▸ Protein Viewer** (Ctrl+Shift+R) opens a workspace for proteins: a window of its
+own, titled after the document, with its own menu bar (on macOS the menu bar at the top of the
+screen switches to the viewer's menus while it is in front). It is not docked beside the table;
+it closes with its document and reopens with it, in the same size and place. Everything the
+viewer does is in its menus and the right-click menu:
 
-- **File:** **Open Protein…** (PDB or mmCIF files, gzipped or not), **Fetch from PDB…**
-  (download an entry by its ID, such as 1ATP), **Remove Protein ▸**, **Save Protein As ▸**
-  (every model and alternate location), **Save Selection As…** (PDB or mmCIF) and **Close
-  Viewer**. Saving writes a temporary file first, so a save that fails leaves the old file as it
-  was. A selection across several proteins is written as one file; a chain whose ID another
-  protein took first is renamed, and the status line says how. With no protein open, the middle of the window offers
-  Open and Fetch. A protein can also be removed from its right-click menu in the proteins list,
-  or with Delete. When it has ligand rows you choose **Delete Rows** or **Keep Rows**; either
-  way one Undo brings it all back. A kept row whose protein is gone says so on the viewer's
-  status line when you make it current.
-- **Edit:** **Copy Selection As ▸ PDB / mmCIF**, **Select All**, **Clear Selection**, **Save
-  Selection…**.
-- **View:** Show, Hide, Colour and Label, Hydrogens, Surface Transparency, Frame Selection, Reset
-  View, and whether the proteins list and the sequence show.
-- **Pocket:** Interactions, Focus, Measure, **Extract Ligands to Table** (rows for the
-  ligands of proteins that have none yet) and **Interactions to Table**: for each ligand row
-  (the selected rows, or all), how many hydrogen bonds, salt bridges, π-stacking, cation–π,
-  hydrophobic, halogen-bond, metal and water-bridge contacts its ligand makes, one number
-  column each, and a **Contacts** column naming the residues and how (`MET793 HB; LEU788 X`).
-  A row's own pose is used when it has one. It runs in the job queue; cancelling it keeps the
-  rows finished, and running it again updates the same columns.
+- **File:** **Open Protein…** (Ctrl+O; PDB or mmCIF files, gzipped or not), **Fetch from
+  PDB…** (Ctrl+Shift+O; download an entry by its ID, such as 1ATP), **Save Protein As ▸**
+  (every model and alternate location), **Save Selection As…** (PDB or mmCIF), **Remove
+  Protein ▸** and **Close Window** (Ctrl+W). Saving writes a temporary file first, so a save
+  that fails leaves the old file as it was. A selection across several proteins is written as
+  one file; a chain whose ID another protein took first is renamed, and the status line says
+  how. With no protein open, the middle of the window offers Open and Fetch. A protein can also
+  be removed from its right-click menu in the proteins list, or with Delete. When ligand rows
+  in the table name it you choose **Delete Rows** or **Keep Rows**; either way one Undo brings
+  it all back. A kept row whose protein is gone says so on the viewer's status line when you
+  make it current.
+- **Edit:** **Copy** (Ctrl+C: the selected atoms as PDB text) and **Copy Selection As ▸ PDB /
+  mmCIF**.
+- **Select:** **All** (Ctrl+A), the usual picks (ligands, binding site, protein, backbone,
+  side chains, waters, ions…), **Chain ▸**, **Around ▸**, **Saved Selections ▸**, **Save
+  Selection…** and **Clear Selection**.
+- **Display:** **Show**, **Hide**, **Colour** and **Label** (on the selection), **Hydrogens**
+  and **Surface Transparency** (on every protein).
+- **Ligand:** **Focus ▸** a ligand in its pocket, **Pocket Surface**, **Clear Focus**,
+  **Interactions**, **Measure ▸**, **Ligands to Table** and **Interactions to Table** (both
+  below).
+- **View:** **Frame Selection** (F), **Reset View**, whether the proteins list and the sequence
+  show, and **Full Screen**.
+- **Window:** **Minimize** (Ctrl+M) and **Show Table**, which brings the document's table
+  forward.
 
-Proteins are saved inside the document. Adding one also adds a row for each of its ligands to
-the table, in one step you can undo. Cofactors (ATP, NAD, FAD, haem, SAM…) get a row only when
-they are the protein's only ligand; **Add Ligand to Table** in the right-click menu adds one.
+Proteins are saved inside the document. Opening or fetching one adds only the protein: the
+table is not touched. Its ligands' bond orders are worked out as it loads (asking the PDB's
+chemical component dictionary when needed), and a ligand whose bond orders had to be guessed is
+marked ⚠ in the proteins list. Ligands become table rows only when you ask:
+
+- **Ligand ▸ Ligands to Table** adds a row for each ligand of every protein that has none in
+  the table yet. Cofactors (ATP, NAD, FAD, haem, SAM…) get a row only when they are the
+  protein's only ligand; **Add Ligand to Table** in the right-click menu adds one.
+- **Ligand ▸ Interactions to Table**: for each ligand row (the selected rows, or all), how many
+  hydrogen bonds, salt bridges, π-stacking, cation–π, hydrophobic, halogen-bond, metal and
+  water-bridge contacts its ligand makes, one number column each, and a **Contacts** column
+  naming the residues and how (`MET793 HB; LEU788 X`). With no ligand rows yet, it adds them
+  first. A row's own pose is used when it has one. It runs in the job queue; cancelling it
+  keeps the rows finished, and running it again updates the same columns.
 
 | Column | What it holds |
 |---|---|
@@ -1254,15 +1271,16 @@ select it), the 3D view and the sequence underneath.
 - **Selecting.** Click selects a residue, Alt-click an atom, double-click its chain; Shift adds
   and Ctrl (Cmd) toggles; click empty space or press Esc to clear. Click or drag across letters
   in the sequence, or use its keys: the arrows move a cursor, Shift+arrows select from where it
-  started, Return selects the residue under it, Home and End jump to the ends of a chain. While
-  you work in the viewer, Ctrl/⌘+A selects every atom, Ctrl/⌘+C copies the selection as PDB and
-  F frames it. The proteins list highlights a chain or ligand that is wholly selected and puts
+  started, Return selects the residue under it, Home and End jump to the ends of a chain. In
+  the viewer, Ctrl/⌘+A selects every atom, Ctrl/⌘+C copies the selection as PDB and F frames
+  it (a text field keeps its own). The proteins list highlights a chain or ligand that is wholly selected and puts
   one partly selected in bold. Type in the selection field (point at it for the syntax): `chain A`,
   `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres (polymer within 5 of
   ligand)` (whole residues near a ligand; `byres` takes what follows it, hence the brackets),
-  `and`, `or`, `not`. **Select ▸** has the usual picks, **Around ▸** (the residues or
-  atoms within 3, 5, 8 or 10 Å of the selection, added to it) and **Save Selection…**; saved
-  selections are used as `$name`, and `$selection` is what is selected now.
+  `and`, `or`, `not`. The **Select** menu has the usual picks (each shows its expression in the
+  field), **Around ▸** (the residues or atoms within 3, 5, 8 or 10 Å of the selection, added to
+  it) and **Save Selection…**; saved selections are used as `$name`, and `$selection` is what
+  is selected now.
 - **Show, Hide, Colour** act on the selection: wire, sticks, ball and stick, spacefill,
   cartoon, surface; colour by element, chain, secondary structure, B-factor, hydrophobicity or
   a colour you choose.
@@ -1271,7 +1289,7 @@ select it), the 3D view and the sequence underneath.
   overlap, faded and sliced-away atoms lose theirs, and at most 300 show at once.
 - **Hydrogens** (all, polar or none) and **Transparency** (of surfaces, from opaque to 80%)
   apply to every protein. A hydrogen is drawn as the atom it is bonded to is shown, so showing
-  a residue as sticks shows its hydrogens too. Both are in the View menu as well.
+  a residue as sticks shows its hydrogens too.
 - **Interactions** draws dashed lines from the ligands (or the selection) to what they touch:
   hydrogen bonds (blue), salt bridges (magenta), π-stacking (green), cation–π (orange),
   hydrophobic contacts (grey), halogen bonds (cyan), metal contacts (purple) and water bridges

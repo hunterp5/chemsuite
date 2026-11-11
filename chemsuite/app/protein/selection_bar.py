@@ -13,11 +13,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The selection field and its quick picks.
+"""The selection field, and the quick picks the viewer's Select menu holds.
 
 Return selects what the text says (:mod:`chemsuite.protein.select`); a mistake marks the field
-and puts the cursor where reading stopped, with the reason in its tooltip. The Select menu
-holds the usual picks (ligands, binding site, waters…), saved selections and Save Selection.
+and puts the cursor where reading stopped, with the reason in its tooltip. :meth:`fill_menu`
+puts the usual picks (ligands, binding site, waters…), chains, Around, saved selections and Save
+Selection into a menu; a pick shows its expression in the field.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
-    QToolButton,
     QWidget,
 )
 
@@ -75,12 +75,6 @@ class SelectionBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        self.menu_button = QToolButton()
-        self.menu_button.setText("Select")
-        self.menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.menu = QMenu(self.menu_button)
-        self.menu.aboutToShow.connect(self._fill_menu)
-        self.menu_button.setMenu(self.menu)
         self.field = QLineEdit()
         self.field.setClearButtonEnabled(True)
         self.field.setPlaceholderText("Selection")
@@ -89,7 +83,6 @@ class SelectionBar(QWidget):
         self.field.textEdited.connect(lambda _text: self._mark(None))
         self.count = QLabel()
         self.count.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-        layout.addWidget(self.menu_button)
         layout.addWidget(self.field, 1)
         layout.addWidget(self.count)
         session.selectionChanged.connect(self._update_count)
@@ -132,22 +125,22 @@ class SelectionBar(QWidget):
                 residues += int(np.count_nonzero(np.diff(owners))) + 1
         self.count.setText(f"{atoms:,} atoms, {residues:,} residues" if atoms else "")
 
-    def _fill_menu(self) -> None:
-        self.menu.clear()
+    def fill_menu(self, menu: QMenu) -> None:
+        """Add the quick picks, chains, Around, saved selections and Save Selection."""
         for title, expression in PICKS:
             if title is None:
-                self.menu.addSeparator()
+                menu.addSeparator()
                 continue
-            action = QAction(title, self.menu)
-            action.triggered.connect(lambda _=False, e=expression: self._pick(e))
-            self.menu.addAction(action)
-        chains = self.menu.addMenu("Chain")
+            action = QAction(title, menu)
+            action.triggered.connect(lambda _=False, e=expression: self.pick(e))
+            menu.addAction(action)
+        chains = menu.addMenu("Chain")
         names = sorted({str(n) for d in self.session.displays if d.visible
                         for n in d.structure.chain_name})  # fmt: skip
         for name in names:
-            chains.addAction(name, lambda n=name: self._pick(f"chain {n}"))
+            chains.addAction(name, lambda n=name: self.pick(f"chain {n}"))
         chains.setEnabled(bool(names))
-        around = self.menu.addMenu("Around")
+        around = menu.addMenu("Around")
         for kind, template in AROUND_KINDS:
             if around.actions():
                 around.addSeparator()
@@ -157,16 +150,13 @@ class SelectionBar(QWidget):
                                  lambda e=expression: self.grow(e))  # fmt: skip
         around.setToolTip("Add what lies near the selection to it")
         around.setEnabled(self.session.selected_count() > 0)
-        self.menu.addSeparator()
-        saved = self.menu.addMenu("Saved Selections")
+        menu.addSeparator()
+        saved = menu.addMenu("Saved Selections")
         for name in sorted(self.session.named):
-            saved.addAction(name, lambda n=name: self._pick(f"${n}"))
+            saved.addAction(name, lambda n=name: self.pick(f"${n}"))
         saved.setEnabled(bool(self.session.named))
-        save = self.menu.addAction("Save Selection…", self.save)
+        save = menu.addAction("Save Selection…", self.save)
         save.setEnabled(self.session.selected_count() > 0)
-        self.menu.addSeparator()
-        clear = self.menu.addAction("Clear Selection", self.session.clear_selection)
-        clear.setEnabled(self.session.selected_count() > 0)
 
     def grow(self, expression: str) -> None:
         """Select by an expression of the selection itself (``$selection``): the field is
@@ -174,7 +164,8 @@ class SelectionBar(QWidget):
         if self.select(expression):
             self.field.clear()
 
-    def _pick(self, expression: str) -> None:
+    def pick(self, expression: str) -> None:
+        """Select by *expression*, showing it in the field."""
         self.field.setText(expression)
         self.select(expression)
 

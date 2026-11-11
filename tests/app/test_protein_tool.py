@@ -13,7 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The Protein Viewer tool: open, fetch (a stub opener: no network), ligand rows, the table link."""
+"""The Protein Viewer tool: its window, open, fetch (a stub opener: no network), ligand rows on
+request, the table link."""
 
 from __future__ import annotations
 
@@ -67,6 +68,24 @@ def opened(window, qtbot, monkeypatch):
     return window
 
 
+def wait(qtbot, job) -> None:
+    if job is not None:
+        qtbot.waitUntil(lambda: not job.running, timeout=30_000)
+
+
+@pytest.fixture
+def with_rows(opened, qtbot):
+    """1ATP opened, and its ligand added to the table (Ligand ▸ Ligands to Table)."""
+    wait(qtbot, tool.extract_ligands(ToolContext(opened)))
+    return opened
+
+
+def menu_of(panel, title: str):
+    menu = next(a.menu() for a in panel.menu_bar.actions() if a.text() == title)
+    menu.aboutToShow.emit()
+    return menu
+
+
 def test_only_the_viewer_is_in_the_main_menus(window) -> None:
     assert window.tool_action("protein").isEnabled()
     assert [t.id for t in tool.TOOLS] == ["protein"]  # files open from the viewer itself
@@ -82,45 +101,68 @@ def test_the_viewer_has_a_menu_of_its_own(window) -> None:
 
 def test_the_viewer_opens_as_its_own_window(window, qtbot, monkeypatch) -> None:
     from chemsuite.app import graphics
+    from chemsuite.app.document_windows import ToolWindow
 
     monkeypatch.setattr(graphics, "_problem", None)
     window.resize(1400, 900)
     window.show()
     qtbot.waitExposed(window)
     panel = tool.open_viewer(ToolContext(window))
-    dock = next(d for d in window._panels if d.widget() is panel)
-    assert dock.isFloating()
-    assert dock.width() >= window.width() * 0.8
+    viewer = panel.window()
+    assert isinstance(viewer, ToolWindow) and viewer is not window and viewer.parent() is None
+    assert not any(d.widget() is panel for d in window._panels)  # not a dock: not dockable
+    assert viewer.menuBar() is panel.menu_bar and viewer.width() >= window.width() * 0.8
+    assert viewer.windowTitle() == f"Protein Viewer — {window.document_name}"
     assert panel.views.currentWidget() is panel.empty  # no proteins yet: ways to add one
     titles = [b.text() for b in panel.empty.findChildren(QPushButton)]
     assert titles == ["Open Protein…", "Fetch from PDB…"]
+    assert tool.open_viewer(ToolContext(window)) is panel  # brought forward, not a second one
+
+
+def test_the_viewer_window_closes_with_the_document_and_comes_back(with_rows) -> None:
+    window = with_rows
+    panel = ToolContext(window).find_panel("protein")
+    panel.window().setGeometry(60, 70, 610, 430)
+    entry = next(e for e in window.panel_states() if e["tool"] == "protein")
+    assert "geometry" in entry
+    window._teardown()
+    assert not window._windows and ToolContext(window).find_panel("protein") is None
+    window._restore_panels([entry])
+    again = ToolContext(window).find_panel("protein")
+    assert again is not None and again.window().size().width() == 610
 
 
 def test_the_viewer_menus_open_and_fetch(window, monkeypatch) -> None:
+    from chemsuite.app.protein.menubar import MENUS
+
     calls: list[str] = []
     monkeypatch.setattr(tool, "open_protein", lambda ctx: calls.append("open"))
     monkeypatch.setattr(tool, "fetch_from_pdb", lambda ctx: calls.append("fetch"))
     panel = tool.open_viewer(ToolContext(window))
-    file_menu = panel.menu_bar.actions()[0].menu()
-    file_menu.aboutToShow.emit()
+    file_menu = menu_of(panel, "File")
     for action in file_menu.actions():
         if action.text() in ("Open Protein…", "Fetch from PDB…"):
             action.trigger()
     assert calls == ["open", "fetch"]
-    assert [a.text() for a in panel.menu_bar.actions()] == ["File", "Edit", "View", "Pocket"]
+    assert [a.text() for a in panel.menu_bar.actions()] == list(MENUS)
 
 
-def test_opening_adds_the_protein_and_its_ligands_in_one_step(opened) -> None:
+def test_opening_adds_the_protein_but_not_its_ligands(opened, qtbot) -> None:
     table = opened.workspace.table
-    assert list(table.assets) == ["1ATP"]
+    assert list(table.assets) == ["1ATP"] and len(table.oids) == 3 and "Ligand" not in table
+    panel = ToolContext(opened).find_panel("protein")
+    assert panel is not None and [d.id for d in panel.session.displays] == ["1ATP"]
+    action = next(a for a in menu_of(panel, "Ligand").actions() if a.text() == "Ligands to Table")
+    action.trigger()
+    qtbot.waitUntil(lambda: "Ligand" in table, timeout=30_000)
     oid = int(table.oids[-1])
     assert table.cell("Protein", oid) == "1ATP" and table.cell("Ligand ID", oid) == "E/ATP 355"
     assert table.kind("Ligand") == "structure" and table.cell("Ligand", oid).startswith("Nc1")
     assert table.cell("Bond Orders", oid) == "File"  # the file's own chemical component tables
-    panel = ToolContext(opened).find_panel("protein")
-    assert panel is not None and [d.id for d in panel.session.displays] == ["1ATP"]
     table.undo()
-    assert not table.assets and len(table.oids) == 3 and "Ligand" not in table
+    assert "Ligand" not in table and list(table.assets) == ["1ATP"]
+    table.undo()
+    assert not table.assets
 
 
 def test_a_ligand_the_file_does_not_define_comes_from_the_ccd_once(window, qtbot, network):
@@ -128,6 +170,7 @@ def test_a_ligand_the_file_does_not_define_comes_from_the_ccd_once(window, qtbot
     for _ in range(2):
         job = tool.open_protein(ctx, [str(DATA / "1ppb.cif.gz")])
         qtbot.waitUntil(lambda job=job: not job.running, timeout=30_000)
+    wait(qtbot, tool.extract_ligands(ctx))
     table = window.workspace.table
     oid = int(table.oids[-1])
     assert table.cell("Ligand ID", oid) == "H/0G6 1"
@@ -146,7 +189,7 @@ def test_a_guessed_ligand_is_marked_in_the_tree(window, qtbot, tmp_path, monkeyp
     job = tool.open_protein(ToolContext(window), [str(DATA / "1ppb.cif.gz")])
     qtbot.waitUntil(lambda: not job.running, timeout=30_000)
     table = window.workspace.table
-    assert table.cell("Bond Orders", int(table.oids[-1])) == "Guessed from geometry"
+    assert "Ligand" not in table  # loading leaves the table alone
     assert table.assets["1PPB"].meta["guessed"] == "H/0G6 1"
     tree = ToolContext(window).find_panel("protein").tree
     top = tree.topLevelItem(0)
@@ -170,25 +213,29 @@ def test_an_unreadable_file_says_why(window, qtbot, tmp_path) -> None:
     assert not window.workspace.table.assets
 
 
-def test_the_current_row_focuses_its_ligand(opened) -> None:
-    table = opened.workspace.table
-    panel = ToolContext(opened).find_panel("protein")
-    ToolContext(opened).set_current_oid(int(table.oids[0]))  # a row with no protein
+def test_the_current_row_focuses_its_ligand(with_rows) -> None:
+    table = with_rows.workspace.table
+    panel = ToolContext(with_rows).find_panel("protein")
+    ToolContext(with_rows).set_current_oid(int(table.oids[0]))  # a row with no protein
     assert panel.session.focused is None
-    ToolContext(opened).set_current_oid(int(table.oids[-1]))
+    ToolContext(with_rows).set_current_oid(int(table.oids[-1]))
     shown = panel.session.display("1ATP")
     assert panel.session.focused_residue() == ("1ATP", 338) and shown.ghost.any()
 
 
-def test_extract_ligands_fills_in_proteins_without_rows(opened) -> None:
-    ctx = ToolContext(opened)
-    assert tool.extract_ligands(ctx) == 0  # 1ATP has its row already
-    table = opened.workspace.table
+def test_extract_ligands_fills_in_proteins_without_rows(with_rows, qtbot) -> None:
+    ctx = ToolContext(with_rows)
+    assert tool.extract_ligands(ctx) is None  # 1ATP has its row already
+    assert with_rows.statusBar().currentMessage() == "No new ligands to add"
+    table = with_rows.workspace.table
+    rows = len(table.oids)
     table.remove_rows([int(table.oids[-1])])
-    assert tool.extract_ligands(ctx) == 1
+    wait(qtbot, tool.extract_ligands(ctx))
+    assert len(table.oids) == rows
 
 
-def test_a_ligand_can_be_added_once_from_the_viewer(opened) -> None:
+def test_a_ligand_can_be_added_once_from_the_viewer(with_rows) -> None:
+    opened = with_rows
     ctx = ToolContext(opened)
     table = opened.workspace.table
     panel = ctx.find_panel("protein")
@@ -269,9 +316,11 @@ def _with_opener(fetch_bytes, opener):
     return call
 
 
-def test_a_second_protein_adds_to_the_ligand_column(opened, qtbot) -> None:
+def test_a_second_protein_adds_to_the_ligand_column(with_rows, qtbot) -> None:
+    opened = with_rows
     job = tool.open_protein(ToolContext(opened), [str(DATA / "3htb.cif.gz")])
     qtbot.waitUntil(lambda: not job.running, timeout=30_000)
+    wait(qtbot, tool.extract_ligands(ToolContext(opened)))
     table = opened.workspace.table
     oid = int(table.oids[-1])
     assert table.cell("Protein", oid) == "3HTB" and table.cell("Ligand", oid).count("\n") == 0
@@ -300,7 +349,8 @@ def _moved_molblock(table, oid: int, by: float) -> str:
     return Chem.MolToMolBlock(mol)
 
 
-def test_a_row_whose_ligand_moved_shows_as_a_pose(opened, qtbot) -> None:
+def test_a_row_whose_ligand_moved_shows_as_a_pose(with_rows, qtbot) -> None:
+    opened = with_rows
     ctx = ToolContext(opened)
     table = opened.workspace.table
     panel = ctx.find_panel("protein")
@@ -333,12 +383,12 @@ def test_a_row_whose_ligand_moved_shows_as_a_pose(opened, qtbot) -> None:
 
 
 def test_interactions_to_table(opened, qtbot) -> None:
+    """With no ligand rows yet, asking for the interactions adds the ligands first."""
     ctx = ToolContext(opened)
     table = opened.workspace.table
     panel = ctx.find_panel("protein")
-    pocket = panel.menu_bar.actions()[3].menu()
-    pocket.aboutToShow.emit()
-    action = next(a for a in pocket.actions() if a.text() == "Interactions to Table")
+    ligand = menu_of(panel, "Ligand")
+    action = next(a for a in ligand.actions() if a.text() == "Interactions to Table")
     assert action.isEnabled()
     action.trigger()
     qtbot.waitUntil(lambda: "Contacts" in table, timeout=30_000)
@@ -351,9 +401,10 @@ def test_interactions_to_table(opened, qtbot) -> None:
     assert "Contacts" not in table
 
 
-def test_removing_a_protein_asks_about_its_rows(opened, qtbot, monkeypatch) -> None:
+def test_removing_a_protein_asks_about_its_rows(with_rows, qtbot, monkeypatch) -> None:
     from PySide6.QtCore import Qt
 
+    opened = with_rows
     ctx = ToolContext(opened)
     table = opened.workspace.table
     panel = ctx.find_panel("protein")
@@ -370,8 +421,7 @@ def test_removing_a_protein_asks_about_its_rows(opened, qtbot, monkeypatch) -> N
     assert not tool.remove_protein(ctx, "1ATP")  # cancelled
     assert asked == [("1ATP", 1)] and "1ATP" in table.assets
     answer[0] = tool.DELETE_ROWS
-    file_menu = panel.menu_bar.actions()[0].menu()
-    file_menu.aboutToShow.emit()
+    file_menu = menu_of(panel, "File")
     removing = next(a.menu() for a in file_menu.actions() if a.text() == "Remove Protein")
     removing.actions()[0].trigger()
     assert not table.assets and atp not in table.oids and not panel.session.displays
@@ -390,7 +440,8 @@ def test_removing_a_protein_asks_about_its_rows(opened, qtbot, monkeypatch) -> N
     assert not tool.remove_protein(ctx, "1ATP")  # not there any more
 
 
-def test_copied_rows_bring_their_protein(opened) -> None:
+def test_copied_rows_bring_their_protein(with_rows) -> None:
+    opened = with_rows
     new = opened.copy_shown_rows_to_new_document()
     try:
         table = new.workspace.table
@@ -423,7 +474,6 @@ def test_save_protein_as_writes_every_atom(opened, tmp_path) -> None:
     back = io.read(path)
     assert back.n_atoms == panel.session.display("1ATP").structure.n_atoms
     assert not list(tmp_path.glob("*.part"))
-    file_menu = panel.menu_bar.actions()[0].menu()
-    file_menu.aboutToShow.emit()
+    file_menu = menu_of(panel, "File")
     saving = next(a.menu() for a in file_menu.actions() if a.text() == "Save Protein As")
     assert [a.text() for a in saving.actions()] == ["1ATP…"]

@@ -28,7 +28,9 @@ from chemsuite.protein.io import ProteinFileError
 
 class FetchDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent, "Fetch from PDB", guide="proteins")
+        from .tool import dialog_parent
+
+        super().__init__(dialog_parent(ctx), "Fetch from PDB", guide="proteins")
         self.ctx = ctx
         entry = self.section("Entry")
         self.code = entry.row("PDB ID", QLineEdit(),

@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """The protein viewer's menus: Show, Hide, Colour and Label (on the selection), Hydrogens and
-Transparency (for every protein), and the right-click menu on an atom.
+Transparency (for every protein), Focus and Measure, and the right-click menu on an atom.
 
 Every menu acts on the session's selection; the right-click menu first offers to select what
 was clicked (its residue, chain or binding site), so the rest of it then applies there.
@@ -34,9 +34,9 @@ from chemsuite.protein.model import LIGAND
 from chemsuite.protein.select import SelectionError
 
 from .session import ADD, ATOM_LABEL, RESIDUE_LABEL, SET, ProteinSession
-from .toolbar import MEASURES
 from .tree import residue_expression
 
+MEASURES = (("Distance", 2), ("Angle", 3), ("Dihedral", 4))
 SHOW_STYLES = (
     ("Wire", scene.WIRE),
     ("Sticks", scene.STICK),
@@ -101,6 +101,34 @@ def fill_transparency(menu: QMenu, session: ProteinSession) -> None:
         action.setCheckable(True)
         action.setChecked(abs(session.transparency - value) < 1e-6)
         group.addAction(action)
+
+
+def fill_focus(menu: QMenu, session: ProteinSession) -> None:
+    """One entry per ligand of the visible proteins: focus it in its pocket."""
+    several = len([d for d in session.displays if d.visible]) > 1
+    for protein, residue in session.ligands():
+        shown = session.display(protein)
+        label = shown.structure.residue_label(residue)
+        title = f"{shown.name}  {label}" if several else label
+        action = menu.addAction(title, lambda p=protein, r=residue: session.focus(p, r))
+        action.setCheckable(True)
+        action.setChecked(session.focused_residue() == (protein, residue))
+    if not menu.actions():
+        menu.addAction("No Ligands").setEnabled(False)
+
+
+def fill_measure(menu: QMenu, session: ProteinSession) -> None:
+    group = QActionGroup(menu)
+    for title, atoms in MEASURES:
+        action = menu.addAction(title, lambda n=atoms: session.measure(n))
+        action.setCheckable(True)
+        action.setChecked(session.measuring == atoms)
+        group.addAction(action)
+    menu.addSeparator()
+    stop = menu.addAction("Stop Measuring", lambda: session.measure(0))
+    stop.setEnabled(bool(session.measuring))
+    clear = menu.addAction("Clear Measurements", session.clear_measurements)
+    clear.setEnabled(bool(session.measurements))
 
 
 def _label_here(menu: QMenu, session: ProteinSession, protein: str, structure, atom: int) -> None:
