@@ -64,7 +64,26 @@ def test_graphics_that_start_leave_3d_on(monkeypatch) -> None:
     assert graphics.check() is None
 
 
-def test_the_check_asks_qt() -> None:
+def test_the_check_asks_qt(qapp) -> None:
     """The real probe answers without raising (offscreen here: the answer may be no)."""
     assert graphics._starts() in (True, False)
     assert graphics._starts("win32") is True  # Direct3D falls back to WARP by itself
+
+
+def test_the_check_needs_no_metal_outside_macos(qapp, monkeypatch) -> None:
+    """PySide6 has QRhiMetalInitParams only on macOS: the Windows and Linux checks must not
+    touch it (they did once, and chemsuite would not start there)."""
+    import sys
+    import types
+
+    from PySide6 import QtGui
+
+    class WithoutMetal(types.ModuleType):  # QtGui as Windows and Linux builds have it
+        def __getattr__(self, name: str):
+            if name == "QRhiMetalInitParams":
+                raise AttributeError(name)
+            return getattr(QtGui, name)
+
+    monkeypatch.setitem(sys.modules, "PySide6.QtGui", WithoutMetal("PySide6.QtGui"))
+    assert graphics._starts("win32") is True
+    assert graphics._starts("linux") in (True, False)

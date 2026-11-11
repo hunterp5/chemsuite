@@ -78,12 +78,18 @@ def check() -> str | None:
 
 
 def _starts(platform: str = sys.platform) -> bool:
-    from PySide6.QtGui import QRhi, QRhiGles2InitParams, QRhiMetalInitParams
-
-    if platform == "darwin":
-        return QRhi.probe(QRhi.Implementation.Metal, QRhiMetalInitParams())
     if platform == "win32":
         return True  # Direct3D 11, with WARP behind it
+    from PySide6.QtGui import QRhi
+
+    if platform == "darwin":
+        from PySide6.QtGui import QRhiMetalInitParams  # only macOS builds of PySide6 have it
+
+        return QRhi.probe(QRhi.Implementation.Metal, QRhiMetalInitParams())
+    from PySide6.QtGui import QOpenGLContext, QRhiGles2InitParams
+
+    if not QOpenGLContext().create():  # no OpenGL at all: the surface below would crash
+        return False
     params = QRhiGles2InitParams()
     surface = QRhiGles2InitParams.newFallbackSurface()
     params.fallbackSurface = surface
