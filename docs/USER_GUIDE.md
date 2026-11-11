@@ -311,7 +311,8 @@ From Tools ▸ Table:
     them scroll again. Frozen rows are saved with the document.
 - **Data ▸ Search ▸ Show All Rows** clears every filter, search and "show only" at once.
 - **File ▸ New from Shown Rows** puts exactly the rows you can see, in their shown
-  order, into a new untitled document. Column types are kept.
+  order, into a new untitled document. Column types are kept, and the proteins the rows name
+  in their **Protein** column come with them.
 
 ---
 

@@ -388,3 +388,14 @@ def test_removing_a_protein_asks_about_its_rows(opened, qtbot, monkeypatch) -> N
     table.undo()
     assert tool.remove_protein(ctx, "1ATP", tool.KEEP_ROWS) and len(asked) == 3
     assert not tool.remove_protein(ctx, "1ATP")  # not there any more
+
+
+def test_copied_rows_bring_their_protein(opened) -> None:
+    new = opened.copy_shown_rows_to_new_document()
+    try:
+        table = new.workspace.table
+        assert list(table.assets) == ["1ATP"] and len(table) == 4
+        assert table.assets["1ATP"] is opened.workspace.table.assets["1ATP"]
+    finally:
+        new.workspace.mark_saved(table.history.checkpoint(), new.workspace.lists.revision)
+        new.close()

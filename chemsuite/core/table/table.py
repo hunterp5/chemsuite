@@ -152,12 +152,23 @@ class Table:
         """A new, independent table of the rows at *slots*, in that order, with new oids.
 
         Columns keep their order and kinds; history, filters, sort and listeners are not
-        copied. Used for "Copy Shown Rows to New Document".
+        copied. The assets the rows link to (:data:`~.assets.LINK_COLUMNS`) come too. Used for
+        "Copy Shown Rows to New Document".
         """
+        from .assets import LINK_COLUMNS
+
         slots = np.asarray(slots, dtype=np.int64)
-        return Table.from_columns(
+        copy = Table.from_columns(
             {name: column.styled_take(slots) for name, column in self._columns.items()}
         )
+        named = {
+            (kind, str(text))
+            for kind, column in LINK_COLUMNS.items()
+            if column in self._columns
+            for text in self._columns[column].displays(slots)
+        }
+        copy._assets = {i: a for i, a in self._assets.items() if (a.kind, i) in named}
+        return copy
 
     @property
     def next_oid(self) -> int:
