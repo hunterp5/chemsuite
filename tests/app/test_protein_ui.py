@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QObject, QPoint, Qt, Signal
 
 from chemsuite.core.table import Asset, PutAsset, Table
 from chemsuite.protein import io, scene, store
@@ -321,6 +321,94 @@ def test_the_list_picks_which_protein_the_bar_steps(panel, table) -> None:
     bar.next.trigger()
     assert panel.session.display("1D3Z-2").model == 1
     assert panel.session.display("1D3Z").model == 0
+
+
+class _Job(QObject):
+    done = Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class _Runner:
+    """Holds background work until a test finishes it, in any order."""
+
+    def __init__(self) -> None:
+        self.jobs: list[tuple[str, object, object, _Job]] = []
+
+    def __call__(self, label, work, on_done) -> _Job:
+        job = _Job()
+        self.jobs.append((label, work, on_done, job))
+        return job
+
+    def finish(self, index: int) -> None:
+        _label, work, on_done, job = self.jobs[index]
+        on_done(work(job))
+        job.done.emit()
+
+
+@pytest.fixture
+def deferring(qtbot, table, monkeypatch):
+    from chemsuite.app import graphics
+    from chemsuite.app.protein.panel import ProteinPanel
+
+    monkeypatch.setattr(graphics, "_problem", None)
+    runner = _Runner()
+    widget = ProteinPanel(table, run=runner)
+    qtbot.addWidget(widget)
+    return widget, runner
+
+
+def test_a_surface_is_built_in_the_background_and_a_stale_one_dropped(deferring) -> None:
+    panel, runner = deferring
+    session = panel.session
+    session.select_text("chain E")
+    session.show_surface(True)
+    assert not len(session.scene.surface.triangles)  # drawn without waiting
+    assert [label for label, *_ in runner.jobs] == ["Building a protein surface"]
+    session.built()  # drawn again: asking for the version being built starts nothing
+    assert len(runner.jobs) == 1
+    session.select_text("chain I")
+    session.show_surface(True)  # changed before the first arrived
+    assert len(runner.jobs) == 2 and runner.jobs[0][3].cancelled
+    runner.finish(1)
+    newest = session.scene.surface
+    assert len(newest.triangles)
+    runner.finish(0)  # the stale one arrives last: dropped
+    assert session.scene.surface is newest  # nothing was redrawn
+    assert not panel.session.builder.busy()
+
+
+def test_interactions_are_found_in_the_background(deferring) -> None:
+    panel, runner = deferring
+    session = panel.session
+    session.show_interactions(True)
+    assert not len(session.scene.lines.triangles)
+    runner.finish(0)
+    assert len(session.scene.lines.triangles)
+
+
+def test_work_for_a_protein_that_went_is_ignored(deferring, table) -> None:
+    panel, runner = deferring
+    panel.session.select_text("all")
+    panel.session.show_surface(True)
+    assert len(runner.jobs) == 1
+    table.undo()  # the protein is gone before its surface arrives
+    runner.finish(0)
+    assert panel.session.displays == [] and not panel.session.builder.busy()
+
+
+def test_closing_the_viewer_cancels_its_work(deferring) -> None:
+    panel, runner = deferring
+    panel.session.select_text("all")
+    panel.session.show_surface(True)
+    assert len(runner.jobs) == 1
+    panel.close()
+    assert runner.jobs[0][3].cancelled
 
 
 def test_state_for_a_protein_not_loaded_yet_waits_for_it(qtbot, monkeypatch) -> None:

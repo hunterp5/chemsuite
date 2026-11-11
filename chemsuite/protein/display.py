@@ -23,6 +23,13 @@ meshes only when what they depend on changed (each part has its own version), so
 or a colour change rebuilds nothing but the look, and a model change nothing but what depends
 on positions.
 
+A display that *defers* (the viewer has a way to run work in the background) never builds its
+slow parts inline: surfaces, interactions and the cartoon of a large protein. It draws the last
+one it accepted while :meth:`Display.pending` hands out the work (a :class:`Build`, whose
+arguments are copies taken when it was asked for) and :meth:`Display.accept` takes a result
+only if that part has not changed since. Without deferring, everything builds inline, as
+scripts and tests want.
+
 :func:`compose` puts the visible displays together for the view: atoms and residues are
 numbered one after the other (a display's ``atom_offset`` and ``residue_offset``), so a pick
 on the combined scene maps back to its protein with :meth:`Scene.locate`.
@@ -33,8 +40,9 @@ enough for a saved document.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -49,6 +57,29 @@ from .model import AMINO, NUCLEIC, Structure
 #: how see-through a surface is drawn
 SURFACE_ALPHA = 0.6
 CARTOON_PICK_RADIUS = 1.2
+#: the parts a deferring display builds in the background
+DEFERRED = ("surface", "interactions", "cartoon")
+#: a cartoon of more residues than this is built in the background
+LARGE_CARTOON = 2000
+_EMPTY: dict[str, Callable[[], Any]] = {
+    "surface": meshes.Mesh.empty,
+    "cartoon": meshes.Mesh.empty,
+    "interactions": contacts.Interactions.empty,
+}
+
+
+@dataclass(frozen=True, eq=False)
+class Build:
+    """A part to build off the GUI thread: ``fn(*args)``, safe to call on any thread (the
+    structure is immutable and the arguments are copies)."""
+
+    part: str
+    version: int
+    fn: Callable[..., Any]
+    args: tuple
+
+    def __call__(self) -> Any:
+        return self.fn(*self.args)
 
 
 @dataclass(eq=False)
@@ -61,6 +92,7 @@ class Display:
     surface_scheme: str = schemes.HYDROPHOBICITY
     altlocs: dict[int, str] = field(default_factory=dict)
     model: int = 0  # which of the structure's coordinate sets is shown
+    deferred: bool = False  # slow parts are built through pending() and accept()
     styles: np.ndarray = field(init=False)
     cartoon: np.ndarray = field(init=False)  # bool per residue
     surface: np.ndarray = field(init=False)  # bool per atom
@@ -69,6 +101,7 @@ class Display:
     ghost: np.ndarray = field(init=False)  # bool per atom
     query: np.ndarray = field(init=False)  # bool per atom: whose interactions are shown
     _cache: dict = field(default_factory=dict, init=False, repr=False)
+    _latest: dict = field(default_factory=dict, init=False, repr=False)  # last built, per part
     _versions: dict = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -162,42 +195,88 @@ class Display:
         self.touch("interactions")
 
     # built parts, cached by version
-    def _cached(self, part: str, build):
+    def _work(self, part: str) -> tuple[Callable[..., Any], tuple]:
+        """What builds a part, with copies of what it reads."""
+        s = self.structure
+        if part == "geometry":
+            return scenes.geometry, (s, self.styles.copy(), self.model)
+        if part == "cartoon":
+            return cartoons.build, (s, np.flatnonzero(self.cartoon), self.model, self.active)
+        if part == "surface":
+            return surfaces.build, (s, np.flatnonzero(self.surface), self.model)
+        if part == "trace":
+            return cartoons.trace, (s, self.active)
+        return contacts.find, (s, self.query.copy(), self.active, self.model)
+
+    def _inline(self, part: str, args: tuple) -> bool:
+        """Whether a part is built at once: always unless deferring, and then when it is quick."""
+        if not self.deferred or part not in DEFERRED:
+            return True
+        if part == "cartoon":
+            return len(args[1]) <= LARGE_CARTOON
+        if part == "surface":
+            return not len(args[1])
+        return False
+
+    def _part(self, part: str) -> Any:
         key = (part, self._versions[part])
-        if key not in self._cache:
-            self._cache = {k: v for k, v in self._cache.items() if k[0] != part}
-            self._cache[key] = build()
-        return self._cache[key]
+        if key in self._cache:
+            return self._cache[key]
+        fn, args = self._work(part)
+        if not self._inline(part, args):
+            latest = self._latest.get(part)
+            return latest if latest is not None else _EMPTY[part]()
+        result = fn(*args)
+        self._store(key, result)
+        return result
+
+    def _store(self, key: tuple[str, int], result: Any) -> None:
+        part = key[0]
+        self._cache = {k: v for k, v in self._cache.items() if k[0] != part}
+        self._cache[key] = result
+        self._latest[part] = result
+
+    def pending(self) -> list[Build]:
+        """The deferred parts that are out of date, as work to run in the background."""
+        out = []
+        for part in DEFERRED:
+            if part == "interactions" and not self.query.any():
+                continue
+            version = self._versions[part]
+            if (part, version) in self._cache:
+                continue
+            fn, args = self._work(part)
+            if not self._inline(part, args):
+                out.append(Build(part, version, fn, args))
+        return out
+
+    def accept(self, part: str, version: int, result: Any) -> bool:
+        """Take a part built in the background; False (dropped) when the part has changed
+        since its work was handed out."""
+        if version != self._versions[part]:
+            return False
+        self._store((part, version), result)
+        return True
 
     def geometry(self) -> scenes.Geometry:
-        return self._cached(
-            "geometry", lambda: scenes.geometry(self.structure, self.styles, self.model)
-        )
+        return self._part("geometry")
 
     def cartoon_mesh(self) -> meshes.Mesh:
-        residues = np.flatnonzero(self.cartoon)
-        return self._cached(
-            "cartoon",
-            lambda: cartoons.build(self.structure, residues, self.model, active=self.active),
-        )
+        return self._part("cartoon")
 
     def surface_mesh(self) -> meshes.Mesh:
-        atoms = np.flatnonzero(self.surface)
-        return self._cached("surface", lambda: surfaces.build(self.structure, atoms, self.model))
+        return self._part("surface")
 
     def trace(self) -> tuple[np.ndarray, np.ndarray]:
         """Cartoon residues and their trace atoms (what picks the cartoon)."""
-        residues, atoms = self._cached("trace", lambda: cartoons.trace(self.structure, self.active))
+        residues, atoms = self._part("trace")
         shown = self.cartoon[residues]
         return residues[shown], atoms[shown]
 
     def interactions(self) -> contacts.Interactions:
         if not self.query.any():
             return contacts.Interactions.empty()
-        return self._cached(
-            "interactions",
-            lambda: contacts.find(self.structure, self.query, self.active, self.model),
-        )
+        return self._part("interactions")
 
     def flags(self) -> np.ndarray:
         return scenes.flags(self.structure.n_atoms, selected=self.selected, ghost=self.ghost)

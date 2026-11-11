@@ -62,6 +62,7 @@ from chemsuite.protein import io as protein_io
 from chemsuite.protein import ligands
 
 from . import menubar, menus
+from .builds import Run
 from .models_bar import ModelsBar
 from .selection_bar import SelectionBar
 from .sequence_view import SequenceView
@@ -87,10 +88,11 @@ class ProteinPanel(QWidget):
         current: Callable[[], int | None] | None = None,
         watch_current: Callable[[Callable[[int | None], None]], Callable[[], None]] | None = None,
         commands: menubar.Commands | None = None,
+        run: Run | None = None,
     ) -> None:
         super().__init__(parent)
         self.tool_id = TOOL_ID
-        self.session = ProteinSession(table, self)
+        self.session = ProteinSession(table, self, run=run)
         self.view = None
         self.overlay = None
         self._view_page: QWidget | None = None

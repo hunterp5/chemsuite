@@ -28,6 +28,10 @@ session, never each other, and redraw on its signals:
 - ``focusChanged``: a ligand was focused or the focus cleared (the panel moves the camera);
 - ``measurementsChanged``: a measurement was added or removed, or atoms picked for one.
 
+With a way to run work in the background (``run``, as a tool's ``ctx.run`` in the quick
+lane), slow parts (surfaces, interactions, large cartoons) are built off the GUI thread by a
+:class:`~.builds.Builder`; the scene shows the last one until the new one arrives.
+
 Selections are atom masks per protein. Saved ("named") selections, measurements and the
 focused ligand are kept as atom uids, so they survive edits of the structure.
 """
@@ -47,6 +51,8 @@ from chemsuite.protein import scene as scenes
 from chemsuite.protein import store
 from chemsuite.protein.model import AMINO, LIGAND, NUCLEIC
 from chemsuite.protein.select import Mask, SelectionError, select
+
+from .builds import Builder, Run
 
 KIND = "protein"
 SET = "set"
@@ -71,9 +77,10 @@ class ProteinSession(QObject):
     focusChanged = Signal()
     measurementsChanged = Signal()
 
-    def __init__(self, table: Table, parent: QObject | None = None) -> None:
+    def __init__(self, table: Table, parent: QObject | None = None, run: Run | None = None) -> None:
         super().__init__(parent)
         self.table = table
+        self.builder = Builder(self, run) if run is not None else None
         self.displays: list[displays.Display] = []
         self.named: dict[str, dict[str, list[int]]] = {}
         self.focused: Point | None = None  # the focused ligand: one of its atoms
@@ -87,6 +94,8 @@ class ProteinSession(QObject):
 
     def close(self) -> None:
         self._unsubscribe()
+        if self.builder is not None:
+            self.builder.cancel_all()
 
     # proteins
     def reload(self) -> None:
@@ -101,7 +110,9 @@ class ProteinSession(QObject):
                 current.name = asset.name
                 new.append(current)
                 continue
-            shown = displays.Display(asset.id, asset.name, structure)
+            shown = displays.Display(
+                asset.id, asset.name, structure, deferred=self.builder is not None
+            )
             state = self._pending.pop(asset.id, None)
             if state is None and current is not None:
                 state = current.state()  # replaced (an edit): keep the look if it fits
@@ -133,7 +144,14 @@ class ProteinSession(QObject):
     def scene(self) -> displays.Scene:
         if self._scene is None:
             self._scene = displays.compose(self.displays)
+            if self.builder is not None:
+                self.builder.schedule(self._scene.displays)
         return self._scene
+
+    def built(self) -> None:
+        """A part built in the background arrived: draw it."""
+        self._scene = None
+        self.sceneChanged.emit()
 
     def _changed(self, rebuilt: bool) -> None:
         if rebuilt or self._scene is None:

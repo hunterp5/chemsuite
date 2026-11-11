@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from chemsuite.app.jobs import QUICK
 from chemsuite.app.tools import Tool, ToolContext
 from chemsuite.core.table import Asset, PutAsset
 from chemsuite.protein import fetch as pdb
@@ -55,8 +56,16 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         FETCH: lambda: fetch_from_pdb(ctx),
         EXTRACT: lambda: extract_ligands(ctx),
     }
+
+    def run(label, work, on_done):  # surfaces and interactions: never hold up closing
+        return ctx.run(label, work, on_done, lane=QUICK, background=True)
+
     panel = ProteinPanel(
-        ctx.table, current=ctx.current_oid, watch_current=ctx.watch_current, commands=commands
+        ctx.table,
+        current=ctx.current_oid,
+        watch_current=ctx.watch_current,
+        commands=commands,
+        run=run,
     )
     if state is not None:
         panel.set_state(state)

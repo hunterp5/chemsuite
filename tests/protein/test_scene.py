@@ -161,3 +161,44 @@ def test_the_model_shown_is_saved_and_a_bad_one_is_ignored(nmr: Structure) -> No
     for bad in (7, -1, "1", None):
         again.set_state({**shown.state(), "model": bad})
         assert again.model == 0
+
+
+def test_a_deferring_display_hands_out_slow_work_and_keeps_the_last_result(kinase) -> None:
+    from chemsuite.protein.display import Display
+
+    shown = Display("1ATP", "1ATP", kinase, deferred=True)
+    assert shown.pending() == []  # the cartoon of 350 residues is quick: built inline
+    assert len(shown.cartoon_mesh().triangles)
+    shown.show_surface(np.ones(kinase.n_atoms, bool))
+    assert not len(shown.surface_mesh().triangles)  # nothing built yet
+    (first,) = shown.pending()
+    assert first.part == "surface"
+    built = first()
+    assert shown.accept("surface", first.version, built)
+    assert shown.surface_mesh() is built and shown.pending() == []
+    shown.show_surface(select(kinase, "chain I"), on=False)
+    assert shown.surface_mesh() is built  # the last one stays until the new one arrives
+    (second,) = shown.pending()
+    assert not shown.accept("surface", first.version, built)  # stale: dropped
+    assert shown.accept("surface", second.version, second())
+    shown.show_surface(np.ones(kinase.n_atoms, bool), on=False)
+    assert shown.pending() == [] and not len(shown.surface_mesh().triangles)  # empty: inline
+
+
+def test_deferred_work_reads_copies_taken_when_it_was_handed_out(kinase) -> None:
+    from chemsuite.protein.display import Display
+
+    shown = Display("1ATP", "1ATP", kinase, deferred=True)
+    shown.show_interactions(kinase.atom_kind == LIGAND)
+    (build,) = shown.pending()
+    query = build.args[1].copy()
+    shown.query[:] = False
+    assert np.array_equal(build.args[1], query) and len(build())
+
+
+def test_without_deferring_everything_is_built_at_once(kinase) -> None:
+    from chemsuite.protein.display import Display
+
+    shown = Display("1ATP", "1ATP", kinase)
+    shown.show_surface(np.ones(kinase.n_atoms, bool))
+    assert shown.pending() == [] and len(shown.surface_mesh().triangles)

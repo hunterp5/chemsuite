@@ -1260,6 +1260,10 @@ select it), the 3D view and the sequence underneath.
 - Right-click an atom to select its residue, chain or surroundings, focus a ligand, switch an
   alternate location, copy a ligand's SMILES, or **Copy Selection As ▸ PDB / mmCIF**.
 
+Surfaces, interactions and the cartoons of very large proteins are built in the background,
+so the viewer never stops answering: each appears as soon as it is ready, and until then the
+previous one stays on screen.
+
 Everything shown, selected, focused and measured is saved with the document. Fetch from PDB
 only sends the ID, over HTTPS; when IT turns downloads off it says so instead.
 
