@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QFocusEvent,
@@ -49,6 +49,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QDockWidget,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLineEdit,
@@ -73,6 +74,30 @@ HIDE_DOCK_TABS = (
     " QMainWindow > QTabBar::tab { height: 0px; min-height: 0px; max-height: 0px;"
     " padding: 0px; margin: 0px; border: none; }"
 )
+
+
+class OptionsPopup(QFrame):
+    """A panel's options, in a popup that closes when you click elsewhere (opened by the
+    header's settings button: a panel exposes one as ``options``)."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent, Qt.WindowType.Popup)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.form = QFormLayout(self)
+        self.form.setContentsMargins(10, 10, 10, 10)
+        self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+
+    def popup(self, anchor: QWidget) -> None:
+        """Show below *anchor* (the settings button), kept on its screen."""
+        self.adjustSize()
+        below = anchor.mapToGlobal(QPoint(anchor.width() - self.width(), anchor.height()))
+        screen = anchor.screen().availableGeometry()
+        x = min(max(below.x(), screen.left()), screen.right() - self.width())
+        y = below.y()
+        if y + self.height() > screen.bottom():  # no room below: open above
+            y = anchor.mapToGlobal(QPoint(0, 0)).y() - self.height()
+        self.move(x, max(y, screen.top()))
+        self.show()
 
 
 class TitleEdit(QLineEdit):

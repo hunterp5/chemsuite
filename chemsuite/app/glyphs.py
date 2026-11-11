@@ -317,6 +317,26 @@ def _pencil(p: QPainter) -> None:
     p.drawPath(path)
 
 
+def _ruler(p: QPainter) -> None:
+    """A ruler at a slant: measure distances and angles."""
+    p.save()
+    p.translate(8, 8)
+    p.rotate(-45)
+    p.drawRoundedRect(QRectF(-7, -2.6, 14, 5.2), 1, 1)
+    path = QPainterPath()
+    for i, x in enumerate((-4.5, -2.0, 0.5, 3.0)):
+        path.moveTo(x, -2.6)
+        path.lineTo(x, -0.2 if i % 2 else -1.0)
+    p.drawPath(path)
+    p.restore()
+
+
+def _overlay(p: QPainter) -> None:
+    """Two offset rings: show conformers on top of each other."""
+    p.drawEllipse(QPointF(6.2, 8), 3.8, 3.8)
+    p.drawEllipse(QPointF(9.8, 8), 3.8, 3.8)
+
+
 GLYPHS: dict[str, Draw] = {
     "pencil": _pencil,
     "not": _not,
@@ -344,6 +364,8 @@ GLYPHS: dict[str, Draw] = {
     "lasso": _lasso,
     "fit": _fit,
     "export": _export,
+    "ruler": _ruler,
+    "overlay": _overlay,
 }
 
 

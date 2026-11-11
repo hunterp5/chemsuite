@@ -23,6 +23,7 @@ columns. Tools never reach into the window, so adding one never means editing it
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import importlib.util
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -31,9 +32,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QItemSelectionModel, QSize
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QDialog, QDockWidget, QWidget
+from PySide6.QtWidgets import QAbstractItemView, QDialog, QDockWidget, QWidget
 
 from chemsuite.core.lists import RowLists
 from chemsuite.core.selection import Selection
@@ -125,6 +126,40 @@ class ToolContext:
         """The row of the table's current cell, if any."""
         index = self._window.view.currentIndex()
         return self._window.workspace.model.oid_at(index.row()) if index.isValid() else None
+
+    def set_current_oid(self, oid: int) -> bool:
+        """Make *oid* the table's current row (the selection is left alone), scrolled into
+        view. False when the row is hidden by a filter or gone."""
+        view, model = self._window.view, self._window.workspace.model
+        row = int(model.rows_of_oids([oid])[0])
+        if row < 0:
+            return False
+        current = view.currentIndex()
+        target = model.index(row, current.column() if current.isValid() else 0)
+        if target != current:
+            view.selectionModel().setCurrentIndex(
+                target, QItemSelectionModel.SelectionFlag.NoUpdate
+            )
+        view.scrollTo(target, QAbstractItemView.ScrollHint.EnsureVisible)
+        return True
+
+    def watch_current(self, callback: Callable[[int | None], None]) -> Callable[[], None]:
+        """Call *callback* with the new current row whenever the table's current row changes;
+        returns the function that stops it."""
+        selection_model = self._window.view.selectionModel()
+
+        def changed(current, _previous) -> None:
+            model = self._window.workspace.model
+            callback(model.oid_at(current.row()) if current.isValid() else None)
+
+        selection_model.currentChanged.connect(changed)
+
+        def stop() -> None:
+            # RuntimeError: the document (and its model) closed first
+            with contextlib.suppress(RuntimeError, TypeError):
+                selection_model.currentChanged.disconnect(changed)
+
+        return stop
 
     def default_structure_column(self) -> str | None:
         """The current cell's column when it holds structures, else the first structure column."""

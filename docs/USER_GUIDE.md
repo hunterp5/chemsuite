@@ -1141,6 +1141,45 @@ Writes every conformer as its own SD record, carrying the row's other columns. C
 **Shown** or **Selected** rows (Selected when rows are selected), then **Export** asks for the
 file.
 
+### 3D Viewer (Ctrl+Shift+3)
+
+**Chemistry ▸ 3D Viewer** opens a panel that shows one row's structure in 3D at a time, starting
+at the table's current row.
+
+- **Browsing rows:** ‹ and › under the view (or ← and →, Home and End) step through the rows
+  in the table's order. The table's current row moves along (the selection is left alone), and
+  clicking a row in the table shows it in the viewer. Which rows are browsed is set in the
+  options menu (gear):
+  - **Browse Selected:** only the selected rows.
+  - **Browse Visible** (on by default): only the rows the filters and search show.
+  - Both on: the selected rows that are shown. Both off: every row in the table.
+  - Deselecting the row shown while browsing the selection moves on to the next one.
+- **Structure column:** chosen in the options menu; a "3D" column is chosen first. A row with
+  only a 2D structure gets 3D coordinates in the background (one ETKDG conformer); they are not
+  written to the table.
+- **Style:** Ball and Stick, Stick, Spacefill or Wire. **Hydrogens:** All, Polar (on atoms
+  other than carbon) or None. **Color:** by element, or each conformer's carbons in a colour of
+  its own.
+- **Conformers:** for a row with several, ‹ and › in the panel's header (or ↑ and ↓) step
+  through them; the counter shows which one. **Overlay** draws every conformer at once as thin
+  sticks with polar hydrogens. **Align Conformers** (on by default) fits them onto the first on
+  heavy atoms.
+- **Mouse:** drag to turn, right-drag, middle-drag or Shift-drag to move, wheel to zoom. Pointing
+  at an atom names it (for example "N4"). Ctrl-click (⌘-click on macOS) an atom to add or remove
+  the row from the selection.
+- **Measure** (ruler): click two atoms for a distance, three for an angle, four for a dihedral; a
+  fifth click starts again.
+- **Each row browsed to** is turned square on (its longest direction along the panel's longer
+  side), centred and fitted to the panel, and it stays fitted as the panel is resized until you
+  turn, move or zoom it. Stepping through conformers keeps the view, so they can be compared.
+- **Reset View** turns the molecule square on and fits it again; **Export** saves the view as a
+  PNG.
+- The panel, its settings, the row and conformer shown and the view are saved with the
+  document.
+
+Drawing uses the computer's graphics through OpenGL, as the 3D plots do. Where OpenGL is not
+available the panel says so.
+
 ### Retrosynthesis
 
 Chemistry ▸ Retrosynthesis plans synthetic routes to each structure with

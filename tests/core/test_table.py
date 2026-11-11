@@ -161,6 +161,21 @@ def test_sort_never_reorders_storage(table: Table) -> None:
     assert table.oids.tolist() == [1, 2, 3, 4]
 
 
+def test_ordered_oids_keep_the_sort_and_the_hidden_rows(table: Table) -> None:
+    table.set_sort([("ID", False)])
+    table.set_filter("hits", OidFilter(frozenset({1, 2})))
+    assert table.visible_oids().tolist() == [1, 2]  # CPD-10, CPD-2
+    assert table.ordered_oids().tolist() == [1, 4, 2, 3]  # CPD-10, cpd-3, CPD-2, CPD-1
+    # The order is kept between calls and follows edits, deletions and sort changes.
+    assert table.ordered_oids() is table.ordered_oids()
+    table.set_cells("ID", [3], ["CPD-99"])
+    assert table.ordered_oids().tolist() == [3, 1, 4, 2]
+    table.remove_rows([1])
+    assert table.ordered_oids().tolist() == [3, 4, 2]
+    table.set_sort([("ID", True)])
+    assert table.ordered_oids().tolist() == [2, 4, 3]
+
+
 def test_filters_combine_with_and(table: Table) -> None:
     table.set_filter("potency", RangeFilter("pIC50", low=7))
     assert cells(table, "ID") == ["CPD-10", "cpd-3"]

@@ -42,9 +42,11 @@ def main(argv: list[str] | None = None) -> int:
     from .error_report import install_crash_handler
     from .jobs import JobRunner
     from .main_window import MainWindow
+    from .molview.renderer import prepare_opengl
     from .settings_hub import settings_hub
     from .table_view import StructureImages
 
+    prepare_opengl()  # before the QApplication: the 3D Viewer and 3D plots share OpenGL
     app = QApplication(argv)
     app.setApplicationName("chemsuite")
     app.setOrganizationName("chemsuite")
