@@ -1253,7 +1253,11 @@ select it), the 3D view and the sequence underneath.
 
 - **Selecting.** Click selects a residue, Alt-click an atom, double-click its chain; Shift adds
   and Ctrl (Cmd) toggles; click empty space or press Esc to clear. Click or drag across letters
-  in the sequence. Type in the selection field (point at it for the syntax): `chain A`,
+  in the sequence, or use its keys: the arrows move a cursor, Shift+arrows select from where it
+  started, Return selects the residue under it, Home and End jump to the ends of a chain. While
+  you work in the viewer, Ctrl/⌘+A selects every atom, Ctrl/⌘+C copies the selection as PDB and
+  F frames it. The proteins list highlights a chain or ligand that is wholly selected and puts
+  one partly selected in bold. Type in the selection field (point at it for the syntax): `chain A`,
   `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres (polymer within 5 of
   ligand)` (whole residues near a ligand; `byres` takes what follows it, hence the brackets),
   `and`, `or`, `not`. **Select ▸** has the usual picks, **Around ▸** (the residues or

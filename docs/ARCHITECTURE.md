@@ -56,3 +56,27 @@ is usually better than an exemption.
   reads `graphics.problem()` to grey itself out with the reason instead of failing when
   opened, and a view that fails when drawing sets it.
 - **No QtWebEngine**: PySide6-Essentials only, to keep the install small. (PLAN.md §1)
+- **Assets beside the rows.** A document holds immutable assets (`core/table/assets.py`), such
+  as proteins, changed only by `PutAsset` ops so they undo with the table. Rows name an asset in
+  a link column (`LINK_COLUMNS`: protein → `Protein`); copying rows to a new document takes the
+  assets they name. Adding or removing a protein and its ligand rows is one undo step
+  (`add_rows`/`remove_rows` with `extra_ops`).
+- **Proteins are Qt-free arrays** (`chemsuite/protein`): an immutable struct-of-arrays
+  `Structure` keyed by atom uids (selections, labels, measurements and focus survive edits),
+  a `Display` per protein holding how it looks, and a composed `Scene` the view uploads as a
+  geometry buffer and a separate look buffer, so a selection change re-uploads colours only.
+  The app side (`chemsuite/app/protein`) is a session object that the tree, sequence, selection
+  bar and view read and change, never each other.
+- **One `RhiView` base for 3D views** (`app/molview/rhi_view.py`): camera, picking, slab and
+  fog. Meshes fall back to 16-bit index chunks where the GPU lacks 32-bit indices.
+- **Slow protein parts build in the background, never stale.** Surfaces, interactions, pocket
+  skins and large cartoons are `Build`s from `Display.pending()`, run as quick background jobs
+  (`app/protein/builds.py`); a result is kept only if the display is still shown, still holds
+  the structure the work was handed, and the part's version has not moved on. The last result
+  stays drawn until the new one lands.
+- **Every download goes through `core/download.py`**: HTTPS only, audited, refused when IT
+  policy turns the network off, with an injectable opener so tests never touch the network.
+  Files that can be fetched again (the CCD components) live in `ToolContext.cache_folder`.
+- **Heavy simulation runs in its own interpreter** (planned: OpenMM, openfe), driven as a
+  JSON-lines worker like `retro/runner.py`, so its pins never meet RDKit's and a native crash
+  never takes the app down.
