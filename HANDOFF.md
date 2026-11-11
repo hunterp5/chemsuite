@@ -5,10 +5,16 @@ other machine can pick it up. Update it at the end of a session that leaves work
 
 ## In progress
 
-- **By-hand check of Protein Viewer Phase 1 on Windows** (ROADMAP §7.0c):
-  - Open `5GNK.cif` (download from the PDB) and confirm 80U's bond orders come from the CCD
-    with no ⚠.
-  - Fetch 1ATP and 1D3Z, and play the NMR models.
+- **By-hand check of Protein Viewer Phase 1 on Windows** (ROADMAP §7.0c).
+  Done 2026-11-11 by script:
+  - 5GNK: 80U's bond orders come from the file's own component table, and from the CCD when
+    the file has none (the acrylamide's C=C intact, no ⚠); geometry alone loses the C=C, so
+    the ⚠ there is right. 1ATP's ATP from the file. `samples/5GNK.cif` is a local copy.
+  - Direct3D and WARP draw the same, light and dark. Fixed: ghosted (focus) and selected
+    cartoons drew as yellow speckle on Direct3D, which interpolates the flag 4.0 as 3.9999.
+
+  Still by hand:
+  - Play 1D3Z's NMR models.
   - Focus Ligand: check the pocket skin and the fog.
   - Label residues. Step through ligand rows. Move a pose in the sketcher and confirm it
     overlays in the pocket.
@@ -16,11 +22,13 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - Remove a protein, then undo.
   - Copy Shown Rows to a new document and confirm the protein travels with them.
   - Save, reopen, and confirm everything comes back.
-  - Compare light and dark: `scripts/screenshot_protein.py OUT_DIR`.
-  - Confirm Direct3D draws everything, and that WARP works too (no GPU or RDP).
-- **Two known visual issues:**
+  - WARP over RDP or with the GPU disabled (forced WARP is checked; the automatic fallback is
+    not).
+- **Known issues:**
   - When a pocket is focused, the faded ribbons in front of it can cross the ligand.
   - A kept row whose protein was removed is not yet marked in the table.
+  - Save Protein As (mmCIF) drops the file's `_chem_comp_*` tables, so a ligand with no CCD
+    entry reopened offline falls back to a geometry guess. Document saves keep them.
 
 ## Next
 

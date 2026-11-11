@@ -42,6 +42,7 @@ def main(argv: list[str]) -> int:
     app = QApplication([argv[0]])
     from chemsuite.app import theme
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.core.settings import DARK, LIGHT, Appearance
     from chemsuite.core.table import Asset, PutAsset, Table
     from chemsuite.protein import io, ligands
 
@@ -61,8 +62,8 @@ def main(argv: list[str]) -> int:
             app.processEvents()
 
     found = ligands.row_residues(structure)
-    for look, palette in (("light", theme.light_palette()), ("dark", theme.dark_palette())):
-        app.setPalette(palette)
+    for look in (LIGHT, DARK):
+        theme.apply_appearance(app, Appearance(theme=look))  # Fusion, as the app's own themes
         panel.session.clear_focus()
         settle()
         panel.grab().save(str(out / f"protein-{look}.png"))
