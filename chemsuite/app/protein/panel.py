@@ -62,7 +62,7 @@ from chemsuite.protein import ligands
 from . import menubar, menus, toolbar
 from .builds import Run
 from .models_bar import ModelsBar
-from .pocket import PocketCamera, follow_row
+from .pocket import PocketCamera, follow_row, missing_protein
 from .selection_bar import SelectionBar
 from .sequence_view import SequenceView
 from .session import ADD, SET, TOGGLE, ProteinSession
@@ -75,7 +75,7 @@ LINES = "interactions"
 POCKET = "pocket"
 #: the commands a tool gives the viewer (see :mod:`.menubar`)
 OPEN, FETCH, EXTRACT, LIGAND = menubar.OPEN, menubar.FETCH, menubar.EXTRACT, menubar.LIGAND
-PROFILE = menubar.PROFILE
+PROFILE, REMOVE = menubar.PROFILE, menubar.REMOVE
 
 
 class ProteinPanel(QWidget):
@@ -107,6 +107,8 @@ class ProteinPanel(QWidget):
 
         self.tree = ProteinTree(self.session)
         self.tree.focusRequested.connect(self.frame_selection)
+        if REMOVE in self.commands:
+            self.tree.removeRequested.connect(self.commands[REMOVE])
         self.sequence = SequenceView(self.session)
         self.sequence.strip.residueHovered.connect(self._sequence_hovered)
         self.views = QStackedWidget()
@@ -338,7 +340,12 @@ class ProteinPanel(QWidget):
     # the table's current row: its ligand, in its pocket
     def follow_row(self, oid: int | None) -> bool:
         """Focus the pose or ligand that row *oid* names, if its protein is shown here."""
-        return follow_row(self.session, oid)
+        if follow_row(self.session, oid):
+            return True
+        missing = missing_protein(self.session, oid)
+        if missing:
+            self.status.setText(f"Protein {missing} is not in this document")
+        return False
 
     def _row_edited(self, oid: int | None, oids: np.ndarray) -> None:
         if oid is not None and oid in oids:

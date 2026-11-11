@@ -24,7 +24,14 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QAbstractItemView, QApplication, QTreeWidget, QTreeWidgetItem, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QMenu,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QWidget,
+)
 
 from chemsuite.protein.ligands import GUESSED
 from chemsuite.protein.model import ADDITIVE, AMINO, GLYCAN, ION, LIGAND, NUCLEIC, WATER, Structure
@@ -45,6 +52,7 @@ def residue_expression(structure: Structure, residue: int) -> str:
 
 class ProteinTree(QTreeWidget):
     focusRequested = Signal()
+    removeRequested = Signal(str)  # a protein's id: Remove Protein from its menu or Delete
 
     def __init__(self, session: ProteinSession, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -57,6 +65,8 @@ class ProteinTree(QTreeWidget):
         self.itemChanged.connect(self._item_changed)
         self.itemClicked.connect(self._item_clicked)
         self.itemDoubleClicked.connect(self._item_double_clicked)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._context_menu)
         session.proteinsChanged.connect(self.reload)
         self.reload()
 
@@ -143,3 +153,19 @@ class ProteinTree(QTreeWidget):
     def _item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         self.select_item(item, SET)
         self.focusRequested.emit()
+
+    def _context_menu(self, where) -> None:
+        item = self.itemAt(where)
+        if item is None:
+            return
+        protein = str(item.data(0, _PROTEIN))
+        menu = QMenu(self)
+        menu.addAction("Remove Protein…", lambda: self.removeRequested.emit(protein))
+        menu.exec(self.viewport().mapToGlobal(where))
+
+    def keyPressEvent(self, event) -> None:
+        item = self.currentItem()
+        if item is not None and event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            self.removeRequested.emit(str(item.data(0, _PROTEIN)))
+            return
+        super().keyPressEvent(event)

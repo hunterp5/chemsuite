@@ -91,6 +91,20 @@ def test_a_protein_and_its_ligand_rows_are_one_undo_step() -> None:
     assert table.has_oid(int(oids[0])) and "1ABC" in table.assets
 
 
+def test_removing_a_protein_and_its_rows_is_one_undo_step() -> None:
+    table = _table()
+    protein = _protein()
+    oids = table.add_rows({"ID": ["ATP"], "Protein": ["1ABC"]},
+                          extra_ops=[PutAsset("1ABC", None, protein)])  # fmt: skip
+    table.remove_rows(oids, label="Remove protein 1ABC",
+                      extra_ops=[PutAsset("1ABC", protein, None)])  # fmt: skip
+    assert len(table) == 2 and "1ABC" not in table.assets
+    assert table.undo() == "Remove protein 1ABC"
+    assert len(table) == 3 and table.assets["1ABC"] is protein
+    table.remove_rows([], label="Remove protein 1ABC", extra_ops=[PutAsset("1ABC", protein, None)])
+    assert "1ABC" not in table.assets and len(table) == 3  # the rows kept
+
+
 def test_assets_are_read_only_and_ids_stay_unique() -> None:
     table = _table()
     table.edit("Open", [PutAsset("1ABC", None, _protein())])

@@ -118,3 +118,12 @@ def _leave_pose(session: ProteinSession) -> None:
     """A row that shows nothing here takes away another row's pose."""
     if session.pose is not None:
         session.clear_focus()
+
+
+def missing_protein(session: ProteinSession, oid: int | None) -> str:
+    """The protein row ``oid`` names when the document has no such protein ("" otherwise)."""
+    table = session.table
+    if oid is None or ligands.PROTEIN_COLUMN not in table or oid not in table.oids:
+        return ""
+    protein = str(table.cell(ligands.PROTEIN_COLUMN, oid) or "")
+    return protein if protein and session.display(protein) is None else ""

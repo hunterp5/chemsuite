@@ -149,6 +149,8 @@ class ProteinSession(QObject):
                 shown.set_state(state)
             new.append(shown)
         self.displays = new
+        if self.focused is not None and self.display(self.focused[0]) is None:
+            self.focused = self._site = None  # its protein was removed
         if self.pose is not None:
             protein = self.display(self.pose.name)
             if protein is None or protein.structure is not self._posed_in:

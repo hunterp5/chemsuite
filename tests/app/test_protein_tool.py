@@ -349,3 +349,42 @@ def test_interactions_to_table(opened, qtbot) -> None:
     assert table.cell("Contacts", int(table.oids[0])) in ("", None)  # no protein: not written
     table.undo()
     assert "Contacts" not in table
+
+
+def test_removing_a_protein_asks_about_its_rows(opened, qtbot, monkeypatch) -> None:
+    from PySide6.QtCore import Qt
+
+    ctx = ToolContext(opened)
+    table = opened.workspace.table
+    panel = ctx.find_panel("protein")
+    asked: list[tuple[str, int]] = []
+    answer: list[str | None] = [None]
+
+    def ask(_ctx, name, count):
+        asked.append((name, count))
+        return answer[0]
+
+    monkeypatch.setattr(tool, "_ask_rows", ask)
+    atp = int(table.oids[-1])
+    ctx.set_current_oid(atp)
+    assert not tool.remove_protein(ctx, "1ATP")  # cancelled
+    assert asked == [("1ATP", 1)] and "1ATP" in table.assets
+    answer[0] = tool.DELETE_ROWS
+    file_menu = panel.menu_bar.actions()[0].menu()
+    file_menu.aboutToShow.emit()
+    removing = next(a.menu() for a in file_menu.actions() if a.text() == "Remove Protein")
+    removing.actions()[0].trigger()
+    assert not table.assets and atp not in table.oids and not panel.session.displays
+    assert panel.session.focused is None
+    assert table.undo() == "Remove protein 1ATP"
+    assert "1ATP" in table.assets and atp in table.oids
+    # keeping the rows: the viewer says the row's protein is gone
+    answer[0] = tool.KEEP_ROWS
+    panel.tree.setCurrentItem(panel.tree.topLevelItem(0))
+    qtbot.keyClick(panel.tree, Qt.Key.Key_Delete)
+    assert not table.assets and atp in table.oids
+    ctx.set_current_oid(atp)
+    assert panel.status.text() == "Protein 1ATP is not in this document"
+    table.undo()
+    assert tool.remove_protein(ctx, "1ATP", tool.KEEP_ROWS) and len(asked) == 3
+    assert not tool.remove_protein(ctx, "1ATP")  # not there any more

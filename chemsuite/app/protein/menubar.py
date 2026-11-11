@@ -44,6 +44,7 @@ FETCH = "fetch"
 EXTRACT = "extract"
 LIGAND = "ligand"  # add one ligand's row: (protein id, residue)
 PROFILE = "profile"  # each ligand row's interactions, as columns
+REMOVE = "remove"  # remove a protein: (protein id)
 Commands = Mapping[str, Callable[..., object]]
 
 
@@ -66,6 +67,10 @@ def _file(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
         menu.addAction("Fetch from PDB…", commands.get(FETCH, lambda: None)).setEnabled(
             FETCH in commands
         )
+        removing = menu.addMenu("Remove Protein")
+        for shown in panel.session.displays:
+            removing.addAction(shown.name, lambda p=shown.id: commands[REMOVE](p))
+        removing.setEnabled(REMOVE in commands and bool(panel.session.displays))
         menu.addSeparator()
         save = menu.addAction("Save Selection As…", lambda: save_selection(panel))
         save.setEnabled(panel.session.selected_count() > 0)

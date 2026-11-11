@@ -47,7 +47,15 @@ FILE_FILTER = "Protein files (*.pdb *.ent *.cif *.mmcif *.pdb.gz *.ent.gz *.cif.
 
 def open_viewer(ctx: ToolContext, state: dict | None = None):
     """Bring the open Protein Viewer forward, or open one (with *state* when reopening)."""
-    from chemsuite.app.protein.panel import EXTRACT, FETCH, LIGAND, OPEN, PROFILE, ProteinPanel
+    from chemsuite.app.protein.panel import (
+        EXTRACT,
+        FETCH,
+        LIGAND,
+        OPEN,
+        PROFILE,
+        REMOVE,
+        ProteinPanel,
+    )
 
     if state is None:
         panel = ctx.find_panel(TOOL_ID)
@@ -60,6 +68,7 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         EXTRACT: lambda: extract_ligands(ctx),
         LIGAND: lambda protein, residue: add_ligand(ctx, protein, residue),
         PROFILE: lambda: interactions_to_table(ctx),
+        REMOVE: lambda protein: remove_protein(ctx, protein),
     }
 
     def run(label, work, on_done):  # surfaces and interactions: never hold up closing
@@ -237,6 +246,53 @@ def add_ligand(ctx: ToolContext, protein: str, residue: int) -> int:
     ctx.add_rows(rows, f"Add ligand {label}", structures=(ligands.LIGAND_COLUMN,))
     ctx.show_message(f"Added {label} of {protein}")
     return 1
+
+
+KEEP_ROWS = "keep"
+DELETE_ROWS = "delete"
+
+
+def linked_rows(ctx: ToolContext, protein: str) -> np.ndarray:
+    """The rows whose Protein is ``protein``."""
+    table = ctx.table
+    if ligands.PROTEIN_COLUMN not in table:
+        return np.zeros(0, np.int64)
+    values = table.read([ligands.PROTEIN_COLUMN])[ligands.PROTEIN_COLUMN]
+    return table.oids[np.array([str(v) == protein for v in values.tolist()], bool)]
+
+
+def remove_protein(ctx: ToolContext, protein: str, rows: str | None = None) -> bool:
+    """Remove the protein, and its ligand rows unless ``rows`` is KEEP_ROWS (asked when None
+    and it has rows), in one undo step. False when cancelled or there is no such protein."""
+    asset = ctx.table.assets.get(protein)
+    if asset is None or asset.kind != KIND:
+        return False
+    linked = linked_rows(ctx, protein)
+    if rows is None and len(linked):
+        rows = _ask_rows(ctx, asset.name, len(linked))
+        if rows is None:
+            return False
+    deleting = rows != KEEP_ROWS
+    ctx.remove_rows(linked if deleting else [], f"Remove protein {protein}",
+                    extra_ops=[PutAsset(protein, asset, None)])  # fmt: skip
+    gone = f" and {len(linked)} ligand row(s)" if deleting and len(linked) else ""
+    ctx.show_message(f"Removed {protein}{gone}")
+    return True
+
+
+def _ask_rows(ctx: ToolContext, name: str, count: int) -> str | None:
+    """Delete or keep the protein's ligand rows (None: cancel)."""
+    from PySide6.QtWidgets import QMessageBox
+
+    question = f"Remove {name} and its {count} ligand row(s)?"
+    box = QMessageBox(QMessageBox.Icon.Question, "Remove Protein", question, parent=ctx.parent)
+    delete = box.addButton("Delete Rows", QMessageBox.ButtonRole.DestructiveRole)
+    keep = box.addButton("Keep Rows", QMessageBox.ButtonRole.AcceptRole)
+    box.addButton(QMessageBox.StandardButton.Cancel)
+    box.setDefaultButton(delete)
+    box.exec()
+    clicked = box.clickedButton()
+    return DELETE_ROWS if clicked is delete else KEEP_ROWS if clicked is keep else None
 
 
 def interactions_to_table(ctx: ToolContext):
