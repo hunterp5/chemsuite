@@ -22,9 +22,13 @@ reading 8 MB of mmCIF 0.8 s, a selection's new look 13 ms, the cartoon 0.13 s).
 
 from __future__ import annotations
 
+import gc
+import subprocess
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -35,6 +39,8 @@ from chemsuite.protein.model import Structure
 from chemsuite.protein.select import select
 
 from .conftest import load
+
+ROOT = Path(__file__).resolve().parents[2]
 
 pytestmark = pytest.mark.bench
 
@@ -47,11 +53,18 @@ COMPOSE_S = 0.5
 
 
 def best_of(fn: Callable[[], object], repeat: int = 3) -> float:
+    """The best time of ``repeat`` runs, the garbage collector paused (in the full suite it
+    would sweep the other tests' heap while a read allocates)."""
     best = float("inf")
-    for _ in range(repeat):
-        start = time.perf_counter()
-        fn()
-        best = min(best, time.perf_counter() - start)
+    gc.collect()
+    gc.disable()
+    try:
+        for _ in range(repeat):
+            start = time.perf_counter()
+            fn()
+            best = min(best, time.perf_counter() - start)
+    finally:
+        gc.enable()
     return best
 
 
@@ -76,10 +89,28 @@ def big() -> Structure:
     return tiled(load("3htb.cif.gz"), ATOMS)
 
 
-def test_reading_a_large_mmcif_file(big) -> None:
-    text = io.to_text(big, io.MMCIF)
-    seconds = best_of(lambda: io.parse(text, io.MMCIF), repeat=2)
-    print(f"\nread {len(text) >> 20} MB, {big.n_atoms:,} atoms: {seconds:.2f} s")
+READ = """
+import sys, time
+from chemsuite.protein import io
+best = float("inf")
+for _ in range(2):
+    start = time.perf_counter()
+    io.read(sys.argv[1])
+    best = min(best, time.perf_counter() - start)
+print(best)
+"""
+
+
+def test_reading_a_large_mmcif_file(big, tmp_path) -> None:
+    """In a process of its own: the rest of a test run (200,000-row tables held by the table
+    benchmarks) slows allocation enough to triple the time."""
+    path = tmp_path / "big.cif"
+    path.write_text(io.to_text(big, io.MMCIF))
+    out = subprocess.run([sys.executable, "-c", READ, str(path)], capture_output=True,
+                         text=True, timeout=120, cwd=ROOT)  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    seconds = float(out.stdout.split()[-1])
+    print(f"\nread {path.stat().st_size >> 20} MB, {big.n_atoms:,} atoms: {seconds:.2f} s")
     assert seconds < READ_S
 
 
