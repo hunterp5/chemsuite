@@ -295,6 +295,35 @@ bioactive conformation**: the pose of a ligand crystallised in its protein.
 **Process:** this work starts in plan mode. Write the plan (benchmark set, licences, metrics,
 candidate methods, acceptance threshold) and get it approved before writing code.
 
+### 7.0c High priority: the Protein Viewer as the other half of chemsuite (added 2026-11-11)
+
+chemsuite has two halves. The **data table** is where a medicinal chemist works up and
+visualises data and generates chemical information. The **Protein Viewer** is where they
+simulate, inspect binding modes, analyse protein–ligand interaction fingerprints (PLIF) and
+align sequences (MSA, and global or local pairwise) and structures. The aim is an
+industry-standard modelling and simulation suite inside chemsuite, and the Protein Viewer gets
+the same polish as the table and the dockable plots and tools.
+
+- **Done 2026-11-11:** Protein is its own menu in the main menu bar (between Data and Help), no
+  longer an item under Chemistry.
+- **Polish pass, before new features:**
+  - the native macOS look, light and dark;
+  - consistent menus, toolbar, shortcuts and context menus with the main window's conventions;
+  - tooltips only (no helper text);
+  - state that reopens exactly as saved;
+  - smooth navigation on large structures (100k atoms at 60 fps);
+  - labels and measurements that stay legible;
+  - selection feedback everywhere (3D, sequence, tree);
+  - keyboard access;
+  - screenshots of each pane compared side by side with the table and plots.
+- **Workspace:** the viewer stays its own window with its own menus. Its Protein menu in the main
+  window grows as the phases land (open, fetch, align, prepare, dock, simulate), each opening
+  or driving the viewer.
+- **Capabilities** are the phases in §7a below. Sequence alignment (phase 4) covers MSA through
+  MAFFT, and global (Needleman–Wunsch) and local (Smith–Waterman) pairwise alignment with
+  chosen matrices and gap penalties. PLIF analysis across poses and frames joins phase 5.
+  Simulation is phase 6.
+
 ### 7a. Proteins (decided 2026-11-10)
 
 A protein viewer and editor for medicinal chemists, on the native QRhi renderer (no WebEngine).

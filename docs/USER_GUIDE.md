@@ -44,10 +44,11 @@ Each document has its own window. From top to bottom:
   | Edit | Undo, Copy and Paste, Edit Structure, selecting rows, Lists, Delete Rows, Settings |
   | View | Search Bar, Arrange Panes, Jobs, Log, Status Bar |
   | Tools ▸ Table | Add compounds, rows and columns; Split and Join columns; Calculator; random numbers and rows |
-  | Chemistry | Sketcher, Calculate Descriptors, Standardize, Predict pKa, Structure Viewer, Protein Viewer, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
+  | Chemistry | Sketcher, Calculate Descriptors, Standardize, Predict pKa, Structure Viewer, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
   | Data | Search ▸, Plot ▸, Filters, Browser, then Bin Values, Statistics, Similarity Search, Diverse Subset, Cluster, SAR ▸, Scoring ▸, Chemical Space ▸ |
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
   | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
+  | Protein | Protein Viewer: the workspace for proteins, with its own menus |
   | Help | This guide, the log folder, About |
 
   - Every command that a tool adds appears in these menus. If a command is greyed out, its
@@ -1202,7 +1203,7 @@ tooltips give the reason. Settings ▸ General ▸ 3D graphics can force softwar
 
 ### Proteins
 
-**Chemistry ▸ Protein Viewer** (Ctrl+Shift+R) opens a workspace for proteins in its own
+**Protein ▸ Protein Viewer** (Ctrl+Shift+R) opens a workspace for proteins in its own
 window (dock it beside the table with the button in its title bar if you prefer). It has its
 own menus:
 

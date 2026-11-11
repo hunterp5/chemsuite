@@ -41,7 +41,7 @@ def chem(window):
 
 def test_menu_bar_order(window) -> None:
     titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
-    assert titles == ["File", "Edit", "View", "Tools", "Chemistry", "Data", "Help"]
+    assert titles == ["File", "Edit", "View", "Tools", "Chemistry", "Data", "Protein", "Help"]
     data = window.menuBar().actions()[5].menu()
     entries = [a.text().replace("&", "") for a in data.actions() if not a.isSeparator()]
     # Search, Plot and the panes lead the Data menu
