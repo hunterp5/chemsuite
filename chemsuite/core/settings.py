@@ -91,7 +91,7 @@ class Files:
 @dataclass
 class Performance:
     max_workers: int = 0  # 0: all cores but one
-    graphics: str = GRAPHICS_AUTO  # OpenGL for 3D: auto, software (Windows) or off
+    graphics: str = GRAPHICS_AUTO  # 3D drawing: auto, software or off
 
 
 @dataclass

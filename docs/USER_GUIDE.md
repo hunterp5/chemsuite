@@ -983,7 +983,7 @@ The 3D plots use the same toolbar as the 2D ones:
 
 | Button | Name | What it does |
 |---|---|---|
-| Arrow round a circle | Turn | Drag to turn the cube, scroll to zoom, click a point to select it. |
+| Arrow round a circle | Turn | Drag to turn the cube, right-drag (or Shift-drag) to move it, scroll to zoom, click a point to select it. |
 | Dashed box | Box Select | Drag a rectangle to select the points inside it, as seen from where you look. |
 | Loop | Lasso Select | Draw round points to select them, as seen from where you look. |
 | Four corners | Reset View | Looks at the cube from the start position again. |
@@ -1189,13 +1189,14 @@ they are, and a 3D view you turned is still turned when you come back to it.
   turn, move or zoom it. Stepping through conformers keeps the view, so they can be compared.
 - **Reset View** turns the molecule square on and fits it again.
 
-3D drawing uses the computer's graphics through OpenGL, as the 3D plots do, on macOS, Windows
-and Linux. The 3D view is only created when you first switch to it, so the 2D view works on
-any computer. chemsuite checks the graphics when it starts. On Windows, if the graphics card
-cannot draw 3D (common on remote desktops, virtual machines and VDI), chemsuite draws 3D in
-software instead: slower, but it works. Where 3D still cannot be drawn, the viewer stays in
-2D, the 3D switch and the 3D plot types are greyed out, and their tooltips give the reason.
-Settings ▸ General ▸ 3D graphics can force software drawing or turn 3D off.
+3D drawing, here and in the 3D plots, uses each system's own graphics: Metal on macOS,
+Direct3D on Windows and OpenGL on Linux. The 3D view is only created when you first switch to
+it, so the 2D view works on any computer. On Windows, if the graphics card cannot draw 3D
+(common on remote desktops, virtual machines and VDI), Windows draws it in software instead:
+slower, but it works. chemsuite checks the graphics when it starts; where 3D cannot be drawn,
+the viewer stays in 2D, the 3D switch and the 3D plot types are greyed out, and their
+tooltips give the reason. Settings ▸ General ▸ 3D graphics can force software drawing
+(Windows and Linux) or turn 3D off.
 
 ### Retrosynthesis
 
@@ -1626,7 +1627,7 @@ keeps them and **Cancel** puts everything back.
 | Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colourful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
 | Keyboard | Change any command's shortcut. |
 | External Tools | Paths to optional programs (Open Babel, CONFORGE, Gnina, AmberTools, MAFFT, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
-| General | Processor cores to use (0 = automatic: all but one, so the window stays responsive), 3D graphics (Automatic, Software on Windows, or Off; takes effect after a restart), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
+| General | Processor cores to use (0 = automatic: all but one, so the window stays responsive), 3D graphics (Automatic, Software on Windows and Linux, or Off; takes effect after a restart), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
 
 Your IT department can fix some settings for everyone. Those are shown greyed out with a
 padlock.

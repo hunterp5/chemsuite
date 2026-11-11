@@ -21,7 +21,6 @@ dependencies = [
     "umap-learn>=0.5.7",        # base install by decision (docs/PLAN.md §5); imported lazily
     "pacmap>=0.9",              # PaCMAP maps (Apache-2.0; pulls faiss-cpu, MIT); imported lazily
     "openpyxl>=3.1",            # Excel (.xlsx) read/write; base install by decision
-    "PyOpenGL>=3.1",            # 3D scatter plots (pyqtgraph.opengl)
 ]
 
 [project.gui-scripts]

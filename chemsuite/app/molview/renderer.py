@@ -15,7 +15,8 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """Draw a :class:`~chemsuite.molview.geometry.Scene` with the GPU, through Qt's RHI.
 
-It draws through OpenGL on macOS, Windows and Linux alike (see :data:`API`). Atoms and bonds
+It draws with the system's own graphics API (Metal on macOS, Direct3D 11 on Windows, OpenGL on
+Linux), as the 3D plots do: every GPU widget in a window shares one API. Atoms and bonds
 are *impostors*: each atom is one small square and each bond one box, and the shaders work
 out where the eye's ray meets the true sphere or cylinder, so they are smooth at any zoom and
 a large scene is two draw calls. Python only uploads the scene when it changes and four small
@@ -27,7 +28,6 @@ the wheel to zoom. A click without a drag picks the atom under the pointer.
 
 from __future__ import annotations
 
-import sys
 from importlib.resources import files
 
 import numpy as np
@@ -46,7 +46,6 @@ from PySide6.QtGui import (
     QRhiVertexInputLayout,
     QRhiViewport,
     QShader,
-    QSurfaceFormat,
     QWheelEvent,
 )
 from PySide6.QtWidgets import QRhiWidget, QWidget
@@ -87,26 +86,6 @@ def _columns(m: np.ndarray) -> np.ndarray:
     return np.asarray(m, np.float32).T.ravel()
 
 
-#: A window draws its GPU widgets through one graphics API, and the 3D plots
-#: (pyqtgraph.opengl, a QOpenGLWidget) need OpenGL: with Metal or Direct3D here, whichever of
-#: the two opened second in a window would draw nothing.
-API = QRhiWidget.Api.OpenGL
-
-
-def prepare_opengl() -> None:
-    """Ask for an OpenGL 4.1 core context on macOS (call before the QApplication exists).
-
-    macOS otherwise gives legacy OpenGL 2.1, which has no instanced drawing; the 3D plots draw
-    the same either way. Windows and Linux drivers give their newest OpenGL by default.
-    """
-    if sys.platform != "darwin":
-        return
-    fmt = QSurfaceFormat.defaultFormat()
-    fmt.setVersion(4, 1)
-    fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
-    QSurfaceFormat.setDefaultFormat(fmt)
-
-
 class MolRenderer(QRhiWidget):
     atomClicked = Signal(int, object)  # scene atom index, keyboard modifiers
     atomHovered = Signal(int)  # scene atom index, -1 when none
@@ -115,7 +94,6 @@ class MolRenderer(QRhiWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setApi(API)
         self.setSampleCount(4)
         self.setMouseTracking(True)
         self.setMinimumSize(120, 120)

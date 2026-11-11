@@ -49,9 +49,8 @@ def main(argv: list[str] | None = None) -> int:
 
     QCoreApplication.setApplicationName("chemsuite")  # before config_folder()
     QCoreApplication.setOrganizationName("chemsuite")
-    folder = config_folder()
-    mode = SettingsStore(folder, Policy.load()).effective().performance.graphics
-    graphics.prepare(mode, folder)  # before the QApplication: OpenGL is chosen once
+    mode = SettingsStore(config_folder(), Policy.load()).effective().performance.graphics
+    graphics.prepare(mode)  # before the QApplication: the graphics are chosen once
     app = QApplication(argv)
     policy = settings_hub().store.policy
     log_file = logbook.setup_logging(level=logbook.level_from(policy.get("log_level")))

@@ -24,6 +24,19 @@ from .conftest import gui
 
 pytestmark = gui
 
+
+@pytest.fixture(autouse=True)
+def gpu(monkeypatch):
+    """The offscreen platform has no GPU drawing, so a 3D view would report it and the plot
+    fall back to 2D; the tests act as if drawing works (the 3D scene is built all the same)
+    and call the real handler when testing the fallback."""
+    from chemsuite.app.plots.panel import PlotPanel
+
+    real = PlotPanel._3d_failed
+    monkeypatch.setattr(PlotPanel, "_3d_failed", lambda self: None)
+    return real
+
+
 NONE = Qt.KeyboardModifier.NoModifier
 SHIFT = Qt.KeyboardModifier.ShiftModifier
 CTRL = Qt.KeyboardModifier.ControlModifier
@@ -358,7 +371,7 @@ def test_hover_card_options(data) -> None:
     panel.show_hover(hover)
     assert panel.card.text.text() == "B"
     panel.card.hide()
-    panel.card_when.setCurrentIndex(panel.card_when.findData("off"))
+    panel.card_controls.card_when.setCurrentIndex(panel.card_controls.card_when.findData("off"))
     assert panel.card_options.when == "off" and not panel.card_options.hovering
     state = panel.state()["cards"]
     assert state["when"] == "off" and CardOptions.from_state(state) == panel.card_options
@@ -373,7 +386,7 @@ def test_selected_points_keep_their_cards(data, qtbot) -> None:
     first, second = (int(o) for o in table.oids[:2])
     data.workspace.selection.set([first, second], "test")
     assert not panel.pinned.cards  # "On Hover" does not pin
-    panel.card_when.setCurrentIndex(panel.card_when.findData("both"))
+    panel.card_controls.card_when.setCurrentIndex(panel.card_controls.card_when.findData("both"))
     assert set(panel.pinned.cards) == {first, second}
     card = panel.pinned.cards[first][0]
     assert card.text.text().splitlines()[0] == "A"
@@ -619,7 +632,7 @@ def test_landscape_draws_a_surface(cube) -> None:
     panel = cube.open_tool("landscape")
     panel.set_spec(bins=12)
     assert "surface on a 12×12 grid" in panel.summary.text()
-    assert panel.scene3d._surface.visible()
+    assert panel.scene3d.has_surface and panel.view3d.surface_triangles > 0
     assert panel.state()["bins"] == 12 and panel.state()["kind"] == "landscape"
 
 
@@ -663,8 +676,22 @@ def test_scatter_item_places_points_like_pyqtgraph(qtbot) -> None:
 def test_3d_kinds_say_why_when_the_graphics_cannot_draw(cube, monkeypatch) -> None:
     from chemsuite.app import graphics
 
-    monkeypatch.setattr(graphics, "_problem", graphics.NO_OPENGL)
+    monkeypatch.setattr(graphics, "_problem", graphics.NO_GPU)
     panel = cube.open_tool("scatter3d")
     item = panel.kind.model().item(panel.kind.findData("scatter3d"))
-    assert not item.isEnabled() and item.toolTip() == f"⚠ {graphics.NO_OPENGL}"
+    assert not item.isEnabled() and item.toolTip() == f"⚠ {graphics.NO_GPU}"
     assert panel.view3d is None  # drawn flat instead of failing
+
+
+def test_3d_that_fails_when_drawn_falls_back_to_2d(cube, gpu, monkeypatch) -> None:
+    """Graphics that pass the start-up check but cannot draw (found only when drawing, as on
+    Windows): the plot goes flat and the 3D kinds say why, here and in later plots."""
+    from chemsuite.app import graphics
+
+    monkeypatch.setattr(graphics, "_problem", None)
+    panel = cube.open_tool("scatter3d")
+    gpu(panel)
+    assert panel.spec().kind == "scatter" and not panel.is_3d()
+    item = panel.kind.model().item(panel.kind.findData("landscape"))
+    assert not item.isEnabled() and item.toolTip() == f"⚠ {graphics.NO_GPU}"
+    assert graphics.problem() == graphics.NO_GPU

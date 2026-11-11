@@ -624,9 +624,10 @@ class GeneralPage(QWidget):
         for mode, text in GRAPHICS_TEXT.items():
             self.graphics.addItem(text, mode)
         self.graphics.setToolTip(
-            "How 3D structures and 3D plots are drawn. Automatic uses the graphics card, or "
-            "software drawing on Windows when the card cannot. Software is slower but works on "
-            "remote desktops and virtual machines. Takes effect after restarting chemsuite."
+            "How 3D structures and 3D plots are drawn. Automatic uses the graphics card (on "
+            "Windows, software drawing when the card cannot). Software, on Windows and Linux, "
+            "is slower but works on remote desktops and virtual machines. Takes effect after "
+            "restarting chemsuite."
         )
         self.recent_limit = QSpinBox()
         self.recent_limit.setRange(0, 50)

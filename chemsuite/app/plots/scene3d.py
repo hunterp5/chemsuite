@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The 3D plots of a plot panel: a cube you turn, drawn with OpenGL (pyqtgraph.opengl).
+"""The 3D plots of a plot panel: a cube you turn, drawn by :class:`~.view3d.View3D`.
 
 * **3D Scatter**: three number columns, coloured and sized by others, with optional drop
   lines to the floor so heights read at a glance.
@@ -29,14 +29,12 @@ on a white background, like a printed figure.
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QMatrix4x4, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QPoint, QRect
 
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import NUMBER
 from chemsuite.plotting.data import BLANK_LABEL, OTHER_LABEL, categories, numbers
-from chemsuite.plotting.geometry import lasso_mask, project
+from chemsuite.plotting.geometry import lasso_mask
 from chemsuite.plotting.stats import landscape
 from chemsuite.plotting.style import (
     DEFAULT_COLOR,
@@ -47,21 +45,16 @@ from chemsuite.plotting.style import (
     scale_colors,
 )
 
-from .view_box import BOX, LASSO, ZOOM
+from .view3d import HIGHLIGHT, INK, View3D
 
 POINT_SIZE = 7.0
-HIGHLIGHT = (230, 70, 20)
 DIMMED = 0.25  # opacity of unselected points while something is selected
 HOVER_RADIUS = 9.0
-CLICK_SLOP = 4  # pixels the mouse may move and still count as a click
 SCALE_STEPS = 24
-BACKGROUND = (255, 255, 255)
-INK = (70, 70, 70)  # the cube's edges and labels
 LABEL_OFFSET = 0.14  # how far labels sit outside the cube
 FLOOR_LINES = 4  # grid lines across the floor, each way
 DROP_MAX = 20_000  # more points than this: drop lines only for the selected ones
 SPECIAL = (OTHER_LABEL, BLANK_LABEL)  # categories drawn grey
-CAMERA = {"distance": 4.6, "elevation": 22.0, "azimuth": -55.0}
 #: the cube's corners are at ±1 on every axis
 CORNERS = np.array(
     [
@@ -91,148 +84,8 @@ def scaled(values: np.ndarray, lo: float | None = None, hi: float | None = None)
     return mapped, lo, hi
 
 
-def _matrix(m: QMatrix4x4) -> np.ndarray:
-    return np.array(m.data(), dtype=float).reshape(4, 4).T  # Qt stores columns first
-
-
 def _rgba(rgb, alpha: float = 1.0) -> tuple[float, float, float, float]:
     return (rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, alpha)
-
-
-try:  # PyOpenGL is a dependency, but a broken install should not stop the app
-    import pyqtgraph.opengl as gl
-except ImportError:  # pragma: no cover - only without PyOpenGL
-    gl = None
-
-AVAILABLE = gl is not None
-
-
-class _Trace(QWidget):
-    """The box or lasso being drawn, painted over the OpenGL view."""
-
-    def __init__(self, parent: QWidget) -> None:
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.points: list[QPointF] = []
-        self.box: QRect | None = None
-        self.hide()
-
-    def paintEvent(self, _event) -> None:
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pen = QPen(QColor(*HIGHLIGHT), 1.2, Qt.PenStyle.DashLine)
-        painter.setPen(pen)
-        painter.setBrush(QColor(*HIGHLIGHT, 30))
-        if self.box is not None:
-            painter.drawRect(self.box)
-        elif len(self.points) > 1:
-            path = QPainterPath(self.points[0])
-            for point in self.points[1:]:
-                path.lineTo(point)
-            path.closeSubpath()
-            painter.drawPath(path)
-
-
-if gl is not None:
-
-    class View3D(gl.GLViewWidget):
-        """The OpenGL view: turns on drag (pyqtgraph), reports clicks, boxes, lassos, hovers and
-        camera moves (so the panel can move the cards beside selected points)."""
-
-        clicked = Signal(QPoint, object)
-        boxed = Signal(QRect, object)
-        lassoed = Signal(object, object)  # (n × 2 widget pixels, modifiers)
-        hovered = Signal(QPoint)
-        turning = Signal()  # a drag started
-        moved = Signal()  # the camera settled (drag released or zoomed)
-
-        def __init__(self) -> None:
-            super().__init__()
-            self.mode = ZOOM
-            self._press: QPoint | None = None
-            self._trace = _Trace(self)
-            self.setMouseTracking(True)
-            self.setBackgroundColor(QColor(*BACKGROUND))
-
-        def resizeEvent(self, event) -> None:
-            super().resizeEvent(event)
-            self._trace.resize(self.size())
-            self.moved.emit()
-
-        def mousePressEvent(self, event) -> None:
-            self._press = event.position().toPoint()
-            if event.button() == Qt.MouseButton.LeftButton and self.mode in (BOX, LASSO):
-                self._trace.box = QRect(self._press, QSize()) if self.mode == BOX else None
-                self._trace.points = [QPointF(self._press)]
-                self._trace.show()
-                self._trace.raise_()
-                return
-            self.turning.emit()
-            super().mousePressEvent(event)
-
-        def mouseMoveEvent(self, event) -> None:
-            pos = event.position().toPoint()
-            if event.buttons() == Qt.MouseButton.NoButton:
-                self.hovered.emit(pos)
-                return
-            if self._trace.isVisible() and self._press is not None:
-                if self._trace.box is not None:
-                    self._trace.box = QRect(self._press, pos).normalized()
-                else:
-                    self._trace.points.append(QPointF(pos))
-                self._trace.update()
-                return
-            super().mouseMoveEvent(event)
-
-        def mouseReleaseEvent(self, event) -> None:
-            pos = event.position().toPoint()
-            press, self._press = self._press, None
-            if self._trace.isVisible():
-                self._trace.hide()
-                box, points = self._trace.box, self._trace.points
-                self._trace.box, self._trace.points = None, []
-                if box is not None and (box.width() > CLICK_SLOP or box.height() > CLICK_SLOP):
-                    self.boxed.emit(box, event.modifiers())
-                    return
-                if box is None and len(points) > 2:
-                    polygon = np.array([[p.x(), p.y()] for p in points])
-                    span = polygon.max(axis=0) - polygon.min(axis=0)
-                    if span.max() > CLICK_SLOP:
-                        self.lassoed.emit(polygon, event.modifiers())
-                        return
-            if press is not None and (pos - press).manhattanLength() <= CLICK_SLOP:
-                self.clicked.emit(pos, event.modifiers())
-            super().mouseReleaseEvent(event)
-            self.moved.emit()
-
-        def wheelEvent(self, event) -> None:
-            super().wheelEvent(event)
-            self.moved.emit()
-
-        def camera(self) -> dict:
-            params = self.cameraParams()
-            return {key: float(params[key]) for key in CAMERA}
-
-        def set_camera(self, camera: object) -> None:
-            if not isinstance(camera, dict):
-                return
-            values = {
-                k: float(v) for k, v in camera.items() if k in CAMERA and isinstance(v, int | float)
-            }
-            self.setCameraPosition(**values)
-            self.moved.emit()
-
-        def reset_camera(self) -> None:
-            from pyqtgraph import Vector
-
-            self.setCameraPosition(pos=Vector(0, 0, 0), **CAMERA)
-            self.moved.emit()
-
-        def export(self, path) -> bool:
-            return self.grabFramebuffer().save(str(path))
-
-else:  # pragma: no cover - only without PyOpenGL
-    View3D = None
 
 
 class Scene3D:
@@ -242,7 +95,7 @@ class Scene3D:
     work on where those points are on screen, so they select what you see.
     """
 
-    def __init__(self, view) -> None:
+    def __init__(self, view: View3D) -> None:
         self.view = view
         self.kind = "scatter3d"
         self.oids = np.empty(0, dtype=np.int64)
@@ -252,24 +105,9 @@ class Scene3D:
         self.ranges: list[tuple[float, float]] = []
         self.names: tuple[str | None, ...] = (None, None, None)
         self.drop = False
-        self._labels: list = []
-        self._frame = gl.GLLinePlotItem(mode="lines", antialias=True)
-        self._floor = gl.GLLinePlotItem(mode="lines", antialias=True)
-        self._drops = gl.GLLinePlotItem(mode="lines", antialias=True)
-        self._surface = gl.GLMeshItem(smooth=True, shader=None, glOptions="opaque")
-        self._points = gl.GLScatterPlotItem(pxMode=True)
-        self._points.setGLOptions("translucent")
-        self._chosen = gl.GLScatterPlotItem(pxMode=True)
-        self._chosen.setGLOptions("translucent")
-        for item in (
-            self._floor,
-            self._frame,
-            self._surface,
-            self._drops,
-            self._points,
-            self._chosen,
-        ):
-            view.addItem(item)
+        self._lines = np.empty((0, 3))  # the cube and floor grid (pairs of ends)
+        self._line_colors = np.empty((0, 4))
+        self.has_surface = False
 
     # -- drawing --------------------------------------------------------------------------------
     def build(self, table: Table, spec, oids: np.ndarray) -> str:
@@ -278,7 +116,7 @@ class Scene3D:
         self.names = (spec.x, spec.y, spec.z)
         self.drop = bool(spec.drop) and spec.kind == "scatter3d"
         names = self.names
-        self._surface.setVisible(False)
+        self._clear_surface()
         if not all(names) or any(n not in table for n in names):
             self._empty()
             return "Choose number columns for X, Y and Z."
@@ -367,26 +205,28 @@ class Scene3D:
         bins_, _lo, _hi = scale_bins(vertices[:, 2], SCALE_STEPS, -1.0, 1.0)
         steps = np.array(scale_colors(SCALE_STEPS), dtype=float) / 255.0
         colours = np.column_stack([steps[np.clip(bins_, 0, None)], np.ones(len(vertices))])
-        mesh = gl.MeshData(vertexes=vertices, faces=faces, vertexColors=colours)
-        self._surface.setMeshData(meshdata=mesh, drawEdges=False)
-        self._surface.setVisible(len(faces) > 0)
+        self.view.set_surface(vertices, colours, faces)
+        self.has_surface = len(faces) > 0
         return nx
 
+    def _clear_surface(self) -> None:
+        if self.has_surface:
+            self.view.set_surface(np.empty((0, 3)), np.empty((0, 4)), np.empty((0, 3), int))
+            self.has_surface = False
+
     def _draw(self) -> None:
-        ink = _rgba(INK, 0.35)
-        self._frame.setData(pos=CORNERS[np.array(EDGE_PAIRS).ravel()], color=ink, width=1.0)
+        frame = CORNERS[np.array(EDGE_PAIRS).ravel()]
         ticks = np.linspace(-1, 1, FLOOR_LINES + 2)[1:-1]
         floor = []
         for t in ticks:
             floor += [(t, -1, -1), (t, 1, -1), (-1, t, -1), (1, t, -1)]
-        self._floor.setData(pos=np.array(floor, dtype=float), color=_rgba(INK, 0.12), width=1.0)
-        for label in self._labels:
-            self.view.removeItem(label)
-        self._labels = []
+        floor = np.array(floor, dtype=float)
+        self._lines = np.concatenate([floor, frame])
+        self._line_colors = np.concatenate(
+            [np.tile(_rgba(INK, 0.12), (len(floor), 1)), np.tile(_rgba(INK, 0.35), (len(frame), 1))]
+        )
+        labels = []
         if len(self.ranges) == 3 and len(self.oids):
-            font = QFont()
-            font.setPointSizeF(max(8.0, font.pointSizeF() - 2))
-            ink_colour = QColor(*INK)
             start = np.array([-1.0, -1.0, -1.0])
             for axis, (name, (lo, hi)) in enumerate(zip(self.names, self.ranges, strict=True)):
                 along = np.zeros(3)
@@ -394,14 +234,9 @@ class Scene3D:
                 outward = np.full(3, -LABEL_OFFSET)
                 outward[axis] = 0.0  # away from the cube, square to its edge
                 for text, t in ((name, 0.5), (f"{lo:.3g}", 0.12), (f"{hi:.3g}", 0.96)):
-                    if text is None:
-                        continue
-                    label = gl.GLTextItem(
-                        pos=start + t * along + outward, text=text, color=ink_colour, font=font
-                    )
-                    self.view.addItem(label)
-                    self._labels.append(label)
-        self._points.setData(pos=self.pos, color=self.colors, size=self.sizes)
+                    if text is not None:
+                        labels.append((start + t * along + outward, text))
+        self.view.set_labels(labels)
         self.show_selection(frozenset())
 
     def show_selection(self, selected) -> None:
@@ -409,28 +244,26 @@ class Scene3D:
         colors = self.colors.copy()
         if mask.any():
             colors[:, 3] = DIMMED
-        self._points.setData(color=colors)
+        self.view.set_points(self.pos, colors, self.sizes)
         n = int(mask.sum())
         sizes = self.sizes[mask] + 3 if isinstance(self.sizes, np.ndarray) else self.sizes + 3
-        self._chosen.setData(
-            pos=self.pos[mask] if n else np.empty((0, 3)),
-            color=np.tile(_rgba(HIGHLIGHT), (n, 1)) if n else np.empty((0, 4)),
-            size=sizes if n else POINT_SIZE,
+        self.view.set_chosen(self.pos[mask], np.tile(_rgba(HIGHLIGHT), (n, 1)), sizes)
+        drops = self._drops(mask)
+        self.view.set_lines(
+            np.concatenate([self._lines, drops]),
+            np.concatenate([self._line_colors, np.tile(_rgba(INK, 0.22), (len(drops), 1))]),
         )
-        self._draw_drops(mask)
 
-    def _draw_drops(self, mask: np.ndarray) -> None:
+    def _drops(self, mask: np.ndarray) -> np.ndarray:
+        """Lines from the points (all, or the selected ones when there are many) to the floor."""
         if not self.drop or not len(self.pos):
-            self._drops.setVisible(False)
-            return
+            return np.empty((0, 3))
         rows = self.pos if len(self.pos) <= DROP_MAX else self.pos[mask]
-        tops = rows
         feet = rows.copy()
         feet[:, 2] = -1.0
         lines = np.empty((2 * len(rows), 3))
-        lines[0::2], lines[1::2] = tops, feet
-        self._drops.setData(pos=lines, color=_rgba(INK, 0.22), width=1.0)
-        self._drops.setVisible(len(rows) > 0)
+        lines[0::2], lines[1::2] = rows, feet
+        return lines
 
     def selected_mask(self, selected) -> np.ndarray:
         chosen = np.fromiter((int(o) for o in selected), dtype=np.int64, count=len(selected))
@@ -442,12 +275,7 @@ class Scene3D:
     def screen_points(self) -> tuple[np.ndarray, np.ndarray]:
         """Where each point is on the view, in widget pixels, and whether it is in front."""
         view = self.view
-        if not len(self.pos):
-            return np.empty((0, 2)), np.zeros(0, dtype=np.bool_)
-        width, height = max(view.width(), 1), max(view.height(), 1)
-        viewport = (0, 0, width, height)
-        mvp = view.projectionMatrix(viewport, viewport) * view.viewMatrix()
-        return project(self.pos, _matrix(mvp), width, height)
+        return view.camera.project(self.pos, max(view.width(), 1), max(view.height(), 1))
 
     def hit_box(self, rect: QRect) -> np.ndarray:
         xy, front = self.screen_points()

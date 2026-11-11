@@ -232,14 +232,12 @@ modified.
 
 ## 7. Proposed order
 
-**High priority, next large piece: 3D plots on QRhi.** Move the 3D scatter and landscape
-plots off pyqtgraph.opengl (a QOpenGLWidget) onto Qt's RHI, as the Structure Viewer's 3D
-view already is. Today one window's GPU widgets must all share OpenGL, which ties chemsuite
-to OpenGL everywhere. With every 3D view on QRhi, each system uses its own graphics API:
-Direct3D 11 on Windows (with WARP, its built-in software renderer, so it draws on any PC,
-virtual desktops included), Metal on macOS (OpenGL is deprecated there), and Vulkan or
-OpenGL on Linux. Until then, an OpenGL probe at start-up falls back to software OpenGL or
-disables 3D views with the reason.
+**Done (2026-11-10): 3D plots on QRhi.** The 3D scatter and landscape plots moved off
+pyqtgraph.opengl onto Qt's RHI, as the Structure Viewer's 3D view already was, and PyOpenGL
+left the dependencies. Each system now draws with its own graphics API: Direct3D 11 on
+Windows (with WARP, its built-in software renderer, behind it, so it draws on any PC,
+virtual desktops included), Metal on macOS, and OpenGL on Linux. A start-up check greys 3D out
+with the reason where the graphics cannot start.
 
 1. **Finish Settings** (in progress): the Settings window and custom-theme editor.
 2. **Jobs and log** (§2–3). Everything after this benefits from non-blocking jobs and a log.
@@ -254,4 +252,6 @@ disables 3D views with the reason.
 ## 8. Open questions
 
 - Which tier 2 and 3 features does the team use most? This decides the order of step 7.
+- **Branch protection on `main`** (changes only through a pull request with green CI): noted
+  2026-11-10, not turned on yet. Revisit with the pilot build.
 - Is a **pilot build** after step 3 useful, or should packaging wait for the table power tools?
