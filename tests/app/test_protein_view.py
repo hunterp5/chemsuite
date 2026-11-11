@@ -80,6 +80,59 @@ def test_a_new_look_keeps_the_hover(qtbot) -> None:
     assert set(np.unique(view._sphere_look[:, 4])) == {0.0, scene.SELECTED, scene.HOVER}
 
 
+def test_mesh_layers_light_up_by_their_owners(qtbot) -> None:
+    from chemsuite.app.protein.view import ATOM, ProteinView
+    from chemsuite.protein import cartoon, mesh, surface
+
+    structure = io.read(KINASE)
+    view = ProteinView()
+    qtbot.addWidget(view)
+    view.set_scene(*_scene(structure))
+    tube = cartoon.build(structure)
+    view.set_mesh("cartoon", tube, mesh.look(tube, np.ones((structure.n_residues, 4)),
+                                             np.zeros(structure.n_residues)))  # fmt: skip
+    ligand = np.flatnonzero(structure.atom_kind == 2)
+    skin = surface.build(structure, ligand)
+    view.set_mesh("surface", skin, mesh.look(skin, np.ones((structure.n_atoms, 4)),
+                                             np.zeros(structure.n_atoms)), owner=ATOM,
+                  transparent=True)  # fmt: skip
+    assert view.mesh_names == ["cartoon", "surface"]
+    residue = int(tube.owner[100])
+    view.set_hover(ligand[:3], [residue])
+    cartoon_look = view._layers["cartoon"].look
+    assert np.array_equal(cartoon_look[:, 4] == scene.HOVER, tube.owner == residue)
+    surface_look = view._layers["surface"].look
+    assert np.array_equal(surface_look[:, 4] == scene.HOVER, np.isin(skin.owner, ligand[:3]))
+    # a new look keeps the hover; removing a layer forgets it
+    view.set_mesh_look("cartoon", mesh.look(tube, np.zeros((structure.n_residues, 4)),
+                                            np.zeros(structure.n_residues)))  # fmt: skip
+    assert (view._layers["cartoon"].look[tube.owner == residue, 4] == scene.HOVER).all()
+    view.set_hover([])
+    assert (view._layers["cartoon"].look[:, 4] == 0).all()
+    view.remove_mesh("surface")
+    assert view.mesh_names == ["cartoon"]
+
+
+def test_a_click_on_the_cartoon_picks_its_residue(qtbot) -> None:
+    from chemsuite.app.protein.view import ProteinView
+    from chemsuite.protein import cartoon
+
+    structure = io.read(KINASE)
+    view = ProteinView()
+    qtbot.addWidget(view)
+    view.resize(400, 300)
+    hidden = np.zeros(structure.n_atoms, np.uint8)
+    geometry = scene.geometry(structure, hidden)
+    view.set_scene(geometry, np.zeros((0, 5)), np.zeros((0, 10)))
+    _, atoms = cartoon.trace(structure)
+    view.set_pick_points(atoms, structure.coords[0][atoms], np.full(len(atoms), 1.2))
+    view.reset_view()
+    xy, depth = view.camera.project(structure.coords[0][atoms], 400, 300)
+    front = int(np.argmin(depth))
+    assert view.atom_at(*xy[front]) == atoms[front]
+    assert view.atom_at(1, 1) == -1
+
+
 RENDER = """
 import sys
 import numpy as np
@@ -125,6 +178,21 @@ view.set_look(*look(select(s, "ligand")))
 for _ in range(10):
     app.processEvents()
 after = view.grabFramebuffer()
+from chemsuite.protein import cartoon, mesh
+tube = cartoon.build(s)
+blue = np.tile(np.array([0.1, 0.2, 0.95, 1.0], np.float32), (s.n_residues, 1))
+nothing = scene.geometry(s, np.zeros(s.n_atoms, np.uint8))
+view.set_scene(nothing, np.zeros((0, 5)), np.zeros((0, 10)))
+view.set_mesh("cartoon", tube, mesh.look(tube, blue, np.zeros(s.n_residues)))
+_, trace = cartoon.trace(s)
+view.set_pick_points(trace, s.coords[0][trace], np.full(len(trace), 1.2))
+view.reset_view()
+for _ in range(10):
+    app.processEvents()
+drawn = view.grabFramebuffer()
+cxy, cdepth = view.camera.project(s.coords[0][trace], drawn.width(), drawn.height())
+c = drawn.pixelColor(*(int(v) for v in cxy[int(np.argmin(cdepth))]))
+print("CARTOON", c.red(), c.green(), c.blue())
 print("FAILED" if failed else "OK", view.rhi().backendName())
 print("PICK", picked >= 0 and picked == int(geometry.atoms[hit]))
 for name, image in (("BEFORE", before), ("AFTER", after)):
@@ -140,7 +208,7 @@ for name, image in (("BEFORE", before), ("AFTER", after)):
 def test_proteins_are_drawn_picked_and_selected() -> None:
     """Draws a binding site with the GPU in a subprocess (the offscreen platform the other
     tests use cannot draw): the ligand's carbons are green, a click picks the atom in front,
-    and selecting the ligand tints it with the selection colour."""
+    selecting the ligand tints it with the selection colour, and a cartoon draws."""
     env = {k: v for k, v in os.environ.items() if k != "QT_QPA_PLATFORM"}
     out = subprocess.run(
         [sys.executable, "-c", RENDER, str(KINASE)], capture_output=True, text=True, env=env,
@@ -158,3 +226,5 @@ def test_proteins_are_drawn_picked_and_selected() -> None:
     assert g > 120 and g > r + 40 and g > b + 40, (r, g, b)  # ligand carbon green
     r2, g2, b2 = (int(v) for v in lines["AFTER"])
     assert r2 > r + 40 and b2 < g2, (r2, g2, b2)  # tinted towards the selection's amber
+    r3, g3, b3 = (int(v) for v in lines["CARTOON"])
+    assert b3 > 60 and b3 > 3 * r3 and b3 > 2 * g3, (r3, g3, b3)  # the cartoon's blue

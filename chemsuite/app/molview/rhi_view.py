@@ -264,23 +264,24 @@ class RhiView(QRhiWidget):
         buf.create()
         return buf
 
-    def instances(self, old, data: np.ndarray, batch):
+    def instances(self, old, data: np.ndarray, batch, usage=QRhiBuffer.UsageFlag.VertexBuffer):
         """A buffer holding ``data`` (a new one when it no longer fits); ``old`` when empty."""
         if not len(data):
             return old
         if old is None or old.size() < data.nbytes:
             if old is not None:
                 old.deleteLater()
-            old = self._rhi.newBuffer(
-                QRhiBuffer.Type.Static, QRhiBuffer.UsageFlag.VertexBuffer, max(data.nbytes, 4096)
-            )
+            old = self._rhi.newBuffer(QRhiBuffer.Type.Static, usage, max(data.nbytes, 4096))
             old.create()
         batch.uploadStaticBuffer(old, 0, data.nbytes, np.ascontiguousarray(data).tobytes())
         return old
 
-    def pipeline(self, name: str, strides, attributes, *, topology=None):
+    def pipeline(
+        self, name: str, strides, attributes, *, topology=None, per_vertex=False, build=True
+    ):
         """A pipeline for ``name.vert``/``name.frag``; ``strides`` per binding (the first per
-        vertex, the rest per instance); ``attributes`` as (binding, location, format, offset).
+        vertex, the rest per instance unless ``per_vertex``); ``attributes`` as (binding,
+        location, format, offset). ``build=False`` returns it uncreated, to adjust first.
         """
         pipe = self._rhi.newGraphicsPipeline()
         pipe.setShaderStages(
@@ -290,10 +291,14 @@ class RhiView(QRhiWidget):
             ]
         )
         layout = QRhiVertexInputLayout()
-        per_instance = QRhiVertexInputBinding.Classification.PerInstance
+        rest = (
+            QRhiVertexInputBinding.Classification.PerVertex
+            if per_vertex
+            else (QRhiVertexInputBinding.Classification.PerInstance)
+        )
         layout.setBindings(
             [QRhiVertexInputBinding(strides[0])]
-            + [QRhiVertexInputBinding(s, per_instance) for s in strides[1:]]
+            + [QRhiVertexInputBinding(s, rest) for s in strides[1:]]
         )
         layout.setAttributes([QRhiVertexInputAttribute(*a) for a in attributes])
         pipe.setVertexInputLayout(layout)
@@ -303,6 +308,8 @@ class RhiView(QRhiWidget):
         pipe.setSampleCount(self.sampleCount())
         pipe.setShaderResourceBindings(self._srb)
         pipe.setRenderPassDescriptor(self.renderTarget().renderPassDescriptor())
+        if not build:
+            return pipe
         return pipe if pipe.create() else None
 
     def _frame_data(self, rhi, aspect: float) -> np.ndarray:

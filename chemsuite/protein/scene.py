@@ -87,13 +87,24 @@ class Geometry:
         )
 
 
-def default_styles(structure: Structure, active: np.ndarray | None = None) -> np.ndarray:
-    """A first look at a complex: the protein as wire, the ligands as ball and stick,
-    ions as balls, additives and glycans as sticks; waters and non-polar hydrogens hidden;
-    of alternate locations only the shown one."""
+#: residues this close to a ligand are the binding site, shown as sticks with a cartoon
+SITE = 5.0
+
+
+def default_styles(
+    structure: Structure, active: np.ndarray | None = None, cartoon: bool = False
+) -> np.ndarray:
+    """A first look at a complex: the ligands as ball and stick, ions as balls, additives and
+    glycans as sticks; the protein as wire, or with ``cartoon`` hidden but for the binding
+    site's residues as sticks; waters and non-polar hydrogens hidden; of alternate locations
+    only the shown one."""
     kind = structure.atom_kind
     styles = np.full(structure.n_atoms, HIDDEN, np.uint8)
-    styles[np.isin(kind, (AMINO, NUCLEIC))] = WIRE
+    polymer = np.isin(kind, (AMINO, NUCLEIC))
+    if cartoon:
+        styles[polymer & binding_site(structure)] = STICK
+    else:
+        styles[polymer] = WIRE
     styles[kind == LIGAND] = BALL_AND_STICK
     styles[kind == ION] = BALL_AND_STICK
     styles[np.isin(kind, (ADDITIVE, GLYCAN))] = STICK
@@ -102,6 +113,17 @@ def default_styles(structure: Structure, active: np.ndarray | None = None) -> np
         active = structure.active()
     styles[~active] = HIDDEN
     return styles
+
+
+def binding_site(structure: Structure, distance: float = SITE) -> np.ndarray:
+    """Atoms of the residues with an atom within ``distance`` of a ligand."""
+    from .select import within
+
+    ligand = structure.atom_kind == LIGAND
+    near = within(structure.xyz(0), ligand, distance)
+    residues = np.zeros(structure.n_residues, bool)
+    residues[structure.residue_of[near]] = True
+    return residues[structure.residue_of]
 
 
 def nonpolar_hydrogens(structure: Structure) -> np.ndarray:
