@@ -54,8 +54,8 @@ from chemsuite.app.shell import graphics
 from chemsuite.app.widgets.panel import ToolPanel
 from chemsuite.core.table import Table
 from chemsuite.molview.camera import Camera
-from chemsuite.protein import io as protein_io
-from chemsuite.protein import ligands
+from chemsuite.protein.chem import ligands
+from chemsuite.protein.structure import io as protein_io
 
 from . import menubar, menus
 from .builds import Run

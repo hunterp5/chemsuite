@@ -28,8 +28,9 @@ import pytest
 from rdkit import Chem
 
 from chemsuite.core.settings import POLICY_ENV
-from chemsuite.protein import components, ligands, store
-from chemsuite.protein.components import CcdCache
+from chemsuite.protein.chem import ligands
+from chemsuite.protein.structure import components, store
+from chemsuite.protein.structure.components import CcdCache
 
 from .conftest import DATA
 from .test_ligands import only_ligand, without_file_components

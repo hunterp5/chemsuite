@@ -25,8 +25,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from chemsuite.protein import colours, io, scene
-from chemsuite.protein.select import select
+from chemsuite.protein.look import colours, scene
+from chemsuite.protein.structure import io
+from chemsuite.protein.structure.select import select
 
 ROOT = Path(__file__).resolve().parents[2]
 KINASE = ROOT / "tests" / "data" / "protein" / "1atp.cif.gz"
@@ -44,7 +45,7 @@ def _scene(structure, selected=None):
 
 
 def test_hover_rewrites_only_the_rows_of_the_atoms_it_touches(qtbot) -> None:
-    from chemsuite.app.protein.view import ProteinView
+    from chemsuite.protein.ui.view import ProteinView
 
     structure = io.read(KINASE)
     view = ProteinView()
@@ -66,7 +67,7 @@ def test_hover_rewrites_only_the_rows_of_the_atoms_it_touches(qtbot) -> None:
 
 
 def test_a_new_look_keeps_the_hover(qtbot) -> None:
-    from chemsuite.app.protein.view import ProteinView
+    from chemsuite.protein.ui.view import ProteinView
 
     structure = io.read(KINASE)
     view = ProteinView()
@@ -81,8 +82,8 @@ def test_a_new_look_keeps_the_hover(qtbot) -> None:
 
 
 def test_mesh_layers_light_up_by_their_owners(qtbot) -> None:
-    from chemsuite.app.protein.view import ATOM, ProteinView
-    from chemsuite.protein import cartoon, mesh, surface
+    from chemsuite.protein.look import cartoon, mesh, surface
+    from chemsuite.protein.ui.view import ATOM, ProteinView
 
     structure = io.read(KINASE)
     view = ProteinView()
@@ -114,8 +115,8 @@ def test_mesh_layers_light_up_by_their_owners(qtbot) -> None:
 
 
 def test_a_click_on_the_cartoon_picks_its_residue(qtbot) -> None:
-    from chemsuite.app.protein.view import ProteinView
-    from chemsuite.protein import cartoon
+    from chemsuite.protein.look import cartoon
+    from chemsuite.protein.ui.view import ProteinView
 
     structure = io.read(KINASE)
     view = ProteinView()
@@ -138,9 +139,10 @@ import sys
 import numpy as np
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from chemsuite.app.protein.view import ProteinView
-from chemsuite.protein import colours, io, scene
-from chemsuite.protein.select import select
+from chemsuite.protein.ui.view import ProteinView
+from chemsuite.protein.look import colours, scene
+from chemsuite.protein.structure import io
+from chemsuite.protein.structure.select import select
 s = io.read(sys.argv[1])
 styles = np.where(select(s, "ligand or within 6 of ligand"), scene.default_styles(s), 0)
 geometry = scene.geometry(s, styles.astype(np.uint8))
@@ -178,7 +180,7 @@ view.set_look(*look(select(s, "ligand")))
 for _ in range(10):
     app.processEvents()
 after = view.grabFramebuffer()
-from chemsuite.protein import cartoon, mesh
+from chemsuite.protein.look import cartoon, mesh
 tube = cartoon.build(s)
 blue = np.tile(np.array([0.1, 0.2, 0.95, 1.0], np.float32), (s.n_residues, 1))
 nothing = scene.geometry(s, np.zeros(s.n_atoms, np.uint8))
@@ -253,9 +255,10 @@ import sys
 import numpy as np
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from chemsuite.app.protein.view import ProteinView
-from chemsuite.protein import colours, io, scene
-from chemsuite.protein.select import select
+from chemsuite.protein.ui.view import ProteinView
+from chemsuite.protein.look import colours, scene
+from chemsuite.protein.structure import io
+from chemsuite.protein.structure.select import select
 s = io.read(sys.argv[1])
 styles = np.where(select(s, "ligand or within 6 of ligand"), scene.default_styles(s), 0)
 geometry = scene.geometry(s, styles.astype(np.uint8))
@@ -326,8 +329,9 @@ import sys
 import numpy as np
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from chemsuite.app.protein import view as views
-from chemsuite.protein import cartoon, io, mesh, scene
+from chemsuite.protein.ui import view as views
+from chemsuite.protein.look import cartoon, mesh, scene
+from chemsuite.protein.structure import io
 made = []
 chunks = mesh.chunks
 def small(m):  # many chunks, as a large mesh would make
@@ -398,8 +402,10 @@ from dataclasses import replace
 import numpy as np
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from chemsuite.app.protein.view import ProteinView
-from chemsuite.protein import display, io, poses
+from chemsuite.protein.ui.view import ProteinView
+from chemsuite.protein.chem import poses
+from chemsuite.protein.look import display
+from chemsuite.protein.structure import io
 base = io.read(sys.argv[1])
 big, k = base, 1
 while big.n_atoms < 100_000:  # copies side by side, each with its own chains

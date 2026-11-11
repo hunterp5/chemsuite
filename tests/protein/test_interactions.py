@@ -20,9 +20,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from chemsuite.protein import interactions as it
-from chemsuite.protein import io
-from chemsuite.protein.model import Structure
+from chemsuite.protein.chem import interactions as it
+from chemsuite.protein.structure import io
+from chemsuite.protein.structure.model import Structure
 
 
 def _ligand(s: Structure, name: str) -> int:
@@ -148,7 +148,7 @@ def test_describe(kinase) -> None:
 
 
 def test_a_display_shows_and_saves_its_interactions(kinase) -> None:
-    from chemsuite.protein.display import Display, compose
+    from chemsuite.protein.look.display import Display, compose
 
     shown = Display("1ATP", "1ATP", kinase)
     assert len(compose([shown]).lines) == 0

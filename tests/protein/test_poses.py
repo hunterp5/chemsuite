@@ -21,8 +21,8 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from chemsuite.protein import interactions, ligands, poses
-from chemsuite.protein.model import AROMATIC, LIGAND
+from chemsuite.protein.chem import interactions, ligands, poses
+from chemsuite.protein.structure.model import AROMATIC, LIGAND
 
 from .test_ligands import only_ligand
 

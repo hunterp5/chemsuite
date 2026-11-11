@@ -33,10 +33,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from chemsuite.protein import cartoon, io, poses
-from chemsuite.protein import display as displays
-from chemsuite.protein.model import Structure
-from chemsuite.protein.select import select
+from chemsuite.protein.chem import poses
+from chemsuite.protein.look import cartoon
+from chemsuite.protein.look import display as displays
+from chemsuite.protein.structure import io
+from chemsuite.protein.structure.model import Structure
+from chemsuite.protein.structure.select import select
 
 from .conftest import load
 
@@ -91,7 +93,7 @@ def big() -> Structure:
 
 READ = """
 import sys, time
-from chemsuite.protein import io
+from chemsuite.protein.structure import io
 best = float("inf")
 for _ in range(2):
     start = time.perf_counter()

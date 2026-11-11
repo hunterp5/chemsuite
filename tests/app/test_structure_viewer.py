@@ -558,10 +558,13 @@ def test_shaders_are_built_from_the_current_sources() -> None:
         import build_shaders
     finally:
         sys.path.pop(0)
-    manifest = json.loads(build_shaders.MANIFEST.read_text())
-    assert manifest == build_shaders.hashes(), "shaders changed: run scripts/build_shaders.py"
-    for source in build_shaders.sources():
-        assert source.with_name(source.name + ".qsb").exists()
+    folders = build_shaders.folders()
+    assert len(folders) == 2  # app/render3d and protein/ui
+    for folder in folders:
+        manifest = json.loads((folder / build_shaders.MANIFEST).read_text())
+        assert manifest == build_shaders.hashes(folder), "shaders changed: run build_shaders.py"
+        for source in build_shaders.sources(folder):
+            assert source.with_name(source.name + ".qsb").exists()
 
 
 RENDER = """

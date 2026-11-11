@@ -27,11 +27,11 @@ from PySide6.QtGui import QActionGroup, QColor
 from PySide6.QtWidgets import QColorDialog, QMenu, QWidget
 
 from chemsuite.molview.geometry import HYDROGENS
-from chemsuite.protein import colours, scene
-from chemsuite.protein.display import TRANSPARENCIES
-from chemsuite.protein.io import MMCIF, PDB
-from chemsuite.protein.model import LIGAND
-from chemsuite.protein.select import SelectionError
+from chemsuite.protein.look import colours, scene
+from chemsuite.protein.look.display import TRANSPARENCIES
+from chemsuite.protein.structure.io import MMCIF, PDB
+from chemsuite.protein.structure.model import LIGAND
+from chemsuite.protein.structure.select import SelectionError
 
 from .session import ADD, ATOM_LABEL, RESIDUE_LABEL, SET, ProteinSession
 from .tree import residue_expression

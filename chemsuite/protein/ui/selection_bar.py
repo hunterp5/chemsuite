@@ -15,10 +15,10 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """The selection field, and the quick picks the viewer's Select menu holds.
 
-Return selects what the text says (:mod:`chemsuite.protein.select`); a mistake marks the field
-and puts the cursor where reading stopped, with the reason in its tooltip. :meth:`fill_menu`
-puts the usual picks (ligands, binding site, waters…), chains, Around, saved selections and Save
-Selection into a menu; a pick shows its expression in the field.
+Return selects what the text says (:mod:`chemsuite.protein.structure.select`); a mistake marks
+the field and puts the cursor where reading stopped, with the reason in its tooltip.
+:meth:`fill_menu` puts the usual picks (ligands, binding site, waters…), chains, Around, saved
+selections and Save Selection into a menu; a pick shows its expression in the field.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from chemsuite.protein.select import SelectionError
+from chemsuite.protein.structure.select import SelectionError
 
 from .session import SET, ProteinSession
 

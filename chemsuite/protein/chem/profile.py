@@ -31,10 +31,10 @@ from rdkit import Chem
 
 from chemsuite.core.jobs import Cancelled, CancelToken
 
+from ..structure.model import WATER, Structure
 from . import interactions as contacts
 from . import poses
 from .ligands import residue_named
-from .model import WATER, Structure
 
 #: one count column per kind of interaction, then the residues touched
 COUNT_COLUMNS = {

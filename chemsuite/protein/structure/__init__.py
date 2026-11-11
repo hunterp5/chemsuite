@@ -13,7 +13,5 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The protein viewer: draws and edits :class:`chemsuite.protein.model.Structure` objects.
 
-:mod:`.view` draws with the GPU; the rest (panel, session, tree, sequence) arrive with it.
-"""
+"""A protein structure: its arrays, files, bonds, bond orders, residue kinds and selections."""

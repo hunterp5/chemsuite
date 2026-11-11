@@ -18,12 +18,15 @@
 
 ``chemsuite.core`` (and the ported domain packages) must never depend on Qt or on the
 ``chemsuite.app`` shell, so the table, files and computations stay testable without a GUI and
-reusable from scripts. Tools may use the app only through ``ToolContext``.
+reusable from scripts. Tools may use the app only through ``ToolContext``. The Protein
+Workbench's Qt layer (``chemsuite.protein.ui``) reaches the table only through its bridge,
+``chemsuite.tools.protein``.
 """
 
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -45,23 +48,47 @@ QT_FREE = (
     "protein",
 )
 FORBIDDEN_FOR_QT_FREE = ("PySide6", "shiboken6", "pyqtgraph", "chemsuite.app", "chemsuite.tools")
+#: The Qt part of a Qt-free package, scanned by its own rules below.
+WORKBENCH_UI = PACKAGE / "protein" / "ui"
 
 
 def _imported_modules(path: Path) -> set[str]:
+    """Every module *path* imports, relative imports resolved."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    package = path.parent.relative_to(PACKAGE.parent).parts
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             found.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            found.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            base = list(package[: len(package) - node.level + 1]) if node.level else []
+            module = ".".join([*base, *([node.module] if node.module else [])])
+            found.add(module)
+            found.update(  # names that are modules: ``from .. import ui``
+                f"{module}.{alias.name}"
+                for alias in node.names
+                if _is_module(f"{module}.{alias.name}")
+            )
     return found
+
+
+def _is_module(name: str) -> bool:
+    *parents, last = name.split(".")
+    folder = PACKAGE.parent.joinpath(*parents)
+    # exact names: Windows and macOS would find table.py for "Table"
+    return folder.is_dir() and bool({last, f"{last}.py"} & set(os.listdir(folder)))
+
+
+def _qt_free_files(package: str) -> list[Path]:
+    return sorted(
+        p for p in (PACKAGE / package).rglob("*.py") if not p.is_relative_to(WORKBENCH_UI)
+    )
 
 
 def test_qt_free_packages_do_not_import_qt_or_the_app() -> None:
     offenders: list[str] = []
     for package in QT_FREE:
-        for path in sorted((PACKAGE / package).rglob("*.py")):
+        for path in _qt_free_files(package):
             for module in _imported_modules(path):
                 if any(
                     module == bad or module.startswith(bad + ".") for bad in FORBIDDEN_FOR_QT_FREE
@@ -121,3 +148,37 @@ def test_importing_core_does_not_load_qt() -> None:
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     )
     assert result.stdout.strip() == "", f"core loaded Qt modules: {result.stdout.strip()}"
+
+
+#: The workbench's Qt layer uses the app's shell, widgets and 3D base, never the table window
+#: or a tool.
+WORKBENCH_UI_FORBIDDEN = ("chemsuite.app.document", "chemsuite.app.table", "chemsuite.tools")
+#: Workbench UI files that still read the document's Table, until the workspace engine takes
+#: their place (refactor Phase C). A ratchet: this set only shrinks.
+WORKBENCH_UI_READS_TABLE = {"panel.py", "session.py"}
+
+
+def test_the_workbench_ui_reaches_the_table_only_through_the_bridge() -> None:
+    paths = sorted(WORKBENCH_UI.rglob("*.py"))
+    offenders = _offenders(paths, WORKBENCH_UI_FORBIDDEN)
+    for path in paths:
+        if path.name not in WORKBENCH_UI_READS_TABLE:
+            offenders += _offenders([path], ["chemsuite.core.table"])
+    assert not offenders, "the workbench UI reaches past its bridge:\n" + "\n".join(offenders)
+    stale = sorted(
+        name
+        for name in WORKBENCH_UI_READS_TABLE
+        if not _offenders([WORKBENCH_UI / name], ["chemsuite.core.table"])
+    )
+    assert not stale, f"no longer read the Table: drop {stale} from WORKBENCH_UI_READS_TABLE"
+
+
+def test_only_the_bridge_imports_the_workbench_ui() -> None:
+    """The engine (the rest of chemsuite.protein) and the app never import the workbench UI;
+    the table side opens it through its bridge, chemsuite.tools.protein."""
+    bridge = PACKAGE / "tools" / "protein"
+    found = []
+    for path in sorted(PACKAGE.rglob("*.py")):
+        if not (path.is_relative_to(WORKBENCH_UI) or path.is_relative_to(bridge)):
+            found += _offenders([path], ["chemsuite.protein.ui"])
+    assert not found, "imports the workbench UI from outside its bridge:\n" + "\n".join(found)

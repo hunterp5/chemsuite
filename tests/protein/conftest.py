@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from chemsuite.protein import io
-from chemsuite.protein.model import Structure
+from chemsuite.protein.structure import io
+from chemsuite.protein.structure.model import Structure
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "protein"
 

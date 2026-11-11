@@ -69,7 +69,7 @@ is usually better than an exemption.
   `Structure` keyed by atom uids (selections, labels, measurements and focus survive edits),
   a `Display` per protein holding how it looks, and a composed `Scene` the view uploads as a
   geometry buffer and a separate look buffer, so a selection change re-uploads colours only.
-  The app side (`chemsuite/app/protein`) is a session object that the tree, sequence, selection
+  The app side (`chemsuite/protein/ui`) is a session object that the tree, sequence, selection
   bar and view read and change, never each other.
 - **One `RhiView` base for 3D views** (`app/molview/rhi_view.py`): camera, picking, slab and
   fog. Meshes fall back to 16-bit index chunks where the GPU lacks 32-bit indices.

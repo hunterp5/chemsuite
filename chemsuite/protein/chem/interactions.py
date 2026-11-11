@@ -35,8 +35,8 @@ import numpy as np
 from rdkit import Chem
 from scipy.spatial import cKDTree
 
+from ..structure.model import ADDITIVE, AMINO, ION, WATER, Structure
 from . import ligands
-from .model import ADDITIVE, AMINO, ION, WATER, Structure
 
 # Kinds
 HBOND = 0

@@ -73,7 +73,6 @@ TOOL_APP_IMPORTS = {
     "chemsuite.app.sketcher",  # the structure editor, opened by tools that draw
     "chemsuite.app.plots.panel",  # plots opened by analysis tools
     "chemsuite.app.viewer.panel",  # the Structure Viewer, opened by its tool
-    "chemsuite.app.protein.panel",  # the Protein Viewer, opened by its tool
     "chemsuite.app.widgets.reaction_text",  # the reaction field (shared with a filter card)
 }
 

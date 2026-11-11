@@ -13,13 +13,17 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Proteins without Qt: structures, their parts, and what can be asked of them.
+"""The Protein Workbench: proteins, their ligands, and how they are drawn.
 
-A protein is a :class:`~.model.Structure`, immutable numpy arrays per atom, residue and chain
-(:mod:`.model`). It is read and written with gemmi (:mod:`.io`), bonded from residue templates
-(:mod:`.bonds`), sorted into polymer, ligand, water and the rest (:mod:`.classify`), stored in
-a document as packed arrays (:mod:`.store`), and queried with a PyMOL-like language
-(:mod:`.select`). Secondary structure (:mod:`.secondary`), the sequence against SEQRES
-(:mod:`.sequence`) and ligands as RDKit molecules (:mod:`.ligands`) come from the same arrays.
-``chemsuite.app.protein`` draws a structure.
+Everything outside :mod:`.ui` is Qt-free:
+
+- :mod:`.structure`: a protein as a :class:`~.structure.model.Structure`, immutable numpy
+  arrays per atom, residue and chain. It is read and written with gemmi (:mod:`.structure.io`),
+  bonded from residue templates (:mod:`.structure.bonds`), sorted into polymer, ligand, water
+  and the rest (:mod:`.structure.classify`), stored in a document as packed arrays
+  (:mod:`.structure.store`), and queried with a PyMOL-like language (:mod:`.structure.select`).
+- :mod:`.chem`: ligands as RDKit molecules, poses, contacts and interaction profiles.
+- :mod:`.look`: how each protein is shown, and the scene, cartoon and surfaces drawn for it.
+- :mod:`.ui`: the Qt workbench (window, view, menus, panels). It never reaches the table: the
+  bridge to the table is :mod:`chemsuite.tools.protein`.
 """

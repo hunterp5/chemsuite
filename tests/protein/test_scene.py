@@ -22,10 +22,10 @@ import pytest
 
 from chemsuite.molview.camera import Camera
 from chemsuite.molview.pick import pick_sphere
-from chemsuite.protein import colours, scene
-from chemsuite.protein.model import ION, LIGAND, WATER, Structure
-from chemsuite.protein.pick import ScreenPicker
-from chemsuite.protein.select import select
+from chemsuite.protein.look import colours, scene
+from chemsuite.protein.look.pick import ScreenPicker
+from chemsuite.protein.structure.model import ION, LIGAND, WATER, Structure
+from chemsuite.protein.structure.select import select
 
 
 def test_default_styles(kinase: Structure, nmr: Structure) -> None:
@@ -132,7 +132,7 @@ def test_the_picker_ignores_what_the_slab_cuts_away(crambin: Structure) -> None:
 
 
 def test_another_model_moves_the_drawing_and_keeps_the_look(nmr: Structure) -> None:
-    from chemsuite.protein.display import Display, compose
+    from chemsuite.protein.look.display import Display, compose
 
     shown = Display("1D3Z", "1D3Z", nmr)
     shown.show(np.ones(nmr.n_atoms, bool), scene.STICK)
@@ -151,7 +151,7 @@ def test_another_model_moves_the_drawing_and_keeps_the_look(nmr: Structure) -> N
 
 
 def test_colours_given_by_hand_are_saved(kinase: Structure) -> None:
-    from chemsuite.protein.display import Display
+    from chemsuite.protein.look.display import Display
 
     shown = Display("1ATP", "1ATP", kinase)
     ligand = select(kinase, "ligand")
@@ -169,7 +169,7 @@ def test_colours_given_by_hand_are_saved(kinase: Structure) -> None:
 
 
 def test_the_model_shown_is_saved_and_a_bad_one_is_ignored(nmr: Structure) -> None:
-    from chemsuite.protein.display import Display
+    from chemsuite.protein.look.display import Display
 
     shown = Display("1D3Z", "1D3Z", nmr)
     shown.set_model(1)
@@ -182,7 +182,7 @@ def test_the_model_shown_is_saved_and_a_bad_one_is_ignored(nmr: Structure) -> No
 
 
 def test_a_deferring_display_hands_out_slow_work_and_keeps_the_last_result(kinase) -> None:
-    from chemsuite.protein.display import Display
+    from chemsuite.protein.look.display import Display
 
     shown = Display("1ATP", "1ATP", kinase, deferred=True)
     assert shown.pending() == []  # the cartoon of 350 residues is quick: built inline
@@ -204,7 +204,7 @@ def test_a_deferring_display_hands_out_slow_work_and_keeps_the_last_result(kinas
 
 
 def test_deferred_work_reads_copies_taken_when_it_was_handed_out(kinase) -> None:
-    from chemsuite.protein.display import Display
+    from chemsuite.protein.look.display import Display
 
     shown = Display("1ATP", "1ATP", kinase, deferred=True)
     shown.show_interactions(kinase.atom_kind == LIGAND)
@@ -215,7 +215,7 @@ def test_deferred_work_reads_copies_taken_when_it_was_handed_out(kinase) -> None
 
 
 def test_without_deferring_everything_is_built_at_once(kinase) -> None:
-    from chemsuite.protein.display import Display
+    from chemsuite.protein.look.display import Display
 
     shown = Display("1ATP", "1ATP", kinase)
     shown.show_surface(np.ones(kinase.n_atoms, bool))
@@ -223,7 +223,7 @@ def test_without_deferring_everything_is_built_at_once(kinase) -> None:
 
 
 def test_hydrogens_and_transparency_are_saved_and_bad_ones_ignored(nmr: Structure) -> None:
-    from chemsuite.protein.display import SURFACE_TRANSPARENCY, Display
+    from chemsuite.protein.look.display import SURFACE_TRANSPARENCY, Display
 
     shown = Display("1D3Z", "1D3Z", nmr)
     shown.show_hydrogens("all")

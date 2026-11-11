@@ -30,8 +30,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..structure.model import AMINO, HELIX, NUCLEIC, STRAND, Structure
 from .mesh import VERTEX_FLOATS, Mesh, join
-from .model import AMINO, HELIX, NUCLEIC, STRAND, Structure
 
 #: spline samples per residue, and points around the profile
 SAMPLES = 6

@@ -25,6 +25,7 @@ comment). Then, in ``chemsuite``, ``tests`` and ``scripts``:
   that is a module (``from chemsuite.app import theme``) follows its own module, so one import
   may become several. Relative imports stay relative while the target is in the same top-level
   package; a renamed module keeps its old name in the importing file (``import x as old``).
+- The same for an import on a line of its own inside a string (a script run in a subprocess).
 - Dotted names (``"chemsuite.app.jobs.Job"``, ``import chemsuite.app.jobs``) and paths
   (``chemsuite/app/main_window.py``) are rewritten anywhere in the code, in ``pyproject.toml``
   and in the Markdown docs.
@@ -47,6 +48,7 @@ SELF = Path(__file__).resolve().relative_to(ROOT)  # its examples are not refere
 CODE_ROOTS = ("chemsuite", "tests", "scripts")
 TEXT_FILES = ("pyproject.toml", "CLAUDE.md", "HANDOFF.md", "README.md")
 DOTTED = re.compile(r"(?<![\w.])chemsuite(?:\.[A-Za-z_]\w*)+")
+QUOTED_IMPORT = re.compile(r"^\s*from chemsuite[\w.]* import [\w ,]+$")
 SLASHED = re.compile(r"(?<![\w/])chemsuite(?:/[A-Za-z_]\w*)+(?:\.py)?")
 
 
@@ -191,9 +193,22 @@ def rewrite(source: str, old_path: Path, new_path: Path, remap: Remapper) -> str
             out += rendered
             i = last + 1
         else:
-            out.append(rewrite_text(lines[i], remap))
+            out += quoted_import(lines[i], remap) or [rewrite_text(lines[i], remap)]
             i += 1
     return "\n".join(out) + ("\n" if source.endswith("\n") else "")
+
+
+def quoted_import(line: str, remap: Remapper) -> list[str] | None:
+    """An absolute import on a line of its own inside a string (a script a test runs in a
+    subprocess), rewritten as a real one would be; None for any other line."""
+    if not QUOTED_IMPORT.match(line):
+        return None
+    where = Path("chemsuite/x.py")  # any module: the import is absolute
+    found = rewrite_imports(line.strip(), where, where, remap)
+    if not found:
+        return None
+    indent = line[: len(line) - len(line.lstrip())]
+    return [indent + text.lstrip() for text in found[0][1]]
 
 
 def main() -> None:

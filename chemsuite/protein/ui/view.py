@@ -15,17 +15,17 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """Draw proteins with the GPU: atoms and bonds as impostors, in two buffers each.
 
-The geometry (:class:`~chemsuite.protein.scene.Geometry`) is uploaded when atoms move or
+The geometry (:class:`~chemsuite.protein.look.scene.Geometry`) is uploaded when atoms move or
 styles change; the look (colour and flags per sphere and per bond end) when colours or the
 selection change, and a hover rewrites only the rows of the atoms it touches. Nothing is
-rebuilt on a pick: picking is a screen-space search (:mod:`chemsuite.protein.pick`) made again
+rebuilt on a pick: picking is a screen-space search (:mod:`chemsuite.protein.look.pick`) made again
 only after the camera has moved.
 
 Meshes (cartoon, surface) are layers by name, drawn after the atoms; each vertex has an owner
 (a residue or an atom) and a look row like the atoms'. A transparent layer draws without
 writing depth, after the opaque ones. Meshes use 32-bit indices; where the GPU lacks them
 (OpenGL ES 2 without the extension) each mesh is drawn in chunks small enough for 16-bit ones
-(:func:`~chemsuite.protein.mesh.chunks`), its look uploaded whole when it changes.
+(:func:`~chemsuite.protein.look.mesh.chunks`), its look uploaded whole when it changes.
 
 Atom indices in and out (picks, hover) are the caller's: the ``atoms`` of the geometry, and
 ``set_pick_points`` adds points that pick an atom (a cartoon's CA atoms).
@@ -40,14 +40,9 @@ from PySide6.QtGui import QRhi, QRhiBuffer, QRhiCommandBuffer, QRhiGraphicsPipel
 from PySide6.QtWidgets import QWidget
 
 from chemsuite.app.render3d.rhi_view import BOX, FLOAT, FLOAT2, FLOAT3, FLOAT4, QUAD, RhiView
-from chemsuite.protein import mesh as meshes
-from chemsuite.protein.pick import ScreenPicker
-from chemsuite.protein.scene import (
-    CYLINDER_LOOK_FLOATS,
-    HOVER,
-    SPHERE_LOOK_FLOATS,
-    Geometry,
-)
+from chemsuite.protein.look import mesh as meshes
+from chemsuite.protein.look.pick import ScreenPicker
+from chemsuite.protein.look.scene import CYLINDER_LOOK_FLOATS, HOVER, SPHERE_LOOK_FLOATS, Geometry
 
 _SPHERE_LOOK_BYTES = SPHERE_LOOK_FLOATS * 4
 _CYLINDER_LOOK_BYTES = CYLINDER_LOOK_FLOATS * 4
@@ -74,6 +69,8 @@ class _Layer:
 
 
 class ProteinView(RhiView):
+    shaders = __package__  # pro_sphere, pro_cylinder, pro_mesh
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.geometry_ = Geometry.empty()

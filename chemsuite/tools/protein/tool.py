@@ -33,10 +33,11 @@ import numpy as np
 from chemsuite.app.document.tools import Tool, ToolContext
 from chemsuite.app.shell.jobs import QUICK
 from chemsuite.core.table import Asset, PutAsset
-from chemsuite.protein import fetch as pdb
-from chemsuite.protein import io, ligands, profile, store
-from chemsuite.protein.components import META_KEY, CcdCache
-from chemsuite.protein.model import Structure
+from chemsuite.protein.chem import ligands, profile
+from chemsuite.protein.structure import fetch as pdb
+from chemsuite.protein.structure import io, store
+from chemsuite.protein.structure.components import META_KEY, CcdCache
+from chemsuite.protein.structure.model import Structure
 
 TOOL_ID = "protein"
 KIND = "protein"
@@ -48,7 +49,7 @@ FILE_FILTER = "Protein files (*.pdb *.ent *.cif *.mmcif *.pdb.gz *.ent.gz *.cif.
 
 def open_viewer(ctx: ToolContext, state: dict | None = None):
     """Bring the open Protein Viewer forward, or open one (with *state* when reopening)."""
-    from chemsuite.app.protein.panel import (
+    from chemsuite.protein.ui.panel import (
         EXTRACT,
         FETCH,
         LIGAND,

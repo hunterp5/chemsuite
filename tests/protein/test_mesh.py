@@ -20,9 +20,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from chemsuite.protein import cartoon, mesh, surface
-from chemsuite.protein.model import Structure
-from chemsuite.protein.select import select
+from chemsuite.protein.look import cartoon, mesh, surface
+from chemsuite.protein.structure.model import Structure
+from chemsuite.protein.structure.select import select
 
 from .conftest import load
 

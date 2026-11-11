@@ -39,7 +39,7 @@ def network(tmp_path, monkeypatch):
     """Downloads allowed, but the CCD is a stub that knows only 0G6 (and records each ask)."""
     import urllib.error
 
-    from chemsuite.protein import components
+    from chemsuite.protein.structure import components
 
     monkeypatch.setenv(POLICY_ENV, str(tmp_path / "no-policy.json"))
     asked: list[str] = []
@@ -135,7 +135,7 @@ def test_the_viewer_window_closes_with_the_document_and_comes_back(with_rows) ->
 
 
 def test_the_viewer_menus_open_and_fetch(window, monkeypatch) -> None:
-    from chemsuite.app.protein.menubar import MENUS
+    from chemsuite.protein.ui.menubar import MENUS
 
     calls: list[str] = []
     monkeypatch.setattr(tool, "open_protein", lambda ctx: calls.append("open"))
@@ -254,7 +254,7 @@ def test_a_ligand_can_be_added_once_from_the_viewer(with_rows) -> None:
 
 
 def test_fetch_downloads_by_id(window, qtbot, monkeypatch) -> None:
-    from chemsuite.protein import fetch as pdb
+    from chemsuite.protein.structure import fetch as pdb
     from chemsuite.tools.protein.dialogs import FetchDialog
 
     asked: list[str] = []
@@ -329,8 +329,8 @@ def test_a_second_protein_adds_to_the_ligand_column(with_rows, qtbot) -> None:
 
 
 def test_save_selection_writes_pdb_or_mmcif(opened, tmp_path) -> None:
-    from chemsuite.app.protein.menubar import save_selection
-    from chemsuite.protein import io
+    from chemsuite.protein.structure import io
+    from chemsuite.protein.ui.menubar import save_selection
 
     panel = ToolContext(opened).find_panel("protein")
     panel.session.select_text("ligand")
@@ -455,7 +455,7 @@ def test_copied_rows_bring_their_protein(with_rows) -> None:
 
 
 def test_copying_two_proteins_makes_one_file(opened, qtbot) -> None:
-    from chemsuite.protein import io
+    from chemsuite.protein.structure import io
 
     job = tool.open_protein(ToolContext(opened), [str(DATA / "1atp.cif.gz")])
     qtbot.waitUntil(lambda: not job.running, timeout=30_000)
@@ -468,8 +468,8 @@ def test_copying_two_proteins_makes_one_file(opened, qtbot) -> None:
 
 
 def test_save_protein_as_writes_every_atom(opened, tmp_path) -> None:
-    from chemsuite.app.protein.menubar import save_protein
-    from chemsuite.protein import io
+    from chemsuite.protein.structure import io
+    from chemsuite.protein.ui.menubar import save_protein
 
     panel = ToolContext(opened).find_panel("protein")
     path = save_protein(panel, "1ATP", str(tmp_path / "kinase.pdb"))

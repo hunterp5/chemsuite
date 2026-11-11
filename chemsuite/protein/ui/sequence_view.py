@@ -37,7 +37,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QScrollArea, QWidget
 
-from chemsuite.protein.sequence import ChainSequence, chain_sequences
+from chemsuite.protein.structure.sequence import ChainSequence, chain_sequences
 
 from .session import ADD, SET, TOGGLE, ProteinSession
 

@@ -25,9 +25,10 @@ import pytest
 from PySide6.QtCore import QObject, QPoint, Qt, Signal
 
 from chemsuite.core.table import Asset, PutAsset, Table
-from chemsuite.protein import io, scene, store
-from chemsuite.protein.model import Structure
-from chemsuite.protein.select import SelectionError, select
+from chemsuite.protein.look import scene
+from chemsuite.protein.structure import io, store
+from chemsuite.protein.structure.model import Structure
+from chemsuite.protein.structure.select import SelectionError, select
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "protein"
 
@@ -63,8 +64,8 @@ def action_in(menu, text: str):
 
 @pytest.fixture
 def panel(qtbot, table, monkeypatch):
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import graphics
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     monkeypatch.setattr(graphics, "_problem", None)
     widget = ProteinPanel(table)
@@ -91,7 +92,7 @@ def test_the_session_follows_the_documents_proteins(panel, table) -> None:
 def test_a_reopened_protein_keeps_its_display_when_another_arrives(qtbot) -> None:
     """A reopened document holds stored bytes: adding a protein (or any asset undo) must not
     decode it again and lose its selection and focus."""
-    from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     table = Table()
     add_protein(table, "1ATP", "1atp.cif.gz", packed=True)
@@ -234,9 +235,9 @@ def test_show_hide_and_colour_act_on_the_selection(panel, qtbot) -> None:
 def test_hydrogens_follow_their_atom_and_the_choice(qtbot, monkeypatch) -> None:
     from PySide6.QtWidgets import QMenu
 
-    from chemsuite.app.protein.menus import fill_hydrogens
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import graphics
+    from chemsuite.protein.ui.menus import fill_hydrogens
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     monkeypatch.setattr(graphics, "_problem", None)
     table = Table()
@@ -268,7 +269,7 @@ def test_hydrogens_follow_their_atom_and_the_choice(qtbot, monkeypatch) -> None:
 def test_surface_transparency_changes_only_the_look(panel, qtbot) -> None:
     from PySide6.QtWidgets import QMenu
 
-    from chemsuite.app.protein.menus import fill_transparency
+    from chemsuite.protein.ui.menus import fill_transparency
 
     session = panel.session
     session.select_text("chain I")
@@ -286,7 +287,7 @@ def test_surface_transparency_changes_only_the_look(panel, qtbot) -> None:
 
 
 def test_label_layout_goes_front_to_back_and_skips_overlaps() -> None:
-    from chemsuite.app.protein import labels
+    from chemsuite.protein.ui import labels
 
     boxes = np.array([[0, 0, 50, 10], [10, 5, 50, 10], [100, 0, 50, 10], [200, 0, 50, 10]])
     depth = np.array([5.0, 1.0, 3.0, 40.0])
@@ -298,7 +299,7 @@ def test_label_layout_goes_front_to_back_and_skips_overlaps() -> None:
 
 
 def test_residues_and_atoms_are_labelled_and_kept_by_uid(panel, table, qtbot) -> None:
-    from chemsuite.app.protein.session import ATOM_LABEL, RESIDUE_LABEL
+    from chemsuite.protein.ui.session import ATOM_LABEL, RESIDUE_LABEL
 
     session = panel.session
     s = structure("1atp.cif.gz")
@@ -333,7 +334,7 @@ def test_residues_and_atoms_are_labelled_and_kept_by_uid(panel, table, qtbot) ->
 
 
 def test_the_overlay_draws_labels_without_overlaps(panel) -> None:
-    from chemsuite.app.protein.session import ATOM_LABEL
+    from chemsuite.protein.ui.session import ATOM_LABEL
 
     panel.view.resize(800, 600)
     panel.overlay.resize(800, 600)
@@ -353,7 +354,7 @@ def test_the_overlay_draws_labels_without_overlaps(panel) -> None:
 
 
 def test_the_context_menu_offers_what_was_clicked(panel) -> None:
-    from chemsuite.app.protein.menus import context_menu
+    from chemsuite.protein.ui.menus import context_menu
 
     s = structure("1atp.cif.gz")
     atom = int(np.flatnonzero(s.atom_kind == 2)[0])
@@ -368,7 +369,7 @@ def test_the_context_menu_offers_what_was_clicked(panel) -> None:
 
 
 def test_the_context_menu_labels_measures_and_adds_a_ligand(panel) -> None:
-    from chemsuite.app.protein.menus import context_menu
+    from chemsuite.protein.ui.menus import context_menu
 
     s = structure("1atp.cif.gz")
     atom = int(np.flatnonzero(s.atom_kind == 2)[0])
@@ -393,7 +394,7 @@ def test_the_context_menu_labels_measures_and_adds_a_ligand(panel) -> None:
 
 
 def test_around_adds_what_lies_near_the_selection(panel) -> None:
-    from chemsuite.app.protein.selection_bar import AROUND
+    from chemsuite.protein.ui.selection_bar import AROUND
 
     bar, session = panel.selection_bar, panel.session
     around = action_in(menu_of(panel, "Select"), "Around")
@@ -417,8 +418,8 @@ def test_around_adds_what_lies_near_the_selection(panel) -> None:
 
 
 def test_alternate_locations_can_be_switched(qtbot, monkeypatch) -> None:
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import graphics
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     monkeypatch.setattr(graphics, "_problem", None)
     t = Table()
@@ -438,8 +439,8 @@ def test_alternate_locations_can_be_switched(qtbot, monkeypatch) -> None:
 
 
 def test_the_panel_reopens_as_it_was(panel, table, qtbot, monkeypatch) -> None:
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import graphics
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     session = panel.session
     session.select_text("chain I")
@@ -553,8 +554,8 @@ class _Runner:
 
 @pytest.fixture
 def deferring(qtbot, table, monkeypatch):
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import graphics
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     monkeypatch.setattr(graphics, "_problem", None)
     runner = _Runner()
@@ -612,9 +613,9 @@ def test_closing_the_viewer_cancels_its_work(deferring) -> None:
 
 
 def test_state_for_a_protein_not_loaded_yet_waits_for_it(qtbot, monkeypatch) -> None:
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import graphics
-    from chemsuite.protein.display import runs
+    from chemsuite.protein.look.display import runs
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     monkeypatch.setattr(graphics, "_problem", None)
     t = Table()
@@ -634,8 +635,8 @@ def test_bad_state_is_ignored(panel) -> None:
 
 
 def test_without_3d_the_view_says_why_and_the_rest_works(qtbot, table, monkeypatch) -> None:
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import graphics
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     monkeypatch.setattr(graphics, "_problem", graphics.TURNED_OFF)
     panel = ProteinPanel(table)
@@ -756,8 +757,8 @@ def test_focus_draws_a_skin_over_the_pocket(panel) -> None:
 
 
 def test_a_saved_focus_brings_its_pocket_skin_back(panel, table, qtbot, monkeypatch) -> None:
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import graphics
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     s = structure("1atp.cif.gz")
     panel.session.focus("1ATP", int(s.residue_of[_atp_atom("N6")]))
@@ -775,7 +776,7 @@ def test_a_saved_focus_brings_its_pocket_skin_back(panel, table, qtbot, monkeypa
 
 
 def test_the_binding_site_picks_whole_residues(panel) -> None:
-    from chemsuite.app.protein.selection_bar import PICKS
+    from chemsuite.protein.ui.selection_bar import PICKS
 
     session = panel.session
     for title in ("Binding Site", "Ligands and Binding Site"):
@@ -823,8 +824,8 @@ def test_measuring_takes_the_clicks(panel) -> None:
 
 
 def test_pocket_work_reopens_as_it_was(panel, table, qtbot, monkeypatch) -> None:
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import graphics
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     session = panel.session
     atp = int(structure("1atp.cif.gz").residue_of[_atp_atom("N6")])
@@ -853,8 +854,8 @@ def test_bad_pocket_state_is_ignored(panel) -> None:
 
 
 def test_every_part_built_in_the_background_has_a_job_title() -> None:
-    from chemsuite.app.protein import builds
-    from chemsuite.protein import display
+    from chemsuite.protein.look import display
+    from chemsuite.protein.ui import builds
 
     assert set(display.DEFERRED) <= set(builds.TITLES)
 
@@ -946,9 +947,9 @@ def test_closing_the_viewer_window_lets_go_of_the_document(qtbot, table, monkeyp
     raised on the next table change, and the listeners after it never heard of the change."""
     from PySide6.QtCore import QCoreApplication, QEvent
 
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import graphics
     from chemsuite.app.shell.windows import ToolWindow
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     monkeypatch.setattr(graphics, "_problem", None)
     stopped = []
@@ -968,7 +969,7 @@ def test_closing_the_viewer_window_lets_go_of_the_document(qtbot, table, monkeyp
 
 
 def test_the_menu_bar_holds_every_command(panel) -> None:
-    from chemsuite.app.protein.menubar import MENUS
+    from chemsuite.protein.ui.menubar import MENUS
 
     assert [a.text() for a in panel.menu_bar.actions()] == list(MENUS)
     display = [a.text() for a in menu_of(panel, "Display").actions() if a.text()]
@@ -983,7 +984,7 @@ def test_the_menu_bar_holds_every_command(panel) -> None:
 
 
 def test_export_image_sizes_keep_the_views_shape(panel, qtbot) -> None:
-    from chemsuite.app.protein.export import CENTIMETRES, INCHES, MAX_PIXELS, ExportImageDialog
+    from chemsuite.protein.ui.export import CENTIMETRES, INCHES, MAX_PIXELS, ExportImageDialog
 
     panel.view.resize(400, 300)
     dialog = ExportImageDialog(panel)

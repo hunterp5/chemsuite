@@ -20,8 +20,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from chemsuite.protein.model import Structure
-from chemsuite.protein.select import SelectionError, residues_in, select
+from chemsuite.protein.structure.model import Structure
+from chemsuite.protein.structure.select import SelectionError, residues_in, select
 
 
 def count(s: Structure, text: str, **kw) -> int:

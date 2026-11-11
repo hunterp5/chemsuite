@@ -22,9 +22,10 @@ from dataclasses import replace
 import numpy as np
 from rdkit import Chem
 
-from chemsuite.protein import bond_orders, components, ligands
-from chemsuite.protein.bonds import template_smiles
-from chemsuite.protein.model import Structure
+from chemsuite.protein.chem import ligands
+from chemsuite.protein.structure import bond_orders, components
+from chemsuite.protein.structure.bonds import template_smiles
+from chemsuite.protein.structure.model import Structure
 
 
 def canonical(smiles: str) -> str:

@@ -16,9 +16,9 @@
 """The protein viewer's one source of truth: which proteins, how shown, what is selected.
 
 The proteins are the document's ``protein`` assets; the session follows them (a protein added,
-replaced, removed or undone shows at once). Each has a :class:`~chemsuite.protein.display.Display`;
-the tree, the sequence strip, the selection bar and the 3D view all read and change the
-session, never each other, and redraw on its signals:
+replaced, removed or undone shows at once). Each has a
+:class:`~chemsuite.protein.look.display.Display`; the tree, the sequence strip, the selection
+bar and the 3D view all read and change the session, never each other, and redraw on its signals:
 
 - ``proteinsChanged``: proteins came or went, or one was shown or hidden;
 - ``sceneChanged``: what is drawn changed (styles, cartoon, surface, the model shown):
@@ -40,7 +40,7 @@ the focused ligand are kept as atom uids, so they survive edits of the structure
 
 A pose (a row's own 3D ligand that is not one of the protein's residues: docked, or moved in
 the sketcher) is drawn by a display of its own, ``pose``, holding the protein and the pose
-merged (:func:`chemsuite.protein.poses.merged`) with only the pose drawn, so its interactions
+merged (:func:`chemsuite.protein.chem.poses.merged`) with only the pose drawn, so its interactions
 with the protein are found as for any ligand. It is not a document asset and is not saved: the
 table's current row brings it back.
 """
@@ -55,12 +55,13 @@ from PySide6.QtCore import QObject, Signal
 from chemsuite.core.table import AssetsChanged, Table
 from chemsuite.core.table.events import CellsChanged, Changed
 from chemsuite.molview.measure import describe
-from chemsuite.protein import display as displays
-from chemsuite.protein import poses, store
-from chemsuite.protein import scene as scenes
-from chemsuite.protein.ligands import LIGAND_COLUMN, LIGAND_ID_COLUMN, PROTEIN_COLUMN
-from chemsuite.protein.model import AMINO, LIGAND, NUCLEIC
-from chemsuite.protein.select import Mask, SelectionError, select
+from chemsuite.protein.chem import poses
+from chemsuite.protein.chem.ligands import LIGAND_COLUMN, LIGAND_ID_COLUMN, PROTEIN_COLUMN
+from chemsuite.protein.look import display as displays
+from chemsuite.protein.look import scene as scenes
+from chemsuite.protein.structure import store
+from chemsuite.protein.structure.model import AMINO, LIGAND, NUCLEIC
+from chemsuite.protein.structure.select import Mask, SelectionError, select
 
 from .builds import Builder, Run
 
@@ -374,7 +375,7 @@ class ProteinSession(QObject):
 
     def interactions_of(self, protein: str, atom: int) -> list[str]:
         """The shown interactions this atom takes part in, in words."""
-        from chemsuite.protein.interactions import describe as say
+        from chemsuite.protein.chem.interactions import describe as say
 
         shown = self.shown(protein)
         if shown is None or shown not in self.scene.displays:

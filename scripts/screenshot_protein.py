@@ -40,12 +40,13 @@ def main(argv: list[str]) -> int:
     from PySide6.QtWidgets import QApplication
 
     app = QApplication([argv[0]])
-    from chemsuite.app.protein.panel import ProteinPanel
     from chemsuite.app.shell import theme
     from chemsuite.app.shell.windows import ToolWindow
     from chemsuite.core.settings import DARK, LIGHT, Appearance
     from chemsuite.core.table import Asset, PutAsset, Table
-    from chemsuite.protein import io, ligands
+    from chemsuite.protein.chem import ligands
+    from chemsuite.protein.structure import io
+    from chemsuite.protein.ui.panel import ProteinPanel
 
     out = Path(argv[1])
     out.mkdir(parents=True, exist_ok=True)

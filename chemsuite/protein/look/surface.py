@@ -32,8 +32,8 @@ from scipy.spatial import cKDTree
 
 from chemsuite.molview.elements import vdw_radii
 
+from ..structure.model import Structure
 from .mesh import VERTEX_FLOATS, Mesh
-from .model import Structure
 
 LEVEL = 0.3
 PADDING = 0.3

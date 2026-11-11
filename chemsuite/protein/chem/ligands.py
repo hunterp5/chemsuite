@@ -41,10 +41,10 @@ from rdkit.Chem import AllChem
 
 from chemsuite.core.jobs import CancelToken
 
-from . import bond_orders, components
-from .bonds import template_smiles
-from .components import CcdCache, Component
-from .model import LIGAND, Structure
+from ..structure import bond_orders, components
+from ..structure.bonds import template_smiles
+from ..structure.components import CcdCache, Component
+from ..structure.model import LIGAND, Structure
 
 SMILES = "smiles"
 FILE = "file"

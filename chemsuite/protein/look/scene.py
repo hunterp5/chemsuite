@@ -36,7 +36,7 @@ import numpy as np
 from chemsuite.molview.elements import vdw_radii
 from chemsuite.molview.geometry import ALL_H, NO_H, POLAR_H
 
-from .model import ADDITIVE, AMINO, GLYCAN, ION, LIGAND, NUCLEIC, Structure
+from ..structure.model import ADDITIVE, AMINO, GLYCAN, ION, LIGAND, NUCLEIC, Structure
 
 HIDDEN = 0
 WIRE = 1
@@ -118,7 +118,7 @@ def default_styles(
 
 def binding_site(structure: Structure, distance: float = SITE) -> np.ndarray:
     """Atoms of the residues with an atom within ``distance`` of a ligand."""
-    from .select import within
+    from ..structure.select import within
 
     ligand = structure.atom_kind == LIGAND
     near = within(structure.xyz(0), ligand, distance)

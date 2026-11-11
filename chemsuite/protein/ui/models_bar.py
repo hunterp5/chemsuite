@@ -30,7 +30,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QComboBox, QLabel, QSizePolicy, QSlider, QSpinBox, QToolBar
 
 from chemsuite.app.shell.glyphs import glyph
-from chemsuite.protein.display import Display
+from chemsuite.protein.look.display import Display
 
 from .session import ProteinSession
 

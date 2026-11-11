@@ -48,13 +48,13 @@ import numpy as np
 
 from chemsuite.molview.geometry import HYDROGENS, POLAR_H
 
+from ..chem import interactions as contacts
+from ..structure.model import AMINO, NUCLEIC, Structure
 from . import cartoon as cartoons
 from . import colours as schemes
-from . import interactions as contacts
 from . import mesh as meshes
 from . import scene as scenes
 from . import surface as surfaces
-from .model import AMINO, NUCLEIC, Structure
 
 #: how see-through a surface is drawn (0 opaque, 1 invisible), and the choices offered
 SURFACE_TRANSPARENCY = 0.4

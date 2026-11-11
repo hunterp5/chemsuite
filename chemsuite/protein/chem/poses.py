@@ -29,7 +29,7 @@ import numpy as np
 from rdkit import Chem
 from scipy.spatial import cKDTree
 
-from .model import AROMATIC, COIL, LIGAND, Structure
+from ..structure.model import AROMATIC, COIL, LIGAND, Structure
 
 POSE_NAME = "LIG"
 POSE_CHAIN = "pose"

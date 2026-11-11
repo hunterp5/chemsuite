@@ -27,8 +27,19 @@ import numpy as np
 from chemsuite.molview.elements import colours as element_colours
 from chemsuite.molview.elements import rgb
 
-from .model import ADDITIVE, AMINO, GLYCAN, HELIX, ION, LIGAND, NUCLEIC, STRAND, WATER, Structure
-from .sequence import one_letter
+from ..structure.model import (
+    ADDITIVE,
+    AMINO,
+    GLYCAN,
+    HELIX,
+    ION,
+    LIGAND,
+    NUCLEIC,
+    STRAND,
+    WATER,
+    Structure,
+)
+from ..structure.sequence import one_letter
 
 ELEMENT = "element"
 CHAIN = "chain"

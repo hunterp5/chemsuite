@@ -34,9 +34,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from chemsuite.protein.ligands import GUESSED
-from chemsuite.protein.model import ADDITIVE, AMINO, GLYCAN, ION, LIGAND, NUCLEIC, WATER, Structure
-from chemsuite.protein.select import select
+from chemsuite.protein.chem.ligands import GUESSED
+from chemsuite.protein.structure.model import (
+    ADDITIVE,
+    AMINO,
+    GLYCAN,
+    ION,
+    LIGAND,
+    NUCLEIC,
+    WATER,
+    Structure,
+)
+from chemsuite.protein.structure.select import select
 
 from .session import ADD, SET, TOGGLE, ProteinSession
 

@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtGui import QActionGroup, QColor, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar
 
-from chemsuite.protein import io as protein_io
+from chemsuite.protein.structure import io as protein_io
 
 from . import menus
 

@@ -16,7 +16,7 @@
 """Building the slow parts of shown proteins off the GUI thread.
 
 Surfaces, interactions and the cartoons of large proteins are built as quick background jobs
-(see :class:`~chemsuite.protein.display.Display` and its ``pending``/``accept``). Until a part
+(see :class:`~chemsuite.protein.look.display.Display` and its ``pending``/``accept``). Until a part
 arrives the view keeps drawing the last one, so nothing flickers.
 
 A result is used only if, when it arrives, the session still shows that display, the display
@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 import shiboken6
 from PySide6.QtCore import QObject
 
-from chemsuite.protein.display import Build, Display
+from chemsuite.protein.look.display import Build, Display
 
 if TYPE_CHECKING:
     from chemsuite.app.shell.jobs import Job

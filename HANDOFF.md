@@ -72,7 +72,7 @@ Still owed by the user: the ChemDraw hotkey list.
   - `select`, `sequence`, `secondary`.
   - `display`: how each protein looks, with background `Build`s (`pending()`/`accept()`);
     `scene`, `cartoon`, `surface`, `mesh`, `colours`, `pick`: what is drawn.
-- `chemsuite/app/protein/`:
+- `chemsuite/protein/ui/`:
   - `session.py`: the one object every other part talks to.
   - `panel.py` (a `ToolPanel`), `menubar.py`, `menus.py`, `export.py`, `tree.py`,
     `sequence_view.py`, `selection_bar.py`, `models_bar.py`, `pocket.py`, `labels.py`,

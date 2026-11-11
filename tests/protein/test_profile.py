@@ -21,7 +21,7 @@ import pytest
 from rdkit import Chem
 
 from chemsuite.core.jobs import Cancelled, CancelToken
-from chemsuite.protein import interactions, ligands, profile
+from chemsuite.protein.chem import interactions, ligands, profile
 
 from .test_poses import moved
 

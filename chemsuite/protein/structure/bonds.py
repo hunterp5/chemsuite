@@ -55,7 +55,7 @@ DECLARED = 3.5
 def templates() -> dict[str, list[tuple[str, str, int]]]:
     """Residue name -> bonds ``(atom, atom, order)`` with AROMATIC as the order of aromatic
     bonds."""
-    text = resources.files("chemsuite.protein").joinpath("data/residues.json").read_text()
+    text = resources.files("chemsuite.protein.structure").joinpath("data/residues.json").read_text()
     out: dict[str, list[tuple[str, str, int]]] = {}
     for name, entry in json.loads(text).items():
         out[name] = [(a, b, AROMATIC if aromatic else order) for a, b, order, aromatic
@@ -65,7 +65,7 @@ def templates() -> dict[str, list[tuple[str, str, int]]]:
 
 @cache
 def template_smiles(name: str) -> str:
-    text = resources.files("chemsuite.protein").joinpath("data/residues.json").read_text()
+    text = resources.files("chemsuite.protein.structure").joinpath("data/residues.json").read_text()
     entry = json.loads(text).get(name)
     return entry["smiles"] if entry else ""
 

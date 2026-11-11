@@ -83,8 +83,9 @@ FLOAT3 = QRhiVertexInputAttribute.Format.Float3
 FLOAT4 = QRhiVertexInputAttribute.Format.Float4
 
 
-def shader(name: str) -> QShader:
-    data = (files("chemsuite.app.render3d") / "shaders" / f"{name}.qsb").read_bytes()
+def shader(name: str, package: str = __package__) -> QShader:
+    """A compiled shader from *package*'s ``shaders`` folder."""
+    data = (files(package) / "shaders" / f"{name}.qsb").read_bytes()
     return QShader.fromSerialized(data)
 
 
@@ -104,6 +105,9 @@ class RhiView(QRhiWidget):
     contextRequested = Signal(int, object)  # a right-click: atom index, global QPoint
     cameraMoved = Signal()
     failed = Signal()  # the GPU could not be used
+
+    #: the package whose ``shaders`` folder holds the shaders :meth:`pipeline` names
+    shaders = __package__
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -325,8 +329,10 @@ class RhiView(QRhiWidget):
         pipe = self.rhi().newGraphicsPipeline()
         pipe.setShaderStages(
             [
-                QRhiShaderStage(QRhiShaderStage.Type.Vertex, shader(f"{name}.vert")),
-                QRhiShaderStage(QRhiShaderStage.Type.Fragment, shader(f"{name}.frag")),
+                QRhiShaderStage(QRhiShaderStage.Type.Vertex, shader(f"{name}.vert", self.shaders)),
+                QRhiShaderStage(
+                    QRhiShaderStage.Type.Fragment, shader(f"{name}.frag", self.shaders)
+                ),
             ]
         )
         layout = QRhiVertexInputLayout()

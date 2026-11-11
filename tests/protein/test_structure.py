@@ -25,8 +25,8 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from chemsuite.protein import io, secondary, store
-from chemsuite.protein.model import (
+from chemsuite.protein.structure import io, secondary, store
+from chemsuite.protein.structure.model import (
     ADDITIVE,
     AMINO,
     HELIX,
@@ -37,7 +37,7 @@ from chemsuite.protein.model import (
     Structure,
     empty,
 )
-from chemsuite.protein.sequence import chain_sequences, one_letter
+from chemsuite.protein.structure.sequence import chain_sequences, one_letter
 
 from .conftest import DATA, load
 
