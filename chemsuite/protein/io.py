@@ -25,7 +25,9 @@ are for import and export only.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Iterator
+import os
+import string
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import replace
 from os import PathLike
 from pathlib import Path
@@ -322,9 +324,57 @@ def to_text(structure: Structure, fmt: str, keep: np.ndarray | None = None) -> s
     return st.make_mmcif_document().as_string()
 
 
+#: chain IDs a renamed chain takes, in this order (one character, so PDB files hold them)
+CHAIN_IDS = string.ascii_uppercase + string.ascii_lowercase + string.digits
+
+
+def to_text_many(
+    parts: Sequence[tuple[Structure, np.ndarray | None]], fmt: str
+) -> tuple[str, dict[tuple[int, str], str]]:
+    """One file of several structures' atoms (``keep`` masks, None for all): the first model
+    of each, one after the other. A chain whose ID an earlier structure took is renamed; the
+    renames come back as ``{(part, old ID): new ID}``. A single structure keeps every model."""
+    if len(parts) == 1:
+        return to_text(parts[0][0], fmt, parts[0][1]), {}
+    st = gemmi.Structure()
+    st.name = "chemsuite"
+    model = gemmi.Model(1)
+    renamed: dict[tuple[int, str], str] = {}
+    used: set[str] = set()
+    for k, (structure, keep) in enumerate(parts):
+        for chain in to_gemmi(structure, keep)[0]:
+            name = chain.name
+            if name in used:
+                name = next((c for c in CHAIN_IDS if c not in used), f"{len(used)}")
+                renamed[(k, chain.name)] = name
+                chain.name = name
+            used.add(name)
+            model.add_chain(chain)
+    st.add_model(model)
+    st.add_entity_types(True)
+    st.assign_subchains(force=True)  # label_asym IDs: one set for the file, not one per part
+    st.ensure_entities()
+    st.deduplicate_entities()
+    st.setup_cell_images()
+    text = st.make_pdb_string() if fmt == PDB else st.make_mmcif_document().as_string()
+    return text, renamed
+
+
 def write(structure: Structure, path: str | PathLike[str], keep: np.ndarray | None = None) -> None:
-    """Write as PDB or mmCIF, by the file's suffix."""
-    Path(path).write_text(to_text(structure, format_of(path), keep))
+    """Write as PDB or mmCIF, by the file's suffix (every model, every alternate location)."""
+    write_text(path, to_text(structure, format_of(path), keep))
+
+
+def write_text(path: str | PathLike[str], text: str) -> None:
+    """Write ``text`` through a temporary file renamed over ``path`` when complete, so an
+    interrupted save leaves the old file as it was."""
+    target = Path(path)
+    part = target.with_name(target.name + ".part")
+    try:
+        part.write_text(text, encoding="utf-8")
+        os.replace(part, target)
+    finally:
+        part.unlink(missing_ok=True)
 
 
 def format_of(path: str | PathLike[str]) -> str:

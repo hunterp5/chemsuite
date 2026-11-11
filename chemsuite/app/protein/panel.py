@@ -354,11 +354,22 @@ class ProteinPanel(QWidget):
     # copying
     def copy_selection(self, fmt: str) -> str:
         """Copy the selected atoms as PDB or mmCIF text (each protein with a selection)."""
-        texts = [protein_io.to_text(d.structure, fmt, keep=d.selected)
-                 for d in self.session.displays if d.visible and d.selected.any()]  # fmt: skip
-        text = "".join(texts)
+        text = self.selection_text(fmt)
         if text:
             QGuiApplication.clipboard().setText(text)
+        return text
+
+    def selection_text(self, fmt: str) -> str:
+        """The selected atoms of every shown protein as one PDB or mmCIF file; chains whose ID
+        another protein took first are renamed, and the status line says so."""
+        shown = [d for d in self.session.displays if d.visible and d.selected.any()]
+        if not shown:
+            return ""
+        text, renamed = protein_io.to_text_many([(d.structure, d.selected) for d in shown], fmt)
+        if renamed:
+            said = ", ".join(f"{shown[k].name} {old} → {new}"
+                             for (k, old), new in renamed.items())  # fmt: skip
+            self.status.setText(f"Chains renamed: {said}")
         return text
 
     def copy_smiles(self, shown, residue: int) -> str:

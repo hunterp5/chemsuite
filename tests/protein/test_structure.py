@@ -308,6 +308,32 @@ def test_written_files_read_back_the_same(kinase: Structure, tmp_path) -> None:
         assert np.array_equal(back.bonds, kinase.bonds)
 
 
+def test_an_interrupted_save_leaves_the_old_file(kinase: Structure, tmp_path, monkeypatch) -> None:
+    path = tmp_path / "out.cif"
+    path.write_text("the old file")
+
+    def broken(_source, _target):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(io.os, "replace", broken)
+    with pytest.raises(OSError):
+        io.write(kinase, path)
+    assert path.read_text() == "the old file" and list(tmp_path.iterdir()) == [path]
+
+
+def test_several_proteins_make_one_file(kinase: Structure, lysozyme: Structure) -> None:
+    protein = kinase.res_kind[kinase.residue_of] == AMINO
+    for fmt in (io.PDB, io.MMCIF):
+        text, renamed = io.to_text_many([(kinase, None), (lysozyme, None), (kinase, protein)], fmt)
+        assert renamed == {(2, "E"): "B", (2, "I"): "C"}  # A is lysozyme's
+        back = io.parse(text, fmt)
+        assert back.n_atoms == kinase.n_atoms + lysozyme.n_atoms + int(protein.sum())
+        assert list(back.chain_name) == ["E", "I", "A", "B", "C"]
+        assert text.count("data_") == (fmt == io.MMCIF)  # one file, not three pasted together
+    alone, renamed = io.to_text_many([(kinase, None)], io.MMCIF)
+    assert alone == io.to_text(kinase, io.MMCIF) and not renamed
+
+
 def _assert_same(a: Structure, b: Structure) -> None:
     for f in fields(Structure):
         mine, theirs = a.__dict__[f.name], b.__dict__[f.name]

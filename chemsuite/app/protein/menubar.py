@@ -26,6 +26,7 @@ open, so they always match the session.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QKeySequence
@@ -72,6 +73,10 @@ def _file(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
             removing.addAction(shown.name, lambda p=shown.id: commands[REMOVE](p))
         removing.setEnabled(REMOVE in commands and bool(panel.session.displays))
         menu.addSeparator()
+        saving = menu.addMenu("Save Protein As")
+        for shown in panel.session.displays:
+            saving.addAction(f"{shown.name}…", lambda p=shown.id: save_protein(panel, p))
+        saving.setEnabled(bool(panel.session.displays))
         save = menu.addAction("Save Selection As…", lambda: save_selection(panel))
         save.setEnabled(panel.session.selected_count() > 0)
         menu.addSeparator()
@@ -155,12 +160,28 @@ def save_selection(panel: ProteinPanel, path: str | None = None) -> str:
         )
     if not path:
         return ""
-    fmt = protein_io.MMCIF if path.lower().endswith((".cif", ".mmcif")) else protein_io.PDB
-    text = "".join(
-        protein_io.to_text(d.structure, fmt, keep=d.selected)
-        for d in panel.session.displays
-        if d.visible and d.selected.any()
-    )
-    with open(path, "w", encoding="utf-8") as out:
-        out.write(text)
+    text = panel.selection_text(protein_io.format_of(path))
+    _write(panel, path, text)
     return path
+
+
+def save_protein(panel: ProteinPanel, protein: str, path: str | None = None) -> str:
+    """Write a whole protein (every model and alternate location) to a PDB or mmCIF file."""
+    shown = panel.session.display(protein)
+    if shown is None:
+        return ""
+    if path is None:
+        path, _ = QFileDialog.getSaveFileName(
+            panel, "Save Protein", f"{shown.name}.cif", "mmCIF (*.cif);;PDB (*.pdb)"
+        )
+    if not path:
+        return ""
+    _write(panel, path, protein_io.to_text(shown.structure, protein_io.format_of(path)))
+    return path
+
+
+def _write(panel: ProteinPanel, path: str, text: str) -> None:
+    try:
+        protein_io.write_text(path, text)
+    except OSError as error:
+        panel.status.setText(f"Could not save {Path(path).name}: {error.strerror or error}")

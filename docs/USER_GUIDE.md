@@ -1209,8 +1209,11 @@ window (dock it beside the table with the button in its title bar if you prefer)
 own menus:
 
 - **File:** **Open Protein…** (PDB or mmCIF files, gzipped or not), **Fetch from PDB…**
-  (download an entry by its ID, such as 1ATP), **Remove Protein ▸**, **Save Selection As…**
-  (PDB or mmCIF) and **Close Viewer**. With no protein open, the middle of the window offers
+  (download an entry by its ID, such as 1ATP), **Remove Protein ▸**, **Save Protein As ▸**
+  (every model and alternate location), **Save Selection As…** (PDB or mmCIF) and **Close
+  Viewer**. Saving writes a temporary file first, so a save that fails leaves the old file as it
+  was. A selection across several proteins is written as one file; a chain whose ID another
+  protein took first is renamed, and the status line says how. With no protein open, the middle of the window offers
   Open and Fetch. A protein can also be removed from its right-click menu in the proteins list,
   or with Delete. When it has ligand rows you choose **Delete Rows** or **Keep Rows**; either
   way one Undo brings it all back. A kept row whose protein is gone says so on the viewer's

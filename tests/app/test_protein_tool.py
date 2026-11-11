@@ -399,3 +399,31 @@ def test_copied_rows_bring_their_protein(opened) -> None:
     finally:
         new.workspace.mark_saved(table.history.checkpoint(), new.workspace.lists.revision)
         new.close()
+
+
+def test_copying_two_proteins_makes_one_file(opened, qtbot) -> None:
+    from chemsuite.protein import io
+
+    job = tool.open_protein(ToolContext(opened), [str(DATA / "1atp.cif.gz")])
+    qtbot.waitUntil(lambda: not job.running, timeout=30_000)
+    panel = ToolContext(opened).find_panel("protein")
+    panel.session.select_text("polymer")
+    text = panel.copy_selection("cif")
+    back = io.parse(text, io.MMCIF)
+    assert list(back.chain_name) == ["E", "I", "A", "B"] and text.count("data_") == 1
+    assert panel.status.text() == "Chains renamed: 1ATP-2 E → A, 1ATP-2 I → B"
+
+
+def test_save_protein_as_writes_every_atom(opened, tmp_path) -> None:
+    from chemsuite.app.protein.menubar import save_protein
+    from chemsuite.protein import io
+
+    panel = ToolContext(opened).find_panel("protein")
+    path = save_protein(panel, "1ATP", str(tmp_path / "kinase.pdb"))
+    back = io.read(path)
+    assert back.n_atoms == panel.session.display("1ATP").structure.n_atoms
+    assert not list(tmp_path.glob("*.part"))
+    file_menu = panel.menu_bar.actions()[0].menu()
+    file_menu.aboutToShow.emit()
+    saving = next(a.menu() for a in file_menu.actions() if a.text() == "Save Protein As")
+    assert [a.text() for a in saving.actions()] == ["1ATP…"]
