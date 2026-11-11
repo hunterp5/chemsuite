@@ -17,8 +17,9 @@ layout(std140, binding = 0) uniform Frame {
 
 layout(location = 0) out vec4 fragColor;
 
-vec3 look(vec3 base, vec3 n, vec3 dir, float flags, float depth)
+vec3 look(vec3 base, vec3 n, vec3 dir, float raw, float depth)
 {
+    float flags = floor(raw + 0.5);           // whole: Direct3D interpolates 4.0 as 3.9999
     vec3 l = normalize(light.xyz);
     float diffuse = max(dot(n, l), 0.0);
     float spec = pow(max(dot(reflect(-l, n), -dir), 0.0), 48.0);

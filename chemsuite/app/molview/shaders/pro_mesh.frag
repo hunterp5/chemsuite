@@ -29,9 +29,10 @@ void main()
     float diffuse = max(dot(n, l), 0.0);
     float spec = pow(max(dot(reflect(-l, n), -dir), 0.0), 32.0);
     float rim = pow(1.0 - max(dot(n, -dir), 0.0), 2.0);
-    float selected = mod(v_flags, 2.0);
-    float hover = mod(floor(v_flags / 2.0), 2.0);
-    float ghost = mod(floor(v_flags / 4.0), 2.0);
+    float flags = floor(v_flags + 0.5);       // whole: Direct3D interpolates 4.0 as 3.9999
+    float selected = mod(flags, 2.0);
+    float hover = mod(floor(flags / 2.0), 2.0);
+    float ghost = mod(floor(flags / 4.0), 2.0);
     vec3 colour = mix(v_color.rgb, highlight.rgb, 0.45 * selected);
     vec3 shade = colour * (0.35 + 0.65 * diffuse) + vec3(0.22 * spec);
     shade += highlight.rgb * rim * 0.6 * selected + vec3(rim * 0.6 * hover);
