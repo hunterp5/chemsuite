@@ -306,53 +306,73 @@ the same polish as the table and the dockable plots and tools.
 
 - **Done 2026-11-11:** Protein is its own menu in the main menu bar (between Data and Help), no
   longer an item under Chemistry.
-- **Polish pass, before new features:**
-  - the native macOS look, light and dark;
-  - consistent menus, toolbar, shortcuts and context menus with the main window's conventions;
-  - tooltips only (no helper text);
-  - state that reopens exactly as saved;
-  - smooth navigation on large structures (100k atoms at 60 fps);
-  - labels and measurements that stay legible;
-  - selection feedback everywhere (3D, sequence, tree);
-  - keyboard access;
-  - screenshots of each pane compared side by side with the table and plots.
+- **Done 2026-11-11: Phase 1 finished and the polish pass.** Bond orders from the file's own
+  component tables or the CCD (cached; guessed ones marked ⚠); ligand rows built off the GUI
+  thread; NMR models with a player bar (the future trajectory player); surfaces, interactions,
+  pocket skins and large cartoons built in the background; 16-bit mesh chunks; hydrogens and
+  surface transparency; Focus with a pocket skin and depth fog; residue and atom labels;
+  Around ▸; a row's own 3D pose shown in its pocket; Interactions to Table (the PLIF column
+  set); Remove Protein; rows copied with their protein; Save Protein As and safe saves;
+  light/dark, the viewer's own ⌘A/⌘C/F, a keyboard sequence cursor, selection shown in the
+  proteins list. Benchmarks at 100,000 atoms: an 8 MB mmCIF read in under a second, a selection
+  redrawn in 13 ms, 60 fps turning on Metal.
+- **Still to polish:** ghosted ribbons in front of a focused pocket can cross the ligand (cut
+  them with a front slab or fade them further); marking a kept row whose protein was removed in
+  the table itself.
 - **Workspace:** the viewer stays its own window with its own menus. Its Protein menu in the main
-  window grows as the phases land (open, fetch, align, prepare, dock, simulate), each opening
-  or driving the viewer.
-- **Capabilities** are the phases in §7a below. Sequence alignment (phase 4) covers MSA through
-  MAFFT, and global (Needleman–Wunsch) and local (Smith–Waterman) pairwise alignment with
-  chosen matrices and gap penalties. PLIF analysis across poses and frames joins phase 5.
-  Simulation is phase 6.
+  window grows as the phases land (align, dock, prepare, simulate), each opening or driving the
+  viewer.
 
-### 7a. Proteins (decided 2026-11-10)
+### 7a. Proteins: from viewer to medicinal-chemistry workspace (revised 2026-11-11)
 
-A protein viewer and editor for medicinal chemists, on the native QRhi renderer (no WebEngine).
 Proteins are stored in the document; ligands, poses and scores are table rows linked to their
-protein by a `Protein` column, so plots, filters and SAR work on them. gemmi is in the base
-install; preparation, minimisation and simulation need the optional `chemsuite[protein]` add-on
-(OpenMM, PDBFixer, Meeko, propka/pdb2pqr). Each phase is usable on its own.
+protein by a `Protein` column, so plots, filters and SAR work on them. Each phase is usable on
+its own and starts in plan mode.
 
-1. **Viewer and selection** (next). Open PDB/mmCIF or fetch by PDB ID; several proteins per
-   document; cartoon, sticks and surface; select chains, residues and atoms in 3D, in the
-   sequence strip or with a selection language; binding site with interactions; measurements;
-   the table's current row shows its pose in the protein.
-2. **Editing.** Delete and rename, protonation states and flips, mutations from a rotamer
-   library, ligand edits in the sketcher placed back in the pocket; every edit undoable.
-3. **Preparation and minimisation.** PDBFixer, propka protonation at a pH, OpenMM minimisation
-   with restraints, in a separate process.
-4. **Alignment.** Pairwise sequence alignment and superposition (whole chain or pocket); MSA
-   through MAFFT.
-5. **Docking and poses.** AutoDock Vina (an external program, all platforms), optional Gnina
-   rescoring (Linux, Windows through WSL); poses and scores as table rows; interaction
-   fingerprints.
-6. **MD simulation.** OpenMM: system setup (force fields for protein and ligand, explicit or
-   implicit solvent, ions), **restraints from any selection** (positional with a force
-   constant, distances between picked atoms, frozen atoms), a minimise / heat / equilibrate /
-   produce protocol that resumes from checkpoints and uses the GPU when present, and results:
-   a trajectory player in the protein view, RMSD, RMSF per residue (cartoon coloured by it),
-   ligand RMSD and interaction occupancy plots, and representative frames as table rows.
-   Trajectories are kept beside the document. Later: MM/GBSA rescoring and relative binding
-   free energy (openfe) as a separate add-on.
+**Dependencies, decided:** preparation is our own Qt-free code in the base install (gemmi's
+`prepare_topology` for hydrogens, benchmarked before anything is written; PDBFixer and pdb2pqr
+are dropped). `propka` and `meeko` stay light pip dependencies (licences checked first).
+OpenMM and openfe run in an interpreter of their own, set in Settings ▸ External Tools and
+driven as a JSON-lines worker (the `retro/runner.py` pattern); there is no `chemsuite[protein]`
+pip extra.
+
+0. **Viewer and selection.** Done (see §7.0c).
+1. **Alignment and correspondence** (base install: gemmi and numpy). Pairwise global
+   (Needleman–Wunsch) and local (Smith–Waterman) alignment with chosen matrices and gap
+   penalties; MSA through the registered MAFFT tool; conservation shading in the sequence
+   strip; structural superposition on a whole chain or a pocket, with the linked ligand rows
+   moving in the same undo step; predicted models (AlphaFold DB, PDB-REDO) fetched by
+   accession. First because everything later needs residue correspondence: ensembles, PLIF
+   across proteins, FEP mapping.
+2. **Docking and PLIF.** AutoDock Vina as an external program on every platform, Gnina optional
+   (Linux, Windows through WSL); the box from a ligand or a selection; Meeko for PDBQT; one
+   process per ligand with progress, cancel and finished rows kept; poses as table rows (pose
+   rank, Vina score, CNN score, parent) shown in the pocket by the pose display; covalent and
+   flexible-side-chain docking; ensemble and consensus scoring; pocket detection and
+   druggability; interaction fingerprints across poses, building on Interactions to Table. Until
+   phase 3 lands, docking prepares the receptor minimally (hydrogens from gemmi).
+3. **Native preparation** (base install, high priority). Missing heavy atoms and caps from the
+   CCD templates; hydrogens through gemmi; a Reduce-style hydrogen-bond network for His
+   tautomers, Asn/Gln/His flips and OH/SH/NH₃ rotors; short loops closed, longer gaps left and
+   marked ⚠; propka for protonation at a chosen pH. Measured first, as the conformer plan was:
+   benchmarked against PDBFixer, Reduce and propka outputs before it becomes the default.
+4. **Editing** (every edit one undoable step). Delete, rename and renumber; waters beyond X Å;
+   move and rotate a ligand; bonds and orders; collapse alternate locations; split and merge;
+   protonation states and flips by hand; mutations from a rotamer library (licence checked)
+   with the fewest clashes; Edit in Sketcher with an MCS-constrained re-embed back into the
+   pocket.
+5. **MD** (OpenMM in its own interpreter). System setup (amber14 or CHARMM36 with GAFF2 or
+   OpenFF; explicit or implicit solvent; ions); **restraints from any selection** (positional
+   with a force constant, distances between picked atoms, frozen atoms), saved with the setup
+   and drawn in the view; minimise, heat, equilibrate and produce, resuming from checkpoints and
+   using the GPU when present. Results: the trajectory in the models bar, RMSD, RMSF per residue
+   (cartoon coloured by it), ligand RMSD and interaction occupancy as rows for the line plots,
+   and clustered representative frames as rows. Trajectories live beside the document.
+6. **Binding free energy.** MM-GBSA/PBSA rescoring of poses and trajectories first; then
+   relative binding free energy (openfe) with an atom mapper, network setup and convergence
+   checks that refuse to report a number that has not converged.
+7. **Optional add-ons, if the team asks:** local folding (Boltz or ESMFold: multi-GB weights and
+   a GPU), ML charge models to avoid AmberTools' conda-only AM1-BCC, metadynamics.
 
 
 **Done (2026-11-10): 3D plots on QRhi.** The 3D scatter and landscape plots moved off
