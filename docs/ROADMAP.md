@@ -232,6 +232,15 @@ modified.
 
 ## 7. Proposed order
 
+**High priority, next large piece: 3D plots on QRhi.** Move the 3D scatter and landscape
+plots off pyqtgraph.opengl (a QOpenGLWidget) onto Qt's RHI, as the Structure Viewer's 3D
+view already is. Today one window's GPU widgets must all share OpenGL, which ties chemsuite
+to OpenGL everywhere. With every 3D view on QRhi, each system uses its own graphics API:
+Direct3D 11 on Windows (with WARP, its built-in software renderer, so it draws on any PC,
+virtual desktops included), Metal on macOS (OpenGL is deprecated there), and Vulkan or
+OpenGL on Linux. Until then, an OpenGL probe at start-up falls back to software OpenGL or
+disables 3D views with the reason.
+
 1. **Finish Settings** (in progress): the Settings window and custom-theme editor.
 2. **Jobs and log** (§2–3). Everything after this benefits from non-blocking jobs and a log.
 3. **Search and filters** (§4).

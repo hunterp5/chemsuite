@@ -97,6 +97,9 @@ class Job(QObject):
         self.lane = lane
         self.owner = owner  # what the job belongs to (a window); its jobs end with it
         self.document = document
+        #: work nobody asked for (made ahead for a view): closing the document cancels it
+        #: without asking
+        self.background = False
         self.state = QUEUED
         self.queued_at = time.monotonic()
         self.started_at: float | None = None

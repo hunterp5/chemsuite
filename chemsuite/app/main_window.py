@@ -1753,7 +1753,7 @@ class MainWindow(QMainWindow):
 
     # -- closing -----------------------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:
-        jobs = self._runner.jobs_of(self)
+        jobs = [job for job in self._runner.jobs_of(self) if not job.background]
         if jobs:
             answer = QMessageBox.question(
                 self,

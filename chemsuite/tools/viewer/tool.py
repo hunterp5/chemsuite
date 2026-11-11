@@ -36,8 +36,8 @@ def open_viewer(ctx: ToolContext, mode: str, state: dict | None = None):
             panel.setFocus()
             return panel
 
-    def run(label, work, on_done):
-        return ctx.run(label, work, on_done, lane=QUICK)
+    def run(label, work, on_done):  # 3D made for the view: never holds up closing
+        return ctx.run(label, work, on_done, lane=QUICK, background=True)
 
     panel = StructureViewer(
         ctx.table,

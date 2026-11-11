@@ -182,6 +182,7 @@ class ToolContext:
         *,
         lane: str = QUEUE,
         keep_partial: bool = False,
+        background: bool = False,
     ) -> Job:
         """Run *work* in the background; *on_done* runs on the GUI thread when it finishes.
 
@@ -199,6 +200,9 @@ class ToolContext:
         ``decompose``, ``_maxmin``), and its dialog passes ``keep_partial=True``. Only work
         whose result means nothing until complete (a model fit, an embedding, clustering, a
         pair search) leaves it off.
+
+        *background* marks work the user did not ask for (a panel making things ahead):
+        closing the document cancels it without asking.
         """
         holder: list[Job] = []
 
@@ -212,6 +216,7 @@ class ToolContext:
         job = self._window._run_with_progress(
             label, work, finish, lane=lane, guard=True, keep_partial=keep_partial
         )
+        job.background = background
         holder.append(job)
         return job
 
