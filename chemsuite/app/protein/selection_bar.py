@@ -22,6 +22,7 @@ holds the usual picks (ligands, binding site, waters…), saved selections and S
 
 from __future__ import annotations
 
+import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
@@ -127,7 +128,8 @@ class SelectionBar(QWidget):
         for shown in self.session.displays:
             if shown.visible and shown.selected.any():
                 atoms += int(shown.selected.sum())
-                residues += len(set(shown.structure.residue_of[shown.selected].tolist()))
+                owners = shown.structure.residue_of[shown.selected]  # sorted: atoms by residue
+                residues += int(np.count_nonzero(np.diff(owners))) + 1
         self.count.setText(f"{atoms:,} atoms, {residues:,} residues" if atoms else "")
 
     def _fill_menu(self) -> None:

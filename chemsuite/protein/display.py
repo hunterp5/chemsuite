@@ -109,6 +109,7 @@ class Display:
     query: np.ndarray = field(init=False)  # bool per atom: whose interactions are shown
     _cache: dict = field(default_factory=dict, init=False, repr=False)
     _latest: dict = field(default_factory=dict, init=False, repr=False)  # last built, per part
+    _rgba: dict = field(default_factory=dict, init=False, repr=False)  # surface colours, by scheme
     _versions: dict = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -186,6 +187,17 @@ class Display:
 
     def surface_alpha(self) -> float:
         return 1.0 - self.transparency
+
+    def surface_colours(self, pocket: bool = False) -> np.ndarray:
+        """Per atom, the surface's colours (a pocket's: hydrophobicity) at its alpha; kept, as
+        they change only with the scheme or the transparency (do not modify)."""
+        key = (schemes.HYDROPHOBICITY if pocket else self.surface_scheme, self.surface_alpha())
+        rgba = self._rgba.get(key)
+        if rgba is None:
+            rgba = schemes.colour(self.structure, key[0])
+            rgba[:, 3] = key[1]
+            self._rgba = {key: rgba, **{k: v for k, v in self._rgba.items() if k[0] != key[0]}}
+        return rgba
 
     def colour_by(self, scheme: str, atoms: np.ndarray | None = None) -> None:
         coloured = schemes.colour(self.structure, scheme)
@@ -450,10 +462,10 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
     residue_flags = _cat([f for _, f in looks], np.float32)
     surface = meshes.join([_shifted(d.surface_mesh(), o) for d, o in
                            zip(shown, atom_offsets, strict=False)])  # fmt: skip
-    surface_colours = _surface_colours(shown)
+    surface_colours = _surface_colours(shown, surface)
     pocket = meshes.join([_shifted(d.pocket_mesh(), o) for d, o in
                           zip(shown, atom_offsets, strict=False)])  # fmt: skip
-    pocket_colours = _surface_colours(shown, pocket=True)
+    pocket_colours = _surface_colours(shown, pocket, pocket=True)
     traces = [d.trace()[1] for d in shown]
     pick_atoms = _cat([t + o for t, o in zip(traces, atom_offsets, strict=False)], np.int64)
     pick_centres = _cat([d.xyz[t] for d, t in zip(shown, traces, strict=True)], np.float32, 3)
@@ -505,7 +517,7 @@ def relook(scene: Scene) -> Scene:
     colours = _cat([d.colours for d in scene.displays], np.float32, 4)
     flags = _cat([d.flags() for d in scene.displays], np.float32)
     looks = [d.residue_look() for d in scene.displays]
-    surface_colours = _surface_colours(scene.displays)
+    surface_colours = _surface_colours(scene.displays, scene.surface)
     return replace(
         scene,
         sphere_look=scenes.sphere_look(scene.geometry, colours, flags),
@@ -516,20 +528,20 @@ def relook(scene: Scene) -> Scene:
             _cat([f for _, f in looks], np.float32),
         ),
         surface_look=meshes.look(scene.surface, surface_colours, flags),
-        pocket_look=meshes.look(scene.pocket, _surface_colours(scene.displays, True), flags),
+        pocket_look=meshes.look(
+            scene.pocket, _surface_colours(scene.displays, scene.pocket, pocket=True), flags
+        ),
     )
 
 
-def _surface_colours(shown: tuple[Display, ...], pocket: bool = False) -> np.ndarray:
+def _surface_colours(
+    shown: tuple[Display, ...], mesh: meshes.Mesh, pocket: bool = False
+) -> np.ndarray:
     """Per atom, each display's surface scheme (a pocket's: hydrophobicity) with its surface's
-    alpha."""
-    parts = []
-    for d in shown:
-        scheme = schemes.HYDROPHOBICITY if pocket else d.surface_scheme
-        rgba = schemes.colour(d.structure, scheme)
-        rgba[:, 3] = d.surface_alpha()
-        parts.append(rgba)
-    return _cat(parts, np.float32, 4)
+    alpha; nothing when there is no surface to colour."""
+    if not len(mesh):
+        return np.zeros((0, 4), np.float32)
+    return _cat([d.surface_colours(pocket) for d in shown], np.float32, 4)
 
 
 def _shifted(mesh: meshes.Mesh, offset: int) -> meshes.Mesh:

@@ -317,3 +317,75 @@ def test_meshes_draw_in_chunks_without_32_bit_indices() -> None:
     assert int(lines["CHUNKS"][0]) > 5, out.stdout
     r, g, b = (int(v) for v in lines["CARTOON"])
     assert b > 60 and b > 3 * r and b > 2 * g, (r, g, b)  # the cartoon's blue
+
+
+RENDER_FRAMES = """
+import sys, time
+from dataclasses import replace
+import numpy as np
+from PySide6.QtWidgets import QApplication
+app = QApplication([])
+from chemsuite.app.protein.view import ProteinView
+from chemsuite.protein import display, io, poses
+base = io.read(sys.argv[1])
+big, k = base, 1
+while big.n_atoms < 100_000:  # copies side by side, each with its own chains
+    shift = np.array([(k % 8) * 60.0, (k // 8) * 60.0, 0.0], np.float32)
+    big = poses.merged(big, replace(base.with_coords(base.coords + shift),
+        chain_name=np.array([f"{c}{k}" for c in base.chain_name], dtype="<U4")))
+    k += 1
+scene = display.compose([display.Display("big", "big", big)])
+view = ProteinView()
+view.resize(800, 600)
+view.set_scene(scene.geometry, scene.sphere_look, scene.cylinder_look, fit=True)
+view.set_mesh("cartoon", scene.cartoon, scene.cartoon_look)
+submitted = []
+view.frameSubmitted.connect(lambda: submitted.append(time.perf_counter()))
+try:
+    view.show()
+    for _ in range(20):
+        app.processEvents()
+except Exception as error:
+    print("NO-RHI", type(error).__name__)
+    sys.exit(0)
+if view.grabFramebuffer().isNull():
+    print("NO-RHI")
+    sys.exit(0)
+times = []
+for _ in range(60):
+    count, start = len(submitted), time.perf_counter()
+    view.camera.turn(6.0, 2.0)
+    view.update()
+    while len(submitted) == count and time.perf_counter() - start < 2.0:
+        app.processEvents()
+    times.append((time.perf_counter() - start) * 1000)
+print("ATOMS", big.n_atoms)
+print("BACKEND", view.rhi().backendName())
+print("MEDIAN", f"{np.median(times):.1f}")
+print("P95", f"{np.percentile(times, 95):.1f}")
+"""
+#: ms per frame while the camera turns around 100,000 atoms, asserted on Metal (a Mac's GPU);
+#: other backends (CI's software Mesa) only report it
+FRAME_MS = 33.0
+
+
+@pytest.mark.bench
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
+    reason="needs a display for the GPU",
+)
+def test_turning_a_large_protein_keeps_its_frame_rate() -> None:
+    env = {k: v for k, v in os.environ.items() if k != "QT_QPA_PLATFORM"}
+    out = subprocess.run(
+        [sys.executable, "-c", RENDER_FRAMES, str(ROOT / "tests/data/protein/3htb.cif.gz")],
+        capture_output=True, text=True, env=env, cwd=ROOT, timeout=300,
+    )  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    if "NO-RHI" in out.stdout:
+        pytest.skip("no GPU drawing on this machine")
+    lines = {line.split()[0]: line.split()[1:] for line in out.stdout.splitlines()}
+    median, p95 = float(lines["MEDIAN"][0]), float(lines["P95"][0])
+    backend = lines["BACKEND"][0]
+    print(f"\n{lines['ATOMS'][0]} atoms on {backend}: median {median} ms, 95% {p95} ms a frame")
+    if backend == "Metal":
+        assert median < FRAME_MS, out.stdout
