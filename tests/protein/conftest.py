@@ -60,3 +60,9 @@ def thrombin() -> Structure:
 def nmr() -> Structure:
     """Ubiquitin, two NMR models, with hydrogens."""
     return load("1d3z_2models.cif.gz")
+
+
+@pytest.fixture
+def egfr() -> Structure:
+    """EGFR T790M cut to the pocket of LXX-6-34 (80U): covalent on Cys797, a halogen bond."""
+    return load("5gnk_pocket.cif.gz")

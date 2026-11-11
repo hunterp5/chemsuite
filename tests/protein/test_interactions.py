@@ -73,6 +73,17 @@ def test_atp_in_protein_kinase_a(kinase) -> None:
     assert waters.any() and "HOH" not in ends.tolist()
 
 
+def test_a_covalent_inhibitor_in_egfr(egfr) -> None:
+    found = _found(egfr, "80U")
+    hbonds = _pairs(egfr, found, it.HBOND)
+    assert hbonds[("N1", "MET793 N")] == pytest.approx(3.22, abs=0.01)  # the hinge
+    assert hbonds[("NAB", "GLN791 O")] == pytest.approx(3.48, abs=0.01)
+    halogen = _pairs(egfr, found, it.HALOGEN)
+    assert halogen == {("CLA", "LEU788 O"): pytest.approx(3.21, abs=0.01)}
+    # the warhead's own cysteine is bonded, not an interaction
+    assert not any(b.startswith("CYS797") for _a, b in hbonds)
+
+
 def test_a_hydrophobic_pocket(lysozyme) -> None:
     found = _found(lysozyme, "JZ4")
     contacts = _pairs(lysozyme, found, it.HYDROPHOBIC)
