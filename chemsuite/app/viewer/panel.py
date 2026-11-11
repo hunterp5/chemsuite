@@ -35,6 +35,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
+import shiboken6
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QImage, QPainter
 from PySide6.QtWidgets import (
@@ -631,6 +632,8 @@ class StructureViewer(QWidget):
         )
 
     def _made_3d(self, name: str, keys: set, result: dict) -> None:
+        if not shiboken6.isValid(self):  # the viewer closed while the job ran
+            return
         self._waiting -= keys
         for oid, mol in (result or {}).items():
             self._made[(name, oid)] = mol

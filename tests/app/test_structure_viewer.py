@@ -348,6 +348,15 @@ def test_a_cells_browse_opens_the_browser_at_its_row(window, browser) -> None:
     window.panels[0].close()
 
 
+def test_3d_made_after_the_viewer_closed_is_dropped(window, browser) -> None:
+    import shiboken6
+
+    browser.set_mode("3d")
+    key = (browser.column_name(), browser.oid)
+    shiboken6.delete(browser)  # closed while its Make 3D structures job ran
+    browser._made_3d(key[0], {key}, {})
+
+
 def test_a_cells_browse_opens_a_new_browser_in_2d(chem) -> None:
     from .test_column_actions import trigger
 
