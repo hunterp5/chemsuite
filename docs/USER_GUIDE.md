@@ -1250,9 +1250,11 @@ select it), the 3D view and the sequence underneath.
   (light blue). Point at an atom to read its interactions in the status line. Structures from
   the PDB rarely carry hydrogens, so these are judged from heavy atoms.
 - **Focus ▸** a ligand shows its pocket (residues within 5 Å as sticks, the waters and ions
-  touching it) with its interactions, fades the rest of the protein and hides other small
-  molecules; a slice of depth around the pocket follows the camera. **Clear Focus** undoes the
-  fading.
+  touching it) with its interactions and a see-through skin over the pocket coloured by
+  hydrophobicity, fades the rest of the protein and hides other small molecules. A slice of
+  depth around the pocket follows the camera, with the back of the pocket fading into the
+  background. **Pocket Surface** in the same menu turns the skin off or on. **Clear Focus**
+  undoes the fading.
 - **Measure ▸ Distance / Angle / Dihedral**, then click two, three or four atoms. Esc stops
   measuring.
 - **Models.** A file with several models (an NMR ensemble) gets a bar under the view: step

@@ -577,11 +577,52 @@ def test_focus_shows_the_pocket_and_fades_the_rest(panel, qtbot) -> None:
     assert far_waters.any() and (shown.styles[far_waters] == scene.HIDDEN).all()
     near, far = panel.view.slab
     assert 0 < far - near < 60
+    fog_start, fog_end = panel.view.fog
+    assert near < fog_start < fog_end == pytest.approx(far)  # the back half of the pocket fades
     panel.view.camera.zoom(0.5)
     panel.view.camera_changed()
     assert panel.view.slab != (near, far)  # the slab follows the camera
     session.clear_focus()
-    assert not shown.ghost.any() and panel.view.slab[1] > 1e8
+    assert not shown.ghost.any() and panel.view.slab[1] > 1e8 and panel.view.fog is None
+
+
+def test_focus_draws_a_skin_over_the_pocket(panel) -> None:
+    session = panel.session
+    s = structure("1atp.cif.gz")
+    atp = int(s.residue_of[_atp_atom("N6")])
+    session.focus("1ATP", atp)
+    shown = session.display("1ATP")
+    skin = session.scene.pocket
+    assert len(skin.triangles)
+    owners = np.unique(skin.owner)
+    assert (s.res_kind[s.residue_of[owners]] == 0).all()  # the protein's side of the pocket
+    assert not shown.ghost[owners].any() and (s.element[owners] != 1).all()
+    assert session.scene.pocket_look[:, 3] == pytest.approx(1 - shown.transparency)
+    session.show_pocket_surface(False)
+    assert not len(session.scene.pocket.triangles)
+    session.show_pocket_surface(True)
+    assert len(session.scene.pocket.triangles)
+    session.clear_focus()
+    assert not len(session.scene.pocket.triangles)
+
+
+def test_a_saved_focus_brings_its_pocket_skin_back(panel, table, qtbot, monkeypatch) -> None:
+    from chemsuite.app import graphics
+    from chemsuite.app.protein.panel import ProteinPanel
+
+    s = structure("1atp.cif.gz")
+    panel.session.focus("1ATP", int(s.residue_of[_atp_atom("N6")]))
+    state = panel.state()
+    monkeypatch.setattr(graphics, "_problem", None)
+    again = ProteinPanel(table)
+    qtbot.addWidget(again)
+    again.set_state(state)
+    assert len(again.session.scene.pocket.triangles)
+    panel.session.show_pocket_surface(False)
+    later = ProteinPanel(table)
+    qtbot.addWidget(later)
+    later.set_state(panel.state())
+    assert not later.session.pocket_surface and not len(later.session.scene.pocket.triangles)
 
 
 def test_the_focus_menu_lists_the_ligands(panel) -> None:
@@ -592,7 +633,7 @@ def test_the_focus_menu_lists_the_ligands(panel) -> None:
     menu = QMenu()
     fill_focus(menu, panel.session)
     titles = [a.text() for a in menu.actions() if a.text()]
-    assert titles == ["E/ATP 355", "Clear Focus"]
+    assert titles == ["E/ATP 355", "Pocket Surface", "Clear Focus"]
     menu.actions()[0].trigger()
     assert panel.session.focused_residue() is not None
     fill_focus(menu, panel.session)

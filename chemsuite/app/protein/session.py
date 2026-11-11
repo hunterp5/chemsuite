@@ -86,6 +86,7 @@ class ProteinSession(QObject):
         self.focused: Point | None = None  # the focused ligand: one of its atoms
         self.measurements: list[tuple[Point, ...]] = []
         self.measuring = 0  # how many atoms the next measurement takes (0: not measuring)
+        self.pocket_surface = True  # Focus draws a skin over the pocket
         self.picked: list[Point] = []
         self._scene: displays.Scene | None = None
         self._pending: dict[str, dict] = {}  # saved display state for proteins not loaded yet
@@ -340,6 +341,7 @@ class ProteinSession(QObject):
         waters = select(s, FOCUS_NEAR, named=named, model=shown.model) & shown.active
         for other in self.displays:
             other.ghost = np.zeros(other.structure.n_atoms, bool)
+            other.show_pocket(None)
             if restyle:
                 other.show_interactions(None)
         if restyle:
@@ -350,6 +352,7 @@ class ProteinSession(QObject):
             shown.show(ligand, scenes.BALL_AND_STICK)
             shown.show_interactions(ligand)
         shown.ghost = ~(site | waters | ligand)
+        shown.show_pocket(site if self.pocket_surface else None)
         self.focused = (protein, int(s.uid[s.atoms_of(residue).start]))
         self._changed(rebuilt=True)
         self.focusChanged.emit()
@@ -379,8 +382,23 @@ class ProteinSession(QObject):
         self.focused = None
         for shown in self.displays:
             shown.ghost = np.zeros(shown.structure.n_atoms, bool)
-        self._changed(rebuilt=False)
+            shown.show_pocket(None)
+        self._changed(rebuilt=True)
         self.focusChanged.emit()
+
+    def show_pocket_surface(self, on: bool) -> None:
+        """Whether Focus draws a skin over the pocket (coloured by hydrophobicity)."""
+        self.pocket_surface = on
+        found = self.focused_atoms()
+        if found is not None:
+            shown, _atoms = found
+            place = self.focused_residue()
+            if place is not None:
+                s = shown.structure
+                ligand = s.residue_of == place[1]
+                site = select(s, FOCUS_SITE, named={"focus": ligand}, model=shown.model)
+                shown.show_pocket(site & shown.active if on else None)
+        self._changed(rebuilt=True)
 
     # measurements
     def measure(self, atoms: int) -> None:
@@ -451,6 +469,7 @@ class ProteinSession(QObject):
             "named": self.named,
             "focused": list(self.focused) if self.focused else None,
             "measurements": [[list(p) for p in m] for m in self.measurements],
+            "pocket_surface": self.pocket_surface,
         }
 
     def set_state(self, state: Mapping) -> None:
@@ -464,6 +483,7 @@ class ProteinSession(QObject):
                 shown.set_state(saved.pop(shown.id))
         self._pending = saved
         self.measurements = _points(state.get("measurements"))
+        self.pocket_surface = state.get("pocket_surface", True) is not False
         focused = _points([[state.get("focused")]])
         self.focused = focused[0][0] if focused else None
         if self.focused is not None:

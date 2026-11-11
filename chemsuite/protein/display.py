@@ -61,11 +61,12 @@ SURFACE_TRANSPARENCY = 0.4
 TRANSPARENCIES = (0.0, 0.2, 0.4, 0.6, 0.8)
 CARTOON_PICK_RADIUS = 1.2
 #: the parts a deferring display builds in the background
-DEFERRED = ("surface", "interactions", "cartoon")
+DEFERRED = ("surface", "pocket", "interactions", "cartoon")
 #: a cartoon of more residues than this is built in the background
 LARGE_CARTOON = 2000
 _EMPTY: dict[str, Callable[[], Any]] = {
     "surface": meshes.Mesh.empty,
+    "pocket": meshes.Mesh.empty,
     "cartoon": meshes.Mesh.empty,
     "interactions": contacts.Interactions.empty,
 }
@@ -101,6 +102,7 @@ class Display:
     styles: np.ndarray = field(init=False)
     cartoon: np.ndarray = field(init=False)  # bool per residue
     surface: np.ndarray = field(init=False)  # bool per atom
+    pocket: np.ndarray = field(init=False)  # bool per atom: the focused pocket's skin
     colours: np.ndarray = field(init=False)  # rgba per atom
     selected: np.ndarray = field(init=False)  # bool per atom
     ghost: np.ndarray = field(init=False)  # bool per atom
@@ -115,11 +117,12 @@ class Display:
         self.cartoon = polymer.copy()
         self.styles = scenes.default_styles(s, self.active, cartoon=bool(polymer.any()))
         self.surface = np.zeros(s.n_atoms, bool)
+        self.pocket = np.zeros(s.n_atoms, bool)
         self.colours = schemes.colour(s, self.scheme)
         self.selected = np.zeros(s.n_atoms, bool)
         self.ghost = np.zeros(s.n_atoms, bool)
         self.query = np.zeros(s.n_atoms, bool)
-        self._versions = {"geometry": 0, "cartoon": 0, "surface": 0, "trace": 0,
+        self._versions = {"geometry": 0, "cartoon": 0, "surface": 0, "pocket": 0, "trace": 0,
                           "interactions": 0}  # fmt: skip
 
     # what changed
@@ -146,7 +149,7 @@ class Display:
         if not 0 <= model < self.n_models or model == self.model:
             return False
         self.model = model
-        self.touch("geometry", "cartoon", "surface", "interactions")
+        self.touch("geometry", "cartoon", "surface", "pocket", "interactions")
         return True
 
     # representations
@@ -166,6 +169,14 @@ class Display:
         heavy = self.structure.element != 1
         self.surface[atoms & heavy & self.active] = on
         self.touch("surface")
+
+    def show_pocket(self, atoms: np.ndarray | None) -> None:
+        """Draw a skin over these atoms (a focused ligand's pocket), or none."""
+        heavy = self.structure.element != 1
+        pocket = np.zeros(self.structure.n_atoms, bool) if atoms is None else atoms & heavy
+        if not np.array_equal(pocket, self.pocket):
+            self.pocket = pocket
+            self.touch("pocket")
 
     def show_hydrogens(self, which: str) -> None:
         """Draw all, the polar or no hydrogens (each as its heavy atom is shown)."""
@@ -201,7 +212,8 @@ class Display:
                 self.styles[i] = self.styles[span.start + twins[0]] if len(twins) else 0
         self.styles[~now] = scenes.HIDDEN
         self.surface &= now
-        self.touch("geometry", "cartoon", "surface", "trace", "interactions")
+        self.pocket &= now
+        self.touch("geometry", "cartoon", "surface", "pocket", "trace", "interactions")
 
     def show_interactions(self, atoms: np.ndarray | None) -> None:
         """Show the interactions of these atoms with the rest (None: none)."""
@@ -217,8 +229,9 @@ class Display:
             return scenes.geometry, (s, styles, self.model)
         if part == "cartoon":
             return cartoons.build, (s, np.flatnonzero(self.cartoon), self.model, self.active)
-        if part == "surface":
-            return surfaces.build, (s, np.flatnonzero(self.surface), self.model)
+        if part in ("surface", "pocket"):
+            atoms = self.surface if part == "surface" else self.pocket
+            return surfaces.build, (s, np.flatnonzero(atoms), self.model)
         if part == "trace":
             return cartoons.trace, (s, self.active)
         return contacts.find, (s, self.query.copy(), self.active, self.model)
@@ -229,7 +242,7 @@ class Display:
             return True
         if part == "cartoon":
             return len(args[1]) <= LARGE_CARTOON
-        if part == "surface":
+        if part in ("surface", "pocket"):
             return not len(args[1])
         return False
 
@@ -281,6 +294,9 @@ class Display:
 
     def surface_mesh(self) -> meshes.Mesh:
         return self._part("surface")
+
+    def pocket_mesh(self) -> meshes.Mesh:
+        return self._part("pocket")
 
     def trace(self) -> tuple[np.ndarray, np.ndarray]:
         """Cartoon residues and their trace atoms (what picks the cartoon)."""
@@ -389,6 +405,8 @@ class Scene:
     cartoon_look: np.ndarray
     surface: meshes.Mesh  # owners: global atoms
     surface_look: np.ndarray
+    pocket: meshes.Mesh  # owners: global atoms
+    pocket_look: np.ndarray
     pick_atoms: np.ndarray  # global atoms of the cartoon trace
     pick_centres: np.ndarray
     interactions: tuple[contacts.Interactions, ...] = ()  # per display
@@ -433,6 +451,9 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
     surface = meshes.join([_shifted(d.surface_mesh(), o) for d, o in
                            zip(shown, atom_offsets, strict=False)])  # fmt: skip
     surface_colours = _surface_colours(shown)
+    pocket = meshes.join([_shifted(d.pocket_mesh(), o) for d, o in
+                          zip(shown, atom_offsets, strict=False)])  # fmt: skip
+    pocket_colours = _surface_colours(shown, pocket=True)
     traces = [d.trace()[1] for d in shown]
     pick_atoms = _cat([t + o for t, o in zip(traces, atom_offsets, strict=False)], np.int64)
     pick_centres = _cat([d.xyz[t] for d, t in zip(shown, traces, strict=True)], np.float32, 3)
@@ -449,6 +470,8 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
         cartoon_look=meshes.look(cartoon, residue_colours, residue_flags),
         surface=surface,
         surface_look=meshes.look(surface, surface_colours, flags),
+        pocket=pocket,
+        pocket_look=meshes.look(pocket, pocket_colours, flags),
         pick_atoms=pick_atoms,
         pick_centres=pick_centres,
         interactions=found,
@@ -493,14 +516,17 @@ def relook(scene: Scene) -> Scene:
             _cat([f for _, f in looks], np.float32),
         ),
         surface_look=meshes.look(scene.surface, surface_colours, flags),
+        pocket_look=meshes.look(scene.pocket, _surface_colours(scene.displays, True), flags),
     )
 
 
-def _surface_colours(shown: tuple[Display, ...]) -> np.ndarray:
-    """Per atom, each display's surface scheme with its surface's alpha."""
+def _surface_colours(shown: tuple[Display, ...], pocket: bool = False) -> np.ndarray:
+    """Per atom, each display's surface scheme (a pocket's: hydrophobicity) with its surface's
+    alpha."""
     parts = []
     for d in shown:
-        rgba = schemes.colour(d.structure, d.surface_scheme)
+        scheme = schemes.HYDROPHOBICITY if pocket else d.surface_scheme
+        rgba = schemes.colour(d.structure, scheme)
         rgba[:, 3] = d.surface_alpha()
         parts.append(rgba)
     return _cat(parts, np.float32, 4)

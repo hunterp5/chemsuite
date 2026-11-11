@@ -93,6 +93,10 @@ def fill_focus(menu: QMenu, session: ProteinSession) -> None:
     if not menu.actions():
         menu.addAction("No Ligands").setEnabled(False)
     menu.addSeparator()
+    skin = menu.addAction("Pocket Surface", session.show_pocket_surface)
+    skin.setCheckable(True)
+    skin.setChecked(session.pocket_surface)
+    skin.setToolTip("Draw a see-through skin over the focused pocket, by hydrophobicity")
     clear = menu.addAction("Clear Focus", session.clear_focus)
     clear.setEnabled(session.focused is not None)
 

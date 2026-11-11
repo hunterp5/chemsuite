@@ -62,6 +62,7 @@ from chemsuite.protein import ligands
 from . import menubar, menus, toolbar
 from .builds import Run
 from .models_bar import ModelsBar
+from .pocket import PocketCamera
 from .selection_bar import SelectionBar
 from .sequence_view import SequenceView
 from .session import ADD, SET, TOGGLE, ProteinSession
@@ -71,7 +72,7 @@ TOOL_ID = "protein"
 CARTOON = "cartoon"
 SURFACE = "surface"
 LINES = "interactions"
-SLAB_PAD = 2.0  # Å beyond the focused pocket kept in the slab
+POCKET = "pocket"
 #: the commands a tool gives the viewer (see :mod:`.menubar`)
 OPEN, FETCH, EXTRACT = menubar.OPEN, menubar.FETCH, menubar.EXTRACT
 
@@ -96,6 +97,7 @@ class ProteinPanel(QWidget):
         self._problem_page: QLabel | None = None
         commands = dict(commands or {})
         self._fitted: set[str] = set()  # proteins the camera has been fitted to
+        self.pocket_camera = PocketCamera(self)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         self.toolbar = toolbar.build(self)
@@ -141,7 +143,6 @@ class ProteinPanel(QWidget):
         QShortcut(QKeySequence("["), self, lambda: self.models_bar.step(-1))
         QShortcut(QKeySequence("]"), self, lambda: self.models_bar.step(1))
         self.session.sceneChanged.connect(self._redraw)
-        self.session.focusChanged.connect(self._focus_changed)
         self.session.lookChanged.connect(self._relook)
         self.session.proteinsChanged.connect(self._proteins_changed)
         self.session.hovered.connect(self._hovered)
@@ -205,7 +206,7 @@ class ProteinPanel(QWidget):
         self.view.atomClicked.connect(self._clicked)
         self.view.atomDoubleClicked.connect(self._double_clicked)
         self.view.contextRequested.connect(self._context_menu)
-        self.view.cameraMoved.connect(self._apply_slab)
+        self.pocket_camera.watch(self.view)
         self.overlay = ProteinOverlay(self.view, self.session)
         page = QWidget()
         grid = QGridLayout(page)
@@ -242,6 +243,7 @@ class ProteinPanel(QWidget):
         )
         view.set_mesh(CARTOON, scene.cartoon, scene.cartoon_look)
         view.set_mesh(SURFACE, scene.surface, scene.surface_look, owner=ATOM, transparent=True)
+        view.set_mesh(POCKET, scene.pocket, scene.pocket_look, owner=ATOM, transparent=True)
         view.set_mesh(LINES, scene.lines, scene.lines_look, owner=ATOM)
         new = {d.id for d in scene.displays} - self._fitted
         view.set_scene(scene.geometry, scene.sphere_look, scene.cylinder_look)
@@ -250,7 +252,7 @@ class ProteinPanel(QWidget):
                 view.orient()
             view.fit()
             self._fitted |= new
-        self._apply_slab()  # a focused pocket moves with the model shown
+        self.pocket_camera.apply()  # a focused pocket moves with the model shown
 
     def _relook(self) -> None:
         if self.view is None:
@@ -259,6 +261,7 @@ class ProteinPanel(QWidget):
         self.view.set_look(scene.sphere_look, scene.cylinder_look)
         self.view.set_mesh_look(CARTOON, scene.cartoon_look)
         self.view.set_mesh_look(SURFACE, scene.surface_look)
+        self.view.set_mesh_look(POCKET, scene.pocket_look)
 
     def _proteins_changed(self) -> None:
         self._fitted &= {d.id for d in self.session.displays if d.visible}
@@ -280,33 +283,6 @@ class ProteinPanel(QWidget):
     def reset_view(self) -> None:
         if self.view is not None:
             self.view.reset_view()
-
-    # focus: frame the pocket and keep a slab of depth around it
-    def _focus_changed(self) -> None:
-        if self.view is None:
-            return
-        found = self.session.focused_atoms()
-        if found is None:
-            from chemsuite.app.molview.rhi_view import NO_SLAB
-
-            self.view.set_slab(*NO_SLAB)
-            return
-        shown, atoms = found
-        positions = shown.xyz[atoms]
-        self.view.frame(positions, np.full(len(positions), 1.5))
-        self._apply_slab()
-
-    def _apply_slab(self) -> None:
-        found = self.session.focused_atoms()
-        if self.view is None or found is None:
-            return
-        shown, atoms = found
-        positions = shown.xyz[atoms]
-        centre = positions.mean(axis=0)
-        radius = float(np.linalg.norm(positions - centre, axis=1).max()) + SLAB_PAD
-        _xy, depth = self.view.camera.project(centre[None], self.view.width(),
-                                              self.view.height())  # fmt: skip
-        self.view.set_slab(max(float(depth[0]) - radius, 0.0), float(depth[0]) + radius)
 
     # picking in the view
     def _residue_mask(self, atom: int, whole_chain: bool = False, single: bool = False):
