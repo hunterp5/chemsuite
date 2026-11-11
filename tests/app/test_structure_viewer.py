@@ -546,7 +546,7 @@ def test_without_3d_graphics_the_viewer_stays_2d(chem, qtbot, gpu) -> None:
 
 
 def test_a_saved_3d_viewer_reopens_in_3d(chem) -> None:
-    chem._restore_panels([{"tool": "molview", "state": {"row": 2, "column": "SMILES 3D"}}])
+    chem.restore_panels([{"tool": "molview", "state": {"row": 2, "column": "SMILES 3D"}}])
     viewer = chem.panels[-1]
     assert viewer.tool_id == "viewer" and viewer.mode == "3d" and viewer.oid == 2
     assert chem.panel_states()[-1]["tool"] == "viewer"

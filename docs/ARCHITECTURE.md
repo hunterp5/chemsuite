@@ -19,6 +19,8 @@ changing code.
 | Tools never reach into the window or the context's private members. | MolManager's 271 `app._x` reaches. | `test_tools_never_reach_into_the_window` |
 | Tools read the table through `ToolContext` (`structure_inputs`, `table.read`) and write results only through `ctx.apply_results`. | One place handles undo, name clashes, deleted rows, and speed at 200k rows. | `test_tools_use_the_table_through_the_context` (ratchet) |
 | A panel that opens from a tool saves and reopens with the document. | Documents reopen exactly as saved. | `tests/app/test_session.py` |
+| A tool's panel is a `ToolPanel` (`app/widgets/panel.py`); docks, tool windows and the saved session ask it only what that class declares. | No duck-typed protocol: a host never asks whether a panel has something. | `test_every_tool_panel_is_saved_with_the_document`, the `getattr` ratchet |
+| A document window's docks and tool windows belong to its `DocumentPanels` (`app/document_windows.py`); nothing else keeps or changes those lists. | MolManager's helpers reached into the window's private state. | review; `window._x` reaches fail `test_tools_never_reach_into_the_window` for tools |
 | Work runs as jobs (`ctx.run`): the queue lane for heavy work, the quick lane for interactive work; per-row tools keep finished rows on cancel; work the user did not ask for is `background=True`. | The window never blocks; nothing is lost; closing never asks about work nobody started. | `tests/app/test_jobs_ui.py` |
 | No blind `except Exception` except at a top-level handler, with a reason. | Errors surface instead of hiding. | ruff `BLE001`, `S110` and the ratchet below |
 | No function above complexity 15 without a stated reason. | Branchy code is where bugs hide. | ruff `C90` (exemptions are `# noqa: C901 - reason`; `RUF100` removes stale ones) |
@@ -70,7 +72,8 @@ is usually better than an exemption.
 - **One `RhiView` base for 3D views** (`app/molview/rhi_view.py`): camera, picking, slab and
   fog. Meshes fall back to 16-bit index chunks where the GPU lacks 32-bit indices.
 - **A workspace of its own is a window, not a dock.** `ToolContext.add_window` hosts a tool's
-  widget in a top-level `ToolWindow` (`app/document_windows.py`) with the tool's own menu bar
+  widget in a top-level `ToolWindow` (owned by the window's `DocumentPanels`, in
+  `app/document_windows.py`) with the tool's own menu bar
   and no toolbar: the Protein Viewer. It belongs to the document (closes with it, saved and
   reopened with it, geometry included) and its shortcuts are its own. Docks
   (`add_panel`) stay for panels that sit beside the table.

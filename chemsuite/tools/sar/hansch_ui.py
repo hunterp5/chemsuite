@@ -21,7 +21,6 @@ from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -31,11 +30,10 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QVBoxLayout,
-    QWidget,
 )
 
 from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog, inline
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.tools import ToolContext, ToolPanel
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import numbers
 from chemsuite.sar.hansch import (
@@ -250,11 +248,10 @@ class HanschDialog(ToolDialog):
         return self.panel
 
 
-class HanschPanel(QWidget):
+class HanschPanel(ToolPanel):
     """One Hansch equation. *recipe* (see :meth:`HanschDialog.recipe`) is saved with the panel
     to rerun the analysis on reopening."""
 
-    titleChanged = Signal(str)
     tool_id = "hansch"
 
     def __init__(self, model: Hansch, recipe: dict | None = None) -> None:

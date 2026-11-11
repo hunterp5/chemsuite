@@ -68,11 +68,12 @@ from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import REACTION, STRUCTURE
 
-from . import dock_layout, document_windows, session
+from . import dock_layout, session
 from .advanced_search import AdvancedSearchPanel
 from .column_actions import ColumnActions
 from .commands import apply_shortcuts, register
 from .dock_layout import LAYOUT_KEY
+from .document_windows import DocumentPanels
 from .error_report import details_of, show_error, show_log_folder
 from .filters.cards import FilterCard
 from .filters.panel import FilterPanel
@@ -81,7 +82,7 @@ from .jobs import QUEUE, QUICK, Job, JobRunner
 from .jobs_ui import JobsIndicator, JobsWindow, duration
 from .list_actions import ListActions
 from .log_ui import LogWindow
-from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader, schedule_header_refresh
+from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader
 from .search_bar import SearchBar
 from .settings_hub import settings_hub
 from .split_join import JoinColumnsDialog, SplitColumnDialog
@@ -93,6 +94,7 @@ from .structure_search import StructureSearchDialog, StructureSearcher
 from .table_model import TableModel
 from .table_view import StructureImages, TableView
 from .tools import Tool, ToolContext, load_tools
+from .widgets.panel import ToolPanel
 
 log = logging.getLogger(__name__)
 
@@ -243,8 +245,7 @@ class MainWindow(QMainWindow):
         self._searcher: StructureSearcher | None = None
         self._last_structure_query: StructureQuery | None = None
         self._lists: ListActions | None = None
-        self._panels: list[PanelDock] = []
-        self._windows: list[document_windows.ToolWindow] = []  # tool windows
+        self.tool_panels = DocumentPanels(self)  # docked panels and tool windows
         self._dialogs: list[QDialog] = []  # open tool dialogs (they do not block the table)
         self.filter_dock = QDockWidget("Filters", self)
         self.filter_dock.setObjectName("FilterDock")
@@ -275,7 +276,7 @@ class MainWindow(QMainWindow):
             lambda on: on and dock_layout.float_search(self)
         )
         for dock in (self.filter_dock, self.search_dock):
-            dock.setTitleBarWidget(PanelHeader(dock))  # one title bar style for every pane
+            dock.setTitleBarWidget(PanelHeader(dock, self.tool_panels))  # one style for all
         self._unsubscribe: Callable[[], None] | None = None
         self.jobs_indicator = JobsIndicator(runner)
         self.jobs_indicator.clicked.connect(self.show_jobs)
@@ -292,7 +293,9 @@ class MainWindow(QMainWindow):
         # the line so it is easy to grab. Tabbed panes show their tabs in their headers, so
         # Qt's tab bar below them is hidden.
         self.setStyleSheet(SEPARATOR_STYLE + HIDE_DOCK_TABS)
-        self.tabifiedDockWidgetActivated.connect(lambda *_: schedule_header_refresh(self))
+        self.tabifiedDockWidgetActivated.connect(
+            lambda *_: self.tool_panels.schedule_header_refresh()
+        )
         self._build_menus()
         hub = settings_hub()
         hub.changed.connect(self._apply_settings)
@@ -418,10 +421,7 @@ class MainWindow(QMainWindow):
             if shiboken6.isValid(dialog):
                 dialog.reject()
         self._dialogs.clear()
-        for dock in list(self._panels):
-            dock.close()
-        self._panels.clear()
-        document_windows.close_windows(self)
+        self.tool_panels.close_all()
         if self._find is not None:
             self._find.close_dialog()
             self._find = None
@@ -972,19 +972,17 @@ class MainWindow(QMainWindow):
         return tool.open(ToolContext(self))
 
     def add_panel(self, widget: QWidget, title: str) -> PanelDock:
-        dock = PanelDock(title, self)
-        dock.setObjectName(f"Panel{id(dock)}")
-        dock.setWidget(widget)
-        if hasattr(widget, "titleChanged"):
-            widget.titleChanged.connect(dock.setWindowTitle)
         # Beside the table (left | right), not under it: tables and plots both want height.
         # Later panels join the last one as tabs.
-        previous = [d for d in self._panels if d.isVisible() and not d.isFloating()]
+        previous = [d for d in self.tool_panels.docks if d.isVisible() and not d.isFloating()]
+        dock = self.tool_panels.new_dock(title)
+        dock.setObjectName(f"Panel{id(dock)}")
+        dock.setWidget(widget)
+        if isinstance(widget, ToolPanel):
+            widget.titleChanged.connect(dock.setWindowTitle)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock, Qt.Orientation.Horizontal)
         if previous:
             self.tabifyDockWidget(previous[-1], dock)
-        self._panels.append(dock)
-        dock.destroyed.connect(lambda _o=None, d=dock: self._forget_panel(d))
         dock.show()
         dock_layout.pin_filters(self)  # the new panel goes left of Filters
         if not previous:  # half the window, sized once Filters is back in place
@@ -993,18 +991,14 @@ class MainWindow(QMainWindow):
         return dock
 
     def panel_states(self) -> list[dict]:
-        return document_windows.panel_states(self)
+        return self.tool_panels.states()
 
-    def _restore_panels(self, saved: list[dict]) -> None:
-        document_windows.restore_panels(self, saved, registered_tools())
-
-    def _forget_panel(self, dock: PanelDock) -> None:
-        if dock in self._panels:
-            self._panels.remove(dock)
+    def restore_panels(self, saved: list[dict]) -> None:
+        self.tool_panels.restore(saved, registered_tools())
 
     @property
     def panels(self) -> list[QWidget]:
-        return [dock.widget() for dock in self._panels] + [w.panel for w in self._windows]
+        return self.tool_panels.widgets()
 
     def _update_actions(self) -> None:
         if self._workspace is None:

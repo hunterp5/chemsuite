@@ -50,7 +50,7 @@ def data(window, qtbot):
 def two_plots(window):
     window.open_tool("scatter").set_spec(x="MW", y="pIC50")
     window.open_tool("histogram").set_spec(x="MW")
-    return window._panels
+    return window.tool_panels.docks
 
 
 def geometry(dock):
@@ -75,7 +75,7 @@ def test_split_beside_a_pane_that_has_tabs_keeps_its_tabs(data, qtbot):
 
     first, second = two_plots(data)
     data.open_tool("scatter")
-    third = data._panels[-1]
+    third = data.tool_panels.docks[-1]
     assert set(data.tabifiedDockWidgets(first)) == {second, third}
     dock_layout.split(data, first, third, Qt.Orientation.Horizontal)
     qtbot.wait(50)
@@ -123,7 +123,7 @@ def test_layout_widths_and_search_are_saved_with_the_document(data, qtbot, tmp_p
     first, second = two_plots(data)
     dock_layout.split(data, first, second, Qt.Orientation.Vertical)
     viewer = data.show_browser()  # the Structure Viewer, a panel like the plots
-    browser_dock = next(d for d in data._panels if d.widget() is viewer)
+    browser_dock = next(d for d in data.tool_panels.docks if d.widget() is viewer)
     dock_layout.move_to_area(data, browser_dock, LEFT)
     data.view.set_column_widths({"MW": 211})
     data.search.focus()
@@ -131,13 +131,13 @@ def test_layout_widths_and_search_are_saved_with_the_document(data, qtbot, tmp_p
     data.search.apply_now()
     target = tmp_path / "layout.csd"
     assert data._save_to(target)
-    assert [d.objectName() for d in data._panels] == ["Panel0", "Panel1", "Panel2"]
+    assert [d.objectName() for d in data.tool_panels.docks] == ["Panel0", "Panel1", "Panel2"]
 
     data._install(Workspace(Table()))
     data.open_path(target)
-    qtbot.waitUntil(lambda: len(data._panels) == 3, timeout=10_000)
+    qtbot.waitUntil(lambda: len(data.tool_panels.docks) == 3, timeout=10_000)
     qtbot.wait(50)
-    first, second, browser_dock = data._panels
+    first, second, browser_dock = data.tool_panels.docks
     assert not data.tabifiedDockWidgets(first)  # still stacked, not tabbed
     assert geometry(second)[0].y() > geometry(first)[0].y()
     assert browser_dock.isVisible() and data.dockWidgetArea(browser_dock) == LEFT
@@ -215,9 +215,9 @@ def test_splitter_positions_are_saved_with_the_document(data, qtbot, tmp_path):
     data._install(Workspace(Table()))
     qtbot.wait(50)
     data.open_path(target)
-    qtbot.waitUntil(lambda: len(data._panels) == 2, timeout=10_000)
+    qtbot.waitUntil(lambda: len(data.tool_panels.docks) == 2, timeout=10_000)
     qtbot.wait(100)
-    first, second = data._panels
+    first, second = data.tool_panels.docks
     assert abs(data.view.width() - table_width) <= 4
     assert abs(first.height() - top_height) <= 4
 
@@ -255,7 +255,7 @@ def test_filters_stay_pinned_right_at_a_fixed_width(data, qtbot):
     data.open_tool("scatter")  # added while Filters is closed, so at the right edge
     filters.show()
     qtbot.wait(50)
-    assert geometry(filters)[0].x() >= right_edge(data._panels[-1]) - 5
+    assert geometry(filters)[0].x() >= right_edge(data.tool_panels.docks[-1]) - 5
 
 
 def test_a_first_panel_takes_half_the_window_beside_filters(window, qtbot) -> None:
@@ -267,7 +267,7 @@ def test_a_first_panel_takes_half_the_window_beside_filters(window, qtbot) -> No
     qtbot.waitExposed(window)
     window.filter_column("ID")
     viewer = window.show_browser()
-    dock = next(d for d in window._panels if d.widget() is viewer)
+    dock = next(d for d in window.tool_panels.docks if d.widget() is viewer)
     want = max(PANEL_MIN_WIDTH, window.width() // 2)
     qtbot.waitUntil(lambda: abs(dock.width() - want) < 40, timeout=2000)
     assert window.filter_dock.isVisible()

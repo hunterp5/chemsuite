@@ -121,8 +121,8 @@ def test_self_organising_map(chem, qtbot) -> None:
     assert panel.grid.item(r, c).text() == str(len(chosen))
     saved = chem.panel_states()
     assert [s["tool"] for s in saved] == ["som"] and saved[0]["state"]["value"] == "Count"
-    chem._restore_panels(saved)
-    assert [d.widget().tool_id for d in chem._panels].count("som") == 2
+    chem.restore_panels(saved)
+    assert [d.widget().tool_id for d in chem.tool_panels.docks].count("som") == 2
 
 
 def test_map_options_follow_the_method(chem) -> None:

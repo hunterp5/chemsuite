@@ -154,7 +154,7 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
     viewer.go(1)
     settle()
     window.grab().save(str(out / "browser.png"))
-    next(d for d in window._panels if d.widget() is viewer).close()
+    next(d for d in window.tool_panels.docks if d.widget() is viewer).close()
     lists_menu = window._lists_menu
     lists_menu.popup(window.mapToGlobal(window.rect().topLeft()))
     settle()

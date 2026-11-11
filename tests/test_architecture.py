@@ -154,9 +154,9 @@ def test_tools_use_the_table_through_the_context() -> None:
 #: Whole-package counts of patterns MolManager drowned in (it had ~2,000 getattr/hasattr
 #: fallbacks and 1,088 blind excepts). Each use should be rare and deliberate.
 BUDGETS = {
-    r"\b(?:getattr|hasattr)\(": 73,
+    r"\b(?:getattr|hasattr)\(": 56,
     r"except\s+(?:Exception|BaseException)\b": 16,
-    r"#\s*type:\s*ignore": 31,
+    r"#\s*type:\s*ignore": 29,
 }
 
 
@@ -177,7 +177,7 @@ def test_fallbacks_and_blind_excepts_do_not_grow() -> None:
 #: of the window) rather than raise its budget.
 MAX_LINES = 1000
 LONG_FILES = {
-    "chemsuite/app/main_window.py": 1770,
+    "chemsuite/app/main_window.py": 1764,
     "chemsuite/app/sketcher/canvas.py": 1341,
     "chemsuite/app/table_view.py": 1139,
     "chemsuite/app/viewer/panel.py": 1021,

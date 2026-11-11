@@ -21,7 +21,7 @@ import math
 from collections.abc import Sequence
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.selectivity import looks_like_assay
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.tools import ToolContext, ToolPanel
 from chemsuite.core.mols import mol_from_blob, mol_from_text
 from chemsuite.plotting.data import number_columns
 from chemsuite.sar.rgroups import Decomposition, decompose, parse_core, suggest_core
@@ -69,18 +69,16 @@ def saved_rows(ctx: ToolContext, state: dict, *columns: str) -> list[int]:
     return oids[np.isin(oids, ctx.table.oids)].tolist()
 
 
-class RerunPanel(QWidget):
+class RerunPanel(ToolPanel):
     """Stands in for an analysis panel reopened with its document while the analysis reruns,
     then holds the result. The dock is in place at once, so the saved arrangement applies."""
-
-    titleChanged = Signal(str)
 
     def __init__(self, tool_id: str, title: str, state: dict) -> None:
         super().__init__()
         self.tool_id = tool_id
         self._title = title
         self._state = state
-        self.panel: QWidget | None = None
+        self.panel: ToolPanel | None = None
         self.job = None
         self.waiting = QLabel("Recalculating…")
         self.waiting.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -92,13 +90,12 @@ class RerunPanel(QWidget):
     def title(self) -> str:
         return self.panel.title() if self.panel is not None else self._title
 
-    def fill(self, panel: QWidget) -> None:
+    def fill(self, panel: ToolPanel) -> None:
         self.panel = panel
         self.job = None
         self.waiting.hide()
         self._layout.addWidget(panel)
-        if hasattr(panel, "titleChanged"):
-            panel.titleChanged.connect(self.titleChanged)
+        panel.titleChanged.connect(self.titleChanged)
         self.titleChanged.emit(panel.title())
 
     def state(self) -> dict:
@@ -107,7 +104,7 @@ class RerunPanel(QWidget):
     def close_panel(self) -> None:
         if self.job is not None and self.job.running:
             self.job.cancel()
-        if self.panel is not None and hasattr(self.panel, "close_panel"):
+        if self.panel is not None:
             self.panel.close_panel()
 
 

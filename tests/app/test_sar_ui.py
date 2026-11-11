@@ -116,6 +116,8 @@ def test_free_wilson(series, qtbot) -> None:
     _run(qtbot, dialog)
     panel = dialog.panel
     assert panel.model.fit.r2 > 0.99
+    dock = next(d for d in series.tool_panels.docks if d.widget() is panel)
+    assert dock.title_bar.settings.isHidden()  # its recipe is not an options popup
     predicted = _cells(table, "FW Predicted")
     assert predicted[-1] == "" and math.isclose(float(predicted[0]), 5.0, abs_tol=0.01)
     best = panel.unmade[0]
@@ -193,8 +195,8 @@ def test_sar_panels_restore(series, qtbot) -> None:
     series.open_tool("sar_matrix").aggregate.setCurrentIndex(2)
     saved = series.panel_states()
     assert [s["tool"] for s in saved] == ["sar_matrix"]
-    series._restore_panels(saved)
-    restored = [d.widget() for d in series._panels if d.widget().tool_id == "sar_matrix"]
+    series.restore_panels(saved)
+    restored = [d.widget() for d in series.tool_panels.docks if d.widget().tool_id == "sar_matrix"]
     assert len(restored) == 2 and restored[-1].aggregate.currentIndex() == 2
 
 
@@ -222,10 +224,10 @@ def test_analysis_panels_reopen_with_the_document(series, qtbot, tmp_path) -> No
     assert [s["tool"] for s in saved] == ["free_wilson", "hansch", "mmp", "sali"]
     path.unlink()  # the constants are saved with the panel
     expected = (fw.panel.model.fit.r2, len(mmp.panel.found), sali.panel.table.rowCount())
-    for dock in list(series._panels):
+    for dock in list(series.tool_panels.docks):
         dock.close()
-    qtbot.waitUntil(lambda: not series._panels)
-    series._restore_panels(saved)
+    qtbot.waitUntil(lambda: not series.tool_panels.docks)
+    series.restore_panels(saved)
     holders = series.panels
     assert all(isinstance(h, RerunPanel) for h in holders) and len(holders) == 4
     qtbot.waitUntil(lambda: all(h.panel is not None for h in holders), timeout=30_000)

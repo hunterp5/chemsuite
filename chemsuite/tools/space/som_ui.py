@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -32,13 +32,12 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
-    QWidget,
 )
 
 from chemsuite.analysis.som import MAX_SIDE, Som, default_size, som
 from chemsuite.app.dialogs import RowsChoice, ToolDialog, inline
 from chemsuite.app.flow_layout import FlowRow, compact, field
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.tools import ToolContext, ToolPanel
 from chemsuite.core.table import Changed
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import number_columns, numbers, shown_oids
@@ -149,10 +148,9 @@ class SomDialog(ToolDialog):
         return self.panel
 
 
-class SomPanel(QWidget):
+class SomPanel(ToolPanel):
     """The map's grid: each cell's count, or the mean (etc.) of a number column."""
 
-    titleChanged = Signal(str)
     tool_id = "som"
 
     def __init__(self, ctx: ToolContext) -> None:

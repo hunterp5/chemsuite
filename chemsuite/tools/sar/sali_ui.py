@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
@@ -26,11 +25,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QVBoxLayout,
-    QWidget,
 )
 
 from chemsuite.app.dialogs import RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.tools import ToolContext, ToolPanel
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import numbers
 from chemsuite.sar.sali import Cliffs, sali_pairs
@@ -135,8 +133,7 @@ class SaliDialog(ToolDialog):
         return self.panel
 
 
-class SaliPanel(QWidget):
-    titleChanged = Signal(str)
+class SaliPanel(ToolPanel):
     tool_id = "sali"
 
     def __init__(

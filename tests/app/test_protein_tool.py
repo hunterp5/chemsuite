@@ -110,7 +110,9 @@ def test_the_viewer_opens_as_its_own_window(window, qtbot, monkeypatch) -> None:
     panel = tool.open_viewer(ToolContext(window))
     viewer = panel.window()
     assert isinstance(viewer, ToolWindow) and viewer is not window and viewer.parent() is None
-    assert not any(d.widget() is panel for d in window._panels)  # not a dock: not dockable
+    assert not any(
+        d.widget() is panel for d in window.tool_panels.docks
+    )  # not a dock: not dockable
     assert viewer.menuBar() is panel.menu_bar and viewer.width() >= window.width() * 0.8
     assert viewer.windowTitle() == f"Protein Viewer — {window.document_name}"
     assert panel.views.currentWidget() is panel.empty  # no proteins yet: ways to add one
@@ -126,8 +128,8 @@ def test_the_viewer_window_closes_with_the_document_and_comes_back(with_rows) ->
     entry = next(e for e in window.panel_states() if e["tool"] == "protein")
     assert "geometry" in entry
     window._teardown()
-    assert not window._windows and ToolContext(window).find_panel("protein") is None
-    window._restore_panels([entry])
+    assert not window.tool_panels.windows and ToolContext(window).find_panel("protein") is None
+    window.restore_panels([entry])
     again = ToolContext(window).find_panel("protein")
     assert again is not None and again.window().size().width() == 610
 

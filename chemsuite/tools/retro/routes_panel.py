@@ -61,13 +61,12 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
-    QWidget,
 )
 from rdkit import Chem, rdBase
 
 from chemsuite.app.flow_layout import FlowRow, compact, field
 from chemsuite.app.structure_copy import FORMATS, copy_structures
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.tools import ToolContext, ToolPanel
 from chemsuite.core.depict import render_png
 from chemsuite.retro.routes import leaf_stock_counts, route_tree, sort_routes
 
@@ -277,10 +276,9 @@ class _Canvas(QGraphicsView):
         self.centerOn(rect.center())
 
 
-class RoutesPanel(QWidget):
+class RoutesPanel(ToolPanel):
     """The pane: a target, its routes, and the tree of the chosen one."""
 
-    titleChanged = Signal(str)
     tool_id = "retro_routes"
 
     def __init__(self, ctx: ToolContext) -> None:

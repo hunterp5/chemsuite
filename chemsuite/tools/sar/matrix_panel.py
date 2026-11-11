@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -31,11 +31,10 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
-    QWidget,
 )
 
 from chemsuite.app.flow_layout import FlowRow, compact, field
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.tools import ToolContext, ToolPanel
 from chemsuite.core.table import Changed
 from chemsuite.plotting.data import number_columns, numbers, shown_oids
 from chemsuite.sar.matrix import AGGREGATES, SarMatrix, build_matrix
@@ -70,8 +69,7 @@ def heat(value: float, low: float, high: float, higher_is_better: bool = True) -
     return QColor(*mix)
 
 
-class SarMatrixPanel(QWidget):
-    titleChanged = Signal(str)
+class SarMatrixPanel(ToolPanel):
     tool_id = "sar_matrix"
 
     def __init__(self, ctx: ToolContext) -> None:

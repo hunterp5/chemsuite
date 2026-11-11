@@ -36,7 +36,7 @@ from pathlib import Path
 
 import numpy as np
 import shiboken6
-from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QImage, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -77,7 +77,7 @@ from chemsuite.molview.geometry import (
 
 from .. import graphics
 from ..glyphs import glyph
-from ..panel_dock import OptionsPopup
+from ..widgets.panel import OptionsPopup, ToolPanel
 from .caption import CaptionOverlay, caption_columns, default_caption, paint_caption
 from .depiction import Depiction2D, structure_image
 
@@ -116,9 +116,7 @@ def make_3d(mols: dict[int, Chem.Mol]) -> dict[int, Chem.Mol | None]:
     return out
 
 
-class StructureViewer(QWidget):
-    titleChanged = Signal(str)
-
+class StructureViewer(ToolPanel):
     def __init__(
         self,
         table: Table,

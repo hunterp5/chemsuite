@@ -84,7 +84,7 @@ def docked(window: MainWindow) -> list[QDockWidget]:
     fixed = [window.filter_dock, window.search_dock]
     return [
         d
-        for d in [*fixed, *window._panels]
+        for d in [*fixed, *window.tool_panels.docks]
         if is_open(d) and not d.isFloating() and d.widget() is not None
     ]
 
@@ -97,13 +97,14 @@ def arrangeable(window: MainWindow) -> list[QDockWidget]:
 def pin_filters(window: MainWindow) -> None:
     """Put the Filters pane (and anything tabbed with it) back at the window's right edge."""
     dock = window.filter_dock
-    if not is_open(dock) or getattr(window, "_pinning", False):
+    panels = window.tool_panels
+    if not is_open(dock) or panels.pinning:
         return
-    window._pinning = True  # re-adding the pane fires visibility signals that call back here
+    panels.pinning = True  # re-adding the pane fires visibility signals that call back here
     try:
         _pin(window, dock)
     finally:
-        window._pinning = False
+        panels.pinning = False
 
 
 def _pin(window: MainWindow, dock: QDockWidget) -> None:
@@ -342,7 +343,7 @@ def name_panels(window: MainWindow, restorable: list[QDockWidget]) -> None:
     document's panels match the saved arrangement."""
     for i, dock in enumerate(restorable):
         dock.setObjectName(f"Panel{i}")
-    for dock in window._panels:
+    for dock in window.tool_panels.docks:
         if dock not in restorable:
             dock.setObjectName(f"Transient{id(dock)}")
 

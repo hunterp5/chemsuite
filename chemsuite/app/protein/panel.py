@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.app import graphics
+from chemsuite.app.widgets.panel import ToolPanel
 from chemsuite.core.table import Table
 from chemsuite.molview.camera import Camera
 from chemsuite.protein import io as protein_io
@@ -76,7 +77,7 @@ PROFILE, REMOVE, SHOW_TABLE = menubar.PROFILE, menubar.REMOVE, menubar.SHOW_TABL
 THEME, BACKGROUNDS = menubar.THEME, menubar.BACKGROUNDS
 
 
-class ProteinPanel(QWidget):
+class ProteinPanel(ToolPanel):
     def __init__(
         self,
         table: Table,

@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -58,7 +58,7 @@ from chemsuite.analysis.statistics import (
 )
 from chemsuite.app.flow_layout import FlowRow, compact, field
 from chemsuite.app.jobs import QUICK
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.tools import ToolContext, ToolPanel
 from chemsuite.core.table import Changed
 from chemsuite.core.table.columns import TEXT
 from chemsuite.plotting.data import number_columns, numbers, shown_oids
@@ -107,8 +107,7 @@ def correlation_color(r: float) -> QColor:
     return QColor(int(255 - 175 * t), int(255 - 125 * t), 255)
 
 
-class StatisticsPanel(QWidget):
-    titleChanged = Signal(str)
+class StatisticsPanel(ToolPanel):
     tool_id = "statistics"
 
     def __init__(self, ctx: ToolContext) -> None:

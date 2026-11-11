@@ -16,13 +16,15 @@
 """Docks for tool panels, with a header that is the top of the panel's card.
 
 The header holds, left to right: the panel's title, the panel's own toolbar (a plot's pan, box,
-lasso…), then settings, undock and close. A panel opts into each part by what it has:
+lasso…), then settings, undock and close. A panel (a ``ToolPanel``) opts into each part:
 
 * ``toolbar``: a ``QToolBar`` moved into the header;
-* ``options``: a popup with ``popup(anchor)``, opened by the settings button;
-* ``set_custom_title(text | None)``: makes the title editable (double-click it; an empty title
-  goes back to the automatic one);
+* ``options``: an ``OptionsPopup``, opened by the settings button;
+* ``renamable`` with ``set_custom_title(text | None)``: makes the title editable (double-click
+  it; an empty title goes back to the automatic one);
 * ``attach_header(bool)``: told when its top edge now meets the header, to square its corners.
+
+Where the headers' tabs come from and what Arrange offers is the window's :class:`DockHost`.
 
 Mouse presses on the header's empty space and on the title (when not editing) fall through to
 the dock, so dragging the header still moves the panel.
@@ -36,7 +38,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QFocusEvent,
@@ -49,7 +51,6 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QDockWidget,
-    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLineEdit,
@@ -62,6 +63,7 @@ from PySide6.QtWidgets import (
 )
 
 from .glyphs import glyph
+from .widgets.panel import ToolPanel
 
 #: panes sit flush against each other, as in native macOS split views
 INSET = 0
@@ -74,30 +76,6 @@ HIDE_DOCK_TABS = (
     " QMainWindow > QTabBar::tab { height: 0px; min-height: 0px; max-height: 0px;"
     " padding: 0px; margin: 0px; border: none; }"
 )
-
-
-class OptionsPopup(QFrame):
-    """A panel's options, in a popup that closes when you click elsewhere (opened by the
-    header's settings button: a panel exposes one as ``options``)."""
-
-    def __init__(self, parent: QWidget) -> None:
-        super().__init__(parent, Qt.WindowType.Popup)
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.form = QFormLayout(self)
-        self.form.setContentsMargins(10, 10, 10, 10)
-        self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-
-    def popup(self, anchor: QWidget) -> None:
-        """Show below *anchor* (the settings button), kept on its screen."""
-        self.adjustSize()
-        below = anchor.mapToGlobal(QPoint(anchor.width() - self.width(), anchor.height()))
-        screen = anchor.screen().availableGeometry()
-        x = min(max(below.x(), screen.left()), screen.right() - self.width())
-        y = below.y()
-        if y + self.height() > screen.bottom():  # no room below: open above
-            y = anchor.mapToGlobal(QPoint(0, 0)).y() - self.height()
-        self.move(x, max(y, screen.top()))
-        self.show()
 
 
 class TitleEdit(QLineEdit):
@@ -395,37 +373,47 @@ def _fit(widths: list[float], room: float, floor: float) -> list[float]:
     return [min(w, lo) for w in widths]
 
 
-def panes_in_order(window: QMainWindow) -> list[QDockWidget]:
-    """Every pane in a fixed order (fixed panes, then panels as opened): the tabs' order."""
-    fixed = [getattr(window, n, None) for n in ("filter_dock", "search_dock")]
-    panels = list(getattr(window, "_panels", []))
-    return [d for d in [*fixed, *panels] if isinstance(d, QDockWidget)]
+class DockHost:
+    """What the panes' headers ask of the window they sit in: the panes in tab order, the
+    Arrange menu, and a refresh once Qt has finished regrouping them. The document window's
+    panels (``document_windows.DocumentPanels``) are one."""
 
+    def __init__(self, window: QMainWindow) -> None:
+        self.window = window
+        self._refresh_pending = False
 
-def refresh_headers(window: QMainWindow) -> None:
-    """Bring every pane header's tabs up to date with how the panes are grouped."""
-    window._header_refresh_pending = False  # type: ignore[attr-defined]
-    for dock in window.findChildren(QDockWidget):
-        header = dock.titleBarWidget()
-        if isinstance(header, PanelHeader):
-            header.update_tabs()
+    def in_order(self) -> list[QDockWidget]:
+        """Every pane in a fixed order: the order of their tabs."""
+        return []
 
+    def fill_arrange(self, menu: QMenu, dock: QDockWidget) -> None:
+        """Fill a pane's Arrange menu."""
 
-def schedule_header_refresh(window: QWidget | None) -> None:
-    """Refresh the headers once control returns to the event loop (Qt regroups docks in
-    several steps, and the grouping is only final afterwards)."""
-    if not isinstance(window, QMainWindow) or getattr(window, "_header_refresh_pending", False):
-        return
-    window._header_refresh_pending = True  # type: ignore[attr-defined]
-    QTimer.singleShot(0, window, lambda: refresh_headers(window))
+    def refresh_headers(self) -> None:
+        """Bring every pane header's tabs up to date with how the panes are grouped."""
+        self._refresh_pending = False
+        for dock in self.window.findChildren(QDockWidget):
+            header = dock.titleBarWidget()
+            if isinstance(header, PanelHeader):
+                header.update_tabs()
+
+    def schedule_header_refresh(self) -> None:
+        """Refresh the headers once control returns to the event loop (Qt regroups docks in
+        several steps, and the grouping is only final afterwards)."""
+        if self._refresh_pending:
+            return
+        self._refresh_pending = True
+        QTimer.singleShot(0, self.window, self.refresh_headers)
 
 
 class PanelHeader(QWidget):
     """The dock's title bar: a flat strip over the pane, divided from it by a hairline."""
 
-    def __init__(self, dock: QDockWidget) -> None:
+    def __init__(self, dock: QDockWidget, host: DockHost) -> None:
+        self._built = False  # a palette change can arrive while it is being built
         super().__init__(dock)
         self.dock = dock
+        self.host = host
         self.strip = QFrame()
         self.strip.setObjectName("PanelHeader")
         self.title = TitleEdit()
@@ -489,22 +477,22 @@ class PanelHeader(QWidget):
             dock.topLevelChanged,
             dock.dockLocationChanged,
         ):
-            signal.connect(lambda *_: schedule_header_refresh(self.dock.parentWidget()))
+            signal.connect(lambda *_: host.schedule_header_refresh())
+        self._built = True
         self._restyle()
 
     # -- tabs -----------------------------------------------------------------------------------
     def tab_docks(self) -> list[QDockWidget]:
         """The panes tabbed with this one, in tab order (empty when it is not tabbed)."""
-        window = self.dock.parentWidget()
-        if not isinstance(window, QMainWindow) or self.dock.isFloating():
+        if self.dock.isFloating():
             return []
         from .dock_layout import is_open
 
-        group = {d for d in window.tabifiedDockWidgets(self.dock) if is_open(d)}
+        group = {d for d in self.host.window.tabifiedDockWidgets(self.dock) if is_open(d)}
         if not group:
             return []
         group.add(self.dock)
-        ordered = [d for d in panes_in_order(window) if d in group]
+        ordered = [d for d in self.host.in_order() if d in group]
         return ordered + [d for d in group if d not in ordered]
 
     def update_tabs(self) -> None:
@@ -521,11 +509,7 @@ class PanelHeader(QWidget):
         self.title.start_editing()
 
     def _fill_arrange(self) -> None:
-        from .dock_layout import fill_arrange_menu
-
-        window = self.dock.parentWidget()
-        if window is not None and hasattr(window, "_panels"):
-            fill_arrange_menu(self.arrange_menu, window, self.dock)
+        self.host.fill_arrange(self.arrange_menu, self.dock)
 
     def add_tools(self, toolbar: QWidget) -> None:
         """Put a pane's own toolbar in the header (replacing one shown before, e.g. when the
@@ -552,37 +536,37 @@ class PanelHeader(QWidget):
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
-        if event.type() == QEvent.Type.PaletteChange and hasattr(self, "strip"):
+        if event.type() == QEvent.Type.PaletteChange and self._built:
             self._restyle()
 
 
 class PanelDock(QDockWidget):
     """A dock holding a tool's panel; closing it closes the panel for good."""
 
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(title, parent)
-        self.title_bar = PanelHeader(self)
+    def __init__(self, title: str, host: DockHost) -> None:
+        super().__init__(title, host.window)
+        self.title_bar = PanelHeader(self, host)
         self.setTitleBarWidget(self.title_bar)
 
     def setWidget(self, widget: QWidget) -> None:
         super().setWidget(widget)
+        if not isinstance(widget, ToolPanel):
+            return
         bar = self.title_bar
-        options = getattr(widget, "options", None)
+        options = widget.options
         bar.settings.setVisible(options is not None)
         if options is not None:
             bar.settings.clicked.connect(lambda: options.popup(bar.settings))
-        toolbar = getattr(widget, "toolbar", None)
-        if toolbar is not None:
-            bar.add_tools(toolbar)
-        if hasattr(widget, "set_custom_title"):
+        if widget.toolbar is not None:
+            bar.add_tools(widget.toolbar)
+        if widget.renamable:
             bar.title.on_rename = widget.set_custom_title
             bar.title.show_title(self.windowTitle())
-        if hasattr(widget, "attach_header"):
-            widget.attach_header(True)
+        widget.attach_header(True)
 
     def closeEvent(self, event) -> None:
         widget = self.widget()
-        if widget is not None and hasattr(widget, "close_panel"):
+        if isinstance(widget, ToolPanel):
             widget.close_panel()
         super().closeEvent(event)
         self.deleteLater()

@@ -51,6 +51,7 @@ from chemsuite.core.table.columns import REACTION, STRUCTURE, Column, StructureC
 from chemsuite.core.table.history import Op
 
 from .jobs import QUEUE, Job
+from .widgets.panel import ToolPanel as ToolPanel  # what a tool's panel is built on
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -324,8 +325,8 @@ class ToolContext:
     def add_panel(self, widget: QWidget, title: str) -> QDockWidget:
         """Show *widget* in a dock beside the table; it closes with the document.
 
-        If the widget has ``close_panel()``, it is called when the dock is closed. A widget
-        with a ``titleChanged(str)`` signal keeps the dock's title up to date.
+        A ``ToolPanel``'s ``close_panel()`` is called when the dock is closed, and its
+        ``titleChanged`` keeps the dock's title up to date.
         """
         return self._window.add_panel(widget, title)
 
@@ -335,17 +336,7 @@ class ToolContext:
         A tool that produces more results of the same kind (further retrosynthetic routes,
         say) fills the panel it already has instead of opening a second one.
         """
-        holders = [(dock.widget(), dock) for dock in self._window._panels]
-        holders += [(shown.panel, shown) for shown in self._window._windows]
-        for widget, holder in holders:
-            if getattr(widget, "tool_id", None) == tool_id:
-                if holder in self._window._windows:
-                    holder.bring_forward()
-                else:
-                    holder.show()
-                    holder.raise_()
-                return widget
-        return None
+        return self._window.tool_panels.find(tool_id)
 
     def add_window(
         self,
@@ -361,9 +352,7 @@ class ToolContext:
         *on_close* first) and, when the widget has ``tool_id`` and ``state()``, is saved and
         reopened with it, in the same size and place.
         """
-        from .document_windows import add_window
-
-        return add_window(self._window, widget, title, menu_bar, on_close)
+        return self._window.tool_panels.add_window(widget, title, menu_bar, on_close)
 
     def show_dialog(self, dialog: QDialog) -> QDialog:
         """Show a tool's dialog without blocking the window.

@@ -19,8 +19,9 @@ A tool shows its work either in a dock beside the table (``ToolContext.add_panel
 workspace of its own such as the Protein Viewer, in a :class:`ToolWindow`
 (``ToolContext.add_window``): a top-level window with its own menu bar, titled after the
 document, that cannot be docked. Either way it belongs to the document: it closes with it, and
-when its widget has ``tool_id`` and ``state()`` it is saved with it and reopened by the tool's
-``restore`` (a window also gets its size and place back).
+when its widget is a ``ToolPanel`` with a ``tool_id`` it is saved with it and reopened by the
+tool's ``restore`` (a window also gets its size and place back). :class:`DocumentPanels` owns
+both lists.
 """
 
 from __future__ import annotations
@@ -33,7 +34,10 @@ from typing import TYPE_CHECKING
 import shiboken6
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QMainWindow, QMenuBar, QWidget
+from PySide6.QtWidgets import QDockWidget, QMainWindow, QMenu, QMenuBar, QWidget
+
+from .panel_dock import DockHost, PanelDock
+from .widgets.panel import ToolPanel
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -90,91 +94,145 @@ class ToolWindow(QMainWindow):
         super().closeEvent(event)
 
 
-def add_window(
-    window: MainWindow,
-    widget: QWidget,
-    title: str,
-    menu_bar: QMenuBar | None,
-    on_close: Callable[[], None] | None,
-) -> ToolWindow:
-    """Show *widget* in a new tool window of *window*'s document."""
-    shown = ToolWindow(widget, title, name=lambda: window.document_name, menu_bar=menu_bar,
-                       on_close=on_close)  # fmt: skip
-    window.windowTitleChanged.connect(shown.retitle)
-    window._windows.append(shown)
-    shown.destroyed.connect(lambda _o=None, w=shown: _forget(window, w))
-    shown.show()
-    return shown
+class DocumentPanels(DockHost):
+    """The tool panels of one document window: docks beside the table and windows of their
+    own. The only owner of those lists; the window, its tools and its saved session ask it."""
 
+    window: MainWindow
 
-def _forget(window: MainWindow, shown: ToolWindow) -> None:
-    if shown in window._windows:
-        window._windows.remove(shown)
+    def __init__(self, window: MainWindow) -> None:
+        super().__init__(window)
+        self.docks: list[PanelDock] = []
+        self.windows: list[ToolWindow] = []
+        #: dock_layout is putting Filters back in place (moving it fires signals that would
+        #: call back into it)
+        self.pinning = False
 
+    def widgets(self) -> list[QWidget]:
+        """Every open panel, docked or in a window."""
+        return [dock.widget() for dock in self.docks] + [shown.panel for shown in self.windows]
 
-def close_windows(window: MainWindow) -> None:
-    """Close the document's tool windows (the document is closing or being replaced)."""
-    for shown in list(window._windows):
-        if shiboken6.isValid(shown):
-            shown.close()
-    window._windows.clear()
+    # -- docks ---------------------------------------------------------------------------------
+    def new_dock(self, title: str) -> PanelDock:
+        dock = PanelDock(title, self)
+        self.docks.append(dock)
+        dock.destroyed.connect(lambda _o=None, d=dock: self._forget_dock(d))
+        return dock
 
+    def _forget_dock(self, dock: PanelDock) -> None:
+        if dock in self.docks:
+            self.docks.remove(dock)
 
-# saving and reopening tool panels and windows
-def panel_states(window: MainWindow) -> list[dict]:
-    """Saved form of the open panels and tool windows that can be restored (``Tool.restore``).
+    def in_order(self) -> list[QDockWidget]:
+        window = self.window
+        return [window.filter_dock, window.search_dock, *self.docks]
 
-    The saved docks are named ``Panel0``… in this order, which the saved arrangement refers
-    to; a window's entry keeps its size and place.
-    """
-    from . import dock_layout
+    def fill_arrange(self, menu: QMenu, dock: QDockWidget) -> None:
+        from .dock_layout import fill_arrange_menu
 
-    states, docks = [], []
-    for dock in window._panels:
-        entry = _entry(dock.widget())
-        if entry is not None:
-            states.append(entry)
-            docks.append(dock)
-    dock_layout.name_panels(window, docks)
-    for shown in window._windows:
-        entry = _entry(shown.panel)
-        if entry is not None:
-            geometry = bytes(shown.saveGeometry().data())
-            entry[GEOMETRY] = base64.b64encode(geometry).decode("ascii")
-            states.append(entry)
-    return states
+        fill_arrange_menu(menu, self.window, dock)
+
+    # -- windows -------------------------------------------------------------------------------
+    def add_window(
+        self,
+        widget: QWidget,
+        title: str,
+        menu_bar: QMenuBar | None,
+        on_close: Callable[[], None] | None,
+    ) -> ToolWindow:
+        """Show *widget* in a new tool window of the document."""
+        window = self.window
+        shown = ToolWindow(widget, title, name=lambda: window.document_name, menu_bar=menu_bar,
+                           on_close=on_close)  # fmt: skip
+        window.windowTitleChanged.connect(shown.retitle)
+        self.windows.append(shown)
+        shown.destroyed.connect(lambda _o=None, w=shown: self._forget_window(w))
+        shown.show()
+        return shown
+
+    def _forget_window(self, shown: ToolWindow) -> None:
+        if shown in self.windows:
+            self.windows.remove(shown)
+
+    def find(self, tool_id: str) -> QWidget | None:
+        """The open panel of *tool_id*, brought to the front, if there is one."""
+        for dock in self.docks:
+            widget = dock.widget()
+            if isinstance(widget, ToolPanel) and widget.tool_id == tool_id:
+                dock.show()
+                dock.raise_()
+                return widget
+        for shown in self.windows:
+            if isinstance(shown.panel, ToolPanel) and shown.panel.tool_id == tool_id:
+                shown.bring_forward()
+                return shown.panel
+        return None
+
+    def close_all(self) -> None:
+        """Close every panel (the document is closing or being replaced)."""
+        for dock in list(self.docks):
+            dock.close()
+        self.docks.clear()
+        for shown in list(self.windows):
+            if shiboken6.isValid(shown):
+                shown.close()
+        self.windows.clear()
+
+    # -- saving and reopening ------------------------------------------------------------------
+    def states(self) -> list[dict]:
+        """Saved form of the open panels and tool windows that can be restored
+        (``Tool.restore``).
+
+        The saved docks are named ``Panel0``… in this order, which the saved arrangement
+        refers to; a window's entry keeps its size and place.
+        """
+        from . import dock_layout
+
+        states, docks = [], []
+        for dock in self.docks:
+            entry = _entry(dock.widget())
+            if entry is not None:
+                states.append(entry)
+                docks.append(dock)
+        dock_layout.name_panels(self.window, docks)
+        for shown in self.windows:
+            entry = _entry(shown.panel)
+            if entry is not None:
+                geometry = bytes(shown.saveGeometry().data())
+                entry[GEOMETRY] = base64.b64encode(geometry).decode("ascii")
+                states.append(entry)
+        return states
+
+    def restore(self, saved: list, tools: Iterable[Tool]) -> None:
+        from .tools import ToolContext
+
+        by_id = {}
+        for tool in tools:
+            by_id.update(dict.fromkeys((*tool.aliases, tool.id), tool))
+        for i, entry in enumerate(saved):
+            tool = by_id.get(entry.get("tool")) if isinstance(entry, dict) else None
+            if tool is None or tool.restore is None or tool.missing():
+                log.warning("cannot restore saved panel %r", entry)
+                continue
+            docks, windows = list(self.docks), list(self.windows)
+            try:
+                tool.restore(ToolContext(self.window), dict(entry.get("state") or {}))
+            except (KeyError, ValueError, TypeError):  # a damaged or outdated entry
+                log.exception("failed to restore panel %r", entry)
+                continue
+            added = [d for d in self.docks if d not in docks]
+            if added:
+                added[-1].setObjectName(f"Panel{i}")  # as named when saved
+            opened = [w for w in self.windows if w not in windows]
+            if opened and isinstance(entry.get(GEOMETRY), str):
+                _place(opened[-1], entry[GEOMETRY])
 
 
 def _entry(widget: QWidget) -> dict | None:
     """The saved form of a tool's widget, if it can be restored."""
-    if hasattr(widget, "state") and getattr(widget, "tool_id", None):
+    if isinstance(widget, ToolPanel) and widget.tool_id:
         return {"tool": widget.tool_id, "state": widget.state()}
     return None
-
-
-def restore_panels(window: MainWindow, saved: list, tools: Iterable[Tool]) -> None:
-    from .tools import ToolContext
-
-    by_id = {}
-    for tool in tools:
-        by_id.update(dict.fromkeys((*tool.aliases, tool.id), tool))
-    for i, entry in enumerate(saved):
-        tool = by_id.get(entry.get("tool")) if isinstance(entry, dict) else None
-        if tool is None or tool.restore is None or tool.missing():
-            log.warning("cannot restore saved panel %r", entry)
-            continue
-        docks, windows = list(window._panels), list(window._windows)
-        try:
-            tool.restore(ToolContext(window), dict(entry.get("state") or {}))
-        except (KeyError, ValueError, TypeError):  # a damaged or outdated entry
-            log.exception("failed to restore panel %r", entry)
-            continue
-        added = [d for d in window._panels if d not in docks]
-        if added:
-            added[-1].setObjectName(f"Panel{i}")  # as named when saved
-        opened = [w for w in window._windows if w not in windows]
-        if opened and isinstance(entry.get(GEOMETRY), str):
-            _place(opened[-1], entry[GEOMETRY])
 
 
 def _place(shown: ToolWindow, text: str) -> None:

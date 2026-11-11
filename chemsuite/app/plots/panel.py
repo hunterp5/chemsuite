@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -60,7 +60,7 @@ from chemsuite.plotting.stats import AGGREGATES, CURVES
 from .. import graphics
 from ..flow_layout import compact
 from ..glyphs import glyph
-from ..panel_dock import OptionsPopup
+from ..widgets.panel import OptionsPopup, ToolPanel
 from .cards import (
     SIZES,
     CardContent,
@@ -107,8 +107,8 @@ AXIS_MARGINS = (6, 6, 10, 6)
 PlotOptions = OptionsPopup  # the plot's options popup
 
 
-class PlotPanel(QWidget):
-    titleChanged = Signal(str)
+class PlotPanel(ToolPanel):
+    renamable = True
 
     def __init__(
         self,

@@ -116,7 +116,7 @@ def test_statistics_panel_follows_edits_and_restores(data, qtbot) -> None:
     assert panel.outliers.column.findText("cLogP") < 0
     states = data.panel_states()
     entry = next(s for s in states if s["tool"] == "statistics")
-    data._restore_panels([entry])
+    data.restore_panels([entry])
     assert sum(1 for p in data.panels if getattr(p, "tool_id", "") == "statistics") == 2
 
 

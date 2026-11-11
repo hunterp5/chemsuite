@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -26,12 +26,11 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QSplitter,
     QVBoxLayout,
-    QWidget,
 )
 
 from chemsuite.analysis.selectivity import looks_like_assay
 from chemsuite.app.dialogs import RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.tools import ToolContext, ToolPanel
 from chemsuite.plotting.data import number_columns, numbers
 from chemsuite.sar.mmp import Pair, Transform, find_pairs, readable, transforms
 from chemsuite.tools.similarity.common import labels
@@ -124,10 +123,9 @@ class MmpDialog(ToolDialog):
         return self.panel
 
 
-class MmpPanel(QWidget):
+class MmpPanel(ToolPanel):
     """Transformations, and the pairs behind the chosen one."""
 
-    titleChanged = Signal(str)
     tool_id = "mmp"
 
     def __init__(

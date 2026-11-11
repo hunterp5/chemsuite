@@ -26,8 +26,9 @@ window state, each saved under its own key in the document's extras:
 * ``layout`` – which panes are open and where, splitter sizes, column widths, the search bar
 
 **Adding a feature with state of its own?** Add a :class:`Part` here (or, for a tool panel,
-give the panel ``tool_id`` and ``state()`` and its tool a ``restore``). Parts are restored in
-order, so ``layout`` comes last: it arranges panes the earlier parts created. A part's
+make the panel a ``ToolPanel`` with a ``tool_id`` and ``state()``, and give its tool a
+``restore``). Parts are restored in order, so ``layout`` comes last: it arranges panes the
+earlier parts created. A part's
 ``restore`` gets only what its ``capture`` returned, and must skip damaged values rather than
 raise. Row lists are document data, saved by the workspace itself.
 """
@@ -135,7 +136,7 @@ def _restore_search(window: MainWindow, saved: Any) -> None:
 
 def _restore_panels(window: MainWindow, saved: Any) -> None:
     if isinstance(saved, list):
-        window._restore_panels(saved)
+        window.restore_panels(saved)
 
 
 PARTS: tuple[Part, ...] = (

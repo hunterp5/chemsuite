@@ -71,7 +71,7 @@ def test_scatter_opens_in_a_dock_with_defaults(data) -> None:
     assert panel in data.panels
     assert panel.spec().x == "MW" and panel.spec().y == "pIC50"
     assert panel.summary.text().startswith("4 points · 1 rows without both values")
-    assert data.findChild(type(data._panels[0])).windowTitle() == "pIC50 vs MW"
+    assert data.findChild(type(data.tool_panels.docks[0])).windowTitle() == "pIC50 vs MW"
 
 
 def test_box_lasso_and_modifiers_select_rows(data) -> None:
@@ -158,8 +158,8 @@ def test_removed_column_and_closing(data, qtbot) -> None:
     table.remove_column("MW")
     panel.rebuild()
     assert panel.spec().x == "pIC50"  # the next number column
-    data._panels[0].close()
-    qtbot.waitUntil(lambda: not data._panels)
+    data.tool_panels.docks[0].close()
+    qtbot.waitUntil(lambda: not data.tool_panels.docks)
     table.set_cells("pIC50", [int(table.oids[0])], ["1"])  # a closed panel no longer listens
 
 
@@ -259,7 +259,7 @@ def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -
 
 
 def test_damaged_saved_panels_are_skipped(data) -> None:
-    data._restore_panels([{"tool": "nope"}, "junk", {"tool": "scatter", "state": {"kind": 3}}])
+    data.restore_panels([{"tool": "nope"}, "junk", {"tool": "scatter", "state": {"kind": 3}}])
     assert len(data.panels) == 1  # the scatter entry, with its bad kind ignored
     assert data.panels[0].spec().kind == "scatter"
 
@@ -293,7 +293,7 @@ def test_options_open_from_the_dock_settings_button(data, qtbot) -> None:
 
     data.show()
     panel = data.open_tool("scatter")
-    dock = data._panels[-1]
+    dock = data.tool_panels.docks[-1]
     # Beside the table, not under it.
     assert data.dockWidgetArea(dock) == Qt.DockWidgetArea.RightDockWidgetArea
     bar = dock.title_bar
@@ -314,7 +314,7 @@ def test_options_open_from_the_dock_settings_button(data, qtbot) -> None:
     assert not dock.isFloating()
     # A second plot joins the first as a tab.
     data.open_tool("histogram")
-    assert data.tabifiedDockWidgets(dock) == [data._panels[-1]]
+    assert data.tabifiedDockWidgets(dock) == [data.tool_panels.docks[-1]]
     bar.close_button.click()
     qtbot.waitUntil(lambda: panel not in data.panels)
 
@@ -331,7 +331,7 @@ def test_rename_a_plot_from_its_header(data, qtbot, tmp_path) -> None:
 
     data.show()
     panel = data.open_tool("scatter")
-    dock = data._panels[-1]
+    dock = data.tool_panels.docks[-1]
     title = dock.title_bar.title
     assert panel.toolbar.parent() is not None and dock.isAncestorOf(panel.toolbar)  # in header
     assert title.isReadOnly()
@@ -577,13 +577,13 @@ def test_3d_scatter_is_saved_with_its_camera(cube) -> None:
     panel.set_camera({"distance": 6.0, "azimuth": 30.0, "elevation": 10.0})
     state = panel.state()
     assert state["color"] == "Series" and state["camera"]["azimuth"] == 30.0 and state["drop"]
-    cube._restore_panels([{"tool": "scatter", "state": state}])
+    cube.restore_panels([{"tool": "scatter", "state": state}])
     reopened = cube.panels[-1]
     assert reopened.state() == state
     reopened.set_state({"x": "gone", "camera": "junk"})  # damaged values are skipped
     assert reopened.spec().x == "MW"
     # a document saved while 3D Scatter was a panel of its own
-    cube._restore_panels([{"tool": "scatter3d", "state": {"x": "LogP", "y": "MW", "z": "pIC50"}}])
+    cube.restore_panels([{"tool": "scatter3d", "state": {"x": "LogP", "y": "MW", "z": "pIC50"}}])
     old = cube.panels[-1]
     assert old.spec().kind == "scatter3d" and old.spec().x == "LogP"
 

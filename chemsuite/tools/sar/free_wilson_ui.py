@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -32,7 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.app.dialogs import RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.tools import ToolContext, ToolPanel
 from chemsuite.core.mols import mol_to_blob, smiles_of
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 from chemsuite.plotting.data import numbers
@@ -151,11 +150,10 @@ class FreeWilsonDialog(ToolDialog):
         return self.panel
 
 
-class FreeWilsonPanel(QWidget):
+class FreeWilsonPanel(ToolPanel):
     """Results of one Free-Wilson analysis. *options* is the analysis recipe (see
     :meth:`FreeWilsonDialog.recipe`); it is saved with the panel to rerun it on reopening."""
 
-    titleChanged = Signal(str)
     tool_id = "free_wilson"
 
     def __init__(self, ctx: ToolContext, oids, d: Decomposition, model: FreeWilson, options):
@@ -163,7 +161,7 @@ class FreeWilsonPanel(QWidget):
         self.ctx = ctx
         self.decomposition = d
         self.model = model
-        self.options = options
+        self.recipe = options
         self.oids = np.asarray(oids)
         summary = QLabel(fit_summary(model.fit, model.skipped))
         summary.setWordWrap(True)
@@ -234,7 +232,7 @@ class FreeWilsonPanel(QWidget):
         layout.addWidget(copy)
 
     def title(self) -> str:
-        return f"Free-Wilson: {self.options.get('activity', '')}"
+        return f"Free-Wilson: {self.recipe.get('activity', '')}"
 
     def select_carriers(self) -> list[int]:
         terms = [t for t in self.terms.selected_data() if t is not None]
@@ -273,7 +271,7 @@ class FreeWilsonPanel(QWidget):
         if not blobs:
             self.ctx.show_message("Choose rows in Best Unmade to add (none could be built).")
             return np.empty(0, dtype=np.int64)
-        structure = self.options.get("structure") or "Structure"
+        structure = self.recipe.get("structure") or "Structure"
         new = self.ctx.table.add_rows(
             {
                 structure: StructureColumn.from_parsed(blobs, texts),
@@ -289,7 +287,7 @@ class FreeWilsonPanel(QWidget):
         return new
 
     def state(self) -> dict:
-        return dict(self.options)
+        return dict(self.recipe)
 
     def close_panel(self) -> None:
         pass

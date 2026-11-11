@@ -101,18 +101,21 @@ def test_damaged_session_parts_are_skipped(chem) -> None:
 
 
 def _panel_classes() -> dict[str, str]:
-    """Panel classes in chemsuite.tools: tool_id -> class name."""
+    """Panel classes in chemsuite.tools with a tool id of their own: tool_id -> class name
+    (a panel that stands in for others, such as RerunPanel, takes theirs)."""
+    from chemsuite.app.tools import ToolPanel
+
     found = {}
     for info in pkgutil.walk_packages([str(TOOLS)], "chemsuite.tools."):
         module = importlib.import_module(info.name)
         for name, value in vars(module).items():
-            tool_id = getattr(value, "tool_id", None)
             if (
                 isinstance(value, type)
-                and isinstance(tool_id, str)
+                and issubclass(value, ToolPanel)
+                and value.tool_id
                 and value.__module__ == info.name
             ):
-                found[tool_id] = f"{info.name}.{name}"
+                found[value.tool_id] = f"{info.name}.{name}"
     return found
 
 
