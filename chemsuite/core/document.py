@@ -25,6 +25,11 @@ and a later version can read single columns lazily.
 Saving writes a complete new file next to the target and swaps it into place, so a crash or a
 full disk never damages the previous version. ``extras`` is a JSON object for state owned by
 the application (filters, named lists, plots); the core stores it without interpreting it.
+
+The table's assets (proteins, see :mod:`chemsuite.core.table.assets`) go in their own table,
+compressed. A document with assets is format 2 and one without is still format 1, so documents
+without proteins keep opening in older versions, and an older version refuses a document with
+proteins (rather than open it and lose them on the next save).
 """
 
 from __future__ import annotations
@@ -43,7 +48,7 @@ import numpy as np
 
 import chemsuite
 from chemsuite.core.jobs import CancelToken, Progress, check
-from chemsuite.core.table import NUMBER, TEXT, ColumnStyle, Table
+from chemsuite.core.table import NUMBER, TEXT, Asset, ColumnStyle, Table
 from chemsuite.core.table.columns import (
     REACTION,
     STRUCTURE,
@@ -59,7 +64,8 @@ from chemsuite.core.table.columns import (
 )
 
 FORMAT = "chemsuite-document"
-VERSION = 1
+VERSION = 2  # the newest format this version reads
+PLAIN_VERSION = 1  # written when a document has no assets
 SUFFIX = ".csd"
 CHUNK_ROWS = 65_536
 #: Level 1 is ~5x faster than the default and only slightly larger on chemistry data.
@@ -71,6 +77,10 @@ CREATE TABLE columns (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
                       kind TEXT NOT NULL);
 CREATE TABLE chunks (position INTEGER NOT NULL, chunk INTEGER NOT NULL, data BLOB NOT NULL,
                      PRIMARY KEY (position, chunk));
+"""
+_ASSETS = """
+CREATE TABLE assets (position INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL,
+                     name TEXT NOT NULL, meta TEXT NOT NULL, data BLOB NOT NULL);
 """
 
 
@@ -134,9 +144,10 @@ def load_document(
 
 def _write(connection, table, extras, progress, cancel) -> None:
     connection.executescript(_SCHEMA)
+    assets = list(table.assets.values())
     meta = {
         "format": FORMAT.encode(),
-        "version": str(VERSION).encode(),
+        "version": str(VERSION if assets else PLAIN_VERSION).encode(),
         "app_version": chemsuite.__version__.encode(),
         "rows": str(len(table)).encode(),
         "next_oid": str(table.next_oid).encode(),
@@ -165,6 +176,21 @@ def _write(connection, table, extras, progress, cancel) -> None:
             )
         if progress is not None:
             progress(position + 1, len(names))
+    if assets:
+        connection.executescript(_ASSETS)
+    for position, asset in enumerate(assets):
+        check(cancel)
+        connection.execute(
+            "INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                position,
+                asset.id,
+                asset.kind,
+                asset.name,
+                json.dumps(dict(asset.meta)),
+                zlib.compress(asset.data(), _ZLIB_LEVEL),
+            ),
+        )
 
 
 def _encode(column: Column) -> bytes:
@@ -245,12 +271,26 @@ def _read(connection, progress, cancel) -> tuple[Table, dict[str, Any]]:
         if name in columns:
             columns[name].style = ColumnStyle.from_json(style).for_kind(columns[name].kind)
     table = Table.from_columns(columns, oids=oids, next_oid=int(meta["next_oid"]))
+    if version >= 2:
+        table.set_assets(_read_assets(connection))
     sort = [(name, bool(asc)) for name, asc in json.loads(meta.get("sort", b"[]"))]
     if sort:
         table.set_sort(sort)
     table.history.clear()
     table.history.mark_clean()
     return table, json.loads(meta.get("extras", b"{}"))
+
+
+def _read_assets(connection) -> list[Asset]:
+    rows = connection.execute("SELECT id, kind, name, meta, data FROM assets ORDER BY position")
+    assets = []
+    for asset_id, kind, name, meta, data in rows:
+        facts = json.loads(meta)
+        if not isinstance(facts, dict):
+            raise DocumentError(f"damaged document: asset {asset_id!r}")
+        facts = {str(k): str(v) for k, v in facts.items()}
+        assets.append(Asset(asset_id, kind, name, zlib.decompress(data), facts))
+    return assets
 
 
 def _decode(kind: str, sections: list[bytes]) -> Column:

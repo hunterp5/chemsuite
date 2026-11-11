@@ -16,8 +16,9 @@
 
 """The compound table core: typed columns, view (filter + sort), undoable edits, events."""
 
+from .assets import Asset, Packable, PutAsset
 from .columns import NUMBER, TEXT, Column, NumberColumn, TextColumn
-from .events import AboutToChange, Changed
+from .events import AboutToChange, AssetsChanged, Changed
 from .filters import CategoryFilter, Filter, OidFilter, RangeFilter, TextFilter
 from .history import History
 from .style import ColourRule, ColumnStyle
@@ -27,6 +28,8 @@ __all__ = [
     "NUMBER",
     "TEXT",
     "AboutToChange",
+    "Asset",
+    "AssetsChanged",
     "CategoryFilter",
     "Changed",
     "ColourRule",
@@ -36,6 +39,8 @@ __all__ = [
     "History",
     "NumberColumn",
     "OidFilter",
+    "Packable",
+    "PutAsset",
     "RangeFilter",
     "SortKey",
     "Table",

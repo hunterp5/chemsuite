@@ -15,6 +15,7 @@ dependencies = [
     "PySide6-Essentials>=6.8",  # Essentials only: no QtWebEngine, no Qt3D, no QtMultimedia
     "pyqtgraph>=0.13.7",
     "rdkit>=2025.9.1",          # official PyPI name; never install rdkit-pypi alongside it
+    "gemmi>=0.7",               # proteins: PDB/mmCIF, residues, alignment
     "numpy>=2.0",
     "scipy>=1.13",
     "scikit-learn>=1.5",
