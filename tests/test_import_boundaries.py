@@ -36,6 +36,7 @@ QT_FREE = (
     "descriptors",
     "plotting",
     "conformers",
+    "molview",
     "analysis",
     "sar",
     "ionisation",

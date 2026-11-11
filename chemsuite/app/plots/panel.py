@@ -63,6 +63,7 @@ from chemsuite.plotting.stats import AGGREGATES, CURVES
 
 from ..flow_layout import compact
 from ..glyphs import glyph
+from ..panel_dock import OptionsPopup
 from .cards import (
     MAX_PINNED,
     SIZES,
@@ -108,27 +109,7 @@ REBUILD_DELAY_MS = 150
 AXIS_MARGINS = (6, 6, 10, 6)
 
 
-class PlotOptions(QFrame):
-    """The plot's options, in a popup that closes when you click elsewhere."""
-
-    def __init__(self, parent: QWidget) -> None:
-        super().__init__(parent, Qt.WindowType.Popup)
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.form = QFormLayout(self)
-        self.form.setContentsMargins(10, 10, 10, 10)
-        self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-
-    def popup(self, anchor: QWidget) -> None:
-        """Show below *anchor* (the settings button), kept on its screen."""
-        self.adjustSize()
-        below = anchor.mapToGlobal(QPoint(anchor.width() - self.width(), anchor.height()))
-        screen = anchor.screen().availableGeometry()
-        x = min(max(below.x(), screen.left()), screen.right() - self.width())
-        y = below.y()
-        if y + self.height() > screen.bottom():  # no room below: open above
-            y = anchor.mapToGlobal(QPoint(0, 0)).y() - self.height()
-        self.move(x, max(y, screen.top()))
-        self.show()
+PlotOptions = OptionsPopup  # the plot's options popup
 
 
 class PlotPanel(QWidget):

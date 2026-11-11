@@ -91,6 +91,7 @@ class Table:
         self._filters: dict[str, Filter] = {}
         self._sort: tuple[SortKey, ...] = ()
         self._view: np.ndarray | None = None
+        self._ordered: tuple[np.ndarray, np.ndarray] | None = None  # (view it goes with, oids)
         #: each filter's mask (see filter_mask); any change but a re-sort or a new filter clears
         #: them, since a filter on every column (the quick search) can read any cell
         self._masks: dict[str, np.ndarray] = {}
@@ -293,6 +294,19 @@ class Table:
 
     def visible_oids(self) -> np.ndarray:
         return self._oids[self.view()]
+
+    def ordered_oids(self) -> np.ndarray:
+        """Every row's oid in the sort order, the rows filters hide included (read-only).
+
+        Kept until the view is next recomputed: every change that can reorder rows (sort,
+        edits to a sorted column, rows added or removed) recomputes the view.
+        """
+        view = self.view()
+        if self._ordered is None or self._ordered[0] is not view:
+            ordered = self._oids[self._sorted(np.arange(len(self._oids), dtype=np.int64))]
+            ordered.flags.writeable = False
+            self._ordered = (view, ordered)
+        return self._ordered[1]
 
     def set_sort(self, keys: Sequence[SortKey]) -> None:
         """Sort by columns, most significant first. Blanks always sort last. Stable."""

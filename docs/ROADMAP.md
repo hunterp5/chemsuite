@@ -215,7 +215,7 @@ modified.
 | Feature | Notes |
 |---|---|
 | Confab and CONFORGE conformers | Through the external-tool paths now in Settings. |
-| Superpose conformers, pharmacophore screen | RDKit only, but needs the 3D viewer to be useful. |
+| Superpose conformers, pharmacophore screen | RDKit only. The 3D Viewer (Chemistry ▸ 3D Viewer) is done and aligns a molecule's conformers; superposing different molecules is next. |
 | PubChem, ChEMBL, vendor, patent and SQL queries | Network access, off by default under policy. Plain HTTPS REST calls, not MolManager's client libraries. SQL through the standard library or an optional driver. |
 | Retrosynthesis | AiZynthFinder through its own Python interpreter (path in Settings). |
 | Sketcher | **Decided: needed.** A robust drawing sketcher that works with the table: edit a structure cell in place, draw a query for structure search and filters, and add new compounds. Plan: [SKETCHER_PLAN.md](SKETCHER_PLAN.md) (native, Ketcher rules as reference, verified; no MolManager iupac_* code). |
@@ -225,7 +225,7 @@ modified.
 | Feature | Notes |
 |---|---|
 | pKa and permeability models | torch, unipka and chemprop make the install about 2 GB larger, so this is an optional "predictions" add-on. Settles the open question about the "(est.)" descriptors. pKa: MolGpKa is built into the base install (Chemistry ▸ Predict pKa); Uni-pKa stays an optional add-on, see [PKA_PLAN.md](PKA_PLAN.md). |
-| Protein viewer, simulation, sequence/MSA, docking (Gnina), interaction fingerprints, pose browser | openmm, pdbfixer, meeko, gemmi, prolif and MAFFT. These need the 3D viewer decision: PyVista as an optional add-on, as discussed. |
+| Protein viewer, simulation, sequence/MSA, docking (Gnina), interaction fingerprints, pose browser | openmm, pdbfixer, meeko, gemmi, prolif and MAFFT. **3D viewer decided and built:** a native Qt RHI renderer (GPU impostor spheres and cylinders, `chemsuite/molview` + `chemsuite/app/molview`), no PyVista or WebEngine. Proteins and surfaces plug into it later. |
 | QSAR, Quick QSAR, CoMSIA | Skipped for now (phase 7d). |
 
 ---
@@ -239,7 +239,7 @@ modified.
    hands now gives feedback before the long tail.
 5. **Table power tools:** formula columns, conditional colouring, structure preparation,
    potency standardisation, scaffolds and decomposition (§5, §6 tier 1).
-6. **Visual and SAR improvements** (§5), and the 3D viewer.
+6. **Visual and SAR improvements** (§5), and the 3D viewer (done: ligands and conformers).
 7. **Optional add-ons, as the team asks:** databases, external tools, predictions, protein.
 
 ## 8. Open questions
