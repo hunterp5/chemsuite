@@ -139,3 +139,11 @@ def test_concat_reconciles_kinds() -> None:
     assert mixed.displays(np.arange(4)) == ["1", "2", "x", "y"]
     structures = concat_columns([StructureColumn.from_texts(["C"]), TextColumn.from_texts(["N"])])
     assert structures.kind == STRUCTURE and structures.displays(np.arange(2)) == ["C", "N"]
+
+
+def test_worker_inputs_send_blobs_unparsed_text_or_none() -> None:
+    from chemsuite.core.mols import mol_to_blob
+
+    blob = mol_to_blob(Chem.MolFromSmiles("CCO"))
+    column = StructureColumn.from_parsed([blob, None, None], ["CCO", "c1ccccc1", ""])
+    assert column.worker_inputs(np.array([2, 0, 1])) == [None, blob, "c1ccccc1"]

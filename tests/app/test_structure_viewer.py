@@ -44,7 +44,7 @@ def gpu(monkeypatch):
     from chemsuite.app.viewer.panel import StructureViewer
 
     real = StructureViewer._failed
-    monkeypatch.setattr(StructureViewer, "_failed", lambda self: None)
+    monkeypatch.setattr(StructureViewer, "_failed", lambda self, *_: None)
     return real
 
 
@@ -602,3 +602,15 @@ def test_atoms_are_drawn_in_their_colours() -> None:
             assert r > 120 and r > 2 * g and r > 2 * b, (r, g, b)
         else:  # carbon: grey
             assert abs(r - g) < 30 and abs(g - b) < 30 and r > 40, (r, g, b)
+
+
+def test_3d_known_unavailable_at_start_up_is_never_tried(chem, qtbot, gpu, monkeypatch) -> None:
+    from chemsuite.app import graphics
+    from chemsuite.app.viewer.panel import StructureViewer
+
+    monkeypatch.setattr(StructureViewer, "_failed", gpu)
+    monkeypatch.setattr(graphics, "_problem", graphics.TURNED_OFF)
+    _current(chem, 1)
+    viewer = chem.open_tool("viewer")
+    assert viewer.mode == "2d" and viewer.renderer is None
+    assert viewer.mode_buttons["3d"].toolTip() == f"⚠ {graphics.TURNED_OFF}"

@@ -70,7 +70,7 @@ def atom_order(sketch: Sketch) -> list[int]:
     return sorted(sketch.atoms)
 
 
-def drawn_molblock(sketch: Sketch) -> str:
+def drawn_molblock(sketch: Sketch) -> str:  # noqa: C901 - one rule per drawing convention
     """The sketch as a V2000 molfile, exactly as drawn: no hydrogen counts or valences.
 
     Raises SketchError for more than 999 atoms or bonds, the V2000 limit.

@@ -658,3 +658,13 @@ def test_scatter_item_places_points_like_pyqtgraph(qtbot) -> None:
         )
         ours.setData(x=x[:10], y=y[:10], size=11.0)  # the selection overlay's redraw
         assert (ours.data["sourceRect"]["w"] > 0).all()
+
+
+def test_3d_kinds_say_why_when_the_graphics_cannot_draw(cube, monkeypatch) -> None:
+    from chemsuite.app import graphics
+
+    monkeypatch.setattr(graphics, "_problem", graphics.NO_OPENGL)
+    panel = cube.open_tool("scatter3d")
+    item = panel.kind.model().item(panel.kind.findData("scatter3d"))
+    assert not item.isEnabled() and item.toolTip() == f"⚠ {graphics.NO_OPENGL}"
+    assert panel.view3d is None  # drawn flat instead of failing

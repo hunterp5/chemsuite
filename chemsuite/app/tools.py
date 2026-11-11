@@ -224,6 +224,18 @@ class ToolContext:
         """The shared worker processes, for CPU-heavy work inside a job."""
         return self._window._runner.process_pool()
 
+    def workers_for(self, rows: int, min_rows: int) -> Executor | None:
+        """The shared worker processes when *rows* is at least *min_rows* (each tool knows
+        when its work per row outweighs starting the workers), else None: run in the job's
+        own thread."""
+        return self.process_pool() if rows >= min_rows else None
+
+    def structure_inputs(self, column: str, oids: Sequence[int] | np.ndarray) -> list:
+        """*column*'s structures for *oids* as worker processes take them (see
+        :meth:`StructureColumn.worker_inputs`), in *oids* order."""
+        table = self.table
+        return table.column(column).worker_inputs(table.slots_of(oids))
+
     # -- writing ------------------------------------------------------------------------------
     def apply_results(
         self,

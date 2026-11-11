@@ -57,6 +57,9 @@ from chemsuite.core.settings import (
     ALIGN_H,
     ALIGN_V,
     BUILTIN_THEMES,
+    GRAPHICS_AUTO,
+    GRAPHICS_OFF,
+    GRAPHICS_SOFTWARE,
     GROOVY,
     MAX_FONT_PT,
     MAX_ROW_HEIGHT,
@@ -73,6 +76,7 @@ from .settings_hub import settings_hub
 
 LOCK = "🔒 "
 LOCKED_TIP = "Set by your IT department (machine policy)"
+GRAPHICS_TEXT = {GRAPHICS_AUTO: "Automatic", GRAPHICS_SOFTWARE: "Software", GRAPHICS_OFF: "Off"}
 THEME_TITLES = {"system": "System", "light": "Light", "dark": "Dark", "groovy": "Groovy"}
 
 
@@ -616,6 +620,14 @@ class GeneralPage(QWidget):
             "Processor cores used by heavy work (descriptors, fingerprints, conformers…). "
             "Takes effect after restarting chemsuite."
         )
+        self.graphics = QComboBox()
+        for mode, text in GRAPHICS_TEXT.items():
+            self.graphics.addItem(text, mode)
+        self.graphics.setToolTip(
+            "How 3D structures and 3D plots are drawn. Automatic uses the graphics card, or "
+            "software drawing on Windows when the card cannot. Software is slower but works on "
+            "remote desktops and virtual machines. Takes effect after restarting chemsuite."
+        )
         self.recent_limit = QSpinBox()
         self.recent_limit.setRange(0, 50)
         clear = QPushButton("Clear Recent Files")
@@ -627,26 +639,31 @@ class GeneralPage(QWidget):
         )
         form = QFormLayout(self)
         form.addRow("Processor cores:", self.workers)
+        form.addRow("3D graphics:", self.graphics)
         form.addRow("Recent files to keep:", self.recent_limit)
         form.addRow("", clear)
         form.addRow("Jobs:", self.notify)
         self.load()
         dialog.lock(self.workers, "performance.max_workers")
+        dialog.lock(self.graphics, "performance.graphics")
         dialog.lock(self.recent_limit, "files.recent_limit")
         dialog.lock(self.notify, "jobs.notify")
         self.workers.valueChanged.connect(self._store)
+        self.graphics.currentIndexChanged.connect(self._store)
         self.recent_limit.valueChanged.connect(self._store)
         self.notify.toggled.connect(self._store)
 
     def load(self) -> None:
         user = self.dialog.user
         self.workers.setValue(user.performance.max_workers)
+        self.graphics.setCurrentIndex(max(0, self.graphics.findData(user.performance.graphics)))
         self.recent_limit.setValue(user.files.recent_limit)
         self.notify.setChecked(user.jobs.notify)
 
     def _store(self, *_args) -> None:
         user = self.dialog.user
         user.performance.max_workers = self.workers.value()
+        user.performance.graphics = self.graphics.currentData()
         user.files.recent_limit = self.recent_limit.value()
         user.files.recent = user.files.recent[: user.files.recent_limit]
         user.jobs.notify = self.notify.isChecked()
@@ -656,5 +673,6 @@ class GeneralPage(QWidget):
 
     def reset(self) -> None:
         self.workers.setValue(0)
+        self.graphics.setCurrentIndex(0)
         self.recent_limit.setValue(10)
         self.notify.setChecked(True)

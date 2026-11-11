@@ -45,7 +45,7 @@ ELEMENTS = {
 INVALID = None  # the model reports a valence error
 
 
-def default_hydrogens(label: str, charge: int, conn: int, rad: int) -> int | None:
+def default_hydrogens(label: str, charge: int, conn: int, rad: int) -> int | None:  # noqa: C901 - valence rules per element
     """Implicit H count by the CTfile default model; INVALID (None) for a valence error."""
     group = ELEMENTS[label]
     a = abs(charge)

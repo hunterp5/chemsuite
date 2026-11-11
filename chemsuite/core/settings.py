@@ -57,6 +57,8 @@ MIN_FONT_PT, MAX_FONT_PT = 6, 32
 MIN_ROW_HEIGHT, MAX_ROW_HEIGHT = 40, 400
 DEFAULT_ROW_HEIGHT = 110
 RECENT_LIMIT = 10
+GRAPHICS_AUTO, GRAPHICS_SOFTWARE, GRAPHICS_OFF = "auto", "software", "off"
+GRAPHICS_MODES = (GRAPHICS_AUTO, GRAPHICS_SOFTWARE, GRAPHICS_OFF)
 
 
 def custom_theme_id(name: str) -> str:
@@ -89,6 +91,7 @@ class Files:
 @dataclass
 class Performance:
     max_workers: int = 0  # 0: all cores but one
+    graphics: str = GRAPHICS_AUTO  # OpenGL for 3D: auto, software (Windows) or off
 
 
 @dataclass
@@ -190,6 +193,7 @@ CHECKS = {
     "files.recent_limit": _int_between(0, 50),
     "files.last_directory": lambda v: isinstance(v, str),
     "performance.max_workers": _int_between(0, 1024),
+    "performance.graphics": lambda v: v in GRAPHICS_MODES,
     "jobs.notify": lambda v: isinstance(v, bool),
 }
 

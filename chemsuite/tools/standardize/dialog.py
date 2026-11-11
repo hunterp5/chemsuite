@@ -146,24 +146,17 @@ class StandardizeDialog(ToolDialog):
     # -- running ------------------------------------------------------------------------------
     def run(self):
         ctx = self.ctx
-        table = ctx.table
         source = self.structure.currentText()
         oids = self.rows.oids()
-        column = table.column(source)
-        slots = table.slots_of(oids)
-        cells = [  # unparsed cells go as text; the workers parse them
-            blob if blob is not None else (text or None)
-            for blob, text in zip(column.blobs(slots), column.displays(slots), strict=True)
-        ]
+        cells = ctx.structure_inputs(source, oids)  # workers parse unparsed cells
         options = self.options()
         replace = self._replacing()
-        use_pool = len(cells) >= POOL_MIN_ROWS
 
         def work(job):
             return standardize_cells(
                 cells,
                 options,
-                executor=ctx.process_pool() if use_pool else None,
+                executor=ctx.workers_for(len(cells), POOL_MIN_ROWS),
                 progress=job.report,
                 cancel=job.cancel_token,
             )

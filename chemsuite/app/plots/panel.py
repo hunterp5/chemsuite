@@ -30,7 +30,6 @@ elsewhere highlights the matching points here.
 from __future__ import annotations
 
 from dataclasses import replace
-from importlib.util import find_spec
 from pathlib import Path
 
 import numpy as np
@@ -61,6 +60,7 @@ from chemsuite.core.table.columns import NUMBER, STRUCTURE, TEXT
 from chemsuite.plotting.data import colorable_columns, number_columns, shown_oids
 from chemsuite.plotting.stats import AGGREGATES, CURVES
 
+from .. import graphics
 from ..flow_layout import compact
 from ..glyphs import glyph
 from ..panel_dock import OptionsPopup
@@ -93,7 +93,6 @@ KINDS = {
 #: kinds plotting one number column against another
 #: drawn by ``scene3d``, imported (with OpenGL) only when one is first shown
 KINDS_3D = ("scatter3d", "landscape")
-HAS_3D = find_spec("OpenGL") is not None
 XY_KINDS = ("scatter", "line", "density", *KINDS_3D)
 #: what the first mode button does and looks like, in 2D and in 3D
 MOVE_MODE = {
@@ -135,10 +134,10 @@ class PlotPanel(QWidget):
             if key == KINDS_3D[0]:
                 self.kind.insertSeparator(self.kind.count())
             self.kind.addItem(title, key)
-            if key in KINDS_3D and not HAS_3D:  # pragma: no cover - only without PyOpenGL
+            if key in KINDS_3D and (reason := graphics.plots_problem()):
                 item = self.kind.model().item(self.kind.count() - 1)
                 item.setEnabled(False)
-                item.setToolTip("3D plots need the PyOpenGL package.")
+                item.setToolTip(f"⚠ {reason}")
         self.kind.setCurrentIndex(max(0, self.kind.findData(kind)))  # unknown kind: scatter
         self.x = QComboBox()
         self.y = QComboBox()
@@ -345,7 +344,7 @@ class PlotPanel(QWidget):
     def is_3d(self) -> bool:
         return self.kind.currentData() in KINDS_3D
 
-    def set_spec(self, **values) -> None:
+    def set_spec(self, **values) -> None:  # noqa: C901 - one branch per plot setting
         """Set controls by name (x, y, z, color, size, kind, bins, fit, curve, guide, aggregate,
         errors, drop, columns, camera); redraw now."""
         widgets = {"x": self.x, "y": self.y, "z": self.z, "color": self.color, "size": self.size}
@@ -606,10 +605,10 @@ class PlotPanel(QWidget):
         return self.scene3d if self.is_3d() and self.scene3d is not None else self.renderer
 
     def _ensure_3d(self) -> bool:
-        """Make the OpenGL view the first time a 3D kind is shown; False without PyOpenGL."""
+        """Make the OpenGL view the first time a 3D kind is shown; False when 3D cannot draw."""
         if self.view3d is not None:
             return True
-        if not HAS_3D:  # pragma: no cover - only without PyOpenGL
+        if graphics.plots_problem():
             return False
         from .scene3d import AVAILABLE, Scene3D, View3D
 

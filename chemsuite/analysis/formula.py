@@ -474,7 +474,7 @@ class Formula:
 _BRACKET = re.compile(r"\[([^\[\]]+)\]")
 
 
-def parse(text: str, columns: Sequence[str]) -> Formula:
+def parse(text: str, columns: Sequence[str]) -> Formula:  # noqa: C901 - a hand-written parser
     """Check and compile *text*; *columns* are the table's column names."""
     if not text.strip():
         raise FormulaError("Type a formula, e.g. [MW] / [Heavy Atoms] or log10([IC50]).")

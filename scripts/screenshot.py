@@ -65,7 +65,7 @@ def sample_table():
     return table
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
     if len(argv) < 2:
         print(__doc__)
         return 2

@@ -74,6 +74,7 @@ from chemsuite.molview.geometry import (
     molecule_part,
 )
 
+from .. import graphics
 from ..glyphs import glyph
 from ..panel_dock import OptionsPopup
 from .caption import CaptionOverlay, caption_columns, default_caption, paint_caption
@@ -85,7 +86,6 @@ MAX_PARTS = 200  # conformers drawn at once in an overlay
 REFRESH_MS = 60
 PREFETCH_MS = 300  # resting on a row this long makes 3D for the rows around it
 PREFETCH_AROUND = 2  # rows either side made ahead
-NO_GPU = "3D drawing is not available on this computer's graphics"
 ELEMENT = "element"
 BY_ROW = "row"
 COLOURS = {ELEMENT: "Element", BY_ROW: "Carbons by Conformer"}
@@ -202,6 +202,8 @@ class StructureViewer(QWidget):
         self._fill_columns()
         self._restyle()
         self._rescope(restart=True)
+        if reason := graphics.problem():  # known at start-up: never try the GPU
+            self._failed(reason)
         self.set_mode(mode)
 
     # -- controls -------------------------------------------------------------------------------
@@ -280,7 +282,6 @@ class StructureViewer(QWidget):
             button.clicked.connect(lambda _on=False, k=key: self.set_mode(k))
             bar.addWidget(button)
             self.mode_buttons[key] = button
-        self._mode_tips = {k: b.toolTip() for k, b in self.mode_buttons.items()}
         self._three_d_actions: list[QAction] = [bar.addSeparator()]
 
         def add(name: str, text: str, tip: str, slot, *, checkable: bool = False) -> QAction:
@@ -419,12 +420,11 @@ class StructureViewer(QWidget):
             self._pending_camera = Camera.from_state(self._camera_state)
             self._camera_state = None
 
-    def _failed(self) -> None:
+    def _failed(self, reason: str = graphics.NO_GPU) -> None:
         """The graphics cannot draw 3D: stay in 2D and say why on the 3D switch."""
         self.gpu_failed = True
-        button = self.mode_buttons[THREE_D]
-        button.setEnabled(False)
-        button.setToolTip(f"⚠ {NO_GPU}")
+        self.mode_buttons[THREE_D].setEnabled(False)
+        self.mode_buttons[THREE_D].setToolTip(f"⚠ {reason}")
         if self.mode == THREE_D:
             self.set_mode(TWO_D)
 
