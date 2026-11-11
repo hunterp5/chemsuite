@@ -13,4 +13,5 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The 3D Viewer: a molecule scene (:mod:`chemsuite.molview`) drawn with Qt's RHI."""
+"""The Structure Viewer's 3D view: a molecule scene (:mod:`chemsuite.molview`) drawn with
+Qt's RHI."""

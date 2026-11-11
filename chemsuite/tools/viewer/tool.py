@@ -13,42 +13,62 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Chemistry ▸ 3D Viewer: the selected rows' structures in 3D, in a panel."""
+"""Chemistry ▸ Structure Viewer and Data ▸ Browser: the table's structures one row at a time,
+in 2D or 3D, in a panel."""
 
 from __future__ import annotations
 
 from chemsuite.app.jobs import QUICK
 from chemsuite.app.tools import Tool, ToolContext
 
+TOOL_ID = "viewer"
 
-def _open(ctx: ToolContext, state: dict | None = None):
-    from chemsuite.app.molview.panel import MolViewPanel  # imported on first use
+
+def open_viewer(ctx: ToolContext, mode: str, state: dict | None = None):
+    """Bring the open viewer forward in *mode*, or open one (with *state*, when reopening a
+    document)."""
+    from chemsuite.app.viewer.panel import StructureViewer  # imported on first use
+
+    if state is None:
+        panel = ctx.find_panel(TOOL_ID)
+        if panel is not None:
+            panel.set_mode(mode)
+            panel.setFocus()
+            return panel
 
     def run(label, work, on_done):
         return ctx.run(label, work, on_done, lane=QUICK)
 
-    panel = MolViewPanel(
+    panel = StructureViewer(
         ctx.table,
         ctx.selection,
         current=ctx.current_oid,
         run=run,
         move_to=ctx.set_current_oid,
         watch_current=ctx.watch_current,
+        mode=mode,
     )
-    if state:
+    if state is not None:
         panel.set_state(state)
     ctx.add_panel(panel, panel.title())
+    panel.setFocus()
     return panel
 
 
+def _restore(ctx: ToolContext, state: dict):
+    return open_viewer(ctx, state.get("mode", "3d"), state)
+
+
 TOOL = Tool(
-    id="molview",
-    title="3D Viewer",
+    id=TOOL_ID,
+    title="Structure Viewer",
     menu=("Chemistry",),
-    open=_open,
-    restore=_open,
+    open=lambda ctx: open_viewer(ctx, "3d"),
+    restore=_restore,
+    aliases=("molview",),  # the 3D Viewer, before it drew in 2D too
     requires=("rdkit",),
     needs_structures=True,
     shortcut="Ctrl+Shift+3",
-    tip="Browse the table's structures in 3D: step through or overlay conformers, measure.",
+    tip="Browse the table's structures one row at a time, in 2D or 3D: step through or "
+    "overlay conformers, measure, show column values over the structure.",
 )

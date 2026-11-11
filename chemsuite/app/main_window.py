@@ -83,7 +83,6 @@ from .list_actions import ListActions
 from .log_ui import LogWindow
 from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader, schedule_header_refresh
 from .search_bar import SearchBar
-from .selection_browser import SelectionBrowser
 from .settings_hub import settings_hub
 from .split_join import JoinColumnsDialog, SplitColumnDialog
 from .status_bar import StatusBar
@@ -244,7 +243,6 @@ class MainWindow(QMainWindow):
         self._searcher: StructureSearcher | None = None
         self._last_structure_query: StructureQuery | None = None
         self._lists: ListActions | None = None
-        self._browser: SelectionBrowser | None = None
         self._panels: list[PanelDock] = []
         self._dialogs: list[QDialog] = []  # open tool dialogs (they do not block the table)
         self.filter_dock = QDockWidget("Filters", self)
@@ -275,11 +273,7 @@ class MainWindow(QMainWindow):
         self.search_dock.toggleViewAction().toggled.connect(
             lambda on: on and dock_layout.float_search(self)
         )
-        self.browser_dock = QDockWidget("Browser", self)
-        self.browser_dock.setObjectName("BrowserDock")
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.browser_dock)
-        self.browser_dock.hide()
-        for dock in (self.filter_dock, self.search_dock, self.browser_dock):
+        for dock in (self.filter_dock, self.search_dock):
             dock.setTitleBarWidget(PanelHeader(dock))  # one title bar style for every pane
         self._unsubscribe: Callable[[], None] | None = None
         self.jobs_indicator = JobsIndicator(runner)
@@ -370,8 +364,6 @@ class MainWindow(QMainWindow):
         )
         workspace.lists.subscribe(self._update_title)
         self._view.apply_appearance(settings_hub().settings.appearance)
-        self._browser = SelectionBrowser(self._view, workspace.selection)
-        self.browser_dock.setWidget(self._browser)
         self._view.headerMenuRequested.connect(self._show_header_menu)
         self._view.structureEditRequested.connect(self._on_structure_edit_requested)
         self._view.structureDrawRequested.connect(self._on_structure_draw_requested)
@@ -431,10 +423,6 @@ class MainWindow(QMainWindow):
         if self._find is not None:
             self._find.close_dialog()
             self._find = None
-        if self._browser is not None:
-            self._browser.close_browser()
-            self._browser.deleteLater()
-            self._browser = None
         if self._search is not None:
             self._search.close_bar()
         if self._advanced is not None:
@@ -586,17 +574,11 @@ class MainWindow(QMainWindow):
         assert self._lists is not None
         return self._lists
 
-    @property
-    def browser(self) -> SelectionBrowser:
-        assert self._browser is not None
-        return self._browser
+    def show_browser(self) -> QWidget:
+        """Data ▸ Browser: the Structure Viewer in 2D (the open one, brought forward)."""
+        from chemsuite.tools.viewer.tool import open_viewer
 
-    def show_browser(self) -> SelectionBrowser:
-        self.browser_dock.show()
-        self.browser_dock.raise_()
-        self.browser.refresh(restart=True)
-        self.browser.setFocus()
-        return self.browser
+        return open_viewer(ToolContext(self), "2d")
 
     def show_all_rows(self) -> None:
         with self.workspace.table.batch():
@@ -836,7 +818,7 @@ class MainWindow(QMainWindow):
         register("view.filters", "Filters", "Data", ["Ctrl+Shift+F"])
         self._commands["view.filters"] = toggle
         data.addAction(toggle)
-        data.addAction(A("view.browser", "&Browser", self.toggle_browser, "Ctrl+Shift+B"))
+        data.addAction(A("view.browser", "&Browser", self.show_browser, "Ctrl+Shift+B"))
         data.addSeparator()
         menus: dict[tuple[str, ...], Any] = {
             ("File",): file_menu,
@@ -1026,7 +1008,9 @@ class MainWindow(QMainWindow):
         return states
 
     def _restore_panels(self, saved: list[dict]) -> None:
-        tools = {tool.id: tool for tool in registered_tools()}
+        tools = {}
+        for tool in registered_tools():
+            tools.update(dict.fromkeys((*tool.aliases, tool.id), tool))
         for i, entry in enumerate(saved):
             tool = tools.get(entry.get("tool")) if isinstance(entry, dict) else None
             if tool is None or tool.restore is None or tool.missing():
@@ -1049,12 +1033,6 @@ class MainWindow(QMainWindow):
     @property
     def panels(self) -> list[QWidget]:
         return [dock.widget() for dock in self._panels]
-
-    def toggle_browser(self) -> None:
-        if self.browser_dock.isVisible():
-            self.browser_dock.hide()
-        else:
-            self.show_browser()
 
     def _update_actions(self) -> None:
         if self._workspace is None:

@@ -15,11 +15,11 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """Draw a :class:`~chemsuite.molview.geometry.Scene` with the GPU, through Qt's RHI.
 
-Qt picks each system's own graphics API (Metal on macOS, Direct3D on Windows, Vulkan or OpenGL
-on Linux). Atoms and bonds are *impostors*: each atom is one small square and each bond one
-box, and the shaders work out where the eye's ray meets the true sphere or cylinder, so they
-are smooth at any zoom and a large scene is two draw calls. Python only uploads the scene when
-it changes and four small matrices per frame; nothing is redrawn until something changes.
+It draws through OpenGL on macOS, Windows and Linux alike (see :data:`API`). Atoms and bonds
+are *impostors*: each atom is one small square and each bond one box, and the shaders work
+out where the eye's ray meets the true sphere or cylinder, so they are smooth at any zoom and
+a large scene is two draw calls. Python only uploads the scene when it changes and four small
+matrices per frame; nothing is redrawn until something changes.
 
 The mouse works as in 3Dmol.js: drag to turn, right- or middle-drag (or Shift-drag) to pan,
 the wheel to zoom. A click without a drag picks the atom under the pointer.

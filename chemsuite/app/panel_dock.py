@@ -397,7 +397,7 @@ def _fit(widths: list[float], room: float, floor: float) -> list[float]:
 
 def panes_in_order(window: QMainWindow) -> list[QDockWidget]:
     """Every pane in a fixed order (fixed panes, then panels as opened): the tabs' order."""
-    fixed = [getattr(window, n, None) for n in ("filter_dock", "search_dock", "browser_dock")]
+    fixed = [getattr(window, n, None) for n in ("filter_dock", "search_dock")]
     panels = list(getattr(window, "_panels", []))
     return [d for d in [*fixed, *panels] if isinstance(d, QDockWidget)]
 

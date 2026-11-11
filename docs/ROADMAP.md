@@ -185,8 +185,8 @@ modified.
   - A radar plot for MPO profiles.
   - Several Y columns on one plot.
   - Saved plot templates.
-- **Selection Browser:** sort and label options, a size slider, and pinning compounds to
-  compare them.
+- **Structure Viewer:** sort options, a size slider, and pinning compounds to compare them
+  side by side.
 - **SAR tools**
   - MMP neighbourhood map and transform ledger (from MolManager).
   - An activity-cliff network plot.
@@ -215,7 +215,7 @@ modified.
 | Feature | Notes |
 |---|---|
 | Confab and CONFORGE conformers | Through the external-tool paths now in Settings. |
-| Superpose conformers, pharmacophore screen | RDKit only. The 3D Viewer (Chemistry ▸ 3D Viewer) is done and aligns a molecule's conformers; superposing different molecules is next. |
+| Superpose conformers, pharmacophore screen | RDKit only. The Structure Viewer's 3D view (Chemistry ▸ Structure Viewer) is done and aligns a molecule's conformers; superposing different molecules is next. |
 | PubChem, ChEMBL, vendor, patent and SQL queries | Network access, off by default under policy. Plain HTTPS REST calls, not MolManager's client libraries. SQL through the standard library or an optional driver. |
 | Retrosynthesis | AiZynthFinder through its own Python interpreter (path in Settings). |
 | Sketcher | **Decided: needed.** A robust drawing sketcher that works with the table: edit a structure cell in place, draw a query for structure search and filters, and add new compounds. Plan: [SKETCHER_PLAN.md](SKETCHER_PLAN.md) (native, Ketcher rules as reference, verified; no MolManager iupac_* code). |

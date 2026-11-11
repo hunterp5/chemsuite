@@ -44,7 +44,7 @@ Each document has its own window. From top to bottom:
   | Edit | Undo, Copy and Paste, Edit Structure, selecting rows, Lists, Delete Rows, Settings |
   | View | Search Bar, Arrange Panes, Jobs, Log, Status Bar |
   | Tools ▸ Table | Add compounds, rows and columns; Split and Join columns; Calculator; random numbers and rows |
-  | Chemistry | Sketcher, Calculate Descriptors, Standardize, Predict pKa, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
+  | Chemistry | Sketcher, Calculate Descriptors, Standardize, Predict pKa, Structure Viewer, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
   | Data | Search ▸, Plot ▸, Filters, Browser, then Bin Values, Statistics, Similarity Search, Diverse Subset, Cluster, SAR ▸, Scoring ▸, Chemical Space ▸ |
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
   | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
@@ -57,13 +57,13 @@ Each document has its own window. From top to bottom:
   [Searching](#6-searching).
 - **The table.** One row per compound. Structure columns show drawings.
 - **Docked panels.**
-  - Filters sits at the right edge at a fixed width, and the Browser docks at the
-    side. Advanced Search opens as its own floating window.
+  - Filters sits at the right edge at a fixed width. Advanced Search opens as its own
+    floating window.
   - New plots and tool panels open to the right of the table, splitting the window left and
     right. A second plot joins the first as a tab.
   - Panels sit flush against the table, divided by a thin line you can drag to resize them
     (the grab area is a few pixels wider than the line).
-    Every panel (plots, Filters, Advanced Search, Browser) has the same header
+    Every panel (plots, Filters, Advanced Search, Structure Viewer) has the same header
     showing its title. Drag the header to move the panel. A plot's
     header also holds the plot toolbar. The buttons at the right are:
 
@@ -169,7 +169,7 @@ in the background, using every processor core. You can scroll and work while tha
   - the workspace layout: where each panel is docked (beside, stacked, tabbed, left, right or
     below the table, floating), the size of each pane (where you dragged the dividers
     between the table and the panes, and between panes), which panes are open (Filters,
-    Advanced Search, Browser), column widths, and the search bar with its text and
+    Advanced Search, the panels), column widths, and the search bar with its text and
     options.
 - A document reopens exactly as you left it: a pane that was closed stays closed, even when
   its filters or search are hiding rows (the status bar still says how many rows are shown).
@@ -224,7 +224,7 @@ Each column has a type:
 
 **Selecting columns.** Click a column header to select the whole column; Shift-click selects a
 range and Ctrl-click (⌘-click) adds or removes one. Selected columns are not a selection of
-compounds, so plots and the Browser are left alone. **Delete** removes the selected
+compounds, so plots and the Structure Viewer are left alone. **Delete** removes the selected
 columns in one step you can undo. Sorting is in the header's right-click menu.
 
 **Moving columns.** Drag a column header left or right to move the column (one undoable
@@ -627,14 +627,9 @@ structure.
 
 ### Browser
 
-Data ▸ Browser (Ctrl+Shift+B) steps through rows one at a time with a large drawing.
-
-- **Selected rows only** (on by default) browses the selected rows; untick it to browse every
-  shown row, in the table's order.
-- The arrows and the row number under the drawing move through the rows (or use the arrow
-  keys, Home and End).
-- It keeps the table's current row in step with what it shows.
-- Its tick box adds or removes the compound from the selection.
+Data ▸ Browser (Ctrl+Shift+B) opens the [Structure Viewer](#structure-viewer) in 2D: it
+steps through rows one at a time with a large drawing, keeping the table's current row in
+step. If a Structure Viewer is already open, it is brought forward and switched to 2D.
 
 ### Named lists
 
@@ -1141,25 +1136,45 @@ Writes every conformer as its own SD record, carrying the row's other columns. C
 **Shown** or **Selected** rows (Selected when rows are selected), then **Export** asks for the
 file.
 
-### 3D Viewer (Ctrl+Shift+3)
+### Structure Viewer
 
-**Chemistry ▸ 3D Viewer** opens a panel that shows one row's structure in 3D at a time, starting
-at the table's current row.
+The Structure Viewer is a panel that shows one row's structure at a time, drawn in **2D** or
+in **3D**, starting at the table's current row. Open it in 2D with **Data ▸ Browser
+(Ctrl+Shift+B)** or in 3D with **Chemistry ▸ Structure Viewer (Ctrl+Shift+3)**; either
+brings an open viewer forward. The **2D | 3D** switch at the left of its header changes only
+how the row is drawn: the row, the structure column, the rows browsed and the caption stay as
+they are, and a 3D view you turned is still turned when you come back to it.
 
 - **Browsing rows:** ‹ and › under the view (or ← and →, Home and End) step through the rows
-  in the table's order. The table's current row moves along (the selection is left alone), and
-  clicking a row in the table shows it in the viewer. Which rows are browsed is set in the
-  options menu (gear):
+  in the table's order; type a number in the row box to jump to it. The table's current row
+  moves along (the selection is left alone), and clicking a row in the table shows it in the
+  viewer. Which rows are browsed is set in the options menu (gear):
   - **Browse Selected:** only the selected rows.
   - **Browse Visible** (on by default): only the rows the filters and search show.
   - Both on: the selected rows that are shown. Both off: every row in the table.
   - Deselecting the row shown while browsing the selection moves on to the next one.
-- **Structure column:** chosen in the options menu; a "3D" column is chosen first. A row with
-  only a 2D structure gets 3D coordinates in the background (one ETKDG conformer); they are not
-  written to the table.
+- **Selected** (the tick box under the view, or Space) adds the row to the selection or takes
+  it out.
+- **Caption:** column values drawn over the structure, in the corner, as the table shows
+  them. Choose the columns in the options menu (an ID or name column is chosen at first, if
+  there is one). The caption is the same in 2D and 3D, and is part of an exported picture.
+- **Structure column:** chosen in the options menu. Opened in 3D, a "3D" column is chosen
+  first.
+- **Export** saves the view (with its caption) as a PNG.
+- The panel, its settings, 2D or 3D, the caption, the row and conformer shown and the 3D view
+  are saved with the document. A 3D Viewer panel saved by an earlier version reopens as a
+  Structure Viewer in 3D.
+
+**In 2D** the structure is drawn as in the table, larger; ↑ and ↓ step through the rows too.
+
+**In 3D:**
+
+- A row with only a 2D structure gets 3D coordinates in the background (one ETKDG conformer);
+  they are not written to the table. They are made ahead for the rows either side of the one
+  shown, in 2D as well, so switching to 3D or stepping on usually finds them ready.
 - **Style:** Ball and Stick, Stick, Spacefill or Wire. **Hydrogens:** All, Polar (on atoms
   other than carbon) or None. **Color:** by element, or each conformer's carbons in a colour of
-  its own.
+  its own. These options show in the options menu in 3D.
 - **Conformers:** for a row with several, ‹ and › in the panel's header (or ↑ and ↓) step
   through them; the counter shows which one. **Overlay** draws every conformer at once as thin
   sticks with polar hydrogens. **Align Conformers** (on by default) fits them onto the first on
@@ -1172,13 +1187,12 @@ at the table's current row.
 - **Each row browsed to** is turned square on (its longest direction along the panel's longer
   side), centred and fitted to the panel, and it stays fitted as the panel is resized until you
   turn, move or zoom it. Stepping through conformers keeps the view, so they can be compared.
-- **Reset View** turns the molecule square on and fits it again; **Export** saves the view as a
-  PNG.
-- The panel, its settings, the row and conformer shown and the view are saved with the
-  document.
+- **Reset View** turns the molecule square on and fits it again.
 
-Drawing uses the computer's graphics through OpenGL, as the 3D plots do. Where OpenGL is not
-available the panel says so.
+3D drawing uses the computer's graphics through OpenGL, as the 3D plots do, on macOS, Windows
+and Linux. The 3D view is only created when you first switch to it, so the 2D view works on
+any computer. Where OpenGL is not available the viewer stays in 2D, and the 3D switch is
+greyed out with the reason in its tooltip.
 
 ### Retrosynthesis
 
@@ -1647,5 +1661,6 @@ You can change any of these in Settings ▸ Keyboard.
 | Calculate Descriptors | Ctrl+Shift+D |
 | Scatter plot | Ctrl+Shift+P |
 | Filters | Ctrl+Shift+F |
-| Browser | Ctrl+Shift+B |
+| Browser (Structure Viewer in 2D) | Ctrl+Shift+B |
+| Structure Viewer in 3D | Ctrl+Shift+3 |
 | Settings | Ctrl+, |

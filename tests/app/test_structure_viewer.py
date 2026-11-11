@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from PySide6.QtCore import Qt
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
@@ -33,6 +34,18 @@ from .conftest import gui
 pytestmark = gui
 
 ROOT = Path(__file__).parents[2]
+
+
+@pytest.fixture(autouse=True)
+def gpu(monkeypatch):
+    """The offscreen platform has no GPU drawing, so the 3D view would report it and the
+    viewer fall back to 2D; the tests act as if drawing works (the 3D scene is built all the
+    same) and call the real handler when testing the fallback."""
+    from chemsuite.app.viewer.panel import StructureViewer
+
+    real = StructureViewer._failed
+    monkeypatch.setattr(StructureViewer, "_failed", lambda self: None)
+    return real
 
 
 def _conformers(smiles: str, count: int) -> Chem.Mol:
@@ -78,11 +91,17 @@ def _current(chem, oid: int) -> None:
 
 
 def _open(chem, qtbot, oid: int = 1):
-    """The viewer opened with *oid* the table's current row."""
+    """The viewer opened in 3D (Chemistry ▸ Structure Viewer) with *oid* the table's current
+    row."""
     _current(chem, oid)
-    panel = chem.open_tool("molview")
+    panel = chem.open_tool("viewer")
+    assert panel.mode == "3d"
     _shows(panel, qtbot, oid)
     return panel
+
+
+def _rows_text(panel) -> str:
+    return f"{panel.position.value()} {panel.count_label.text()}"
 
 
 def _shows(panel, qtbot, oid: int) -> None:
@@ -99,7 +118,7 @@ def test_opens_on_the_current_row_in_the_3d_column(chem, qtbot) -> None:
     panel = _open(chem, qtbot, 2)
     assert panel in chem.panels
     assert panel.column_name() == "SMILES 3D"
-    assert panel.row_counter.text() == "Row 2 of 3"
+    assert _rows_text(panel) == "2 of 3"
 
 
 def test_browsing_moves_the_table_and_follows_it(chem, qtbot) -> None:
@@ -127,13 +146,14 @@ def test_browse_selected_and_visible(chem, qtbot) -> None:
     qtbot.waitUntil(lambda: panel.browsed.tolist() == [1, 2], timeout=5_000)
     panel.browse_selected.setChecked(False)  # every row
     qtbot.waitUntil(lambda: panel.browsed.tolist() == [1, 2, 3], timeout=5_000)
+    before = chem.view.currentIndex()
     panel.go(1)
     _shows(panel, qtbot, 2)  # a hidden row can be viewed; the table's cursor stays
-    assert _current_oid(chem) == 1
+    assert chem.view.currentIndex() == before
     # In the table's sort order.
     table.set_sort([("ID", False)])
     qtbot.waitUntil(lambda: panel.browsed.tolist() == [3, 2, 1], timeout=5_000)
-    assert panel.oid == 2 and panel.row_counter.text() == "Row 2 of 3"
+    assert panel.oid == 2 and _rows_text(panel) == "2 of 3"
 
 
 def test_deselecting_the_row_shown_moves_on(chem, qtbot) -> None:
@@ -146,7 +166,7 @@ def test_deselecting_the_row_shown_moves_on(chem, qtbot) -> None:
     panel._clicked(0, Qt.KeyboardModifier.ControlModifier)  # Ctrl-click: deselect row 1
     assert chem.workspace.selection.oids == {2}
     _shows(panel, qtbot, 2)
-    assert panel.row_counter.text() == "Row 1 of 1"
+    assert _rows_text(panel) == "1 of 1"
 
 
 def test_conformer_stepper_and_overlay(chem, qtbot) -> None:
@@ -235,8 +255,10 @@ def test_each_row_browsed_to_is_centred_and_fitted(chem, qtbot) -> None:
 
 
 def test_state_round_trip(chem, qtbot) -> None:
-    from chemsuite.app.molview.panel import BY_ROW
+    from chemsuite.app.tools import ToolContext
+    from chemsuite.app.viewer.panel import BY_ROW
     from chemsuite.molview.geometry import SPACEFILL
+    from chemsuite.tools.viewer.tool import open_viewer
 
     panel = _open(chem, qtbot, 1)
     panel.style_box.setCurrentIndex(panel.style_box.findData(SPACEFILL))
@@ -247,8 +269,8 @@ def test_state_round_trip(chem, qtbot) -> None:
     panel.renderer.camera.zoom(1.5)
     state = json.loads(json.dumps(panel.state()))  # as saved in the document
     _current(chem, 3)
-    again = chem.open_tool("molview")
-    again.set_state(state)
+    again = open_viewer(ToolContext(chem), "2d", state)  # a second viewer, as on reopening
+    assert again is not panel
     assert again.state() == state
     assert _current_oid(chem) == 1  # the saved row is the table's current row again
 
@@ -266,11 +288,236 @@ def test_state_survives_save_and_reopen(chem, qtbot, tmp_path) -> None:
     chem._install(Workspace(Table()))
     chem.open_path(path)
     qtbot.waitUntil(lambda: chem.workspace.path == path, timeout=10_000)
-    reopened = [p for p in chem.panels if getattr(p, "tool_id", None) == "molview"]
+    reopened = [p for p in chem.panels if getattr(p, "tool_id", None) == "viewer"]
     assert len(reopened) == 1
     assert reopened[0].state()["conformer"] == 1
     assert reopened[0].state()["row"] == 1
     assert reopened[0].state()["camera"] == saved["camera"]
+    assert reopened[0].mode == "3d"
+
+
+# -- 2D (Data ▸ Browser) ------------------------------------------------------------------------
+
+
+@pytest.fixture
+def browser(window, qtbot):
+    """Data ▸ Browser on rows A–D (D's SMILES is invalid), with a number column."""
+    from chemsuite.app.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    table = Table()
+    table.add_rows(
+        {
+            "ID": list("ABCD"),
+            "SMILES": ["CCO", "c1ccccc1", "CC(=O)O", "not a smiles"],
+            "pIC50": [5.1, 6.25, 7.0, 4.5],
+        },
+        undoable=False,
+    )
+    table.convert_column("SMILES", "structure")
+    window._install(Workspace(table))
+    window.show()
+    qtbot.waitExposed(window)
+    return window.show_browser()
+
+
+def ids(window, oids) -> list[str]:
+    table = window.workspace.table
+    return [table.cell("ID", int(o)) for o in oids]
+
+
+def shown_id(viewer) -> str:
+    return viewer.table.cell("ID", viewer.oid)
+
+
+def test_browser_is_the_viewer_in_2d(window, browser) -> None:
+    assert browser.mode == "2d" and browser in window.panels
+    assert browser.renderer is None  # 2D never makes the 3D view (or touches the GPU)
+    assert not browser.depiction.pixmap().isNull()
+    browser.set_mode("3d")
+    assert window.show_browser() is browser and browser.mode == "2d"  # brought forward
+
+
+def test_browses_selected_rows_in_display_order(window, browser, qtbot) -> None:
+    table = window.workspace.table
+    window.workspace.selection.set(table.oids[[3, 0, 2]].tolist(), "test")
+    table.set_sort([("ID", False)])
+    browser.browse_selected.setChecked(True)
+    qtbot.waitUntil(lambda: len(browser.browsed) == 3)
+    assert ids(window, browser.browsed) == ["D", "C", "A"]
+    browser.go(0)
+    assert shown_id(browser) == "D"
+    browser.go_by(1)
+    assert shown_id(browser) == "C"
+    # The table cursor follows, without touching the selection.
+    assert window.workspace.model.oid_at(window.view.currentIndex().row()) == browser.oid
+    assert len(window.workspace.selection) == 3
+
+
+def test_keys_and_messages(window, browser, qtbot) -> None:
+    qtbot.keyClick(browser, Qt.Key.Key_End)
+    assert shown_id(browser) == "D"
+    assert browser.depiction.text() == "No structure"  # the invalid SMILES
+    qtbot.keyClick(browser, Qt.Key.Key_Up)  # rows, in 2D
+    assert shown_id(browser) == "C"
+    assert not browser.depiction.pixmap().isNull()
+    qtbot.keyClick(browser, Qt.Key.Key_Space)
+    assert browser.oid in window.workspace.selection and browser.select_box.isChecked()
+    qtbot.keyClick(browser, Qt.Key.Key_Home)
+    assert shown_id(browser) == "A" and not browser.previous_row.isEnabled()
+
+
+def test_jump_box_and_follow_table_cursor(window, browser) -> None:
+    browser.position.setValue(3)
+    assert shown_id(browser) == "C"
+    window.view.setCurrentIndex(window.workspace.model.index(1, 0))
+    assert shown_id(browser) == "B"
+
+
+def test_deselecting_while_browsing_selected_stays_in_place(window, browser, qtbot) -> None:
+    window.workspace.selection.set(window.workspace.table.oids[:3].tolist(), "test")
+    browser.browse_selected.setChecked(True)
+    qtbot.waitUntil(lambda: len(browser.browsed) == 3)
+    browser.go(1)
+    browser.set_selected(False)  # B leaves the selected rows
+    qtbot.waitUntil(lambda: len(browser.browsed) == 2)
+    assert shown_id(browser) == "C"
+    assert browser.count_label.text() == "of 2"
+
+
+def test_empty_scope(window, browser, qtbot) -> None:
+    browser.browse_selected.setChecked(True)
+    qtbot.waitUntil(lambda: browser.oid is None)
+    assert browser.depiction.text() == "No rows selected"
+    assert not browser.select_box.isEnabled()
+
+
+def test_caption_shows_the_chosen_columns(window, browser) -> None:
+    table = window.workspace.table
+    assert browser.caption_names == ["ID"]  # an ID-like column by default
+    assert browser.caption.lines == [("ID", "A")]
+    browser.set_caption(["ID", "pIC50"])
+    browser.go(1)
+    assert browser.caption.lines == [("ID", "B"), ("pIC50", table.cell("pIC50", browser.oid))]
+    assert browser.caption_button.text() == "ID, pIC50"
+    browser._fill_caption_menu()
+    names = [a.text() for a in browser.caption_menu.actions() if a.text()]
+    assert names == ["None", "ID", "pIC50"]  # no structure column
+    browser._toggle_caption("ID", False)
+    assert browser.caption_names == ["pIC50"]
+    browser.set_caption([])
+    assert browser.caption.lines == [] and browser.caption_button.text() == "None"
+
+
+def test_the_drawing_fits_at_once_when_the_view_is_resized(browser, qtbot) -> None:
+    depiction = browser.depiction
+    depiction.resize(600, 500)
+    depiction.show_mol(depiction.mol)
+    depiction.resize(300, 250)  # smaller: fitted before the sharp redraw
+    pixmap = depiction.pixmap()
+    dpr = depiction.devicePixelRatioF()
+    assert pixmap.width() <= 300 * dpr + 1 and pixmap.height() <= 250 * dpr + 1
+
+
+def test_export_includes_the_caption(window, browser, tmp_path) -> None:
+    from PySide6.QtGui import QImage
+
+    browser.set_caption([])
+    plain = browser.picture()
+    browser.set_caption(["ID", "pIC50"])
+    captioned = browser.picture()
+    assert not plain.isNull() and plain.size() == captioned.size()
+    assert plain != captioned
+    assert browser.export(tmp_path / "view")
+    assert not QImage(str(tmp_path / "view.png")).isNull()
+
+
+# -- one viewer, two drawings ---------------------------------------------------------------------
+
+
+def test_switching_keeps_the_row_column_rows_and_caption(chem, qtbot) -> None:
+    _current(chem, 2)
+    viewer = chem.show_browser()
+    viewer.column.setCurrentText("SMILES 3D")
+    viewer.browse_visible.setChecked(False)
+    viewer.set_caption(["ID"])
+    viewer.refresh()
+    before = (viewer.oid, viewer.column_name(), viewer.browsed.tolist(), viewer.caption.lines)
+    viewer.set_mode("3d")
+    assert viewer.pages.currentIndex() == 1
+    _shows(viewer, qtbot, 2)
+    assert (
+        viewer.oid,
+        viewer.column_name(),
+        viewer.browsed.tolist(),
+        viewer.caption.lines,
+    ) == before
+    camera = viewer.renderer.camera.state()
+    viewer.renderer.camera.turn(30, 10)  # the user turned it
+    turned = viewer.renderer.camera.state()
+    assert turned != camera
+    viewer.set_mode("2d")
+    assert viewer.pages.currentIndex() == 0
+    assert (
+        viewer.oid,
+        viewer.column_name(),
+        viewer.browsed.tolist(),
+        viewer.caption.lines,
+    ) == before
+    viewer.set_mode("3d")
+    assert viewer.renderer.camera.state() == turned  # back as it was, not refitted
+
+
+def test_3d_controls_only_in_3d(chem) -> None:
+    viewer = chem.show_browser()
+    form = viewer.options.form
+    three_d = [viewer.overlay_action, viewer.measure_action, viewer.reset_action]
+    assert not any(a.isVisible() for a in three_d)
+    assert not form.isRowVisible(viewer.style_box) and form.isRowVisible(viewer.column)
+    assert form.isRowVisible(viewer.caption_button)
+    viewer.set_mode("3d")
+    assert all(a.isVisible() for a in three_d)
+    assert form.isRowVisible(viewer.style_box)
+    viewer.set_measuring(True)
+    viewer.set_mode("2d")
+    assert not viewer.measuring and not viewer.measure_action.isChecked()
+
+
+def test_3d_is_made_ahead_for_the_rows_around(chem, qtbot) -> None:
+    _current(chem, 1)
+    viewer = chem.show_browser()
+    viewer.column.setCurrentText("SMILES")  # 2D only
+    viewer.refresh()
+    viewer.make_ahead()
+    assert viewer._ahead == {("SMILES", 1)}  # the row shown first, one row at a time
+    viewer.go(1)
+    viewer.make_ahead()  # nothing more is queued meanwhile
+    assert viewer._waiting == {("SMILES", 1)}
+    keys = {("SMILES", oid) for oid in (1, 2, 3)}  # then the rows either side, in turn
+    qtbot.waitUntil(lambda: keys <= viewer._made.keys(), timeout=30_000)
+    viewer.go(0)
+    viewer.set_mode("3d")
+    assert len(viewer.renderer.scene) > 0  # ready at once, no wait for a conformer
+
+
+def test_without_3d_graphics_the_viewer_stays_2d(chem, qtbot, gpu) -> None:
+    viewer = _open(chem, qtbot, 1)
+    gpu(viewer)  # the real handler: the graphics cannot draw
+    assert viewer.mode == "2d" and viewer.gpu_failed
+    button = viewer.mode_buttons["3d"]
+    assert not button.isEnabled() and button.toolTip().startswith("⚠")
+    viewer.set_mode("3d")
+    assert viewer.mode == "2d"
+    assert not viewer.depiction.pixmap().isNull()
+    viewer.make_ahead()
+    assert not viewer._ahead  # no 3D made for a view that cannot show it
+
+
+def test_a_saved_3d_viewer_reopens_in_3d(chem) -> None:
+    chem._restore_panels([{"tool": "molview", "state": {"row": 2, "column": "SMILES 3D"}}])
+    viewer = chem.panels[-1]
+    assert viewer.tool_id == "viewer" and viewer.mode == "3d" and viewer.oid == 2
+    assert chem.panel_states()[-1]["tool"] == "viewer"
 
 
 def test_shaders_are_built_from_the_current_sources() -> None:
@@ -336,6 +583,8 @@ def test_atoms_are_drawn_in_their_colours() -> None:
     )  # fmt: skip
     assert out.returncode == 0, out.stderr
     if "NO-RHI" in out.stdout:
+        if os.environ.get("CHEMSUITE_REQUIRE_GPU"):  # CI's Linux 3D step: must draw
+            pytest.fail("no GPU drawing: " + out.stderr)
         pytest.skip("no GPU drawing on this machine")
     assert "OK" in out.stdout.split(), out.stdout + out.stderr
     rows = [line.split() for line in out.stdout.splitlines() if line[:1].isdigit()]

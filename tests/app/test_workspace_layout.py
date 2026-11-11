@@ -122,25 +122,26 @@ def test_layout_widths_and_search_are_saved_with_the_document(data, qtbot, tmp_p
 
     first, second = two_plots(data)
     dock_layout.split(data, first, second, Qt.Orientation.Vertical)
-    data.show_browser()
-    dock_layout.move_to_area(data, data.browser_dock, LEFT)
+    viewer = data.show_browser()  # the Structure Viewer, a panel like the plots
+    browser_dock = next(d for d in data._panels if d.widget() is viewer)
+    dock_layout.move_to_area(data, browser_dock, LEFT)
     data.view.set_column_widths({"MW": 211})
     data.search.focus()
     data.search.edit.setText("B")
     data.search.apply_now()
     target = tmp_path / "layout.csd"
     assert data._save_to(target)
-    assert [d.objectName() for d in data._panels] == ["Panel0", "Panel1"]
+    assert [d.objectName() for d in data._panels] == ["Panel0", "Panel1", "Panel2"]
 
     data._install(Workspace(Table()))
-    data.browser_dock.hide()
     data.open_path(target)
-    qtbot.waitUntil(lambda: len(data._panels) == 2, timeout=10_000)
+    qtbot.waitUntil(lambda: len(data._panels) == 3, timeout=10_000)
     qtbot.wait(50)
-    first, second = data._panels
+    first, second, browser_dock = data._panels
     assert not data.tabifiedDockWidgets(first)  # still stacked, not tabbed
     assert geometry(second)[0].y() > geometry(first)[0].y()
-    assert data.browser_dock.isVisible() and data.dockWidgetArea(data.browser_dock) == LEFT
+    assert browser_dock.isVisible() and data.dockWidgetArea(browser_dock) == LEFT
+    assert browser_dock.widget().mode == "2d"
     assert data.view.column_widths()["MW"] == 211
     assert data.search.is_open and data.search.edit.text() == "B"
     assert len(data.workspace.table.visible_oids()) == 1

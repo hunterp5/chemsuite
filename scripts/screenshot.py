@@ -150,10 +150,11 @@ def main(argv: list[str]) -> int:
     window.search.apply_now()
     window.workspace.lists.add("Actives", table.oids[:4])
     window.workspace.selection.set(table.oids[1:5].tolist(), "script")
-    browser = window.show_browser()
-    browser.go(1)
+    viewer = window.show_browser()
+    viewer.go(1)
     settle()
     window.grab().save(str(out / "browser.png"))
+    next(d for d in window._panels if d.widget() is viewer).close()
     lists_menu = window._lists_menu
     lists_menu.popup(window.mapToGlobal(window.rect().topLeft()))
     settle()

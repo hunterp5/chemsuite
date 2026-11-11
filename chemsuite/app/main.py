@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     from .settings_hub import settings_hub
     from .table_view import StructureImages
 
-    prepare_opengl()  # before the QApplication: the 3D Viewer and 3D plots share OpenGL
+    prepare_opengl()  # before the QApplication: the 3D views and 3D plots share OpenGL
     app = QApplication(argv)
     app.setApplicationName("chemsuite")
     app.setOrganizationName("chemsuite")

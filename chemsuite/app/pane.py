@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared look of side panes (Filters, Advanced Search, Browser …).
+"""Shared look of side panes (Filters, Advanced Search …).
 
 Native macOS inspector style: 12 px margins, 8 px between controls, flat sections divided
 by hairlines rather than boxed cards, and pop-up buttons that draw their own menu arrow.
