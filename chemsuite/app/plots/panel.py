@@ -18,7 +18,7 @@
 The options (kind, columns, bins, fits…) live in a popup, :class:`PlotOptions`, opened from the
 settings button on the panel's dock title bar (see ``PanelDock``), so the plot keeps the room.
 
-2D kinds draw with pyqtgraph; 3D kinds (3D Scatter, 3D Landscape) with OpenGL in the same panel
+2D kinds draw with pyqtgraph; 3D kinds (3D Scatter, 3D Landscape) on the GPU in the same panel
 (``scene3d``), so switching between any two kinds keeps the pane, its toolbar, title, columns,
 cards and selection, and only swaps the drawing.
 
@@ -29,7 +29,6 @@ elsewhere highlights the matching points here.
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -40,9 +39,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
-    QFormLayout,
     QFrame,
-    QHBoxLayout,
     QLabel,
     QMenu,
     QPushButton,
@@ -65,10 +62,9 @@ from ..flow_layout import compact
 from ..glyphs import glyph
 from ..panel_dock import OptionsPopup
 from .cards import (
-    MAX_PINNED,
     SIZES,
-    WHEN,
     CardContent,
+    CardControls,
     CardOptions,
     HoverCard,
     ImageProvider,
@@ -91,7 +87,7 @@ KINDS = {
     "landscape": "3D Landscape",
 }
 #: kinds plotting one number column against another
-#: drawn by ``scene3d``, imported (with OpenGL) only when one is first shown
+#: drawn by ``scene3d`` on the GPU, imported only when one is first shown
 KINDS_3D = ("scatter3d", "landscape")
 XY_KINDS = ("scatter", "line", "density", *KINDS_3D)
 #: what the first mode button does and looks like, in 2D and in 3D
@@ -134,10 +130,8 @@ class PlotPanel(QWidget):
             if key == KINDS_3D[0]:
                 self.kind.insertSeparator(self.kind.count())
             self.kind.addItem(title, key)
-            if key in KINDS_3D and (reason := graphics.plots_problem()):
-                item = self.kind.model().item(self.kind.count() - 1)
-                item.setEnabled(False)
-                item.setToolTip(f"⚠ {reason}")
+        if reason := graphics.problem():
+            self._disable_3d(reason)
         self.kind.setCurrentIndex(max(0, self.kind.findData(kind)))  # unknown kind: scatter
         self.x = QComboBox()
         self.y = QComboBox()
@@ -217,7 +211,9 @@ class PlotPanel(QWidget):
         #: Not shown in the options (no explanatory text there); the fit and curve controls
         #: carry it as their tooltip.
         self.summary = QLabel(" ")
-        self._build_card_options(form)
+        self.card_options = CardOptions()
+        self.card_controls = CardControls(form, lambda: self.table.column_names, self)
+        self.card_controls.changed.connect(self.set_card_options)
 
         # A slim toolbar joined to the top of the plot: icon buttons, the mode ones exclusive.
         self.toolbar = QToolBar()
@@ -258,7 +254,7 @@ class PlotPanel(QWidget):
         self._apply_palette()
         self.card = HoverCard(self)
         self.plot_widget.setFrameShape(QFrame.Shape.NoFrame)
-        #: the 2D plot, and the OpenGL view once a 3D kind is first shown (made lazily)
+        #: the 2D plot, and the GPU view once a 3D kind is first shown (made lazily)
         self.stack = QStackedWidget()
         self.stack.addWidget(self.plot_widget)
         self.view3d = None
@@ -605,17 +601,16 @@ class PlotPanel(QWidget):
         return self.scene3d if self.is_3d() and self.scene3d is not None else self.renderer
 
     def _ensure_3d(self) -> bool:
-        """Make the OpenGL view the first time a 3D kind is shown; False when 3D cannot draw."""
+        """Make the GPU view the first time a 3D kind is shown; False when 3D cannot draw."""
         if self.view3d is not None:
             return True
-        if graphics.plots_problem():
+        if graphics.problem():
             return False
-        from .scene3d import AVAILABLE, Scene3D, View3D
-
-        if not AVAILABLE:  # pragma: no cover - a broken PyOpenGL install
-            return False
+        from .scene3d import Scene3D
+        from .view3d import View3D
 
         self.view3d = View3D()
+        self.view3d.failed.connect(self._3d_failed)
         self.view3d.mode = self.view_box.mode
         self.scene3d = Scene3D(self.view3d)
         self.stack.addWidget(self.view3d)
@@ -637,6 +632,19 @@ class PlotPanel(QWidget):
             self.view3d.reset_camera()
         return True
 
+    def _disable_3d(self, reason: str) -> None:
+        for key in KINDS_3D:
+            item = self.kind.model().item(self.kind.findData(key))
+            item.setEnabled(False)
+            item.setToolTip(f"⚠ {reason}")
+
+    def _3d_failed(self) -> None:
+        """The graphics cannot draw 3D after all: say why on the 3D kinds, and draw flat."""
+        graphics.set_problem(graphics.NO_GPU)
+        self._disable_3d(graphics.NO_GPU)
+        if self.is_3d():
+            self.set_spec(kind="scatter")
+
     def _show_page(self, three: bool) -> None:
         """The 2D plot or the 3D view, and the toolbar's first button to match."""
         page = self.view3d if three else self.plot_widget
@@ -654,7 +662,7 @@ class PlotPanel(QWidget):
     def camera(self) -> dict | None:
         """Where a 3D plot is looked at from (None before a 3D kind was shown)."""
         if self.view3d is not None:
-            return self.view3d.camera()
+            return self.view3d.camera_state()
         return dict(self._camera) if self._camera else None
 
     def set_camera(self, camera: object) -> None:
@@ -826,107 +834,10 @@ class PlotPanel(QWidget):
         self.card.show_at(QCursor.pos(), content)
 
     # -- point cards ----------------------------------------------------------------------------
-    def _build_card_options(self, form: QFormLayout) -> None:
-        self.card_options = CardOptions()
-        self.card_when = QComboBox()
-        for key, title in WHEN.items():
-            self.card_when.addItem(title, key)
-        self.card_when.setToolTip(
-            "When point cards show. Selected: each selected point keeps a card beside it "
-            f"(up to {MAX_PINNED} points)."
-        )
-        compact(self.card_when, chars=16)
-        rule = QFrame()
-        rule.setFrameShape(QFrame.Shape.HLine)
-        rule.setFrameShadow(QFrame.Shadow.Plain)
-        rule.setEnabled(False)
-        form.addRow(rule)
-        form.addRow("Point cards:", self.card_when)
-        shows = QWidget()
-        line = QHBoxLayout(shows)
-        line.setContentsMargins(0, 0, 0, 0)
-        line.setSpacing(8)
-        self.card_structure = QCheckBox("Structure")
-        self.card_label = QCheckBox("Label")
-        self.card_label.setToolTip("The row's first text column (its name or ID)")
-        self.card_values = QCheckBox("Values")
-        self.card_values.setToolTip("The plotted columns: X, Y, colour and size")
-        for box in (self.card_structure, self.card_label, self.card_values):
-            line.addWidget(box)
-        line.addStretch(1)
-        form.addRow("Show:", shows)
-        self.card_columns_button = QPushButton("None")
-        self.card_columns_button.setToolTip("More columns to show on the cards")
-        self.card_columns_menu = QMenu(self.card_columns_button)
-        self.card_columns_menu.aboutToShow.connect(self._fill_card_columns)
-        self.card_columns_button.setMenu(self.card_columns_menu)
-        self.card_columns_button.setStyleSheet("text-align: left; padding: 3px 8px;")
-        form.addRow("More columns:", self.card_columns_button)
-        self.card_size = QComboBox()
-        for key, (title, _size) in SIZES.items():
-            self.card_size.addItem(title, key)
-        compact(self.card_size, chars=16)
-        form.addRow("Drawing size:", self.card_size)
-        self._show_card_options(self.card_options)
-        for box in (self.card_structure, self.card_label, self.card_values):
-            box.toggled.connect(self._card_controls_changed)
-        for combo in (self.card_when, self.card_size):
-            combo.currentIndexChanged.connect(self._card_controls_changed)
-
-    def _show_card_options(self, options: CardOptions) -> None:
-        controls = (
-            self.card_when,
-            self.card_size,
-            self.card_structure,
-            self.card_label,
-            self.card_values,
-        )
-        for control in controls:
-            control.blockSignals(True)
-        self.card_when.setCurrentIndex(self.card_when.findData(options.when))
-        self.card_size.setCurrentIndex(self.card_size.findData(options.size))
-        self.card_structure.setChecked(options.structure)
-        self.card_label.setChecked(options.label)
-        self.card_values.setChecked(options.values)
-        for control in controls:
-            control.blockSignals(False)
-        count = len(options.columns)
-        self.card_columns_button.setText(
-            "None" if not count else options.columns[0] if count == 1 else f"{count} columns"
-        )
-
-    def _card_controls_changed(self, *_args) -> None:
-        self.set_card_options(
-            CardOptions(
-                when=self.card_when.currentData(),
-                structure=self.card_structure.isChecked(),
-                label=self.card_label.isChecked(),
-                values=self.card_values.isChecked(),
-                columns=self.card_options.columns,
-                size=self.card_size.currentData(),
-            )
-        )
-
-    def _fill_card_columns(self) -> None:
-        menu = self.card_columns_menu
-        menu.clear()
-        chosen = set(self.card_options.columns)
-        for name in self.table.column_names:
-            action = menu.addAction(name)
-            action.setCheckable(True)
-            action.setChecked(name in chosen)
-            action.toggled.connect(lambda on, n=name: self._toggle_card_column(n, on))
-
-    def _toggle_card_column(self, name: str, on: bool) -> None:
-        columns = [c for c in self.card_options.columns if c != name]
-        if on:
-            columns.append(name)
-        self.set_card_options(replace(self.card_options, columns=tuple(columns)))
-
     def set_card_options(self, options: CardOptions) -> None:
         """When cards show and what they hold; redraws the pinned cards."""
         self.card_options = options
-        self._show_card_options(options)
+        self.card_controls.show(options)
         if not options.hovering:
             self.card.hide()
         self.update_pinned()

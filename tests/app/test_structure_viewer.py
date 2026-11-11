@@ -534,46 +534,51 @@ def test_shaders_are_built_from_the_current_sources() -> None:
 
 RENDER = """
 import sys
-from chemsuite.app.molview.renderer import MolRenderer, prepare_opengl
-prepare_opengl()
+import numpy as np
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QWidget
 from rdkit import Chem
 from rdkit.Chem import AllChem
 app = QApplication([])
-import pyqtgraph.opengl as gl
+from chemsuite.app.molview.renderer import MolRenderer
+from chemsuite.app.plots.view3d import View3D
 from chemsuite.molview.geometry import SPACEFILL, combine, molecule_part
 mol = Chem.AddHs(Chem.MolFromSmiles("O=C=O"))
 AllChem.EmbedMolecule(mol, randomSeed=1)
 window = QWidget()
 layout = QHBoxLayout(window)
-layout.addWidget(gl.GLViewWidget())  # a 3D plot in the same window, drawn first
-window.resize(400, 200)
-try:  # Windows paints the 3D plot inside show()
-    window.show()
-    app.processEvents()
-except Exception as error:  # an OpenGL too old to draw at all (a CI machine's software GL)
-    print("NO-RHI", type(error).__name__)
-    sys.exit(0)
+plot = View3D()  # a 3D plot in the same window: one graphics API for both
+spots = np.array([[0.0, 0.0, 0.0], [0.6, -0.6, 0.0]])
+plot.set_points(spots, np.array([[0.9, 0.1, 0.1, 1.0], [0.1, 0.2, 0.9, 1.0]]), 24.0)
+plot.set_lines(np.array([[-1, -1, -1], [1, 1, 1]], float), (0.2, 0.2, 0.2, 1.0))
 view = MolRenderer()
 failed = []
 view.failed.connect(lambda: failed.append(1))
+plot.failed.connect(lambda: failed.append(1))
+layout.addWidget(plot)
 layout.addWidget(view)
+window.resize(500, 250)
 view.set_scene(combine([molecule_part(mol, style=SPACEFILL, hydrogens="all")]), fit=True)
 try:
+    window.show()
     for _ in range(20):
         app.processEvents()
-except Exception as error:
+except Exception as error:  # graphics too old to draw at all
     print("NO-RHI", type(error).__name__)
     sys.exit(0)
 image = view.grabFramebuffer()
-if image.isNull():
+picture = plot.grabFramebuffer()
+if image.isNull() or picture.isNull():
     print("NO-RHI")
     sys.exit(0)
-print("FAILED" if failed else "OK")
+print("FAILED" if failed else "OK", view.rhi().backendName())
 xy, _ = view.camera.project(view.scene.positions, image.width(), image.height())
 for (x, y), number in zip(xy, view.scene.atom_number):
     c = image.pixelColor(int(x), int(y))
     print(int(number), c.red(), c.green(), c.blue())
+xy, _ = plot.camera.project(spots, picture.width(), picture.height())
+for (x, y) in xy:
+    c = picture.pixelColor(int(x), int(y))
+    print("PLOT", c.red(), c.green(), c.blue())
 """
 
 
@@ -581,9 +586,9 @@ for (x, y), number in zip(xy, view.scene.atom_number):
     sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
     reason="needs a display for the GPU",
 )
-def test_atoms_are_drawn_in_their_colours() -> None:
-    """Draws with the GPU beside a 3D plot in one window, in a subprocess: the offscreen
-    platform the other tests use has no GPU drawing."""
+def test_molecules_and_3d_plots_draw_side_by_side() -> None:
+    """Draws a molecule and a 3D plot with the GPU in one window, in a subprocess: the
+    offscreen platform the other tests use has no GPU drawing."""
     env = {k: v for k, v in os.environ.items() if k != "QT_QPA_PLATFORM"}
     out = subprocess.run(
         [sys.executable, "-c", RENDER], capture_output=True, text=True, env=env, cwd=ROOT,
@@ -602,6 +607,12 @@ def test_atoms_are_drawn_in_their_colours() -> None:
             assert r > 120 and r > 2 * g and r > 2 * b, (r, g, b)
         else:  # carbon: grey
             assert abs(r - g) < 30 and abs(g - b) < 30 and r > 40, (r, g, b)
+    (red, blue) = [
+        tuple(int(v) for v in line.split()[1:]) for line in out.stdout.splitlines()
+        if line.startswith("PLOT")
+    ]  # fmt: skip
+    assert red[0] > 180 and red[1] < 80 and red[2] < 80, red  # the points, in their colours
+    assert blue[2] > 180 and blue[0] < 80, blue
 
 
 def test_3d_known_unavailable_at_start_up_is_never_tried(chem, qtbot, gpu, monkeypatch) -> None:

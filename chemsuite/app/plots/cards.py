@@ -33,9 +33,22 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 
 import numpy as np
-from PySide6.QtCore import QLineF, QPoint, QPointF, QRect, QSize, Qt
+from PySide6.QtCore import QLineF, QObject, QPoint, QPointF, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QFontMetrics, QImage, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..flow_layout import compact
 
 #: when cards show: key -> menu title
 WHEN = {
@@ -341,3 +354,112 @@ def _free_spot(
             if best is None or cost < best[0]:
                 best = (cost, rect)
     return best[1] if best is not None else fit(point.x() + GAP, point.y() - GAP - h)
+
+
+class CardControls(QObject):
+    """The point-card rows of a plot's options: when cards show, what they hold, and their
+    drawing size."""
+
+    changed = Signal(object)  # the new CardOptions
+
+    def __init__(
+        self, form: QFormLayout, columns: Callable[[], Sequence[str]], parent=None
+    ) -> None:
+        super().__init__(parent)
+        self.columns = columns
+        self.options = CardOptions()
+        self.card_when = QComboBox()
+        for key, title in WHEN.items():
+            self.card_when.addItem(title, key)
+        self.card_when.setToolTip(
+            "When point cards show. Selected: each selected point keeps a card beside it "
+            f"(up to {MAX_PINNED} points)."
+        )
+        compact(self.card_when, chars=16)
+        rule = QFrame()
+        rule.setFrameShape(QFrame.Shape.HLine)
+        rule.setFrameShadow(QFrame.Shadow.Plain)
+        rule.setEnabled(False)
+        form.addRow(rule)
+        form.addRow("Point cards:", self.card_when)
+        shows = QWidget()
+        line = QHBoxLayout(shows)
+        line.setContentsMargins(0, 0, 0, 0)
+        line.setSpacing(8)
+        self.card_structure = QCheckBox("Structure")
+        self.card_label = QCheckBox("Label")
+        self.card_label.setToolTip("The row's first text column (its name or ID)")
+        self.card_values = QCheckBox("Values")
+        self.card_values.setToolTip("The plotted columns: X, Y, colour and size")
+        for box in (self.card_structure, self.card_label, self.card_values):
+            line.addWidget(box)
+        line.addStretch(1)
+        form.addRow("Show:", shows)
+        self.card_columns_button = QPushButton("None")
+        self.card_columns_button.setToolTip("More columns to show on the cards")
+        self.card_columns_menu = QMenu(self.card_columns_button)
+        self.card_columns_menu.aboutToShow.connect(self._fill_columns)
+        self.card_columns_button.setMenu(self.card_columns_menu)
+        self.card_columns_button.setStyleSheet("text-align: left; padding: 3px 8px;")
+        form.addRow("More columns:", self.card_columns_button)
+        self.card_size = QComboBox()
+        for key, (title, _size) in SIZES.items():
+            self.card_size.addItem(title, key)
+        compact(self.card_size, chars=16)
+        form.addRow("Drawing size:", self.card_size)
+        self.show(self.options)
+        for box in (self.card_structure, self.card_label, self.card_values):
+            box.toggled.connect(self._controls_changed)
+        for combo in (self.card_when, self.card_size):
+            combo.currentIndexChanged.connect(self._controls_changed)
+
+    def show(self, options: CardOptions) -> None:
+        self.options = options
+        controls = (
+            self.card_when,
+            self.card_size,
+            self.card_structure,
+            self.card_label,
+            self.card_values,
+        )
+        for control in controls:
+            control.blockSignals(True)
+        self.card_when.setCurrentIndex(self.card_when.findData(options.when))
+        self.card_size.setCurrentIndex(self.card_size.findData(options.size))
+        self.card_structure.setChecked(options.structure)
+        self.card_label.setChecked(options.label)
+        self.card_values.setChecked(options.values)
+        for control in controls:
+            control.blockSignals(False)
+        count = len(options.columns)
+        self.card_columns_button.setText(
+            "None" if not count else options.columns[0] if count == 1 else f"{count} columns"
+        )
+
+    def _controls_changed(self, *_args) -> None:
+        self.changed.emit(
+            CardOptions(
+                when=self.card_when.currentData(),
+                structure=self.card_structure.isChecked(),
+                label=self.card_label.isChecked(),
+                values=self.card_values.isChecked(),
+                columns=self.options.columns,
+                size=self.card_size.currentData(),
+            )
+        )
+
+    def _fill_columns(self) -> None:
+        menu = self.card_columns_menu
+        menu.clear()
+        chosen = set(self.options.columns)
+        for name in self.columns():
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(name in chosen)
+            action.toggled.connect(lambda on, n=name: self._toggle_column(n, on))
+
+    def _toggle_column(self, name: str, on: bool) -> None:
+        columns = [c for c in self.options.columns if c != name]
+        if on:
+            columns.append(name)
+        self.changed.emit(replace(self.options, columns=tuple(columns)))
