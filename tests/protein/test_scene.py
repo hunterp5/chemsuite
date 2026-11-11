@@ -129,3 +129,35 @@ def test_the_picker_ignores_what_the_slab_cuts_away(crambin: Structure) -> None:
     _, depth = camera.project(centres[front : front + 1], 300, 300)
     cut = ScreenPicker(camera, centres, radii, 300, 300, slab=(float(depth[0]) + 1.0, 1e9))
     assert cut.pick(150, 150) not in (front, -1)
+
+
+def test_another_model_moves_the_drawing_and_keeps_the_look(nmr: Structure) -> None:
+    from chemsuite.protein.display import Display, compose
+
+    shown = Display("1D3Z", "1D3Z", nmr)
+    shown.show(np.ones(nmr.n_atoms, bool), scene.STICK)
+    shown.selected[:40] = True
+    before = compose([shown])
+    assert len(before.geometry.atoms)
+    assert shown.set_model(1)
+    after = compose([shown])
+    atoms = after.geometry.atoms
+    assert np.allclose(after.geometry.spheres[:, :3], nmr.xyz(1)[atoms])
+    assert not np.allclose(before.geometry.spheres[:, :3], after.geometry.spheres[:, :3])
+    assert not np.allclose(before.cartoon.vertices, after.cartoon.vertices)
+    assert np.array_equal(before.sphere_look, after.sphere_look)  # colours and selection stay
+    assert np.allclose(after.pick_centres, nmr.xyz(1)[after.pick_atoms])
+    assert not shown.set_model(1) and not shown.set_model(2) and not shown.set_model(-1)
+
+
+def test_the_model_shown_is_saved_and_a_bad_one_is_ignored(nmr: Structure) -> None:
+    from chemsuite.protein.display import Display
+
+    shown = Display("1D3Z", "1D3Z", nmr)
+    shown.set_model(1)
+    again = Display("1D3Z", "1D3Z", nmr)
+    again.set_state(shown.state())
+    assert again.model == 1
+    for bad in (7, -1, "1", None):
+        again.set_state({**shown.state(), "model": bad})
+        assert again.model == 0

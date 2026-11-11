@@ -318,7 +318,7 @@ class ProteinPanel(QWidget):
         """Fit the selection (everything, when nothing is selected) to the view."""
         if self.view is None:
             return
-        points = [d.structure.xyz(0)[d.selected] for d in self.session.displays
+        points = [d.xyz[d.selected] for d in self.session.displays
                   if d.visible and d.selected.any()]  # fmt: skip
         if not points:
             self.view.fit()
@@ -341,7 +341,7 @@ class ProteinPanel(QWidget):
             self.view.set_slab(*NO_SLAB)
             return
         shown, atoms = found
-        positions = shown.structure.xyz(0)[atoms]
+        positions = shown.xyz[atoms]
         self.view.frame(positions, np.full(len(positions), 1.5))
         self._apply_slab()
 
@@ -350,7 +350,7 @@ class ProteinPanel(QWidget):
         if self.view is None or found is None:
             return
         shown, atoms = found
-        positions = shown.structure.xyz(0)[atoms]
+        positions = shown.xyz[atoms]
         centre = positions.mean(axis=0)
         radius = float(np.linalg.norm(positions - centre, axis=1).max()) + SLAB_PAD
         _xy, depth = self.view.camera.project(centre[None], self.view.width(),

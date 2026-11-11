@@ -176,7 +176,9 @@ class ProteinSession(QObject):
         for shown in self.displays:
             if shown.visible and protein in (None, shown.id):
                 named = self._named_masks(shown)
-                out[shown.id] = select(shown.structure, text, named=named) & shown.active
+                out[shown.id] = (
+                    select(shown.structure, text, named=named, model=shown.model) & shown.active
+                )
         return out
 
     def select_text(self, text: str, mode: str = SET, protein: str | None = None) -> int:
@@ -289,8 +291,8 @@ class ProteinSession(QObject):
         s = shown.structure
         ligand = (s.residue_of == residue) & shown.active
         named = {"focus": ligand}
-        site = select(s, FOCUS_SITE, named=named) & shown.active
-        waters = select(s, FOCUS_NEAR, named=named) & shown.active
+        site = select(s, FOCUS_SITE, named=named, model=shown.model) & shown.active
+        waters = select(s, FOCUS_NEAR, named=named, model=shown.model) & shown.active
         for other in self.displays:
             other.ghost = np.zeros(other.structure.n_atoms, bool)
             if restyle:
@@ -376,7 +378,7 @@ class ProteinSession(QObject):
         index = int(shown.structure.indices(np.array([point[1]]))[0])
         if index < 0:
             return None
-        return int(scene.global_atoms(shown, np.array([index]))[0]), shown.structure.xyz(0)[index]
+        return int(scene.global_atoms(shown, np.array([index]))[0]), shown.xyz[index]
 
     def measured(self) -> list[tuple[list[np.ndarray], str]]:
         """Each measurement whose atoms are all drawn: its positions and value in words."""

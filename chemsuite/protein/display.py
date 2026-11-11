@@ -17,9 +17,11 @@
 
 A :class:`Display` holds one structure's representation: a style per atom, which residues
 show as cartoon and which atoms make up a surface, colours, the selection and the ghosted
-atoms, and the alternate locations chosen. It builds its geometry and meshes only when what
-they depend on changed (each part has its own version), so a selection change rebuilds
-nothing but the look.
+atoms, the alternate locations chosen and which model is shown (an NMR model; a trajectory
+can be a memory-mapped ``coords`` array, one model per frame). It builds its geometry and
+meshes only when what they depend on changed (each part has its own version), so a selection
+or a colour change rebuilds nothing but the look, and a model change nothing but what depends
+on positions.
 
 :func:`compose` puts the visible displays together for the view: atoms and residues are
 numbered one after the other (a display's ``atom_offset`` and ``residue_offset``), so a pick
@@ -58,6 +60,7 @@ class Display:
     scheme: str = schemes.ELEMENT
     surface_scheme: str = schemes.HYDROPHOBICITY
     altlocs: dict[int, str] = field(default_factory=dict)
+    model: int = 0  # which of the structure's coordinate sets is shown
     styles: np.ndarray = field(init=False)
     cartoon: np.ndarray = field(init=False)  # bool per residue
     surface: np.ndarray = field(init=False)  # bool per atom
@@ -89,6 +92,24 @@ class Display:
     @property
     def active(self) -> np.ndarray:
         return self.structure.active(self.altlocs)
+
+    @property
+    def xyz(self) -> np.ndarray:
+        """The positions shown: the current model's."""
+        return self.structure.xyz(self.model)
+
+    @property
+    def n_models(self) -> int:
+        return self.structure.n_models
+
+    def set_model(self, model: int) -> bool:
+        """Show another model; False when it is already shown or out of range. Only what
+        depends on positions is rebuilt: colours, styles and the selection stay."""
+        if not 0 <= model < self.n_models or model == self.model:
+            return False
+        self.model = model
+        self.touch("geometry", "cartoon", "surface", "interactions")
+        return True
 
     # representations
     def show(self, atoms: np.ndarray, style: int) -> None:
@@ -149,17 +170,20 @@ class Display:
         return self._cache[key]
 
     def geometry(self) -> scenes.Geometry:
-        return self._cached("geometry", lambda: scenes.geometry(self.structure, self.styles))
+        return self._cached(
+            "geometry", lambda: scenes.geometry(self.structure, self.styles, self.model)
+        )
 
     def cartoon_mesh(self) -> meshes.Mesh:
         residues = np.flatnonzero(self.cartoon)
         return self._cached(
-            "cartoon", lambda: cartoons.build(self.structure, residues, active=self.active)
+            "cartoon",
+            lambda: cartoons.build(self.structure, residues, self.model, active=self.active),
         )
 
     def surface_mesh(self) -> meshes.Mesh:
         atoms = np.flatnonzero(self.surface)
-        return self._cached("surface", lambda: surfaces.build(self.structure, atoms))
+        return self._cached("surface", lambda: surfaces.build(self.structure, atoms, self.model))
 
     def trace(self) -> tuple[np.ndarray, np.ndarray]:
         """Cartoon residues and their trace atoms (what picks the cartoon)."""
@@ -171,7 +195,8 @@ class Display:
         if not self.query.any():
             return contacts.Interactions.empty()
         return self._cached(
-            "interactions", lambda: contacts.find(self.structure, self.query, self.active)
+            "interactions",
+            lambda: contacts.find(self.structure, self.query, self.active, self.model),
         )
 
     def flags(self) -> np.ndarray:
@@ -196,6 +221,7 @@ class Display:
             "scheme": self.scheme,
             "surface_scheme": self.surface_scheme,
             "altlocs": {str(k): v for k, v in self.altlocs.items()},
+            "model": self.model,
             "styles": runs(self.styles),
             "cartoon": runs(self.cartoon.astype(np.uint8)),
             "surface": runs(self.surface.astype(np.uint8)),
@@ -206,6 +232,8 @@ class Display:
         n, r = self.structure.n_atoms, self.structure.n_residues
         self.visible = bool(state.get("visible", True))
         self.altlocs = {int(k): str(v) for k, v in dict(state.get("altlocs", {})).items()}
+        model = state.get("model", 0)
+        self.model = model if isinstance(model, int) and 0 <= model < self.n_models else 0
         styles = unruns(state.get("styles"), n)
         if styles is not None:
             self.styles = styles.astype(np.uint8)
@@ -309,8 +337,7 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
     surface_colours[:, 3] = SURFACE_ALPHA
     traces = [d.trace()[1] for d in shown]
     pick_atoms = _cat([t + o for t, o in zip(traces, atom_offsets, strict=False)], np.int64)
-    pick_centres = _cat([d.structure.xyz(0)[t] for d, t in zip(shown, traces, strict=True)],
-                        np.float32, 3)  # fmt: skip
+    pick_centres = _cat([d.xyz[t] for d, t in zip(shown, traces, strict=True)], np.float32, 3)
     found = tuple(d.interactions() for d in shown)
     lines, lines_look = interaction_lines(found, atom_offsets)
     return Scene(
