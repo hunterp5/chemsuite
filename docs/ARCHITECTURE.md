@@ -51,4 +51,7 @@ is usually better than an exemption.
 - **3D draws through QRhi** (Qt's GPU layer). The Structure Viewer does today. Moving the 3D
   plots off pyqtgraph.opengl onto QRhi is a high priority (ROADMAP.md §7): it frees every view
   to use Direct3D on Windows and Metal on macOS instead of OpenGL everywhere.
+- **3D is checked once at start-up** (`chemsuite/app/graphics.py`): Windows falls back to Qt's
+  software OpenGL when the driver cannot draw 3D, and anything that draws 3D reads
+  `graphics.problem()` to grey itself out with the reason instead of failing when opened.
 - **No QtWebEngine**: PySide6-Essentials only, to keep the install small. (PLAN.md §1)

@@ -33,23 +33,26 @@ def main(argv: list[str] | None = None) -> int:
     limit_app_threads()  # before numpy and friends load: leave a core for the window
     argv = list(sys.argv if argv is None else argv)
     from chemsuite.core import logbook
+    from chemsuite.core.settings import Policy, SettingsStore
 
     logbook.setup_logging()  # at once, so start-up problems are logged too
 
-    from PySide6.QtCore import qVersion
+    from PySide6.QtCore import QCoreApplication, qVersion
     from PySide6.QtWidgets import QApplication
 
+    from . import graphics
     from .error_report import install_crash_handler
     from .jobs import JobRunner
     from .main_window import MainWindow
-    from .molview.renderer import prepare_opengl
-    from .settings_hub import settings_hub
+    from .settings_hub import config_folder, settings_hub
     from .table_view import StructureImages
 
-    prepare_opengl()  # before the QApplication: the 3D views and 3D plots share OpenGL
+    QCoreApplication.setApplicationName("chemsuite")  # before config_folder()
+    QCoreApplication.setOrganizationName("chemsuite")
+    folder = config_folder()
+    mode = SettingsStore(folder, Policy.load()).effective().performance.graphics
+    graphics.prepare(mode, folder)  # before the QApplication: OpenGL is chosen once
     app = QApplication(argv)
-    app.setApplicationName("chemsuite")
-    app.setOrganizationName("chemsuite")
     policy = settings_hub().store.policy
     log_file = logbook.setup_logging(level=logbook.level_from(policy.get("log_level")))
     audit_file = logbook.setup_audit(policy.get("audit_log"))
@@ -63,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         platform.platform(),
     )
     log.info("log file: %s%s", log_file, f"; audit log: {audit_file}" if audit_file else "")
+    graphics.check()  # 3D views and plots read graphics.problem()
     logbook.audit("start", version=_version())
     runner = JobRunner(app, keep_awake=True)
     images = StructureImages()

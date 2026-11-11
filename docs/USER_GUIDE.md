@@ -1191,8 +1191,11 @@ they are, and a 3D view you turned is still turned when you come back to it.
 
 3D drawing uses the computer's graphics through OpenGL, as the 3D plots do, on macOS, Windows
 and Linux. The 3D view is only created when you first switch to it, so the 2D view works on
-any computer. Where OpenGL is not available the viewer stays in 2D, and the 3D switch is
-greyed out with the reason in its tooltip.
+any computer. chemsuite checks the graphics when it starts. On Windows, if the graphics card
+cannot draw 3D (common on remote desktops, virtual machines and VDI), chemsuite draws 3D in
+software instead: slower, but it works. Where 3D still cannot be drawn, the viewer stays in
+2D, the 3D switch and the 3D plot types are greyed out, and their tooltips give the reason.
+Settings ▸ General ▸ 3D graphics can force software drawing or turn 3D off.
 
 ### Retrosynthesis
 
@@ -1623,7 +1626,7 @@ keeps them and **Cancel** puts everything back.
 | Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colourful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
 | Keyboard | Change any command's shortcut. |
 | External Tools | Paths to optional programs (Open Babel, CONFORGE, Gnina, AmberTools, MAFFT, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
-| General | Processor cores to use (0 = automatic: all but one, so the window stays responsive), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
+| General | Processor cores to use (0 = automatic: all but one, so the window stays responsive), 3D graphics (Automatic, Software on Windows, or Off; takes effect after a restart), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
 
 Your IT department can fix some settings for everyone. Those are shown greyed out with a
 padlock.
