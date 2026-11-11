@@ -13,4 +13,4 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Chemistry ▸ Proteins: open or fetch proteins, view them, and their ligands as rows."""
+"""Protein ▸ Protein Viewer: open or fetch proteins, view them, and their ligands as rows."""

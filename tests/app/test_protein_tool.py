@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Chemistry ▸ Proteins: open, fetch (a stub opener: no network), ligand rows, the table link."""
+"""The Protein Viewer tool: open, fetch (a stub opener: no network), ligand rows, the table link."""
 
 from __future__ import annotations
 
@@ -52,6 +52,14 @@ def opened(window, qtbot, monkeypatch):
 def test_only_the_viewer_is_in_the_main_menus(window) -> None:
     assert window.tool_action("protein").isEnabled()
     assert [t.id for t in tool.TOOLS] == ["protein"]  # files open from the viewer itself
+
+
+def test_the_viewer_has_a_menu_of_its_own(window) -> None:
+    titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
+    protein = window.menuBar().actions()[titles.index("Protein")].menu()
+    assert window.tool_action("protein") in protein.actions()
+    chemistry = window.menuBar().actions()[titles.index("Chemistry")].menu()
+    assert window.tool_action("protein") not in chemistry.actions()
 
 
 def test_the_viewer_opens_as_its_own_window(window, qtbot, monkeypatch) -> None:

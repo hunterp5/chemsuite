@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Chemistry ▸ Protein Viewer: a workspace of its own for proteins, opened as its own window.
+"""Protein ▸ Protein Viewer: a workspace of its own for proteins, opened as its own window.
 
 Proteins are opened, fetched and turned into ligand rows from the viewer's File and Pocket
 menus (this module hands it those commands). A protein is stored in the document as an asset
@@ -35,7 +35,7 @@ from chemsuite.protein.model import Structure
 
 TOOL_ID = "protein"
 KIND = "protein"
-MENU = ("Chemistry",)
+MENU = ("Protein",)
 #: the viewer's window: this share of the main window, centred over it
 WINDOW_SHARE = 0.85
 FILE_FILTER = "Protein files (*.pdb *.ent *.cif *.mmcif *.pdb.gz *.ent.gz *.cif.gz)"
