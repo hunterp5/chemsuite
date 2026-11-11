@@ -3,7 +3,14 @@ name: CI
 on:
   push:
     branches: [main, dev]
+    paths-ignore: ["docs/**", "**/*.md"]  # documentation alone does not need the tests
   pull_request:
+    paths-ignore: ["docs/**", "**/*.md"]
+  workflow_dispatch:  # run by hand (Actions tab or `gh workflow run CI --ref dev`)
+
+concurrency:  # a newer push to the same branch replaces the run in progress
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
