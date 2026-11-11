@@ -68,6 +68,58 @@ def join(meshes: list[Mesh]) -> Mesh:
     )
 
 
+#: the most vertices a chunk can index with 16-bit indices
+SHORT_INDICES = 65535
+
+
+@dataclass(frozen=True)
+class Chunk:
+    """Part of a mesh small enough for 16-bit indices: which of the mesh's vertices it uses,
+    and its triangles numbered within those."""
+
+    vertex_map: np.ndarray  # int64 (k,), k <= the limit: the mesh's vertex for each
+    triangles: np.ndarray  # uint16 (t, 3)
+
+
+def chunks(mesh: Mesh, limit: int = SHORT_INDICES) -> list[Chunk]:
+    """The mesh cut into chunks of at most ``limit`` vertices each, for GPUs without 32-bit
+    indices. Together the chunks hold every triangle once, though not in the mesh's order
+    (the view tests depth, so the order of triangles does not change the picture).
+
+    Meshes are built piece by piece (a cartoon's segments, a surface's grid cells), so a
+    triangle's vertices are close in number. Triangles are put in buckets by their lowest
+    vertex, ``limit // 2`` vertex numbers to a bucket: a triangle spanning fewer than that
+    reaches at most into the next bucket, so each bucket's vertices fit in one chunk. The rare
+    triangle that spans more (a cap closing a long tube) goes with others like it, ``limit //
+    3`` triangles to a chunk. Any mesh can so be drawn.
+    """
+    tri = np.asarray(mesh.triangles, np.int64)
+    if not len(tri):
+        return []
+    width = max(limit // 2, 1)
+    lo, hi = tri.min(axis=1), tri.max(axis=1)
+    narrow = hi - lo < width
+    out = []
+    near = tri[narrow]
+    bucket = lo[narrow] // width
+    order = np.argsort(bucket, kind="stable")
+    near, bucket = near[order], bucket[order]
+    breaks = np.flatnonzero(np.diff(bucket)) + 1
+    for part in np.split(near, breaks):
+        if len(part):
+            out.append(_chunk(part))
+    wide = tri[~narrow]
+    step = max(limit // 3, 1)
+    for first in range(0, len(wide), step):
+        out.append(_chunk(wide[first : first + step]))
+    return out
+
+
+def _chunk(triangles: np.ndarray) -> Chunk:
+    vertices, numbered = np.unique(triangles, return_inverse=True)
+    return Chunk(vertices, numbered.reshape(-1, 3).astype(np.uint16))
+
+
 def look(mesh: Mesh, colours: np.ndarray, flags: np.ndarray) -> np.ndarray:
     """Per vertex ``r g b a flags`` from per-owner colours (k, 4) and flags (k,)."""
     out = np.empty((len(mesh), LOOK_FLOATS), np.float32)

@@ -129,3 +129,98 @@ def test_the_picker_ignores_what_the_slab_cuts_away(crambin: Structure) -> None:
     _, depth = camera.project(centres[front : front + 1], 300, 300)
     cut = ScreenPicker(camera, centres, radii, 300, 300, slab=(float(depth[0]) + 1.0, 1e9))
     assert cut.pick(150, 150) not in (front, -1)
+
+
+def test_another_model_moves_the_drawing_and_keeps_the_look(nmr: Structure) -> None:
+    from chemsuite.protein.display import Display, compose
+
+    shown = Display("1D3Z", "1D3Z", nmr)
+    shown.show(np.ones(nmr.n_atoms, bool), scene.STICK)
+    shown.selected[:40] = True
+    before = compose([shown])
+    assert len(before.geometry.atoms)
+    assert shown.set_model(1)
+    after = compose([shown])
+    atoms = after.geometry.atoms
+    assert np.allclose(after.geometry.spheres[:, :3], nmr.xyz(1)[atoms])
+    assert not np.allclose(before.geometry.spheres[:, :3], after.geometry.spheres[:, :3])
+    assert not np.allclose(before.cartoon.vertices, after.cartoon.vertices)
+    assert np.array_equal(before.sphere_look, after.sphere_look)  # colours and selection stay
+    assert np.allclose(after.pick_centres, nmr.xyz(1)[after.pick_atoms])
+    assert not shown.set_model(1) and not shown.set_model(2) and not shown.set_model(-1)
+
+
+def test_the_model_shown_is_saved_and_a_bad_one_is_ignored(nmr: Structure) -> None:
+    from chemsuite.protein.display import Display
+
+    shown = Display("1D3Z", "1D3Z", nmr)
+    shown.set_model(1)
+    again = Display("1D3Z", "1D3Z", nmr)
+    again.set_state(shown.state())
+    assert again.model == 1
+    for bad in (7, -1, "1", None):
+        again.set_state({**shown.state(), "model": bad})
+        assert again.model == 0
+
+
+def test_a_deferring_display_hands_out_slow_work_and_keeps_the_last_result(kinase) -> None:
+    from chemsuite.protein.display import Display
+
+    shown = Display("1ATP", "1ATP", kinase, deferred=True)
+    assert shown.pending() == []  # the cartoon of 350 residues is quick: built inline
+    assert len(shown.cartoon_mesh().triangles)
+    shown.show_surface(np.ones(kinase.n_atoms, bool))
+    assert not len(shown.surface_mesh().triangles)  # nothing built yet
+    (first,) = shown.pending()
+    assert first.part == "surface"
+    built = first()
+    assert shown.accept("surface", first.version, built)
+    assert shown.surface_mesh() is built and shown.pending() == []
+    shown.show_surface(select(kinase, "chain I"), on=False)
+    assert shown.surface_mesh() is built  # the last one stays until the new one arrives
+    (second,) = shown.pending()
+    assert not shown.accept("surface", first.version, built)  # stale: dropped
+    assert shown.accept("surface", second.version, second())
+    shown.show_surface(np.ones(kinase.n_atoms, bool), on=False)
+    assert shown.pending() == [] and not len(shown.surface_mesh().triangles)  # empty: inline
+
+
+def test_deferred_work_reads_copies_taken_when_it_was_handed_out(kinase) -> None:
+    from chemsuite.protein.display import Display
+
+    shown = Display("1ATP", "1ATP", kinase, deferred=True)
+    shown.show_interactions(kinase.atom_kind == LIGAND)
+    (build,) = shown.pending()
+    query = build.args[1].copy()
+    shown.query[:] = False
+    assert np.array_equal(build.args[1], query) and len(build())
+
+
+def test_without_deferring_everything_is_built_at_once(kinase) -> None:
+    from chemsuite.protein.display import Display
+
+    shown = Display("1ATP", "1ATP", kinase)
+    shown.show_surface(np.ones(kinase.n_atoms, bool))
+    assert shown.pending() == [] and len(shown.surface_mesh().triangles)
+
+
+def test_hydrogens_and_transparency_are_saved_and_bad_ones_ignored(nmr: Structure) -> None:
+    from chemsuite.protein.display import SURFACE_TRANSPARENCY, Display
+
+    shown = Display("1D3Z", "1D3Z", nmr)
+    shown.show_hydrogens("all")
+    shown.transparency = 0.2
+    again = Display("1D3Z", "1D3Z", nmr)
+    again.set_state(shown.state())
+    assert again.hydrogens == "all" and again.transparency == 0.2
+    again.set_state({**shown.state(), "hydrogens": "some", "transparency": 1.5})
+    assert again.hydrogens == "polar" and again.transparency == SURFACE_TRANSPARENCY
+
+
+def test_a_hydrogen_is_drawn_as_its_atom_is(nmr: Structure) -> None:
+    styles = np.full(nmr.n_atoms, scene.HIDDEN, np.uint8)
+    amide = select(nmr, "resi 5 and name N")
+    styles[amide] = scene.SPACEFILL
+    shown = scene.shown_styles(nmr, styles, nmr.active(), "polar")
+    assert (shown[select(nmr, "resi 5 and name H")] == scene.SPACEFILL).all()
+    assert (shown[select(nmr, "resi 5 and name HA")] == scene.HIDDEN).all()

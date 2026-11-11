@@ -13,8 +13,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""What the protein view draws on top: measurements (a dashed line and its value) and the
-atoms picked for the measurement being made."""
+"""What the protein view draws on top: residue and atom labels (:mod:`.labels`),
+measurements (a dashed line and its value) and the atoms picked for the measurement being
+made."""
 
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
+from . import labels as labelling
 from .session import ProteinSession
 
 MEASURE = QColor(230, 70, 20)
@@ -38,7 +40,30 @@ class ProteinOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         view.cameraMoved.connect(self.update)
         session.measurementsChanged.connect(self.update)
-        session.sceneChanged.connect(self.update)
+        session.sceneChanged.connect(self._labels_moved)
+        session.labelsChanged.connect(self._labels_moved)
+        self._labelled: tuple[np.ndarray, list[str]] | None = None
+
+    def _labels_moved(self) -> None:
+        self._labelled = None
+        self.update()
+
+    def placed_labels(self) -> tuple[np.ndarray, list[str]]:
+        """The labels drawn now: their boxes (n, 4) and texts (for tests and painting)."""
+        if self._labelled is None:
+            self._labelled = self.session.labelled()
+        positions, texts = self._labelled
+        if not texts:
+            return np.zeros((0, 4)), []
+        xy, depth = self.view.camera.project(positions, self.width(), self.height())
+        font = labelling.label_font(self.font())
+        boxes = labelling.boxes(xy, texts, font)
+        on_screen = (boxes[:, 0] + boxes[:, 2] > 0) & (boxes[:, 0] < self.width()) & (
+            boxes[:, 1] + boxes[:, 3] > 0) & (boxes[:, 1] < self.height())  # fmt: skip
+        depth = np.where(on_screen, depth, -1.0)
+        near, far = self.view.slab
+        chosen = labelling.layout(boxes, depth, near, far)
+        return boxes[chosen], [texts[i] for i in chosen.tolist()]
 
     def labels(self) -> list[tuple[QPointF, str]]:
         """Where each measurement's value goes, and the value (for tests and painting)."""
@@ -55,10 +80,14 @@ class ProteinOverlay(QWidget):
         width, height = self.width(), self.height()
         measured = self.session.measured()
         picked = [p for p in (self.session.where(q) for q in self.session.picked) if p]
-        if not measured and not picked:
+        boxes, texts = self.placed_labels()
+        if not measured and not picked and not texts:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if texts:
+            painter.setFont(labelling.label_font(self.font()))
+            labelling.paint(painter, boxes, texts, self.palette())
         for points, text in measured:
             xy, depth = camera.project(np.array(points), width, height)
             if (depth <= 0).any():

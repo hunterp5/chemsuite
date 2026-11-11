@@ -22,6 +22,7 @@ holds the usual picks (ligands, binding site, waters…), saved selections and S
 
 from __future__ import annotations
 
+import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
@@ -41,8 +42,8 @@ from .session import SET, ProteinSession
 #: the Select menu's quick picks: title, expression
 PICKS = (
     ("Ligands", "ligand"),
-    ("Binding Site", "byres polymer within 5 of ligand"),
-    ("Ligands and Binding Site", "ligand or byres polymer within 5 of ligand"),
+    ("Binding Site", "byres (polymer within 5 of ligand)"),
+    ("Ligands and Binding Site", "ligand or byres (polymer within 5 of ligand)"),
     (None, None),
     ("Protein", "protein"),
     ("Backbone", "backbone"),
@@ -52,7 +53,13 @@ PICKS = (
     ("Hetero Atoms", "hetero"),
     ("Hydrogens", "hydrogen"),
 )
-SITE = "byres polymer within 5 of ligand"
+SITE = "byres (polymer within 5 of ligand)"
+#: Select ▸ Around: distances (Å), and how the surroundings are taken
+AROUND = (3, 5, 8, 10)
+AROUND_KINDS = (
+    ("Residues", "byres (within {} of $selection)"),
+    ("Atoms", "within {} of $selection"),
+)
 _SYNTAX = (
     "chain A, resi 10-50, resn HIS+ASP, name CA, elem Fe; protein, ligand, water, ion, "
     "backbone, sidechain, helix, sheet; byres S, within 5 of S; and, or, not, ( ); $saved"
@@ -121,7 +128,8 @@ class SelectionBar(QWidget):
         for shown in self.session.displays:
             if shown.visible and shown.selected.any():
                 atoms += int(shown.selected.sum())
-                residues += len(set(shown.structure.residue_of[shown.selected].tolist()))
+                owners = shown.structure.residue_of[shown.selected]  # sorted: atoms by residue
+                residues += int(np.count_nonzero(np.diff(owners))) + 1
         self.count.setText(f"{atoms:,} atoms, {residues:,} residues" if atoms else "")
 
     def _fill_menu(self) -> None:
@@ -139,6 +147,16 @@ class SelectionBar(QWidget):
         for name in names:
             chains.addAction(name, lambda n=name: self._pick(f"chain {n}"))
         chains.setEnabled(bool(names))
+        around = self.menu.addMenu("Around")
+        for kind, template in AROUND_KINDS:
+            if around.actions():
+                around.addSeparator()
+            for distance in AROUND:
+                expression = template.format(distance)
+                around.addAction(f"{kind} Within {distance} Å",
+                                 lambda e=expression: self.grow(e))  # fmt: skip
+        around.setToolTip("Add what lies near the selection to it")
+        around.setEnabled(self.session.selected_count() > 0)
         self.menu.addSeparator()
         saved = self.menu.addMenu("Saved Selections")
         for name in sorted(self.session.named):
@@ -149,6 +167,12 @@ class SelectionBar(QWidget):
         self.menu.addSeparator()
         clear = self.menu.addAction("Clear Selection", self.session.clear_selection)
         clear.setEnabled(self.session.selected_count() > 0)
+
+    def grow(self, expression: str) -> None:
+        """Select by an expression of the selection itself (``$selection``): the field is
+        cleared, as its text no longer says what is selected."""
+        if self.select(expression):
+            self.field.clear()
 
     def _pick(self, expression: str) -> None:
         self.field.setText(expression)

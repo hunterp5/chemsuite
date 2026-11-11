@@ -17,10 +17,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 from rdkit import Chem
 
-from chemsuite.protein import bond_orders, ligands
+from chemsuite.protein import bond_orders, components, ligands
 from chemsuite.protein.bonds import template_smiles
 from chemsuite.protein.model import Structure
 
@@ -45,13 +47,20 @@ def only_ligand(s: Structure) -> int:
     return int(residue)
 
 
+def without_file_components(s: Structure) -> Structure:
+    """``s`` as read from a file that defines none of its components (a PDB file, say)."""
+    return replace(s, meta={k: v for k, v in s.meta.items() if k != components.META_KEY})
+
+
 def test_a_cofactor_takes_its_bond_orders_and_stereo_from_the_dictionary(kinase) -> None:
-    ligand = ligands.to_mol(kinase, only_ligand(kinase))
-    assert ligand.source == ligands.TEMPLATE and not ligand.guessed
     template = Chem.MolFromSmiles(template_smiles("ATP"))
-    assert flat(ligand.mol) == flat(template)
-    # the ribose's stereocentres come from the pose (a phosphate's are only resonance)
-    assert carbon_centres(ligand.mol) == carbon_centres(template)
+    for structure, source in ((kinase, ligands.FILE),
+                              (without_file_components(kinase), ligands.TEMPLATE)):  # fmt: skip
+        ligand = ligands.to_mol(structure, only_ligand(structure))
+        assert ligand.source == source and not ligand.guessed
+        assert flat(ligand.mol) == flat(template)
+        # the ribose's stereocentres come from the pose (a phosphate's are only resonance)
+        assert carbon_centres(ligand.mol) == carbon_centres(template)
 
 
 def test_a_given_smiles_comes_first(lysozyme) -> None:
@@ -63,14 +72,20 @@ def test_a_given_smiles_comes_first(lysozyme) -> None:
 
 def test_a_smiles_that_does_not_fit_is_passed_over(lysozyme) -> None:
     ligand = ligands.to_mol(lysozyme, only_ligand(lysozyme), smiles="c1ccccc1")
+    assert ligand.source == ligands.FILE
+    bare = without_file_components(lysozyme)
+    ligand = ligands.to_mol(bare, only_ligand(bare), smiles="c1ccccc1")
     assert ligand.source == ligands.GEOMETRY and ligand.guessed
 
 
 def test_without_a_template_the_geometry_gives_the_bond_orders(lysozyme, thrombin) -> None:
+    lysozyme = without_file_components(lysozyme)
     jz4 = ligands.to_mol(lysozyme, only_ligand(lysozyme))
     assert jz4.guessed
     assert Chem.MolToSmiles(jz4.mol) == canonical("CCCc1ccccc1O")  # 2-propylphenol
     ppack = ligands.to_mol(thrombin, only_ligand(thrombin))
+    # the file's own 0G6 has the chlorine that left on binding His57, and does not flag it
+    assert ppack.guessed
     assert flat(ppack.mol) == canonical("CC(O)C(CCCN=C(N)N)NC(=O)C1CCCN1C(=O)C(N)Cc1ccccc1")
 
 

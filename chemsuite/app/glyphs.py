@@ -337,6 +337,22 @@ def _overlay(p: QPainter) -> None:
     p.drawEllipse(QPointF(9.8, 8), 3.8, 3.8)
 
 
+def _play(p: QPainter) -> None:
+    """A triangle pointing right: play."""
+    path = QPainterPath()
+    path.moveTo(5, 3.5)
+    path.lineTo(12, 8)
+    path.lineTo(5, 12.5)
+    path.closeSubpath()
+    p.drawPath(path)
+
+
+def _pause(p: QPainter) -> None:
+    """Two upright bars: pause."""
+    p.drawLine(QPointF(6, 4), QPointF(6, 12))
+    p.drawLine(QPointF(10, 4), QPointF(10, 12))
+
+
 GLYPHS: dict[str, Draw] = {
     "pencil": _pencil,
     "not": _not,
@@ -347,6 +363,8 @@ GLYPHS: dict[str, Draw] = {
     "previous": lambda p: _chevron(p, False, False),
     "next": lambda p: _chevron(p, True, False),
     "last": lambda p: _chevron(p, True, True),
+    "play": _play,
+    "pause": _pause,
     "case": _case,
     "whole": _whole,
     "regex": _regex,

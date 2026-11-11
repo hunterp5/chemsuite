@@ -21,14 +21,28 @@ the tree, the sequence strip, the selection bar and the 3D view all read and cha
 session, never each other, and redraw on its signals:
 
 - ``proteinsChanged``: proteins came or went, or one was shown or hidden;
-- ``sceneChanged``: what is drawn changed (styles, cartoon, surface): geometry is rebuilt;
+- ``sceneChanged``: what is drawn changed (styles, cartoon, surface, the model shown):
+  geometry is rebuilt;
 - ``lookChanged``: only colours or the selection changed: only the look is uploaded;
 - ``hovered``: the atom under the pointer (the protein's id and atom index, or "" and -1);
 - ``focusChanged``: a ligand was focused or the focus cleared (the panel moves the camera);
-- ``measurementsChanged``: a measurement was added or removed, or atoms picked for one.
+- ``measurementsChanged``: a measurement was added or removed, or atoms picked for one;
+- ``labelsChanged``: labels were added or cleared;
+- ``rowsEdited``: table rows had their protein, ligand ID or ligand changed (the panel follows
+  the current row again: a ligand moved in the sketcher shows as a pose).
 
-Selections are atom masks per protein. Saved ("named") selections, measurements and the
-focused ligand are kept as atom uids, so they survive edits of the structure.
+With a way to run work in the background (``run``, as a tool's ``ctx.run`` in the quick
+lane), slow parts (surfaces, interactions, large cartoons) are built off the GUI thread by a
+:class:`~.builds.Builder`; the scene shows the last one until the new one arrives.
+
+Selections are atom masks per protein. Saved ("named") selections, measurements, labels and
+the focused ligand are kept as atom uids, so they survive edits of the structure.
+
+A pose (a row's own 3D ligand that is not one of the protein's residues: docked, or moved in
+the sketcher) is drawn by a display of its own, ``pose``, holding the protein and the pose
+merged (:func:`chemsuite.protein.poses.merged`) with only the pose drawn, so its interactions
+with the protein are found as for any ligand. It is not a document asset and is not saved: the
+table's current row brings it back.
 """
 
 from __future__ import annotations
@@ -39,13 +53,16 @@ import numpy as np
 from PySide6.QtCore import QObject, Signal
 
 from chemsuite.core.table import AssetsChanged, Table
-from chemsuite.core.table.events import Changed
+from chemsuite.core.table.events import CellsChanged, Changed
 from chemsuite.molview.measure import describe
 from chemsuite.protein import display as displays
+from chemsuite.protein import poses, store
 from chemsuite.protein import scene as scenes
-from chemsuite.protein import store
+from chemsuite.protein.ligands import LIGAND_COLUMN, LIGAND_ID_COLUMN, PROTEIN_COLUMN
 from chemsuite.protein.model import AMINO, LIGAND, NUCLEIC
 from chemsuite.protein.select import Mask, SelectionError, select
+
+from .builds import Builder, Run
 
 KIND = "protein"
 SET = "set"
@@ -53,9 +70,18 @@ ADD = "add"
 TOGGLE = "toggle"
 REMOVE = "remove"
 #: Focus Ligand shows these as sticks and the rest faded
-FOCUS_SITE = "byres polymer within 5 of $focus"
+#: whole residues: ``byres`` takes what follows it, so the distance test is in brackets
+FOCUS_SITE = "byres (polymer within 5 of $focus)"
 FOCUS_NEAR = "(water or ion) within 3.5 of $focus"
 Point = tuple[str, int]  # a protein id and an atom uid
+#: in expressions, ``$selection`` is what is selected now
+SELECTION = "selection"
+ATOM_LABEL = "atom"
+RESIDUE_LABEL = "residue"
+#: a pose's display id: this, then its protein's
+POSE = "pose:"
+#: the table columns that say what a row shows here
+ROW_COLUMNS = (PROTEIN_COLUMN, LIGAND_ID_COLUMN, LIGAND_COLUMN)
 
 
 structure_of = store.as_structure  # an asset's structure, decoding stored bytes
@@ -69,15 +95,26 @@ class ProteinSession(QObject):
     hovered = Signal(str, int)
     focusChanged = Signal()
     measurementsChanged = Signal()
+    labelsChanged = Signal()
+    rowsEdited = Signal(object)  # oids whose protein, ligand ID or ligand changed
 
-    def __init__(self, table: Table, parent: QObject | None = None) -> None:
+    def __init__(self, table: Table, parent: QObject | None = None, run: Run | None = None) -> None:
         super().__init__(parent)
         self.table = table
+        self.builder = Builder(self, run) if run is not None else None
         self.displays: list[displays.Display] = []
         self.named: dict[str, dict[str, list[int]]] = {}
         self.focused: Point | None = None  # the focused ligand: one of its atoms
+        self.pose: displays.Display | None = None  # a row's own pose, in its protein
+        self.pose_row: int | None = None  # that row
+        self._posed_in = None  # the protein's structure the pose was placed in
+        self._site: np.ndarray | None = None  # the focused pocket's residues (for its skin)
         self.measurements: list[tuple[Point, ...]] = []
         self.measuring = 0  # how many atoms the next measurement takes (0: not measuring)
+        self.pocket_surface = True  # Focus draws a skin over the pocket
+        #: what is labelled, in order: (protein, atom uid, ATOM_LABEL or RESIDUE_LABEL); a
+        #: residue's label is kept on its first atom
+        self.labels: dict[tuple[str, int, str], None] = {}
         self.picked: list[Point] = []
         self._scene: displays.Scene | None = None
         self._pending: dict[str, dict] = {}  # saved display state for proteins not loaded yet
@@ -86,6 +123,8 @@ class ProteinSession(QObject):
 
     def close(self) -> None:
         self._unsubscribe()
+        if self.builder is not None:
+            self.builder.cancel_all()
 
     # proteins
     def reload(self) -> None:
@@ -100,7 +139,9 @@ class ProteinSession(QObject):
                 current.name = asset.name
                 new.append(current)
                 continue
-            shown = displays.Display(asset.id, asset.name, structure)
+            shown = displays.Display(
+                asset.id, asset.name, structure, deferred=self.builder is not None
+            )
             state = self._pending.pop(asset.id, None)
             if state is None and current is not None:
                 state = current.state()  # replaced (an edit): keep the look if it fits
@@ -108,16 +149,38 @@ class ProteinSession(QObject):
                 shown.set_state(state)
             new.append(shown)
         self.displays = new
+        if self.focused is not None and self.display(self.focused[0]) is None:
+            self.focused = self._site = None  # its protein was removed
+        if self.pose is not None:
+            protein = self.display(self.pose.name)
+            if protein is None or protein.structure is not self._posed_in:
+                self.pose = self.pose_row = None
         self._scene = None
         self.proteinsChanged.emit()
         self.sceneChanged.emit()
 
     def _on_table_event(self, event) -> None:
-        if isinstance(event, Changed) and any(isinstance(c, AssetsChanged) for c in event.changes):
+        if not isinstance(event, Changed):
+            return
+        if any(isinstance(c, AssetsChanged) for c in event.changes):
             self.reload()
+        edited = [c for c in event.changes
+                  if isinstance(c, CellsChanged) and c.column in ROW_COLUMNS]  # fmt: skip
+        if edited:
+            self.rowsEdited.emit(np.unique(np.concatenate([c.oids for c in edited])))
 
     def display(self, protein: str) -> displays.Display | None:
         return next((d for d in self.displays if d.id == protein), None)
+
+    def shown(self, id: str) -> displays.Display | None:
+        """The protein's display, or the pose's (for hovering and measuring)."""
+        if self.pose is not None and id == self.pose.id:
+            return self.pose
+        return self.display(id)
+
+    def all_displays(self) -> list[displays.Display]:
+        """The proteins' displays and the pose's."""
+        return self.displays + ([self.pose] if self.pose is not None else [])
 
     def set_visible(self, protein: str, visible: bool) -> None:
         shown = self.display(protein)
@@ -131,8 +194,18 @@ class ProteinSession(QObject):
     @property
     def scene(self) -> displays.Scene:
         if self._scene is None:
-            self._scene = displays.compose(self.displays)
+            if self.pose is not None:
+                protein = self.display(self.pose.name)
+                self.pose.visible = protein is not None and protein.visible
+            self._scene = displays.compose(self.all_displays())
+            if self.builder is not None:
+                self.builder.schedule(self._scene.displays)
         return self._scene
+
+    def built(self) -> None:
+        """A part built in the background arrived: draw it."""
+        self._scene = None
+        self.sceneChanged.emit()
 
     def _changed(self, rebuilt: bool) -> None:
         if rebuilt or self._scene is None:
@@ -176,7 +249,9 @@ class ProteinSession(QObject):
         for shown in self.displays:
             if shown.visible and protein in (None, shown.id):
                 named = self._named_masks(shown)
-                out[shown.id] = select(shown.structure, text, named=named) & shown.active
+                out[shown.id] = (
+                    select(shown.structure, text, named=named, model=shown.model) & shown.active
+                )
         return out
 
     def select_text(self, text: str, mode: str = SET, protein: str | None = None) -> int:
@@ -189,6 +264,8 @@ class ProteinSession(QObject):
     def save_selection(self, name: str) -> None:
         if not name.isidentifier():
             raise SelectionError(f"'{name}' is not a name (letters, digits and _)", 0)
+        if name == SELECTION:
+            raise SelectionError(f"'{name}' is taken: $selection is what is selected now", 0)
         self.named[name] = {
             d.id: d.structure.uid[d.selected].tolist() for d in self.displays if d.selected.any()
         }
@@ -200,6 +277,7 @@ class ProteinSession(QObject):
             indices = shown.structure.indices(np.array(by_protein.get(shown.id, []), np.int64))
             mask[indices[indices >= 0]] = True
             out[name] = mask
+        out[SELECTION] = shown.selected.copy()
         return out
 
     # changing how the selection is shown
@@ -236,10 +314,38 @@ class ProteinSession(QObject):
             shown.colour(mask, rgb)
         self._changed(rebuilt=False)
 
+    @property
+    def hydrogens(self) -> str:
+        """Which hydrogens are drawn (all, polar, none), as the first protein has it."""
+        return self.displays[0].hydrogens if self.displays else displays.POLAR_H
+
+    def show_hydrogens(self, which: str) -> None:
+        for shown in self.displays:
+            shown.show_hydrogens(which)
+        self._changed(rebuilt=True)
+
+    @property
+    def transparency(self) -> float:
+        """How see-through surfaces are (0 opaque), as the first protein has it."""
+        return self.displays[0].transparency if self.displays else displays.SURFACE_TRANSPARENCY
+
+    def set_transparency(self, transparency: float) -> None:
+        for shown in self.displays:
+            shown.transparency = transparency
+        self._changed(rebuilt=False)
+
     def choose_altloc(self, protein: str, residue: int, letter: str) -> None:
         shown = self.display(protein)
         if shown is not None:
             shown.choose_altloc(residue, letter)
+            self._changed(rebuilt=True)
+
+    def set_model(self, protein: str, model: int) -> None:
+        """Show another of the protein's models (NMR models; trajectory frames later)."""
+        shown = self.display(protein)
+        if shown is not None and shown.set_model(model):
+            if self.pose is not None and self.pose.name == protein:
+                self.pose.set_model(model)
             self._changed(rebuilt=True)
 
     # interactions
@@ -265,7 +371,7 @@ class ProteinSession(QObject):
         """The shown interactions this atom takes part in, in words."""
         from chemsuite.protein.interactions import describe as say
 
-        shown = self.display(protein)
+        shown = self.shown(protein)
         if shown is None or shown not in self.scene.displays:
             return []
         found = self.scene.interactions[self.scene.displays.index(shown)]
@@ -289,26 +395,89 @@ class ProteinSession(QObject):
         s = shown.structure
         ligand = (s.residue_of == residue) & shown.active
         named = {"focus": ligand}
-        site = select(s, FOCUS_SITE, named=named) & shown.active
-        waters = select(s, FOCUS_NEAR, named=named) & shown.active
-        for other in self.displays:
-            other.ghost = np.zeros(other.structure.n_atoms, bool)
-            if restyle:
-                other.show_interactions(None)
+        site = select(s, FOCUS_SITE, named=named, model=shown.model) & shown.active
+        waters = select(s, FOCUS_NEAR, named=named, model=shown.model) & shown.active
+        self.pose = self.pose_row = None
+        self._pocket(shown, ligand, site, waters, restyle)
         if restyle:
-            polymer = np.isin(s.res_kind[s.residue_of], (AMINO, NUCLEIC))
-            shown.show(~(site | waters | ligand | polymer), scenes.HIDDEN)
-            shown.show(site, scenes.STICK)
-            shown.show(waters, scenes.BALL_AND_STICK)
-            shown.show(ligand, scenes.BALL_AND_STICK)
             shown.show_interactions(ligand)
         shown.ghost = ~(site | waters | ligand)
         self.focused = (protein, int(s.uid[s.atoms_of(residue).start]))
         self._changed(rebuilt=True)
         self.focusChanged.emit()
 
+    def _pocket(self, shown, ligand, site, waters, restyle: bool) -> None:
+        """Fade every protein, show this one's pocket and hide its other small molecules."""
+        for other in self.displays:
+            other.ghost = np.zeros(other.structure.n_atoms, bool)
+            other.show_pocket(None)
+            if restyle:
+                other.show_interactions(None)
+        if restyle:
+            s = shown.structure
+            polymer = np.isin(s.res_kind[s.residue_of], (AMINO, NUCLEIC))
+            shown.show(~(site | waters | ligand | polymer), scenes.HIDDEN)
+            shown.show(site, scenes.STICK)
+            shown.show(waters, scenes.BALL_AND_STICK)
+            shown.show(ligand, scenes.BALL_AND_STICK)
+        self._site = site
+        shown.show_pocket(site if self.pocket_surface else None)
+
+    def show_pose(self, protein: str, mol, oid: int | None = None) -> bool:
+        """Show ``mol``'s own 3D pose (an RDKit molecule) in ``protein``'s pocket, as Focus
+        shows a ligand: its pocket as sticks, the protein faded, its interactions. A ligand of
+        the protein it overlaps (the one it stands in for) stays, faded, for comparison."""
+        shown = self.display(protein)
+        if shown is None:
+            return False
+        s = shown.structure
+        pose = poses.from_mol(mol)
+        heavy = pose.xyz()[pose.element != 1]
+        replaced = poses.overlapping(s, heavy, shown.active, shown.model)
+        both = poses.merged(s.subset(~replaced), pose)
+        mine = np.zeros(both.n_atoms, bool)
+        mine[s.n_atoms - int(replaced.sum()) :] = True
+        display = displays.Display(
+            POSE + protein,
+            protein,
+            both,
+            model=shown.model,
+            hydrogens=shown.hydrogens,
+            altlocs={} if replaced.any() else dict(shown.altlocs),
+            deferred=self.builder is not None,
+        )
+        display.show(~mine, scenes.HIDDEN)
+        display.show(mine, scenes.BALL_AND_STICK)
+        display.show_cartoon(np.ones(both.n_atoms, bool), False)
+        display.show_interactions(mine)
+        named = {"focus": mine}
+        site = select(both, FOCUS_SITE, named=named, model=display.model)
+        waters = select(both, FOCUS_NEAR, named=named, model=display.model)
+
+        def in_protein(mask: np.ndarray) -> np.ndarray:
+            out = np.zeros(s.n_atoms, bool)
+            found = s.indices(both.uid[mask & ~mine])
+            out[found[found >= 0]] = True
+            return out & shown.active
+
+        site, waters = in_protein(site), in_protein(waters)
+        self.focused = None
+        self._pocket(shown, replaced, site, waters, restyle=True)
+        shown.show(replaced, scenes.STICK)
+        shown.ghost = ~(site | waters)
+        self.pose, self.pose_row, self._posed_in = display, oid, s
+        self._changed(rebuilt=True)
+        self.focusChanged.emit()
+        return True
+
     def focused_atoms(self) -> tuple[displays.Display, np.ndarray] | None:
-        """The focused ligand's display and its pocket's atoms (ligand, site, waters)."""
+        """The focused ligand's display and its pocket's atoms (ligand, site, waters); for a
+        pose, its protein's display and the pocket's."""
+        if self.pose is not None:
+            shown = self.display(self.pose.name)
+            if shown is None or not shown.visible:
+                return None
+            return shown, ~shown.ghost
         if self.focused is None:
             return None
         shown = self.display(self.focused[0])
@@ -327,13 +496,83 @@ class ProteinSession(QObject):
         return shown.id, int(shown.structure.residue_of[index])
 
     def clear_focus(self) -> None:
-        if self.focused is None:
+        if self.focused is None and self.pose is None:
             return
         self.focused = None
+        self.pose = self.pose_row = None
+        self._site = None
         for shown in self.displays:
             shown.ghost = np.zeros(shown.structure.n_atoms, bool)
-        self._changed(rebuilt=False)
+            shown.show_pocket(None)
+        self._changed(rebuilt=True)
         self.focusChanged.emit()
+
+    def show_pocket_surface(self, on: bool) -> None:
+        """Whether Focus draws a skin over the pocket (coloured by hydrophobicity)."""
+        self.pocket_surface = on
+        found = self.focused_atoms()
+        if found is not None and self._site is not None:
+            shown, _atoms = found
+            if len(self._site) == shown.structure.n_atoms:
+                shown.show_pocket(self._site if on else None)
+        self._changed(rebuilt=True)
+
+    # labels
+    def label(self, kind: str, masks: Mapping[str, Mask] | None = None) -> None:
+        """Label the selected residues (``RESIDUE_LABEL``) or atoms (``ATOM_LABEL``), or those
+        of ``masks`` (atoms per protein)."""
+        masks = self.selection() if masks is None else masks
+        for shown in self.displays:
+            mask = masks.get(shown.id)
+            if mask is None or not mask.any():
+                continue
+            s = shown.structure
+            if kind == RESIDUE_LABEL:
+                atoms = s.res_start[:-1][np.unique(s.residue_of[mask])]
+            else:
+                atoms = np.flatnonzero(mask)
+            for uid in s.uid[atoms].tolist():
+                self.labels[(shown.id, int(uid), kind)] = None
+        self.labelsChanged.emit()
+
+    def clear_labels(self) -> None:
+        self.labels = {}
+        self.labelsChanged.emit()
+
+    def labelled(self) -> tuple[np.ndarray, list[str]]:
+        """Where each label goes that can be drawn, and its text: on a residue's CA (or the
+        middle of its atoms) and an atom itself; none on a protein hidden, an atom faded by
+        Focus or a residue not drawn at all."""
+        scene = self.scene
+        drawn = np.zeros(int(scene.atom_offsets[-1]), bool)
+        drawn[scene.geometry.atoms] = True
+        drawn[scene.pick_atoms] = True  # a cartoon's residues, through their trace atoms
+        positions, texts = [], []
+        for protein, uid, kind in self.labels:
+            shown = self.display(protein)
+            if shown is None or shown not in scene.displays:
+                continue
+            s = shown.structure
+            index = int(s.indices(np.array([uid]))[0])
+            if index < 0 or shown.ghost[index]:
+                continue
+            offset = int(scene.global_atoms(shown, np.zeros(1, np.int64))[0])
+            if kind == RESIDUE_LABEL:
+                residue = int(s.residue_of[index])
+                span = s.atoms_of(residue)
+                atoms = np.arange(span.start, span.stop)[shown.active[span]]
+                if not len(atoms) or not drawn[atoms + offset].any():
+                    continue
+                ca = atoms[s.name[atoms] == "CA"]
+                where = shown.xyz[ca[0]] if len(ca) else shown.xyz[atoms].mean(axis=0)
+                text = f"{s.res_name[residue]} {s.res_seq[residue]}{s.icode[residue]}"
+            else:
+                if not drawn[index + offset]:
+                    continue
+                where, text = shown.xyz[index], str(s.name[index])
+            positions.append(where)
+            texts.append(text)
+        return np.array(positions, np.float32).reshape(-1, 3), texts
 
     # measurements
     def measure(self, atoms: int) -> None:
@@ -369,14 +608,14 @@ class ProteinSession(QObject):
 
     def where(self, point: Point) -> tuple[int, np.ndarray] | None:
         """A point's scene atom and position, or None when it is not drawn."""
-        shown = self.display(point[0])
+        shown = self.shown(point[0])
         scene = self.scene
         if shown is None or shown not in scene.displays:
             return None
         index = int(shown.structure.indices(np.array([point[1]]))[0])
         if index < 0:
             return None
-        return int(scene.global_atoms(shown, np.array([index]))[0]), shown.structure.xyz(0)[index]
+        return int(scene.global_atoms(shown, np.array([index]))[0]), shown.xyz[index]
 
     def measured(self) -> list[tuple[list[np.ndarray], str]]:
         """Each measurement whose atoms are all drawn: its positions and value in words."""
@@ -404,6 +643,8 @@ class ProteinSession(QObject):
             "named": self.named,
             "focused": list(self.focused) if self.focused else None,
             "measurements": [[list(p) for p in m] for m in self.measurements],
+            "pocket_surface": self.pocket_surface,
+            "labels": [list(label) for label in self.labels],
         }
 
     def set_state(self, state: Mapping) -> None:
@@ -417,6 +658,14 @@ class ProteinSession(QObject):
                 shown.set_state(saved.pop(shown.id))
         self._pending = saved
         self.measurements = _points(state.get("measurements"))
+        self.pocket_surface = state.get("pocket_surface", True) is not False
+        self.labels = {
+            (str(item[0]), item[1], item[2]): None
+            for item in state.get("labels") or []
+            if isinstance(item, list) and len(item) == 3 and isinstance(item[1], int)
+            and item[2] in (ATOM_LABEL, RESIDUE_LABEL)
+        }  # fmt: skip
+        self.labelsChanged.emit()
         focused = _points([[state.get("focused")]])
         self.focused = focused[0][0] if focused else None
         if self.focused is not None:

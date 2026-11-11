@@ -246,3 +246,146 @@ def test_proteins_are_drawn_picked_and_selected() -> None:
     assert lines["HOLDS"] == ["False"]
     r4, g4, b4 = (int(v) for v in lines["MOVED"])
     assert b4 > 60 and b4 > 3 * r4 and b4 > 2 * g4, (r4, g4, b4)  # still drawn after the move
+
+
+RENDER_SHORT = """
+import sys
+import numpy as np
+from PySide6.QtWidgets import QApplication
+app = QApplication([])
+from chemsuite.app.protein import view as views
+from chemsuite.protein import cartoon, io, mesh, scene
+made = []
+chunks = mesh.chunks
+def small(m):  # many chunks, as a large mesh would make
+    parts = chunks(m, 2000)
+    made.append(len(parts))
+    return parts
+mesh.chunks = small
+create = views.ProteinView.create_pipelines
+def without_wide_indices(self):
+    ok = create(self)
+    self._wide_indices = False  # as on OpenGL ES 2 without the extension
+    return ok
+views.ProteinView.create_pipelines = without_wide_indices
+s = io.read(sys.argv[1])
+view = views.ProteinView()
+view.resize(400, 400)
+nothing = scene.geometry(s, np.zeros(s.n_atoms, np.uint8))
+view.set_scene(nothing, np.zeros((0, 5)), np.zeros((0, 10)))
+tube = cartoon.build(s)
+blue = np.tile(np.array([0.1, 0.2, 0.95, 1.0], np.float32), (s.n_residues, 1))
+view.set_mesh("cartoon", tube, mesh.look(tube, blue, np.zeros(s.n_residues)))
+_, trace = cartoon.trace(s)
+view.set_pick_points(trace, s.coords[0][trace], np.full(len(trace), 1.2))
+view.reset_view()
+try:
+    view.show()
+    for _ in range(20):
+        app.processEvents()
+except Exception as error:
+    print("NO-RHI", type(error).__name__)
+    sys.exit(0)
+drawn = view.grabFramebuffer()
+if drawn.isNull():
+    print("NO-RHI")
+    sys.exit(0)
+xy, depth = view.camera.project(s.coords[0][trace], drawn.width(), drawn.height())
+c = drawn.pixelColor(*(int(v) for v in xy[int(np.argmin(depth))]))
+print("CHUNKS", made[0] if made else 0)
+print("CARTOON", c.red(), c.green(), c.blue())
+"""
+
+
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
+    reason="needs a display for the GPU",
+)
+def test_meshes_draw_in_chunks_without_32_bit_indices() -> None:
+    """Where the GPU has only 16-bit indices, a cartoon is drawn in chunks, not skipped."""
+    env = {k: v for k, v in os.environ.items() if k != "QT_QPA_PLATFORM"}
+    out = subprocess.run(
+        [sys.executable, "-c", RENDER_SHORT, str(KINASE)], capture_output=True, text=True,
+        env=env, cwd=ROOT, timeout=120,
+    )  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    if "NO-RHI" in out.stdout:
+        if os.environ.get("CHEMSUITE_REQUIRE_GPU"):
+            pytest.fail("no GPU drawing: " + out.stderr)
+        pytest.skip("no GPU drawing on this machine")
+    lines = {line.split()[0]: line.split()[1:] for line in out.stdout.splitlines()}
+    assert int(lines["CHUNKS"][0]) > 5, out.stdout
+    r, g, b = (int(v) for v in lines["CARTOON"])
+    assert b > 60 and b > 3 * r and b > 2 * g, (r, g, b)  # the cartoon's blue
+
+
+RENDER_FRAMES = """
+import sys, time
+from dataclasses import replace
+import numpy as np
+from PySide6.QtWidgets import QApplication
+app = QApplication([])
+from chemsuite.app.protein.view import ProteinView
+from chemsuite.protein import display, io, poses
+base = io.read(sys.argv[1])
+big, k = base, 1
+while big.n_atoms < 100_000:  # copies side by side, each with its own chains
+    shift = np.array([(k % 8) * 60.0, (k // 8) * 60.0, 0.0], np.float32)
+    big = poses.merged(big, replace(base.with_coords(base.coords + shift),
+        chain_name=np.array([f"{c}{k}" for c in base.chain_name], dtype="<U4")))
+    k += 1
+scene = display.compose([display.Display("big", "big", big)])
+view = ProteinView()
+view.resize(800, 600)
+view.set_scene(scene.geometry, scene.sphere_look, scene.cylinder_look, fit=True)
+view.set_mesh("cartoon", scene.cartoon, scene.cartoon_look)
+submitted = []
+view.frameSubmitted.connect(lambda: submitted.append(time.perf_counter()))
+try:
+    view.show()
+    for _ in range(20):
+        app.processEvents()
+except Exception as error:
+    print("NO-RHI", type(error).__name__)
+    sys.exit(0)
+if view.grabFramebuffer().isNull():
+    print("NO-RHI")
+    sys.exit(0)
+times = []
+for _ in range(60):
+    count, start = len(submitted), time.perf_counter()
+    view.camera.turn(6.0, 2.0)
+    view.update()
+    while len(submitted) == count and time.perf_counter() - start < 2.0:
+        app.processEvents()
+    times.append((time.perf_counter() - start) * 1000)
+print("ATOMS", big.n_atoms)
+print("BACKEND", view.rhi().backendName())
+print("MEDIAN", f"{np.median(times):.1f}")
+print("P95", f"{np.percentile(times, 95):.1f}")
+"""
+#: ms per frame while the camera turns around 100,000 atoms, asserted on Metal (a Mac's GPU);
+#: other backends (CI's software Mesa) only report it
+FRAME_MS = 33.0
+
+
+@pytest.mark.bench
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
+    reason="needs a display for the GPU",
+)
+def test_turning_a_large_protein_keeps_its_frame_rate() -> None:
+    env = {k: v for k, v in os.environ.items() if k != "QT_QPA_PLATFORM"}
+    out = subprocess.run(
+        [sys.executable, "-c", RENDER_FRAMES, str(ROOT / "tests/data/protein/3htb.cif.gz")],
+        capture_output=True, text=True, env=env, cwd=ROOT, timeout=300,
+    )  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    if "NO-RHI" in out.stdout:
+        pytest.skip("no GPU drawing on this machine")
+    lines = {line.split()[0]: line.split()[1:] for line in out.stdout.splitlines()}
+    median, p95 = float(lines["MEDIAN"][0]), float(lines["P95"][0])
+    backend = lines["BACKEND"][0]
+    print(f"\n{lines['ATOMS'][0]} atoms on {backend}: median {median} ms, 95% {p95} ms a frame")
+    if backend == "Metal":
+        assert median < FRAME_MS, out.stdout

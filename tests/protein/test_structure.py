@@ -50,7 +50,15 @@ def residue(s: Structure, label: str) -> int:
 
 
 @pytest.mark.parametrize(
-    "name", ["1crn.pdb.gz", "1crn.cif.gz", "3htb.cif.gz", "1atp.cif.gz", "1ppb.cif.gz"]
+    "name",
+    [
+        "1crn.pdb.gz",
+        "1crn.cif.gz",
+        "3htb.cif.gz",
+        "1atp.cif.gz",
+        "1ppb.cif.gz",
+        "5gnk_pocket.cif.gz",
+    ],
 )
 def test_atoms_residues_and_chains_match_gemmi(name: str) -> None:
     s = load(name)
@@ -141,7 +149,15 @@ def test_all_alternate_locations_are_kept_and_one_is_shown(lysozyme: Structure) 
 
 
 @pytest.mark.parametrize(
-    "name", ["1crn.cif.gz", "3htb.cif.gz", "1atp.cif.gz", "1ppb.cif.gz", "1d3z_2models.cif.gz"]
+    "name",
+    [
+        "1crn.cif.gz",
+        "3htb.cif.gz",
+        "1atp.cif.gz",
+        "1ppb.cif.gz",
+        "1d3z_2models.cif.gz",
+        "5gnk_pocket.cif.gz",
+    ],  # fmt: skip
 )
 def test_every_atom_but_waters_and_ions_is_bonded_with_sensible_lengths(name: str) -> None:
     s = load(name)
@@ -169,6 +185,16 @@ def test_disulfides_and_covalent_ligands_are_bonded(crambin: Structure, thrombin
     out = thrombin.bonds[inside.any(axis=1) & ~inside.all(axis=1)]
     links = {tuple(sorted(thrombin.atom_label(i) for i in pair)) for pair in out}
     assert links == {("H/0G6 1/C3", "H/HIS 57/NE2"), ("H/0G6 1/C2", "H/SER 195/OG")}
+
+
+def test_a_covalent_warhead_is_bonded_to_its_cysteine(egfr: Structure) -> None:
+    ligand = residue(egfr, "A/80U 1001")
+    span = egfr.atoms_of(ligand)
+    inside = (egfr.bonds >= span.start) & (egfr.bonds < span.stop)
+    out = egfr.bonds[inside.any(axis=1) & ~inside.all(axis=1)]
+    assert {tuple(sorted(egfr.atom_label(i) for i in pair)) for pair in out} == {
+        ("A/80U 1001/CAO", "A/CYS 797/SG")
+    }
 
 
 def test_peptide_bonds_join_neighbours_only(crambin: Structure) -> None:
@@ -280,6 +306,32 @@ def test_written_files_read_back_the_same(kinase: Structure, tmp_path) -> None:
         assert np.allclose(back.coords, kinase.coords, atol=1e-3)
         assert np.array_equal(back.res_kind, kinase.res_kind)
         assert np.array_equal(back.bonds, kinase.bonds)
+
+
+def test_an_interrupted_save_leaves_the_old_file(kinase: Structure, tmp_path, monkeypatch) -> None:
+    path = tmp_path / "out.cif"
+    path.write_text("the old file")
+
+    def broken(_source, _target):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(io.os, "replace", broken)
+    with pytest.raises(OSError):
+        io.write(kinase, path)
+    assert path.read_text() == "the old file" and list(tmp_path.iterdir()) == [path]
+
+
+def test_several_proteins_make_one_file(kinase: Structure, lysozyme: Structure) -> None:
+    protein = kinase.res_kind[kinase.residue_of] == AMINO
+    for fmt in (io.PDB, io.MMCIF):
+        text, renamed = io.to_text_many([(kinase, None), (lysozyme, None), (kinase, protein)], fmt)
+        assert renamed == {(2, "E"): "B", (2, "I"): "C"}  # A is lysozyme's
+        back = io.parse(text, fmt)
+        assert back.n_atoms == kinase.n_atoms + lysozyme.n_atoms + int(protein.sum())
+        assert list(back.chain_name) == ["E", "I", "A", "B", "C"]
+        assert text.count("data_") == (fmt == io.MMCIF)  # one file, not three pasted together
+    alone, renamed = io.to_text_many([(kinase, None)], io.MMCIF)
+    assert alone == io.to_text(kinase, io.MMCIF) and not renamed
 
 
 def _assert_same(a: Structure, b: Structure) -> None:

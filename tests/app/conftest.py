@@ -70,6 +70,7 @@ def no_modal_dialogs(monkeypatch):
 def private_settings(tmp_path, monkeypatch):
     """Each test gets empty settings and no machine policy; the user's own are never touched."""
     monkeypatch.setenv("CHEMSUITE_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("CHEMSUITE_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("CHEMSUITE_POLICY", str(tmp_path / "no-policy.json"))
     if NO_GUI:
         yield

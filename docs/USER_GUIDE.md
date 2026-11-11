@@ -311,7 +311,8 @@ From Tools ▸ Table:
     them scroll again. Frozen rows are saved with the document.
 - **Data ▸ Search ▸ Show All Rows** clears every filter, search and "show only" at once.
 - **File ▸ New from Shown Rows** puts exactly the rows you can see, in their shown
-  order, into a new untitled document. Column types are kept.
+  order, into a new untitled document. Column types are kept, and the proteins the rows name
+  in their **Protein** column come with them.
 
 ---
 
@@ -1208,26 +1209,44 @@ window (dock it beside the table with the button in its title bar if you prefer)
 own menus:
 
 - **File:** **Open Protein…** (PDB or mmCIF files, gzipped or not), **Fetch from PDB…**
-  (download an entry by its ID, such as 1ATP), **Save Selection As…** (PDB or mmCIF) and
-  **Close Viewer**. With no protein open, the middle of the window offers Open and Fetch.
+  (download an entry by its ID, such as 1ATP), **Remove Protein ▸**, **Save Protein As ▸**
+  (every model and alternate location), **Save Selection As…** (PDB or mmCIF) and **Close
+  Viewer**. Saving writes a temporary file first, so a save that fails leaves the old file as it
+  was. A selection across several proteins is written as one file; a chain whose ID another
+  protein took first is renamed, and the status line says how. With no protein open, the middle of the window offers
+  Open and Fetch. A protein can also be removed from its right-click menu in the proteins list,
+  or with Delete. When it has ligand rows you choose **Delete Rows** or **Keep Rows**; either
+  way one Undo brings it all back. A kept row whose protein is gone says so on the viewer's
+  status line when you make it current.
 - **Edit:** **Copy Selection As ▸ PDB / mmCIF**, **Select All**, **Clear Selection**, **Save
   Selection…**.
-- **View:** Show, Hide and Colour, Frame Selection, Reset View, and whether the proteins list
-  and the sequence show.
-- **Pocket:** Interactions, Focus, Measure and **Extract Ligands to Table** (rows for the
-  ligands of proteins that have none yet).
+- **View:** Show, Hide, Colour and Label, Hydrogens, Surface Transparency, Frame Selection, Reset
+  View, and whether the proteins list and the sequence show.
+- **Pocket:** Interactions, Focus, Measure, **Extract Ligands to Table** (rows for the
+  ligands of proteins that have none yet) and **Interactions to Table**: for each ligand row
+  (the selected rows, or all), how many hydrogen bonds, salt bridges, π-stacking, cation–π,
+  hydrophobic, halogen-bond, metal and water-bridge contacts its ligand makes, one number
+  column each, and a **Contacts** column naming the residues and how (`MET793 HB; LEU788 X`).
+  A row's own pose is used when it has one. It runs in the job queue; cancelling it keeps the
+  rows finished, and running it again updates the same columns.
 
 Proteins are saved inside the document. Adding one also adds a row for each of its ligands to
-the table, in one step you can undo:
+the table, in one step you can undo. Cofactors (ATP, NAD, FAD, haem, SAM…) get a row only when
+they are the protein's only ligand; **Add Ligand to Table** in the right-click menu adds one.
 
 | Column | What it holds |
 |---|---|
 | Protein | Which protein the ligand belongs to (a second copy of 1ATP becomes 1ATP-2) |
 | Ligand ID | Chain, residue name and number, such as `E/ATP 355` |
 | Ligand | The ligand as a structure, in its pose from the file (3D kept) |
-| Bond Orders | Where the bond orders came from: the PDB's chemical component dictionary (CCD), a SMILES, or **Guessed from geometry**, which is worth checking |
+| Bond Orders | Where the bond orders came from (the first that fits): **SMILES** (one the row already had), **File** (the file's own component tables, as PDB mmCIF files carry), **CCD (downloaded)** (the PDB's chemical component dictionary, fetched once per ligand and kept, when downloads are allowed), **CCD template** (bundled with chemsuite) or **Guessed from geometry**, which is worth checking. A guessed ligand is marked ⚠ in the proteins list |
 
-Make a ligand row current in the table and the viewer shows that ligand in its pocket.
+Make a ligand row current in the table and the viewer shows that ligand in its pocket. When
+the row's **Ligand** is 3D and no longer sits where the file has it (a docked pose, or a ligand
+moved in the sketcher), the viewer shows the row's own pose instead: in ball and stick with its
+pocket and interactions, and the ligand of the file it stands in for faded beside it for
+comparison. Editing the current row's ligand updates the pose at once. The pose is not saved
+with the viewer; making the row current brings it back.
 
 **The viewer.** The proteins list (tick a protein to show or hide it; click a chain or ligand to
 select it), the 3D view and the sequence underneath.
@@ -1235,25 +1254,47 @@ select it), the 3D view and the sequence underneath.
 - **Selecting.** Click selects a residue, Alt-click an atom, double-click its chain; Shift adds
   and Ctrl (Cmd) toggles; click empty space or press Esc to clear. Click or drag across letters
   in the sequence. Type in the selection field (point at it for the syntax): `chain A`,
-  `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres polymer within 5 of
-  ligand`, `and`, `or`, `not`. **Select ▸** has the usual picks and **Save Selection…**;
-  saved selections are used as `$name`.
+  `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres (polymer within 5 of
+  ligand)` (whole residues near a ligand; `byres` takes what follows it, hence the brackets),
+  `and`, `or`, `not`. **Select ▸** has the usual picks, **Around ▸** (the residues or
+  atoms within 3, 5, 8 or 10 Å of the selection, added to it) and **Save Selection…**; saved
+  selections are used as `$name`, and `$selection` is what is selected now.
 - **Show, Hide, Colour** act on the selection: wire, sticks, ball and stick, spacefill,
   cartoon, surface; colour by element, chain, secondary structure, B-factor, hydrophobicity or
   a colour you choose.
+- **Label ▸ Residues / Atoms** labels what is selected (a residue on its Cα, a ligand in its
+  middle); **Clear Labels** removes them. Labels stay legible: nearer ones win where they would
+  overlap, faded and sliced-away atoms lose theirs, and at most 300 show at once.
+- **Hydrogens** (all, polar or none) and **Transparency** (of surfaces, from opaque to 80%)
+  apply to every protein. A hydrogen is drawn as the atom it is bonded to is shown, so showing
+  a residue as sticks shows its hydrogens too. Both are in the View menu as well.
 - **Interactions** draws dashed lines from the ligands (or the selection) to what they touch:
   hydrogen bonds (blue), salt bridges (magenta), π-stacking (green), cation–π (orange),
   hydrophobic contacts (grey), halogen bonds (cyan), metal contacts (purple) and water bridges
   (light blue). Point at an atom to read its interactions in the status line. Structures from
   the PDB rarely carry hydrogens, so these are judged from heavy atoms.
 - **Focus ▸** a ligand shows its pocket (residues within 5 Å as sticks, the waters and ions
-  touching it) with its interactions, fades the rest of the protein and hides other small
-  molecules; a slice of depth around the pocket follows the camera. **Clear Focus** undoes the
-  fading.
+  touching it) with its interactions and a see-through skin over the pocket coloured by
+  hydrophobicity, fades the rest of the protein and hides other small molecules. A slice of
+  depth around the pocket follows the camera, with the back of the pocket fading into the
+  background. **Pocket Surface** in the same menu turns the skin off or on. **Clear Focus**
+  undoes the fading.
 - **Measure ▸ Distance / Angle / Dihedral**, then click two, three or four atoms. Esc stops
   measuring.
+- **Models.** A file with several models (an NMR ensemble) gets a bar under the view: step
+  with the arrows or `[` and `]`, type a model's number, drag the slider, or press Play to loop
+  through them. The selection, colours and measurements stay as the atoms move. When several
+  shown proteins have models, the list at its left picks which one the bar steps. The model
+  shown is saved with the document.
 - Right-click an atom to select its residue, chain or surroundings, focus a ligand, switch an
-  alternate location, copy a ligand's SMILES, or **Copy Selection As ▸ PDB / mmCIF**.
+  alternate location, copy a ligand's SMILES, **Add Ligand to Table** (a cofactor, say, or a
+  ligand whose row you deleted), **Label ▸** its residue or the atom, start a **Measure From
+  Here ▸** distance, angle or dihedral with it as the first atom, or **Copy Selection As ▸
+  PDB / mmCIF**.
+
+Surfaces, interactions and the cartoons of very large proteins are built in the background,
+so the viewer never stops answering: each appears as soon as it is ready, and until then the
+previous one stays on screen.
 
 Everything shown, selected, focused and measured is saved with the document. Fetch from PDB
 only sends the ID, over HTTPS; when IT turns downloads off it says so instead.

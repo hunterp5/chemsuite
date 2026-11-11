@@ -17,14 +17,16 @@
 display and pocket work live here rather than in the main window's menus.
 
 File: Open Protein…, Fetch from PDB…, Save Selection As…, Close. Edit: copying, selecting.
-View: Show, Hide, Colour, the camera, which areas show. Pocket: interactions, focus,
-measurements, ligands to the table. Menus are filled when they open, so they always match the
-session.
+View: Show, Hide, Colour, Label, Hydrogens, Surface Transparency, the camera, which areas
+show.
+Pocket: interactions, focus, measurements, ligands to the table. Menus are filled when they
+open, so they always match the session.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QKeySequence
@@ -32,7 +34,7 @@ from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar
 
 from chemsuite.protein import io as protein_io
 
-from . import menus
+from . import menus, toolbar
 
 if TYPE_CHECKING:
     from .panel import ProteinPanel
@@ -41,7 +43,10 @@ if TYPE_CHECKING:
 OPEN = "open"
 FETCH = "fetch"
 EXTRACT = "extract"
-Commands = Mapping[str, Callable[[], object]]
+LIGAND = "ligand"  # add one ligand's row: (protein id, residue)
+PROFILE = "profile"  # each ligand row's interactions, as columns
+REMOVE = "remove"  # remove a protein: (protein id)
+Commands = Mapping[str, Callable[..., object]]
 
 
 def build(panel: ProteinPanel, commands: Commands) -> QMenuBar:
@@ -63,7 +68,15 @@ def _file(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
         menu.addAction("Fetch from PDB…", commands.get(FETCH, lambda: None)).setEnabled(
             FETCH in commands
         )
+        removing = menu.addMenu("Remove Protein")
+        for shown in panel.session.displays:
+            removing.addAction(shown.name, lambda p=shown.id: commands[REMOVE](p))
+        removing.setEnabled(REMOVE in commands and bool(panel.session.displays))
         menu.addSeparator()
+        saving = menu.addMenu("Save Protein As")
+        for shown in panel.session.displays:
+            saving.addAction(f"{shown.name}…", lambda p=shown.id: save_protein(panel, p))
+        saving.setEnabled(bool(panel.session.displays))
         save = menu.addAction("Save Selection As…", lambda: save_selection(panel))
         save.setEnabled(panel.session.selected_count() > 0)
         menu.addSeparator()
@@ -102,6 +115,9 @@ def _view(menu: QMenu, panel: ProteinPanel) -> None:
         menus.fill_show(menu.addMenu("Show"), session)
         menus.fill_hide(menu.addMenu("Hide"), session)
         menus.fill_colour(menu.addMenu("Colour"), session, panel)
+        menus.fill_label(menu.addMenu("Label"), session)
+        menus.fill_hydrogens(menu.addMenu("Hydrogens"), session)
+        menus.fill_transparency(menu.addMenu("Surface Transparency"), session)
         menu.addSeparator()
         menu.addAction("Frame Selection", panel.frame_selection)
         menu.addAction("Reset View", panel.reset_view)
@@ -124,11 +140,13 @@ def _pocket(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
             not session.interactions_shown))  # fmt: skip
         shown.setCheckable(True)
         shown.setChecked(session.interactions_shown)
-        panel.fill_focus(menu.addMenu("Focus"))
-        panel.fill_measure(menu.addMenu("Measure"))
+        toolbar.fill_focus(menu.addMenu("Focus"), session)
+        toolbar.fill_measure(menu.addMenu("Measure"), session)
         menu.addSeparator()
         extract = menu.addAction("Extract Ligands to Table", commands.get(EXTRACT, lambda: None))
         extract.setEnabled(EXTRACT in commands and bool(session.displays))
+        profile = menu.addAction("Interactions to Table", commands.get(PROFILE, lambda: None))
+        profile.setEnabled(PROFILE in commands and bool(session.displays))
 
     menu.aboutToShow.connect(fill)
     fill()
@@ -142,12 +160,28 @@ def save_selection(panel: ProteinPanel, path: str | None = None) -> str:
         )
     if not path:
         return ""
-    fmt = protein_io.MMCIF if path.lower().endswith((".cif", ".mmcif")) else protein_io.PDB
-    text = "".join(
-        protein_io.to_text(d.structure, fmt, keep=d.selected)
-        for d in panel.session.displays
-        if d.visible and d.selected.any()
-    )
-    with open(path, "w", encoding="utf-8") as out:
-        out.write(text)
+    text = panel.selection_text(protein_io.format_of(path))
+    _write(panel, path, text)
     return path
+
+
+def save_protein(panel: ProteinPanel, protein: str, path: str | None = None) -> str:
+    """Write a whole protein (every model and alternate location) to a PDB or mmCIF file."""
+    shown = panel.session.display(protein)
+    if shown is None:
+        return ""
+    if path is None:
+        path, _ = QFileDialog.getSaveFileName(
+            panel, "Save Protein", f"{shown.name}.cif", "mmCIF (*.cif);;PDB (*.pdb)"
+        )
+    if not path:
+        return ""
+    _write(panel, path, protein_io.to_text(shown.structure, protein_io.format_of(path)))
+    return path
+
+
+def _write(panel: ProteinPanel, path: str, text: str) -> None:
+    try:
+        protein_io.write_text(path, text)
+    except OSError as error:
+        panel.status.setText(f"Could not save {Path(path).name}: {error.strerror or error}")

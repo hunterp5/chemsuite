@@ -34,6 +34,11 @@ if TYPE_CHECKING:
     from .table import Table
 
 
+#: asset kind -> the column whose cells name assets of that kind: rows copied to a new
+#: document take the assets they name with them
+LINK_COLUMNS: dict[str, str] = {"protein": "Protein"}
+
+
 @runtime_checkable
 class Packable(Protocol):
     """A decoded payload: it can be stored again, and says how much memory it holds."""

@@ -25,7 +25,9 @@ are for import and export only.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Iterator
+import os
+import string
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import replace
 from os import PathLike
 from pathlib import Path
@@ -33,8 +35,8 @@ from pathlib import Path
 import gemmi
 import numpy as np
 
-from . import bonds, classify, secondary
-from .model import AMINO, COIL, HELIX, STRAND, Structure
+from . import bonds, classify, components, secondary
+from .model import AMINO, COIL, HELIX, LIGAND, STRAND, Structure
 
 log = logging.getLogger(__name__)
 
@@ -52,24 +54,33 @@ class ProteinFileError(ValueError):
 
 def read(path: str | PathLike[str]) -> Structure:
     """Read a PDB or mmCIF file (``.gz`` too)."""
+    doc = gemmi.cif.Document()
     try:
-        st = gemmi.read_structure(str(path))
+        st = gemmi.read_structure(str(path), save_doc=doc)
     except (RuntimeError, ValueError) as error:
         raise ProteinFileError(f"{Path(path).name}: {error}") from error
-    return from_gemmi(st)
+    return from_gemmi(st, doc[0] if len(doc) else None)
 
 
 def parse(text: str, fmt: str) -> Structure:
     """Read a structure from text in ``fmt`` (PDB or MMCIF)."""
     kind = gemmi.CoorFormat.Pdb if fmt == PDB else gemmi.CoorFormat.Mmcif
+    doc = gemmi.cif.Document()
     try:
-        st = gemmi.read_structure_string(text, format=kind)
+        st = gemmi.read_structure_string(text, format=kind, save_doc=doc)
     except (RuntimeError, ValueError) as error:
         raise ProteinFileError(str(error)) from error
-    return from_gemmi(st)
+    return from_gemmi(st, doc[0] if len(doc) else None)
 
 
-def from_gemmi(st: gemmi.Structure) -> Structure:
+def _suffix_format(path: str | PathLike[str]) -> str | None:
+    suffixes = [s.lower() for s in Path(path).suffixes if s.lower() != ".gz"]
+    return SUFFIXES.get(suffixes[-1]) if suffixes else None
+
+
+def from_gemmi(st: gemmi.Structure, block: gemmi.cif.Block | None = None) -> Structure:
+    """``st`` as a Structure; ``block``, the mmCIF block it was read from, gives the bond
+    orders of its ligands (its chemical component tables)."""
     if not len(st) or not st[0].count_atom_sites():
         raise ProteinFileError("the file has no atoms")
     st.setup_entities()
@@ -148,6 +159,12 @@ def from_gemmi(st: gemmi.Structure) -> Structure:
         next_uid=n,
         meta=_meta(st),
     )
+    names = {str(structure.res_name[r]) for r in np.flatnonzero(structure.res_kind == LIGAND)}
+    found = components.from_block(block, names) if block is not None and names else {}
+    if found:
+        structure = replace(
+            structure, meta={**structure.meta, components.META_KEY: components.to_meta(found)}
+        )
     pairs, orders = bonds.perceive(
         structure.name,
         structure.element,
@@ -158,6 +175,7 @@ def from_gemmi(st: gemmi.Structure) -> Structure:
         structure.res_kind,
         structure.chain_start,
         links=_declared_links(st, structure),
+        library={name: c.template_bonds for name, c in found.items()},
     )
     structure = replace(structure, bonds=pairs, order=orders)
     ss = _ss_from_records(st, structure)
@@ -306,21 +324,64 @@ def to_text(structure: Structure, fmt: str, keep: np.ndarray | None = None) -> s
     return st.make_mmcif_document().as_string()
 
 
+#: chain IDs a renamed chain takes, in this order (one character, so PDB files hold them)
+CHAIN_IDS = string.ascii_uppercase + string.ascii_lowercase + string.digits
+
+
+def to_text_many(
+    parts: Sequence[tuple[Structure, np.ndarray | None]], fmt: str
+) -> tuple[str, dict[tuple[int, str], str]]:
+    """One file of several structures' atoms (``keep`` masks, None for all): the first model
+    of each, one after the other. A chain whose ID an earlier structure took is renamed; the
+    renames come back as ``{(part, old ID): new ID}``. A single structure keeps every model."""
+    if len(parts) == 1:
+        return to_text(parts[0][0], fmt, parts[0][1]), {}
+    st = gemmi.Structure()
+    st.name = "chemsuite"
+    model = gemmi.Model(1)
+    renamed: dict[tuple[int, str], str] = {}
+    used: set[str] = set()
+    for k, (structure, keep) in enumerate(parts):
+        for chain in to_gemmi(structure, keep)[0]:
+            name = chain.name
+            if name in used:
+                name = next((c for c in CHAIN_IDS if c not in used), f"{len(used)}")
+                renamed[(k, chain.name)] = name
+                chain.name = name
+            used.add(name)
+            model.add_chain(chain)
+    st.add_model(model)
+    st.add_entity_types(True)
+    st.assign_subchains(force=True)  # label_asym IDs: one set for the file, not one per part
+    st.ensure_entities()
+    st.deduplicate_entities()
+    st.setup_cell_images()
+    text = st.make_pdb_string() if fmt == PDB else st.make_mmcif_document().as_string()
+    return text, renamed
+
+
 def write(structure: Structure, path: str | PathLike[str], keep: np.ndarray | None = None) -> None:
-    """Write as PDB or mmCIF, by the file's suffix."""
-    Path(path).write_text(to_text(structure, format_of(path), keep))
+    """Write as PDB or mmCIF, by the file's suffix (every model, every alternate location)."""
+    write_text(path, to_text(structure, format_of(path), keep))
+
+
+def write_text(path: str | PathLike[str], text: str) -> None:
+    """Write ``text`` through a temporary file renamed over ``path`` when complete, so an
+    interrupted save leaves the old file as it was."""
+    target = Path(path)
+    part = target.with_name(target.name + ".part")
+    try:
+        part.write_text(text, encoding="utf-8")
+        os.replace(part, target)
+    finally:
+        part.unlink(missing_ok=True)
 
 
 def format_of(path: str | PathLike[str]) -> str:
-    suffixes = [s.lower() for s in Path(path).suffixes if s.lower() != ".gz"]
-    return SUFFIXES.get(suffixes[-1] if suffixes else "", MMCIF)
+    """PDB or MMCIF by the file's suffix (``.gz`` aside); MMCIF for any other suffix."""
+    return _suffix_format(path) or MMCIF
 
 
 def readable(paths: Iterable[str | PathLike[str]]) -> list[Path]:
     """The paths that look like structure files."""
-    out = []
-    for path in map(Path, paths):
-        suffixes = [s.lower() for s in path.suffixes if s.lower() != ".gz"]
-        if suffixes and suffixes[-1] in SUFFIXES:
-            out.append(path)
-    return out
+    return [Path(path) for path in paths if _suffix_format(path) is not None]

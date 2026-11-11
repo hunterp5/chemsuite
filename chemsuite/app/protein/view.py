@@ -23,8 +23,9 @@ only after the camera has moved.
 
 Meshes (cartoon, surface) are layers by name, drawn after the atoms; each vertex has an owner
 (a residue or an atom) and a look row like the atoms'. A transparent layer draws without
-writing depth, after the opaque ones. Meshes use 32-bit indices: where the GPU lacks them
-(OpenGL ES 2 without the extension) meshes are not drawn.
+writing depth, after the opaque ones. Meshes use 32-bit indices; where the GPU lacks them
+(OpenGL ES 2 without the extension) each mesh is drawn in chunks small enough for 16-bit ones
+(:func:`~chemsuite.protein.mesh.chunks`), its look uploaded whole when it changes.
 
 Atom indices in and out (picks, hover) are the caller's: the ``atoms`` of the geometry, and
 ``set_pick_points`` adds points that pick an atom (a cartoon's CA atoms).
@@ -32,7 +33,6 @@ Atom indices in and out (picks, hover) are the caller's: the ``atoms`` of the ge
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -48,8 +48,6 @@ from chemsuite.protein.scene import (
     SPHERE_LOOK_FLOATS,
     Geometry,
 )
-
-log = logging.getLogger(__name__)
 
 _SPHERE_LOOK_BYTES = SPHERE_LOOK_FLOATS * 4
 _CYLINDER_LOOK_BYTES = CYLINDER_LOOK_FLOATS * 4
@@ -67,6 +65,12 @@ class _Layer:
     buffers: dict = field(default_factory=dict)
     dirty: set = field(default_factory=lambda: {"vertices", "indices", "look"})
     rows: list = field(default_factory=list)
+    chunks: list | None = None  # without 32-bit indices: the mesh's chunks, made when drawn
+    parts: list = field(default_factory=list)  # and each chunk's buffers
+
+    @property
+    def uploaded(self) -> bool:
+        return "indices" in self.buffers or bool(self.parts)
 
 
 class ProteinView(RhiView):
@@ -176,9 +180,11 @@ class ProteinView(RhiView):
         return list(self._layers)
 
     def _release_layer(self, layer: _Layer) -> None:
-        for buffer in layer.buffers.values():
-            buffer.deleteLater()
+        for buffers in (layer.buffers, *layer.parts):
+            for buffer in buffers.values():
+                buffer.deleteLater()
         layer.buffers.clear()
+        layer.parts.clear()
 
     def set_pick_points(self, atoms: np.ndarray, centres: np.ndarray, radii: np.ndarray) -> None:
         """Points that pick an atom besides its sphere: a cartoon's trace atoms."""
@@ -252,8 +258,6 @@ class ProteinView(RhiView):
             ],
         )
         self._wide_indices = self.rhi().isFeatureSupported(QRhi.Feature.ElementIndexUint)
-        if not self._wide_indices:
-            log.warning("no 32-bit indices on this GPU: cartoons and surfaces are not drawn")
         self._mesh_pipes = {mode: self._mesh_pipeline(mode) for mode in _MESH_MODES}
         return (
             self._sphere_pipe is not None
@@ -294,6 +298,7 @@ class ProteinView(RhiView):
         self._counts = (0, 0)
         for layer in self._layers.values():
             layer.buffers.clear()
+            layer.parts.clear()
             layer.dirty = {"vertices", "indices", "look"}
             layer.rows.clear()
 
@@ -317,9 +322,32 @@ class ProteinView(RhiView):
             rows.clear()
         self._dirty.clear()
         self._counts = (len(self.geometry_.spheres), len(self.geometry_.cylinders))
-        if self._wide_indices:
-            for layer in self._layers.values():
+        for layer in self._layers.values():
+            if self._wide_indices:
                 self._upload_layer(layer, batch)
+            else:
+                self._upload_chunks(layer, batch)
+
+    def _upload_chunks(self, layer: _Layer, batch) -> None:
+        """A layer in chunks with 16-bit indices: geometry once, the look whole on a change."""
+        if layer.chunks is None:
+            layer.chunks = meshes.chunks(layer.mesh)
+        vertex = QRhiBuffer.UsageFlag.VertexBuffer
+        index = QRhiBuffer.UsageFlag.IndexBuffer
+        restyled = "look" in layer.dirty or bool(layer.rows)
+        for i, chunk in enumerate(layer.chunks):
+            if i == len(layer.parts):
+                layer.parts.append({})
+            part = layer.parts[i]
+            if "indices" not in part:
+                vertices = layer.mesh.vertices[chunk.vertex_map]
+                part["vertices"] = self.instances(None, vertices, batch, usage=vertex)
+                part["indices"] = self.instances(None, chunk.triangles, batch, usage=index)
+            if restyled or "look" not in part:
+                look = layer.look[chunk.vertex_map]
+                part["look"] = self.instances(part.get("look"), look, batch, usage=vertex)
+        layer.rows.clear()
+        layer.dirty.clear()
 
     def _upload_layer(self, layer: _Layer, batch) -> None:
         arrays = {
@@ -366,9 +394,7 @@ class ProteinView(RhiView):
                 0, [(self._quad, 0), (buffers["spheres"], 0), (buffers["sphere_look"], 0)]
             )
             cb.draw(len(QUAD), spheres)
-        if not self._wide_indices:
-            return
-        layers = [layer for layer in self._layers.values() if "indices" in layer.buffers]
+        layers = [layer for layer in self._layers.values() if layer.uploaded]
         for layer in layers:
             if not layer.transparent:
                 self._draw_mesh(cb, viewport, layer, "opaque")
@@ -381,11 +407,19 @@ class ProteinView(RhiView):
         cb.setGraphicsPipeline(self._mesh_pipes[mode])
         cb.setViewport(viewport)
         cb.setShaderResources()
+        if not layer.parts:
+            self._draw_indexed(cb, layer.buffers, layer.mesh.triangles.size, wide=True)
+        for part, chunk in zip(layer.parts, layer.chunks or (), strict=False):
+            self._draw_indexed(cb, part, chunk.triangles.size, wide=False)
+
+    @staticmethod
+    def _draw_indexed(cb, buffers: dict, count: int, *, wide: bool) -> None:
+        width = QRhiCommandBuffer.IndexFormat
         cb.setVertexInput(
             0,
-            [(layer.buffers["vertices"], 0), (layer.buffers["look"], 0)],
-            layer.buffers["indices"],
+            [(buffers["vertices"], 0), (buffers["look"], 0)],
+            buffers["indices"],
             0,
-            QRhiCommandBuffer.IndexFormat.IndexUInt32,
+            width.IndexUInt32 if wide else width.IndexUInt16,
         )
-        cb.drawIndexed(layer.mesh.triangles.size)
+        cb.drawIndexed(count)

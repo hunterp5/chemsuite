@@ -152,12 +152,23 @@ class Table:
         """A new, independent table of the rows at *slots*, in that order, with new oids.
 
         Columns keep their order and kinds; history, filters, sort and listeners are not
-        copied. Used for "Copy Shown Rows to New Document".
+        copied. The assets the rows link to (:data:`~.assets.LINK_COLUMNS`) come too. Used for
+        "Copy Shown Rows to New Document".
         """
+        from .assets import LINK_COLUMNS
+
         slots = np.asarray(slots, dtype=np.int64)
-        return Table.from_columns(
+        copy = Table.from_columns(
             {name: column.styled_take(slots) for name, column in self._columns.items()}
         )
+        named = {
+            (kind, str(text))
+            for kind, column in LINK_COLUMNS.items()
+            if column in self._columns
+            for text in self._columns[column].displays(slots)
+        }
+        copy._assets = {i: a for i, a in self._assets.items() if (a.kind, i) in named}
+        return copy
 
     @property
     def next_oid(self) -> int:
@@ -409,13 +420,23 @@ class Table:
         self._execute(Command(label, ops), record=undoable)
         return oids
 
-    def remove_rows(self, oids: Sequence[int] | np.ndarray, *, label: str = "Delete rows") -> None:
+    def remove_rows(
+        self,
+        oids: Sequence[int] | np.ndarray,
+        *,
+        label: str = "Delete rows",
+        extra_ops: Sequence[Op] = (),
+    ) -> None:
+        """Delete rows. *extra_ops* run first in the same undo step (e.g. removing the protein
+        the rows link to)."""
         oids = np.unique(as_slots(oids))
-        if not len(oids):
-            return
-        slots = self.slots_of(oids)
-        snapshot = {name: col.take(slots) for name, col in self._columns.items()}
-        self._execute(Command(label, [DeleteRows(oids, snapshot)]))
+        ops: list[Op] = list(extra_ops)
+        if len(oids):
+            slots = self.slots_of(oids)
+            snapshot = {name: col.take(slots) for name, col in self._columns.items()}
+            ops.append(DeleteRows(oids, snapshot))
+        if ops:
+            self._execute(Command(label, ops))
 
     def duplicate_rows(
         self, oids: Sequence[int] | np.ndarray, *, label: str = "Duplicate rows"

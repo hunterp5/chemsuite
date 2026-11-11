@@ -35,7 +35,25 @@ DATA = Path(__file__).resolve().parents[1] / "data" / "protein"
 
 @pytest.fixture(autouse=True)
 def network(tmp_path, monkeypatch):
+    """Downloads allowed, but the CCD is a stub that knows only 0G6 (and records each ask)."""
+    import urllib.error
+
+    from chemsuite.protein import components
+
     monkeypatch.setenv(POLICY_ENV, str(tmp_path / "no-policy.json"))
+    asked: list[str] = []
+
+    def ccd(request, timeout=None):
+        import gzip
+        import io
+
+        asked.append(request.full_url)
+        if request.full_url.endswith("/0G6.cif"):
+            return io.BytesIO(gzip.decompress((DATA / "0g6_ccd.cif.gz").read_bytes()))
+        raise urllib.error.HTTPError(request.full_url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(components, "fetch_bytes", _with_opener(components.fetch_bytes, ccd))
+    return asked
 
 
 @pytest.fixture
@@ -98,11 +116,43 @@ def test_opening_adds_the_protein_and_its_ligands_in_one_step(opened) -> None:
     oid = int(table.oids[-1])
     assert table.cell("Protein", oid) == "1ATP" and table.cell("Ligand ID", oid) == "E/ATP 355"
     assert table.kind("Ligand") == "structure" and table.cell("Ligand", oid).startswith("Nc1")
-    assert table.cell("Bond Orders", oid) == "CCD template"
+    assert table.cell("Bond Orders", oid) == "File"  # the file's own chemical component tables
     panel = ToolContext(opened).find_panel("protein")
     assert panel is not None and [d.id for d in panel.session.displays] == ["1ATP"]
     table.undo()
     assert not table.assets and len(table.oids) == 3 and "Ligand" not in table
+
+
+def test_a_ligand_the_file_does_not_define_comes_from_the_ccd_once(window, qtbot, network):
+    ctx = ToolContext(window)
+    for _ in range(2):
+        job = tool.open_protein(ctx, [str(DATA / "1ppb.cif.gz")])
+        qtbot.waitUntil(lambda job=job: not job.running, timeout=30_000)
+    table = window.workspace.table
+    oid = int(table.oids[-1])
+    assert table.cell("Ligand ID", oid) == "H/0G6 1"
+    assert table.cell("Bond Orders", oid) == "CCD (downloaded)"
+    assert network == ["https://files.rcsb.org/ligands/download/0G6.cif"]  # then the cache
+    assert "guessed" not in table.assets["1PPB"].meta
+
+
+def test_a_guessed_ligand_is_marked_in_the_tree(window, qtbot, tmp_path, monkeypatch) -> None:
+    from chemsuite.app import graphics
+
+    monkeypatch.setattr(graphics, "_problem", None)
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"network_allowed": False}))
+    monkeypatch.setenv(POLICY_ENV, str(policy))
+    job = tool.open_protein(ToolContext(window), [str(DATA / "1ppb.cif.gz")])
+    qtbot.waitUntil(lambda: not job.running, timeout=30_000)
+    table = window.workspace.table
+    assert table.cell("Bond Orders", int(table.oids[-1])) == "Guessed from geometry"
+    assert table.assets["1PPB"].meta["guessed"] == "H/0G6 1"
+    tree = ToolContext(window).find_panel("protein").tree
+    top = tree.topLevelItem(0)
+    item = next(top.child(i) for i in range(top.childCount())
+                if top.child(i).text(0).startswith("0G6"))  # fmt: skip
+    assert item.text(0).endswith("⚠") and "guessed" in item.toolTip(0)
 
 
 def test_a_second_copy_gets_its_own_id(opened, qtbot) -> None:
@@ -136,6 +186,22 @@ def test_extract_ligands_fills_in_proteins_without_rows(opened) -> None:
     table = opened.workspace.table
     table.remove_rows([int(table.oids[-1])])
     assert tool.extract_ligands(ctx) == 1
+
+
+def test_a_ligand_can_be_added_once_from_the_viewer(opened) -> None:
+    ctx = ToolContext(opened)
+    table = opened.workspace.table
+    panel = ctx.find_panel("protein")
+    shown = panel.session.display("1ATP")
+    atp = int(shown.structure.res_seq.tolist().index(355))
+    assert tool.add_ligand(ctx, "1ATP", atp) == 0  # it has its row already
+    assert "in the table already" in opened.statusBar().currentMessage()
+    table.remove_rows([int(table.oids[-1])])
+    rows = len(table.oids)
+    panel.commands["ligand"]("1ATP", atp)
+    assert len(table.oids) == rows + 1
+    assert table.cell("Ligand ID", int(table.oids[-1])) == "E/ATP 355"
+    assert tool.add_ligand(ctx, "NONE", 0) == 0
 
 
 def test_fetch_downloads_by_id(window, qtbot, monkeypatch) -> None:
@@ -221,3 +287,143 @@ def test_save_selection_writes_pdb_or_mmcif(opened, tmp_path) -> None:
         path = save_selection(panel, str(tmp_path / name))
         back = io.read(path)
         assert back.n_atoms == 31 and str(back.res_name[0]) == "ATP"
+
+
+def _moved_molblock(table, oid: int, by: float) -> str:
+    from rdkit import Chem
+
+    mol = Chem.Mol(table.column("Ligand").mol(int(table.slots_of([oid])[0])))
+    conformer = mol.GetConformer()
+    for i in range(mol.GetNumAtoms()):
+        p = conformer.GetAtomPosition(i)
+        conformer.SetAtomPosition(i, (p.x + by, p.y, p.z))
+    return Chem.MolToMolBlock(mol)
+
+
+def test_a_row_whose_ligand_moved_shows_as_a_pose(opened, qtbot) -> None:
+    ctx = ToolContext(opened)
+    table = opened.workspace.table
+    panel = ctx.find_panel("protein")
+    session = panel.session
+    atp = int(table.oids[-1])
+    ctx.set_current_oid(atp)
+    assert session.focused_residue() == ("1ATP", 338) and session.pose is None
+    # moved in the sketcher, say: the current row's ligand is edited, so the viewer follows
+    table.set_cells("Ligand", [atp], [_moved_molblock(table, atp, 0.8)])
+    pose = session.pose
+    assert pose is not None and session.pose_row == atp and session.focused is None
+    assert pose in session.scene.displays and pose.structure.n_atoms == 3070 - 31 + 31
+    shown = session.display("1ATP")
+    atp_atoms = shown.structure.residue_of == 338
+    assert shown.ghost[atp_atoms].all() and not shown.ghost.all()  # the crystal ATP, faded
+    assert session.focused_atoms() is not None
+    qtbot.waitUntil(lambda: len(pose.interactions().kind) > 0, timeout=30_000)
+    # a row with no protein takes the pose away; the moved row brings it back
+    ctx.set_current_oid(int(table.oids[0]))
+    assert session.pose is None and not shown.ghost.any()
+    ctx.set_current_oid(atp)
+    assert session.pose is not None
+    # not saved: the current row brings it back when the viewer reopens
+    restore = next(t for t in tool.TOOLS if t.id == "protein").restore
+    again = restore(ctx, panel.state())
+    assert "pose" not in str(panel.state()) and again.session.pose is not None
+    # back where the file has it: the residue itself is focused again
+    table.undo()
+    assert again.session.pose is None and again.session.focused_residue() == ("1ATP", 338)
+
+
+def test_interactions_to_table(opened, qtbot) -> None:
+    ctx = ToolContext(opened)
+    table = opened.workspace.table
+    panel = ctx.find_panel("protein")
+    pocket = panel.menu_bar.actions()[3].menu()
+    pocket.aboutToShow.emit()
+    action = next(a for a in pocket.actions() if a.text() == "Interactions to Table")
+    assert action.isEnabled()
+    action.trigger()
+    qtbot.waitUntil(lambda: "Contacts" in table, timeout=30_000)
+    atp = int(table.oids[-1])
+    assert "LYS72 SB" in table.cell("Contacts", atp).split("; ")
+    assert table.kind("Metal Contacts") == "number" and table.cell("Metal Contacts", atp) == "4"
+    assert table.read(["H-Bonds"], [atp])["H-Bonds"][0] > 0
+    assert table.cell("Contacts", int(table.oids[0])) in ("", None)  # no protein: not written
+    table.undo()
+    assert "Contacts" not in table
+
+
+def test_removing_a_protein_asks_about_its_rows(opened, qtbot, monkeypatch) -> None:
+    from PySide6.QtCore import Qt
+
+    ctx = ToolContext(opened)
+    table = opened.workspace.table
+    panel = ctx.find_panel("protein")
+    asked: list[tuple[str, int]] = []
+    answer: list[str | None] = [None]
+
+    def ask(_ctx, name, count):
+        asked.append((name, count))
+        return answer[0]
+
+    monkeypatch.setattr(tool, "_ask_rows", ask)
+    atp = int(table.oids[-1])
+    ctx.set_current_oid(atp)
+    assert not tool.remove_protein(ctx, "1ATP")  # cancelled
+    assert asked == [("1ATP", 1)] and "1ATP" in table.assets
+    answer[0] = tool.DELETE_ROWS
+    file_menu = panel.menu_bar.actions()[0].menu()
+    file_menu.aboutToShow.emit()
+    removing = next(a.menu() for a in file_menu.actions() if a.text() == "Remove Protein")
+    removing.actions()[0].trigger()
+    assert not table.assets and atp not in table.oids and not panel.session.displays
+    assert panel.session.focused is None
+    assert table.undo() == "Remove protein 1ATP"
+    assert "1ATP" in table.assets and atp in table.oids
+    # keeping the rows: the viewer says the row's protein is gone
+    answer[0] = tool.KEEP_ROWS
+    panel.tree.setCurrentItem(panel.tree.topLevelItem(0))
+    qtbot.keyClick(panel.tree, Qt.Key.Key_Delete)
+    assert not table.assets and atp in table.oids
+    ctx.set_current_oid(atp)
+    assert panel.status.text() == "Protein 1ATP is not in this document"
+    table.undo()
+    assert tool.remove_protein(ctx, "1ATP", tool.KEEP_ROWS) and len(asked) == 3
+    assert not tool.remove_protein(ctx, "1ATP")  # not there any more
+
+
+def test_copied_rows_bring_their_protein(opened) -> None:
+    new = opened.copy_shown_rows_to_new_document()
+    try:
+        table = new.workspace.table
+        assert list(table.assets) == ["1ATP"] and len(table) == 4
+        assert table.assets["1ATP"] is opened.workspace.table.assets["1ATP"]
+    finally:
+        new.workspace.mark_saved(table.history.checkpoint(), new.workspace.lists.revision)
+        new.close()
+
+
+def test_copying_two_proteins_makes_one_file(opened, qtbot) -> None:
+    from chemsuite.protein import io
+
+    job = tool.open_protein(ToolContext(opened), [str(DATA / "1atp.cif.gz")])
+    qtbot.waitUntil(lambda: not job.running, timeout=30_000)
+    panel = ToolContext(opened).find_panel("protein")
+    panel.session.select_text("polymer")
+    text = panel.copy_selection("cif")
+    back = io.parse(text, io.MMCIF)
+    assert list(back.chain_name) == ["E", "I", "A", "B"] and text.count("data_") == 1
+    assert panel.status.text() == "Chains renamed: 1ATP-2 E → A, 1ATP-2 I → B"
+
+
+def test_save_protein_as_writes_every_atom(opened, tmp_path) -> None:
+    from chemsuite.app.protein.menubar import save_protein
+    from chemsuite.protein import io
+
+    panel = ToolContext(opened).find_panel("protein")
+    path = save_protein(panel, "1ATP", str(tmp_path / "kinase.pdb"))
+    back = io.read(path)
+    assert back.n_atoms == panel.session.display("1ATP").structure.n_atoms
+    assert not list(tmp_path.glob("*.part"))
+    file_menu = panel.menu_bar.actions()[0].menu()
+    file_menu.aboutToShow.emit()
+    saving = next(a.menu() for a in file_menu.actions() if a.text() == "Save Protein As")
+    assert [a.text() for a in saving.actions()] == ["1ATP…"]

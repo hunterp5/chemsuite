@@ -24,8 +24,16 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QAbstractItemView, QApplication, QTreeWidget, QTreeWidgetItem, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QMenu,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QWidget,
+)
 
+from chemsuite.protein.ligands import GUESSED
 from chemsuite.protein.model import ADDITIVE, AMINO, GLYCAN, ION, LIGAND, NUCLEIC, WATER, Structure
 
 from .session import ADD, SET, TOGGLE, ProteinSession
@@ -44,6 +52,7 @@ def residue_expression(structure: Structure, residue: int) -> str:
 
 class ProteinTree(QTreeWidget):
     focusRequested = Signal()
+    removeRequested = Signal(str)  # a protein's id: Remove Protein from its menu or Delete
 
     def __init__(self, session: ProteinSession, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -56,6 +65,8 @@ class ProteinTree(QTreeWidget):
         self.itemChanged.connect(self._item_changed)
         self.itemClicked.connect(self._item_clicked)
         self.itemDoubleClicked.connect(self._item_double_clicked)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._context_menu)
         session.proteinsChanged.connect(self.reload)
         self.reload()
 
@@ -93,11 +104,17 @@ class ProteinTree(QTreeWidget):
                 name = structure.chain_name[c]
                 self._child(top, protein, f"Chain {name} ({polymer})",
                             f"chain {name} and polymer")  # fmt: skip
+        asset = self.session.table.assets.get(protein)
+        guessed = set(asset.meta.get(GUESSED, "").splitlines()) if asset is not None else set()
         for residue in np.flatnonzero(kinds == LIGAND):
             chain = structure.chain_name[structure.chain_of[residue]]
             label = f"{structure.res_name[residue]} {chain}{structure.res_seq[residue]}"
+            ligand_id = structure.residue_label(int(residue))
+            if ligand_id in guessed:
+                label += " ⚠"
+                ligand_id += "\nBond orders guessed from the geometry"
             item = self._child(top, protein, label, residue_expression(structure, int(residue)))
-            item.setToolTip(0, structure.residue_label(int(residue)))
+            item.setToolTip(0, ligand_id)
         for kind, title, expression in _GROUPS:
             count = int((kinds == kind).sum())
             if count:
@@ -136,3 +153,19 @@ class ProteinTree(QTreeWidget):
     def _item_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         self.select_item(item, SET)
         self.focusRequested.emit()
+
+    def _context_menu(self, where) -> None:
+        item = self.itemAt(where)
+        if item is None:
+            return
+        protein = str(item.data(0, _PROTEIN))
+        menu = QMenu(self)
+        menu.addAction("Remove Protein…", lambda: self.removeRequested.emit(protein))
+        menu.exec(self.viewport().mapToGlobal(where))
+
+    def keyPressEvent(self, event) -> None:
+        item = self.currentItem()
+        if item is not None and event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            self.removeRequested.emit(str(item.data(0, _PROTEIN)))
+            return
+        super().keyPressEvent(event)

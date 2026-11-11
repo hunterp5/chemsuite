@@ -13,8 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The protein viewer's menus: Show, Hide and Colour (on the selection), and the right-click
-menu on an atom.
+"""The protein viewer's menus: Show, Hide, Colour and Label (on the selection), Hydrogens and
+Transparency (for every protein), and the right-click menu on an atom.
 
 Every menu acts on the session's selection; the right-click menu first offers to select what
 was clicked (its residue, chain or binding site), so the rest of it then applies there.
@@ -22,15 +22,19 @@ was clicked (its residue, chain or binding site), so the rest of it then applies
 
 from __future__ import annotations
 
-from PySide6.QtGui import QColor
+import numpy as np
+from PySide6.QtGui import QActionGroup, QColor
 from PySide6.QtWidgets import QColorDialog, QMenu, QWidget
 
+from chemsuite.molview.geometry import HYDROGENS
 from chemsuite.protein import colours, scene
+from chemsuite.protein.display import TRANSPARENCIES
 from chemsuite.protein.io import MMCIF, PDB
 from chemsuite.protein.model import LIGAND
 from chemsuite.protein.select import SelectionError
 
-from .session import ADD, SET, ProteinSession
+from .session import ADD, ATOM_LABEL, RESIDUE_LABEL, SET, ProteinSession
+from .toolbar import MEASURES
 from .tree import residue_expression
 
 SHOW_STYLES = (
@@ -69,6 +73,49 @@ def fill_colour(menu: QMenu, session: ProteinSession, parent: QWidget) -> None:
     pick.setEnabled(selected)
 
 
+def fill_label(menu: QMenu, session: ProteinSession) -> None:
+    menu.clear()
+    selected = session.selected_count() > 0
+    menu.addAction("Residues", lambda: session.label(RESIDUE_LABEL)).setEnabled(selected)
+    menu.addAction("Atoms", lambda: session.label(ATOM_LABEL)).setEnabled(selected)
+    menu.addSeparator()
+    menu.addAction("Clear Labels", session.clear_labels).setEnabled(bool(session.labels))
+
+
+def fill_hydrogens(menu: QMenu, session: ProteinSession) -> None:
+    menu.clear()
+    group = QActionGroup(menu)
+    for key, title in HYDROGENS.items():
+        action = menu.addAction(title, lambda k=key: session.show_hydrogens(k))
+        action.setCheckable(True)
+        action.setChecked(session.hydrogens == key)
+        group.addAction(action)
+
+
+def fill_transparency(menu: QMenu, session: ProteinSession) -> None:
+    menu.clear()
+    group = QActionGroup(menu)
+    for value in TRANSPARENCIES:
+        title = f"{value:.0%}" if value else "Opaque"
+        action = menu.addAction(title, lambda v=value: session.set_transparency(v))
+        action.setCheckable(True)
+        action.setChecked(abs(session.transparency - value) < 1e-6)
+        group.addAction(action)
+
+
+def _label_here(menu: QMenu, session: ProteinSession, protein: str, structure, atom: int) -> None:
+    mask = np.zeros(structure.n_atoms, bool)
+    mask[atom] = True
+    for title, kind in (("Residue", RESIDUE_LABEL), ("Atom", ATOM_LABEL)):
+        menu.addAction(title, lambda k=kind: session.label(k, {protein: mask}))
+
+
+def _measure_from(session: ProteinSession, atoms: int, atom: int) -> None:
+    """Start a measurement of ``atoms`` atoms with this one picked."""
+    session.measure(atoms)
+    session.pick(atom)
+
+
 def _pick_colour(session: ProteinSession, parent: QWidget) -> None:
     colour = QColorDialog.getColor(QColor(46, 200, 74), parent, "Colour")
     if colour.isValid():
@@ -82,11 +129,20 @@ def _need_selection(menu: QMenu, session: ProteinSession) -> None:
 
 
 def context_menu(
-    session: ProteinSession, atom: int, parent: QWidget, *, focus, copy_smiles=None, copy_as=None
+    session: ProteinSession,
+    atom: int,
+    parent: QWidget,
+    *,
+    focus,
+    copy_smiles=None,
+    copy_as=None,
+    add_ligand=None,
 ) -> QMenu:
     """The right-click menu for scene atom ``atom`` (-1: empty space)."""
     menu = QMenu(parent)
     found = session.scene.locate(atom)
+    if found is not None and found[0] is session.pose:
+        found = None  # a pose's atoms: the menu for empty space
     if found is not None:
         shown, index = found
         structure = shown.structure
@@ -110,6 +166,12 @@ def context_menu(
             menu.addAction("Focus This Ligand", lambda: session.focus(shown.id, residue))
         if copy_smiles is not None and structure.res_kind[residue] == LIGAND:
             menu.addAction("Copy Ligand SMILES", lambda: copy_smiles(shown, residue))
+        if add_ligand is not None and structure.res_kind[residue] == LIGAND:
+            menu.addAction("Add Ligand to Table", lambda: add_ligand(shown.id, residue))
+        _label_here(menu.addMenu("Label"), session, shown.id, structure, index)
+        measuring = menu.addMenu("Measure From Here")
+        for name, atoms in MEASURES:
+            measuring.addAction(name, lambda n=atoms: _measure_from(session, n, atom))
         alternates = sorted(set(structure.altloc[structure.atoms_of(residue)].tolist()) - {""})
         if alternates:
             alt = menu.addMenu("Alternate Location")
