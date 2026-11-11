@@ -75,6 +75,7 @@ LINES = "interactions"
 POCKET = "pocket"
 #: the commands a tool gives the viewer (see :mod:`.menubar`)
 OPEN, FETCH, EXTRACT, LIGAND = menubar.OPEN, menubar.FETCH, menubar.EXTRACT, menubar.LIGAND
+PROFILE = menubar.PROFILE
 
 
 class ProteinPanel(QWidget):

@@ -1214,8 +1214,13 @@ own menus:
   Selection…**.
 - **View:** Show, Hide, Colour and Label, Hydrogens, Surface Transparency, Frame Selection, Reset
   View, and whether the proteins list and the sequence show.
-- **Pocket:** Interactions, Focus, Measure and **Extract Ligands to Table** (rows for the
-  ligands of proteins that have none yet).
+- **Pocket:** Interactions, Focus, Measure, **Extract Ligands to Table** (rows for the
+  ligands of proteins that have none yet) and **Interactions to Table**: for each ligand row
+  (the selected rows, or all), how many hydrogen bonds, salt bridges, π-stacking, cation–π,
+  hydrophobic, halogen-bond, metal and water-bridge contacts its ligand makes, one number
+  column each, and a **Contacts** column naming the residues and how (`MET793 HB; LEU788 X`).
+  A row's own pose is used when it has one. It runs in the job queue; cancelling it keeps the
+  rows finished, and running it again updates the same columns.
 
 Proteins are saved inside the document. Adding one also adds a row for each of its ligands to
 the table, in one step you can undo. Cofactors (ATP, NAD, FAD, haem, SAM…) get a row only when

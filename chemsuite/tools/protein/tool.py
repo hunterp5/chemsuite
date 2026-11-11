@@ -27,11 +27,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+
 from chemsuite.app.jobs import QUICK
 from chemsuite.app.tools import Tool, ToolContext
 from chemsuite.core.table import Asset, PutAsset
 from chemsuite.protein import fetch as pdb
-from chemsuite.protein import io, ligands, store
+from chemsuite.protein import io, ligands, profile, store
 from chemsuite.protein.components import META_KEY, CcdCache
 from chemsuite.protein.model import Structure
 
@@ -45,7 +47,7 @@ FILE_FILTER = "Protein files (*.pdb *.ent *.cif *.mmcif *.pdb.gz *.ent.gz *.cif.
 
 def open_viewer(ctx: ToolContext, state: dict | None = None):
     """Bring the open Protein Viewer forward, or open one (with *state* when reopening)."""
-    from chemsuite.app.protein.panel import EXTRACT, FETCH, LIGAND, OPEN, ProteinPanel
+    from chemsuite.app.protein.panel import EXTRACT, FETCH, LIGAND, OPEN, PROFILE, ProteinPanel
 
     if state is None:
         panel = ctx.find_panel(TOOL_ID)
@@ -57,6 +59,7 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         FETCH: lambda: fetch_from_pdb(ctx),
         EXTRACT: lambda: extract_ligands(ctx),
         LIGAND: lambda protein, residue: add_ligand(ctx, protein, residue),
+        PROFILE: lambda: interactions_to_table(ctx),
     }
 
     def run(label, work, on_done):  # surfaces and interactions: never hold up closing
@@ -234,6 +237,69 @@ def add_ligand(ctx: ToolContext, protein: str, residue: int) -> int:
     ctx.add_rows(rows, f"Add ligand {label}", structures=(ligands.LIGAND_COLUMN,))
     ctx.show_message(f"Added {label} of {protein}")
     return 1
+
+
+def interactions_to_table(ctx: ToolContext):
+    """Count each ligand row's interactions with its protein, by kind, and name the residues
+    (the selected rows, or every row): a queued job that keeps the rows finished if cancelled."""
+    table = ctx.table
+    if ligands.PROTEIN_COLUMN not in table:
+        ctx.show_message("No ligand rows: add a protein first")
+        return None
+    structures: dict[str, Structure] = {}
+    oids, names = [], []
+    for oid in ctx.target_oids(selected_only=len(ctx.selection) > 0).tolist():
+        protein = str(table.cell(ligands.PROTEIN_COLUMN, oid) or "")
+        asset = table.assets.get(protein)
+        if asset is not None and asset.kind == KIND:
+            if protein not in structures:
+                structures[protein] = store.as_structure(asset.payload)
+            oids.append(int(oid))
+            names.append(protein)
+    if not oids:
+        ctx.show_message("No rows name a protein in this document")
+        return None
+    labels, smiles, inputs = _row_ligands(ctx, oids)
+
+    def work(job):
+        each = zip(names, labels, inputs, smiles, strict=True)
+        rows = [profile.Row(structures[p], label, _mol(given), text)
+                for p, label, given, text in each]  # fmt: skip
+        return profile.for_rows(rows, progress=job.report, cancel=job.cancel_token)
+
+    def done(found) -> None:
+        done_oids = np.array(oids[: len(found)], np.int64)
+        results = {
+            title: (done_oids, np.array([p.counts[k] if p else np.nan for p in found], float))
+            for k, title in enumerate(profile.COUNT_COLUMNS.values())
+        }
+        results[profile.CONTACTS_COLUMN] = (done_oids, [p.contacts if p else "" for p in found])
+        ctx.apply_results(results, label="Interactions to table", overwrite=True)
+        ctx.show_message(f"Interactions of {len(found):,} of {len(oids):,} ligand row(s)")
+
+    return ctx.run(f"Finding interactions of {len(oids):,} ligands…", work, done,
+                   keep_partial=True)  # fmt: skip
+
+
+def _row_ligands(ctx: ToolContext, oids: list[int]) -> tuple[list[str], list[str], list]:
+    """The rows' ligand IDs, their ligands' SMILES, and the ligands as a job takes them."""
+    table = ctx.table
+    labels = [""] * len(oids)
+    if ligands.LIGAND_ID_COLUMN in table:
+        labels = [str(table.cell(ligands.LIGAND_ID_COLUMN, o) or "") for o in oids]
+    if ligands.LIGAND_COLUMN not in table or table.kind(ligands.LIGAND_COLUMN) != "structure":
+        return labels, [""] * len(oids), [None] * len(oids)
+    smiles = [str(table.cell(ligands.LIGAND_COLUMN, o) or "") for o in oids]
+    return labels, smiles, ctx.structure_inputs(ligands.LIGAND_COLUMN, oids)
+
+
+def _mol(given):
+    """A molecule from :meth:`ToolContext.structure_inputs` (a blob, unparsed text or None)."""
+    from chemsuite.core.mols import mol_from_blob, mol_from_text
+
+    if isinstance(given, bytes):
+        return mol_from_blob(given)
+    return mol_from_text(given) if given else None
 
 
 TOOLS = [

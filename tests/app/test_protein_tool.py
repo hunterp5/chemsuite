@@ -330,3 +330,22 @@ def test_a_row_whose_ligand_moved_shows_as_a_pose(opened, qtbot) -> None:
     # back where the file has it: the residue itself is focused again
     table.undo()
     assert again.session.pose is None and again.session.focused_residue() == ("1ATP", 338)
+
+
+def test_interactions_to_table(opened, qtbot) -> None:
+    ctx = ToolContext(opened)
+    table = opened.workspace.table
+    panel = ctx.find_panel("protein")
+    pocket = panel.menu_bar.actions()[3].menu()
+    pocket.aboutToShow.emit()
+    action = next(a for a in pocket.actions() if a.text() == "Interactions to Table")
+    assert action.isEnabled()
+    action.trigger()
+    qtbot.waitUntil(lambda: "Contacts" in table, timeout=30_000)
+    atp = int(table.oids[-1])
+    assert "LYS72 SB" in table.cell("Contacts", atp).split("; ")
+    assert table.kind("Metal Contacts") == "number" and table.cell("Metal Contacts", atp) == "4"
+    assert table.read(["H-Bonds"], [atp])["H-Bonds"][0] > 0
+    assert table.cell("Contacts", int(table.oids[0])) in ("", None)  # no protein: not written
+    table.undo()
+    assert "Contacts" not in table

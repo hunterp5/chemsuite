@@ -43,6 +43,7 @@ OPEN = "open"
 FETCH = "fetch"
 EXTRACT = "extract"
 LIGAND = "ligand"  # add one ligand's row: (protein id, residue)
+PROFILE = "profile"  # each ligand row's interactions, as columns
 Commands = Mapping[str, Callable[..., object]]
 
 
@@ -134,6 +135,8 @@ def _pocket(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
         menu.addSeparator()
         extract = menu.addAction("Extract Ligands to Table", commands.get(EXTRACT, lambda: None))
         extract.setEnabled(EXTRACT in commands and bool(session.displays))
+        profile = menu.addAction("Interactions to Table", commands.get(PROFILE, lambda: None))
+        profile.setEnabled(PROFILE in commands and bool(session.displays))
 
     menu.aboutToShow.connect(fill)
     fill()
