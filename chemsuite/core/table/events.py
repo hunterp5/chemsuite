@@ -86,6 +86,13 @@ class ColumnStyleChanged:
 
 
 @dataclass(frozen=True)
+class AssetsChanged:
+    """Assets were added, replaced or removed (see :mod:`.assets`)."""
+
+    ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ViewChanged:
     """Filters or sort order changed (or a column they used went away)."""
 
@@ -100,6 +107,7 @@ Change = (
     | ColumnRenamed
     | ColumnKindChanged
     | ColumnStyleChanged
+    | AssetsChanged
     | ViewChanged
 )
 

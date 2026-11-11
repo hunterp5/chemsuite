@@ -338,6 +338,38 @@ def test_browser_is_the_viewer_in_2d(window, browser) -> None:
     assert window.show_browser() is browser and browser.mode == "2d"  # brought forward
 
 
+def test_a_cells_browse_opens_the_browser_at_its_row(window, browser) -> None:
+    from .test_column_actions import trigger
+
+    model = window.workspace.model
+    browser.set_mode("3d")
+    trigger(window.cell_menu(model.index(2, 0)), "Browse")
+    assert shown_id(browser) == model.index(2, 0).data() and browser.mode == "3d"  # as it was
+    window.panels[0].close()
+
+
+def test_3d_made_after_the_viewer_closed_is_dropped(window, browser, monkeypatch) -> None:
+    import shiboken6
+
+    browser.set_mode("3d")
+    key = (browser.column_name(), browser.oid)
+    finish = []
+    monkeypatch.setattr(browser, "_run", lambda _label, _work, done: finish.append(done))
+    browser._made.pop(key, None)
+    browser._make_3d(key[0], {key[1]: None})
+    shiboken6.delete(browser)  # closed while its Make 3D structures job ran
+    finish[0]({})
+
+
+def test_a_cells_browse_opens_a_new_browser_in_2d(chem) -> None:
+    from .test_column_actions import trigger
+
+    model = chem.workspace.model
+    trigger(chem.cell_menu(model.index(1, 0)), "Browse")
+    viewer = chem.panels[-1]
+    assert viewer.mode == "2d" and viewer.table.cell("ID", viewer.oid) == "B"
+
+
 def test_browses_selected_rows_in_display_order(window, browser, qtbot) -> None:
     table = window.workspace.table
     window.workspace.selection.set(table.oids[[3, 0, 2]].tolist(), "test")

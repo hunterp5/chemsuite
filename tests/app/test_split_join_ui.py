@@ -19,7 +19,6 @@ from __future__ import annotations
 import pytest
 
 from .conftest import gui
-from .test_column_actions import menu_titles, trigger
 
 pytestmark = gui
 
@@ -113,19 +112,3 @@ def test_join_needs_two_ticked_columns(assays) -> None:
     dialog.accept()  # refused
     assert dialog.isVisible()
     dialog.reject()
-
-
-def test_header_menu_offers_split_and_join(assays) -> None:
-    from chemsuite.app.split_join import JoinColumnsDialog, SplitColumnDialog
-
-    window = assays
-    menu = window.columns.build_menu("Assay", ["ID", "Assay"], 1)
-    assert "Split Column…" in menu_titles(menu)
-    trigger(menu, "Join 2 Columns…")
-    join = window.findChild(JoinColumnsDialog)
-    assert join.chosen_columns() == ["ID", "Assay"]
-    join.reject()
-    trigger(window.columns.build_menu("Assay", [], 1), "Split Column…")
-    split = window.findChild(SplitColumnDialog)
-    assert split.column.currentText() == "Assay"
-    split.reject()

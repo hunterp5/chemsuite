@@ -256,3 +256,18 @@ def test_filters_stay_pinned_right_at_a_fixed_width(data, qtbot):
     filters.show()
     qtbot.wait(50)
     assert geometry(filters)[0].x() >= right_edge(data._panels[-1]) - 5
+
+
+def test_a_first_panel_takes_half_the_window_beside_filters(window, qtbot) -> None:
+    """Re-pinning Filters on the right used to squeeze a new panel to a sliver."""
+    from chemsuite.app.main_window import PANEL_MIN_WIDTH
+
+    window.resize(1400, 900)
+    window.show()
+    qtbot.waitExposed(window)
+    window.filter_column("ID")
+    viewer = window.show_browser()
+    dock = next(d for d in window._panels if d.widget() is viewer)
+    want = max(PANEL_MIN_WIDTH, window.width() // 2)
+    qtbot.waitUntil(lambda: abs(dock.width() - want) < 40, timeout=2000)
+    assert window.filter_dock.isVisible()

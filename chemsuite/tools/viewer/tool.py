@@ -24,15 +24,20 @@ from chemsuite.app.tools import Tool, ToolContext
 TOOL_ID = "viewer"
 
 
-def open_viewer(ctx: ToolContext, mode: str, state: dict | None = None):
-    """Bring the open viewer forward in *mode*, or open one (with *state*, when reopening a
-    document)."""
+def open_viewer(
+    ctx: ToolContext, mode: str | None, state: dict | None = None, at: int | None = None
+):
+    """Bring the open viewer forward in *mode* (None: as it is; a new one opens in 2D), or
+    open one (with *state*, when reopening a document); *at* first makes that row current."""
     from chemsuite.app.viewer.panel import StructureViewer  # imported on first use
 
+    if at is not None:
+        ctx.set_current_oid(at)
     if state is None:
         panel = ctx.find_panel(TOOL_ID)
         if panel is not None:
-            panel.set_mode(mode)
+            if mode is not None:
+                panel.set_mode(mode)
             panel.setFocus()
             return panel
 
@@ -46,7 +51,7 @@ def open_viewer(ctx: ToolContext, mode: str, state: dict | None = None):
         run=run,
         move_to=ctx.set_current_oid,
         watch_current=ctx.watch_current,
-        mode=mode,
+        mode=mode or "2d",
     )
     if state is not None:
         panel.set_state(state)

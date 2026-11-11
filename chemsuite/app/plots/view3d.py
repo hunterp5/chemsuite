@@ -52,6 +52,7 @@ from PySide6.QtGui import (
     QShader,
 )
 from PySide6.QtWidgets import QRhiWidget, QWidget
+from shiboken6 import getCppPointer
 
 from chemsuite.plotting.orbit import OrbitCamera
 
@@ -186,7 +187,7 @@ class View3D(QRhiWidget):
         self._surface = np.empty((0, 10), np.float32)
         self._faces = np.empty(0, np.uint32)
         self._dirty = {"points", "chosen", "lines", "surface"}
-        self._rhi = None
+        self._rhi_key = None  # the address of the QRhi the GPU resources belong to
         self._broken = False
         self._buffers: dict[str, object] = {}
         self._counts: dict[str, int] = {}
@@ -264,9 +265,10 @@ class View3D(QRhiWidget):
     # -- QRhiWidget -----------------------------------------------------------------------------
     def initialize(self, cb) -> None:
         rhi = self.rhi()
-        if rhi is self._rhi:
+        key = getCppPointer(rhi)[0]
+        if key == self._rhi_key:
             return
-        self._rhi = rhi
+        self._rhi_key = key
         self._buffers = {}
         self._counts = {}
         self._dirty = {"points", "chosen", "lines", "surface"}
@@ -316,7 +318,7 @@ class View3D(QRhiWidget):
         cb.resourceUpdate(batch)
 
     def releaseResources(self) -> None:
-        self._rhi = None
+        self._rhi_key = None
         self._buffers = {}
 
     def render(self, cb) -> None:
@@ -373,7 +375,7 @@ class View3D(QRhiWidget):
 
     # -- GPU resources --------------------------------------------------------------------------
     def _buffer(self, kind, nbytes: int, usage=QRhiBuffer.UsageFlag.VertexBuffer):
-        buf = self._rhi.newBuffer(kind, usage, nbytes)
+        buf = self.rhi().newBuffer(kind, usage, nbytes)
         buf.create()
         return buf
 
@@ -393,7 +395,7 @@ class View3D(QRhiWidget):
         batch.uploadStaticBuffer(old, 0, data.nbytes, np.ascontiguousarray(data).tobytes())
 
     def _pipeline(self, name: str, topology, bindings, attributes, *, blend: bool):
-        pipe = self._rhi.newGraphicsPipeline()
+        pipe = self.rhi().newGraphicsPipeline()
         pipe.setShaderStages(
             [
                 QRhiShaderStage(QRhiShaderStage.Type.Vertex, _shader(f"{name}.vert")),

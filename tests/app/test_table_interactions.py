@@ -128,7 +128,7 @@ def test_sorting_from_the_menu_keeps_a_column_selection(qtbot, window) -> None:
     window.show()
     qtbot.waitExposed(window)
     click_header(qtbot, window.view, 1)
-    trigger(window.columns.build_menu("pIC50", ["pIC50"], 1), "Sort Descending")
+    trigger(window.columns.build_menu("pIC50", ["pIC50"], 1), "Descending")
     assert window.workspace.table.sort_keys == (("pIC50", False),)
     assert window.view.whole_columns() == ["pIC50"]
 
@@ -182,6 +182,7 @@ def test_structure_cell_menu(structures) -> None:
     model = window.workspace.model
     menu = window.cell_menu(model.index(0, model.column_index("SMILES")))
     assert menu_titles(menu) == [  # no plain Copy, no text editor
+        "Browse",
         "Edit in Sketcher…",
         "Copy As",
         "Paste",
@@ -189,7 +190,12 @@ def test_structure_cell_menu(structures) -> None:
     ]
     copy_as = next(a.menu() for a in menu.actions() if a.text() == "Copy As")
     assert menu_titles(copy_as) == ["Molfile", "SMILES", "InChI", "InChIKey", "Image"]
-    assert menu_titles(window.cell_menu(model.index(0, 0))) == ["Copy", "Paste", "Clear Cells"]
+    assert menu_titles(window.cell_menu(model.index(0, 0))) == [
+        "Browse",
+        "Copy",
+        "Paste",
+        "Clear Cells",
+    ]
 
 
 @pytest.mark.parametrize(

@@ -347,8 +347,8 @@ class MainWindow(QMainWindow):
             workspace.table,
             lambda message: self.statusBar().showMessage(message, 4000),
             add_filter=self.filter_column,
-            split=self.split_column,
-            join=self.join_columns,
+            search=lambda name: self.search.focus(name),
+            selection=workspace.selection,
             freeze=lambda count: self.view.set_frozen(count),
             frozen=lambda: self.view.frozen_count,
             align=self.align_drawings,
@@ -574,11 +574,11 @@ class MainWindow(QMainWindow):
         assert self._lists is not None
         return self._lists
 
-    def show_browser(self) -> QWidget:
-        """Data ▸ Browser: the Structure Viewer in 2D (the open one, brought forward)."""
+    def show_browser(self, oid: int | None = None) -> QWidget:
+        """Data ▸ Browser: the Structure Viewer in 2D; a cell's Browse: at *oid*, as it is."""
         from chemsuite.tools.viewer.tool import open_viewer
 
-        return open_viewer(ToolContext(self), "2d")
+        return open_viewer(ToolContext(self), "2d" if oid is None else None, at=oid)
 
     def show_all_rows(self) -> None:
         with self.workspace.table.batch():
@@ -981,14 +981,12 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock, Qt.Orientation.Horizontal)
         if previous:
             self.tabifyDockWidget(previous[-1], dock)
-        else:
-            self.resizeDocks(
-                [dock], [max(PANEL_MIN_WIDTH, self.width() // 2)], Qt.Orientation.Horizontal
-            )
         self._panels.append(dock)
         dock.destroyed.connect(lambda _o=None, d=dock: self._forget_panel(d))
         dock.show()
         dock_layout.pin_filters(self)  # the new panel goes left of Filters
+        if not previous:  # half the window, sized once Filters is back in place
+            dock_layout.widen(self, dock, max(PANEL_MIN_WIDTH, self.width() // 2))
         dock.raise_()
         return dock
 
@@ -1245,6 +1243,8 @@ class MainWindow(QMainWindow):
         name = model.column_name(index.column())
         oid = model.oid_at(index.row())
         menu = QMenu(self)
+        menu.addAction("Browse", lambda: self.show_browser(oid))
+        menu.addSeparator()
         kind = table.kind(name)
         if kind == STRUCTURE:
             menu.addAction("Edit in Sketcher…", lambda: self.draw_structure(oid, name))

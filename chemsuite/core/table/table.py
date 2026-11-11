@@ -38,10 +38,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from types import MappingProxyType
 
 import numpy as np
 
 from . import events as ev
+from .assets import Asset
 from .columns import (
     NUMBER,
     REACTION,
@@ -99,6 +101,7 @@ class Table:
         self._depth = 0
         self._pending: list[ev.Change] = []
         self._pending_structural = False
+        self._assets: dict[str, Asset] = {}
         self.history = history or History()
 
     @classmethod
@@ -142,6 +145,7 @@ class Table:
             next_oid=self._next_oid,
         )
         copy._sort = self._sort
+        copy._assets = dict(self._assets)  # assets are immutable: sharing them is safe
         return copy
 
     def rows_copy(self, slots: np.ndarray) -> Table:
@@ -364,6 +368,7 @@ class Table:
         count: int | None = None,
         label: str = "Add rows",
         undoable: bool = True,
+        extra_ops: Sequence[Op] = (),
     ) -> np.ndarray:
         """Append rows. Unknown columns in *data* are created. Returns the new oids.
 
@@ -371,6 +376,7 @@ class Table:
         :class:`StructureColumn`) to give the kind explicitly.
 
         Pass ``undoable=False`` when loading a file, which should not fill the undo history.
+        *extra_ops* run first in the same undo step (e.g. adding the protein the rows link to).
         """
         data = dict(data or {})
         lengths = {len(v) for v in data.values()}
@@ -381,7 +387,7 @@ class Table:
         n = lengths.pop() if lengths else 0
         oids = np.arange(self._next_oid, self._next_oid + n, dtype=np.int64)
 
-        ops: list[Op] = []
+        ops: list[Op] = list(extra_ops)
         incoming: dict[str, Column] = {}
         position = len(self._columns)
         for name, values in data.items():
@@ -684,6 +690,30 @@ class Table:
             self._execute(Command(label, ops))
         return names
 
+    def edit(self, label: str, ops: Sequence[Op]) -> None:
+        """Run *ops* (built by a package that extends the table, e.g. asset changes) as one
+        undoable step."""
+        if ops:
+            self._execute(Command(label, list(ops)))
+
+    # -- assets ----------------------------------------------------------------------------------
+    @property
+    def assets(self) -> Mapping[str, Asset]:
+        """The document's assets by id, in the order they were added (read only)."""
+        return MappingProxyType(self._assets)
+
+    def set_assets(self, assets: Sequence[Asset]) -> None:
+        """Install assets read from a file. Not undoable, like :meth:`from_columns`."""
+        self._assets = {asset.id: asset for asset in assets}
+
+    def unique_asset_id(self, wanted: str) -> str:
+        """*wanted*, or ``wanted-2``, ``wanted-3``… if an asset already has that id."""
+        candidate, n = wanted, 1
+        while candidate in self._assets:
+            n += 1
+            candidate = f"{wanted}-{n}"
+        return candidate
+
     # -- undo / redo -----------------------------------------------------------------------------
     def undo(self) -> str | None:
         """Undo the last command; returns its label (None if there was nothing to undo)."""
@@ -802,6 +832,13 @@ class Table:
         slots = self.slots_of(oids)
         fitted, current = self._fit(name, incoming, ops)
         ops.append(PutCells(name, oids, fitted, current.take(slots)))
+
+    def _put_asset(self, asset_id: str, asset: Asset | None) -> None:
+        if asset is None:
+            self._assets.pop(asset_id, None)
+        else:
+            self._assets[asset_id] = asset
+        self._pending.append(ev.AssetsChanged((asset_id,)))
 
     def _insert_rows(self, oids: np.ndarray, cells: Mapping[str, Column]) -> None:
         if set(cells) != set(self._columns):

@@ -232,6 +232,69 @@ modified.
 
 ## 7. Proposed order
 
+### 7.0 High priority: graceful exit (added 2026-11-11)
+
+Closing the main window and accepting the exit prompt must shut chemsuite down completely: no
+windows left open and no Python process, worker process or external program still running.
+This must hold whatever is in flight: a job in the queue or quick lane, a file loading or
+being exported or saved, structures being parsed, a download, or an external tool (the warm
+AiZynthFinder worker, and later Vina, Gnina, OpenMM).
+
+What happens today: the window cancels its jobs and closes. Then, on `aboutToQuit`,
+`JobRunner.shutdown` cancels everything, waits up to 5 s for each thread pool, and shuts down
+the process pool without waiting, and the retro worker is closed.
+
+Gaps to close:
+- work that cannot see its cancel token (a long RDKit call, a C extension) keeps its thread
+  alive past the 5 s wait, and Python then waits for it at exit;
+- the process pool's workers are not waited for or killed, so a busy one can outlive the app;
+- external programs must be terminated, then killed after a grace period, including their
+  child processes;
+- floating panels (the Protein Viewer), dialogs and error reports must close with the last
+  document window;
+- a save or export cut short must leave the old file intact (write to a temporary file, then
+  rename), never a half-written one;
+- the "jobs still running" prompt must count every job that would be stopped, background
+  work included.
+
+Done when a test starts each kind of work, quits mid-way, and finds no child processes, no
+live threads and no open windows; and when a by-hand check on macOS, Windows and Linux shows
+the process gone from Activity Monitor, Task Manager or `ps`.
+
+### 7.0b High priority: bioactive-quality conformers (added 2026-11-11)
+
+Good drug-like conformers are essential to chemsuite: docking, 3D similarity, pharmacophores,
+superposition and the protein work all start from them. Today Chemistry ▸ Generate
+Conformers is RDKit's ETKDGv3 followed by MMFF94 (or UFF) optimisation
+(`chemsuite/conformers/etkdg.py`).
+
+The goal is a generator that is **measurably better than that baseline at reproducing the
+bioactive conformation**: the pose of a ligand crystallised in its protein.
+
+- **Measure first.** Build a benchmark of protein-bound ligand structures from the PDB (a
+  Platinum-style or PDBbind-style set with a licence that allows it). Score the best heavy-atom
+  RMSD to the crystal pose at 10, 50, 100 and 300 conformers, the fraction of ligands within
+  1.0 Å and 2.0 Å, ensemble size and time per molecule. ETKDGv3 + MMFF is the number to beat.
+  The benchmark runs as its own `-m bench` set, not in the regular suite.
+- **Then improve.** Candidate steps, each kept only if it improves the benchmark:
+  - more and better-diversified ETKDG embeddings;
+  - macrocycle-aware settings;
+  - correct protonation and tautomer states;
+  - torsion-library (CSD-derived) knowledge;
+  - energy windows and RMSD pruning tuned for coverage rather than minimum energy;
+  - solvent-aware or implicit-solvent minimisation instead of gas-phase MMFF, which collapses
+    polar ligands;
+  - an optional ML or semi-empirical rescoring add-on (e.g. xtb) if it pays for its install
+    size.
+
+  Compare against open generators (CONFORGE, OMEGA-like settings) where licences allow.
+- **Ship.** The new generator becomes the default behind the same tool, and ETKDG stays
+  available. It keeps partial results on cancel and runs in the process pool. The user guide
+  states the benchmark numbers.
+
+**Process:** this work starts in plan mode. Write the plan (benchmark set, licences, metrics,
+candidate methods, acceptance threshold) and get it approved before writing code.
+
 ### 7a. Proteins (decided 2026-11-10)
 
 A protein viewer and editor for medicinal chemists, on the native QRhi renderer (no WebEngine).

@@ -29,10 +29,36 @@ import numpy as np
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox, QWidget
 
+from chemsuite.core.selection import Selection
 from chemsuite.core.table import NUMBER, TEXT, Table
+from chemsuite.core.table import picks as row_picks
 from chemsuite.core.table.columns import REACTION, STRUCTURE, to_number
 
 KIND_TITLES = {TEXT: "Text", NUMBER: "Number", STRUCTURE: "Structure", REACTION: "Reaction"}
+#: the Select submenu: title, pick, tooltip (None: a separator)
+SELECT_PICKS = (
+    ("Empty", row_picks.EMPTY, "Select the shown rows where this cell is empty."),
+    ("Not Empty", row_picks.NOT_EMPTY, "Select the shown rows where this cell has a value."),
+    None,
+    (
+        "First Occurrence",
+        row_picks.FIRST,
+        "Select the first shown row of each value, top to bottom. Structures count as the "
+        "same when they are the same molecule.",
+    ),
+    (
+        "Duplicates",
+        row_picks.DUPLICATES,
+        "Select every shown row whose value appears in a row above it; deleting these keeps "
+        "one row of each value.",
+    ),
+    (
+        "All Duplicated Values",
+        row_picks.ALL_DUPLICATED,
+        "Select every shown row whose value appears more than once, the first included.",
+    ),
+)
+SELECT_ORIGIN = "column-menu"
 
 
 class ColumnActions:
@@ -42,8 +68,8 @@ class ColumnActions:
         table: Table,
         show_message: Callable[[str], None] = lambda _m: None,
         add_filter: Callable[[str], object] | None = None,
-        split: Callable[[str], object] | None = None,
-        join: Callable[[list[str]], object] | None = None,
+        search: Callable[[str], object] | None = None,
+        selection: Selection | None = None,
         freeze: Callable[[int], object] | None = None,
         frozen: Callable[[], int] = lambda: 0,
         align: Callable[[str], object] | None = None,
@@ -54,8 +80,8 @@ class ColumnActions:
         self._table = table
         self._show = show_message
         self._add_filter = add_filter
-        self._split = split
-        self._join = join
+        self._search = search
+        self._selection = selection
         self._freeze = freeze
         self._frozen = frozen
         self._align = align
@@ -74,6 +100,17 @@ class ColumnActions:
     def clear_sort(self) -> None:
         self._table.set_sort([])
 
+    # -- selecting rows by value --------------------------------------------------------------
+    def select_rows(self, name: str, pick: str) -> int:
+        """Select the shown rows that ``pick`` (:mod:`chemsuite.core.table.picks`) finds in
+        column *name*; returns how many."""
+        if self._selection is None:
+            return 0
+        oids = row_picks.PICKS[pick](self._table, name, self._table.visible_oids())
+        self._selection.set(oids.tolist(), SELECT_ORIGIN)
+        self._show(f"Selected {len(oids):,} row(s)")
+        return len(oids)
+
     # -- structure ----------------------------------------------------------------------------
     def rename(self, name: str) -> bool:
         new, ok = QInputDialog.getText(self._parent, "Rename Column", "Column name:", text=name)
@@ -85,22 +122,6 @@ class ColumnActions:
             return False
         self._table.rename_column(name, new)
         return True
-
-    def insert(self, position: int) -> str | None:
-        name, ok = QInputDialog.getText(
-            self._parent,
-            "Insert Column",
-            "Column name:",
-            text=self._table.unique_name("New column"),
-        )
-        name = name.strip()
-        if not ok or not name:
-            return None
-        if name in self._table:
-            QMessageBox.warning(self._parent, "Insert Column", f"“{name}” already exists.")
-            return None
-        self._table.add_column(name, position=position)
-        return name
 
     def delete(self, names: Sequence[str]) -> None:
         if names:
@@ -201,22 +222,42 @@ class ColumnActions:
         menu.setToolTipsVisible(True)
         sortable = table.column(name).sortable
 
-        def add(title: str, slot: Callable[[], object], enabled: bool = True) -> QAction:
-            action = menu.addAction(title)
+        def add(
+            title: str, slot: Callable[[], object], enabled: bool = True, into: QMenu = menu
+        ) -> QAction:
+            action = into.addAction(title)
             action.triggered.connect(lambda _checked=False: slot())
             action.setEnabled(enabled)
             return action
 
-        add("Sort Ascending", lambda: self.sort(name, True), sortable)
-        add("Sort Descending", lambda: self.sort(name, False), sortable)
-        others = [k for k in table.sort_keys if k[0] != name]
-        if others:
-            add("Then Sort Ascending", lambda: self.add_to_sort(name, True), sortable)
-            add("Then Sort Descending", lambda: self.add_to_sort(name, False), sortable)
-        add("Clear Sort", self.clear_sort, bool(table.sort_keys))
+        sort = menu.addMenu("Sort")
+        sort.setToolTipsVisible(True)
+        add("Ascending", lambda: self.sort(name, True), sortable, sort)
+        add("Descending", lambda: self.sort(name, False), sortable, sort)
+        if any(k[0] != name for k in table.sort_keys):
+            then = add("Then Ascending", lambda: self.add_to_sort(name, True), sortable, sort)
+            then.setToolTip("Sort by this column within the current sort")
+            then = add("Then Descending", lambda: self.add_to_sort(name, False), sortable, sort)
+            then.setToolTip("Sort by this column within the current sort")
+        sort.addSeparator()
+        add("Clear", self.clear_sort, bool(table.sort_keys), sort)
         if self._add_filter is not None:
             add_filter = self._add_filter
-            add("Filter This Column", lambda: add_filter(name))
+            add("Filter", lambda: add_filter(name))
+        if self._search is not None:
+            search = self._search
+            add("Search", lambda: search(name)).setToolTip(
+                "Open the search bar to search this column"
+            )
+        if self._selection is not None:
+            chooser = menu.addMenu("Select")
+            chooser.setToolTipsVisible(True)
+            for item in SELECT_PICKS:
+                if item is None:
+                    chooser.addSeparator()
+                    continue
+                title, pick, tip = item
+                add(title, lambda p=pick: self.select_rows(name, p), True, chooser).setToolTip(tip)
         if self._freeze is not None:
             freeze = self._freeze
             frozen = self._frozen()
@@ -232,23 +273,11 @@ class ColumnActions:
 
         add("Rename…", lambda: self.rename(name))
         add("Duplicate Column", lambda: self.duplicate(name))
-        add("Insert Column Left…", lambda: self.insert(position))
-        add("Insert Column Right…", lambda: self.insert(position + 1))
         targets = list(selected) if name in selected else [name]
         add(
             "Delete Column" if len(targets) == 1 else f"Delete {len(targets)} Columns",
             lambda: self.delete(targets),
         )
-        menu.addSeparator()
-        if self._split is not None:
-            split = self._split
-            add("Split Column…", lambda: split(name))
-        if self._join is not None:
-            join = self._join
-            add(
-                "Join Columns…" if len(targets) < 2 else f"Join {len(targets)} Columns…",
-                lambda: join(targets),
-            )
         menu.addSeparator()
 
         number = table.kind(name) == NUMBER
