@@ -548,8 +548,8 @@ window = QWidget()
 layout = QHBoxLayout(window)
 layout.addWidget(gl.GLViewWidget())  # a 3D plot in the same window, drawn first
 window.resize(400, 200)
-window.show()
-try:
+try:  # Windows paints the 3D plot inside show()
+    window.show()
     app.processEvents()
 except Exception as error:  # an OpenGL too old to draw at all (a CI machine's software GL)
     print("NO-RHI", type(error).__name__)
