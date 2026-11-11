@@ -382,12 +382,12 @@ def test_the_focus_menu_lists_the_ligands(panel) -> None:
     from PySide6.QtWidgets import QMenu
 
     menu = QMenu()
-    panel._fill_focus(menu)
+    panel.fill_focus(menu)
     titles = [a.text() for a in menu.actions() if a.text()]
     assert titles == ["E/ATP 355", "Clear Focus"]
     menu.actions()[0].trigger()
     assert panel.session.focused_residue() is not None
-    panel._fill_focus(menu)
+    panel.fill_focus(menu)
     assert menu.actions()[0].isChecked() and menu.actions()[-1].isEnabled()
 
 

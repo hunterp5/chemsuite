@@ -44,7 +44,7 @@ Each document has its own window. From top to bottom:
   | Edit | Undo, Copy and Paste, Edit Structure, selecting rows, Lists, Delete Rows, Settings |
   | View | Search Bar, Arrange Panes, Jobs, Log, Status Bar |
   | Tools ▸ Table | Add compounds, rows and columns; Split and Join columns; Calculator; random numbers and rows |
-  | Chemistry | Sketcher, Calculate Descriptors, Standardize, Predict pKa, Structure Viewer, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
+  | Chemistry | Sketcher, Calculate Descriptors, Standardize, Predict pKa, Structure Viewer, Protein Viewer, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
   | Data | Search ▸, Plot ▸, Filters, Browser, then Bin Values, Statistics, Similarity Search, Diverse Subset, Cluster, SAR ▸, Scoring ▸, Chemical Space ▸ |
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
   | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
@@ -197,8 +197,9 @@ in the background, using every processor core. You can scroll and work while tha
 
 - Double-click a cell to edit it, or start typing. Double-clicking a structure opens the
   sketcher (see [Structures](#4-structures)).
-- Right-click a cell for Copy, Paste and Clear Cells. Structure cells offer **Edit in
-  Sketcher…** and **Copy As ▸ Molfile / SMILES / InChI / InChIKey / Image** instead of Copy.
+- Right-click a cell for **Browse**, Copy, Paste and Clear Cells. **Browse** opens the
+  Structure Viewer at that row (in 2D, or as it is when it is already open). Structure cells
+  offer **Edit in Sketcher…** and **Copy As ▸ Molfile / SMILES / InChI / InChIKey / Image** instead of Copy.
   Copy As takes every selected structure in that column, in the order shown: text formats one
   per line, molfiles as an SD file. A single molfile also pastes into ChemDraw as a drawing.
   Reaction cells offer **Edit in Sketcher…** and **Copy As ▸ RXN File / Reaction SMILES /
@@ -235,16 +236,17 @@ scrolled to, the moved column stays in view and, if it was selected, stays selec
 
 Right-click a column header for:
 
-- **Sort Ascending / Descending.** **Then Sort…** adds a second (third…) sort key.
-  **Clear Sort** returns rows to their original order.
-- **Filter This Column.** Adds a filter card for the column (see [Filters](#7-filters)).
+- **Sort ▸ Ascending / Descending.** **Then Ascending / Then Descending** add a second (third…)
+  sort key; **Clear** returns rows to their original order.
+- **Filter.** Adds a filter card for the column (see [Filters](#7-filters)).
+- **Search.** Opens the search bar set to this column, ready to type.
+- **Select ▸** picks shown rows by this column's value, top to bottom: **Empty**, **Not Empty**,
+  **First Occurrence** (the first row of each value), **Duplicates** (every row whose value
+  appears in a row above it, so deleting them keeps one of each) and **All Duplicated Values**
+  (every row whose value appears more than once). Structures count as the same when they are
+  the same molecule, however they were written.
 - **Rename…**, **Duplicate Column** (a copy, with its formatting, to the right),
-  **Insert Column Left/Right…**, **Delete Column**. Delete acts on all selected columns when you
-  right-click one of them.
-- **Split Column…** and **Join Columns…**, each with a live preview of the first rows shown.
-  Choose **All**, **Shown** or **Selected** rows; other rows stay blank. Split finds the
-  delimiter itself (**Auto**) or uses one you choose, and keeps every field or only the first,
-  last, largest or smallest; Join can skip blank cells so no delimiters are doubled.
+  **Delete Column**. Delete acts on all selected columns when you right-click one of them.
 - **Logarithmic (log₁₀)** (Number columns). Converts the values to log₁₀; choose it again to
   convert them back (10ˣ). The header shows "(log₁₀)". It needs every value above zero. One
   step you can undo.
@@ -291,7 +293,7 @@ From Tools ▸ Table:
 | Add Compound… | Opens the sketcher; draw (or paste) a structure, and **Add** appends it as a new row. |
 | Add Rows… | Adds empty rows. |
 | Add Column… | Adds a column. |
-| Split Column… / Join Columns… | As above. |
+| Split Column… / Join Columns… | Each with a live preview of the first rows shown. Choose **All**, **Shown** or **Selected** rows; other rows stay blank. Split finds the delimiter itself (**Auto**) or uses one you choose, and keeps every field or only the first, last, largest or smallest; Join can skip blank cells so no delimiters are doubled. |
 
 ### Rows
 
@@ -793,7 +795,7 @@ a row is shown only if it passes every enabled card.
   and it starts on a suitable column (for Category, the first column with a short list of
   values); choose its column in the box at the top of the card. Switching the column keeps the
   card's place, on/off and Not. A kind with no suitable column is greyed out. A column
-  header's **Filter This Column** adds the best kind of card for that column directly. The
+  header's **Filter** adds the best kind of card for that column directly. The
   panel header's other buttons are **Filter Sets** and **Remove All Filters**; point at Remove
   All for how many rows are showing.
 - Each card has an on/off tick box, a **¬** (Not) toggle that keeps the rows the card would
@@ -1197,6 +1199,63 @@ slower, but it works. chemsuite checks the graphics when it starts; where 3D can
 the viewer stays in 2D, the 3D switch and the 3D plot types are greyed out, and their
 tooltips give the reason. Settings ▸ General ▸ 3D graphics can force software drawing
 (Windows and Linux) or turn 3D off.
+
+### Proteins
+
+**Chemistry ▸ Protein Viewer** (Ctrl+Shift+R) opens a workspace for proteins in its own
+window (dock it beside the table with the button in its title bar if you prefer). It has its
+own menus:
+
+- **File:** **Open Protein…** (PDB or mmCIF files, gzipped or not), **Fetch from PDB…**
+  (download an entry by its ID, such as 1ATP), **Save Selection As…** (PDB or mmCIF) and
+  **Close Viewer**. With no protein open, the middle of the window offers Open and Fetch.
+- **Edit:** **Copy Selection As ▸ PDB / mmCIF**, **Select All**, **Clear Selection**, **Save
+  Selection…**.
+- **View:** Show, Hide and Colour, Frame Selection, Reset View, and whether the proteins list
+  and the sequence show.
+- **Pocket:** Interactions, Focus, Measure and **Extract Ligands to Table** (rows for the
+  ligands of proteins that have none yet).
+
+Proteins are saved inside the document. Adding one also adds a row for each of its ligands to
+the table, in one step you can undo:
+
+| Column | What it holds |
+|---|---|
+| Protein | Which protein the ligand belongs to (a second copy of 1ATP becomes 1ATP-2) |
+| Ligand ID | Chain, residue name and number, such as `E/ATP 355` |
+| Ligand | The ligand as a structure, in its pose from the file (3D kept) |
+| Bond Orders | Where the bond orders came from: the PDB's chemical component dictionary (CCD), a SMILES, or **Guessed from geometry**, which is worth checking |
+
+Make a ligand row current in the table and the viewer shows that ligand in its pocket.
+
+**The viewer.** The proteins list (tick a protein to show or hide it; click a chain or ligand to
+select it), the 3D view and the sequence underneath.
+
+- **Selecting.** Click selects a residue, Alt-click an atom, double-click its chain; Shift adds
+  and Ctrl (Cmd) toggles; click empty space or press Esc to clear. Click or drag across letters
+  in the sequence. Type in the selection field (point at it for the syntax): `chain A`,
+  `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres polymer within 5 of
+  ligand`, `and`, `or`, `not`. **Select ▸** has the usual picks and **Save Selection…**;
+  saved selections are used as `$name`.
+- **Show, Hide, Colour** act on the selection: wire, sticks, ball and stick, spacefill,
+  cartoon, surface; colour by element, chain, secondary structure, B-factor, hydrophobicity or
+  a colour you choose.
+- **Interactions** draws dashed lines from the ligands (or the selection) to what they touch:
+  hydrogen bonds (blue), salt bridges (magenta), π-stacking (green), cation–π (orange),
+  hydrophobic contacts (grey), halogen bonds (cyan), metal contacts (purple) and water bridges
+  (light blue). Point at an atom to read its interactions in the status line. Structures from
+  the PDB rarely carry hydrogens, so these are judged from heavy atoms.
+- **Focus ▸** a ligand shows its pocket (residues within 5 Å as sticks, the waters and ions
+  touching it) with its interactions, fades the rest of the protein and hides other small
+  molecules; a slice of depth around the pocket follows the camera. **Clear Focus** undoes the
+  fading.
+- **Measure ▸ Distance / Angle / Dihedral**, then click two, three or four atoms. Esc stops
+  measuring.
+- Right-click an atom to select its residue, chain or surroundings, focus a ligand, switch an
+  alternate location, copy a ligand's SMILES, or **Copy Selection As ▸ PDB / mmCIF**.
+
+Everything shown, selected, focused and measured is saved with the document. Fetch from PDB
+only sends the ID, over HTTPS; when IT turns downloads off it says so instead.
 
 ### Retrosynthesis
 

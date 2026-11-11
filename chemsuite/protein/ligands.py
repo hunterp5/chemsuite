@@ -136,3 +136,43 @@ def _from_template(bare: Chem.Mol, smiles: str) -> Chem.Mol | None:
     out = fitted.GetMol()
     Chem.AssignStereochemistryFrom3D(out)
     return out
+
+
+# -- ligands as table rows ----------------------------------------------------------------------
+
+#: the columns a protein's ligands fill: which protein, which residue, the ligand in its pose
+PROTEIN_COLUMN = "Protein"
+LIGAND_ID_COLUMN = "Ligand ID"
+LIGAND_COLUMN = "Ligand"
+BOND_ORDERS_COLUMN = "Bond Orders"
+SOURCE_TITLES = {SMILES: "SMILES", TEMPLATE: "CCD template", GEOMETRY: "Guessed from geometry"}
+
+
+def ligand_rows(structure: Structure, protein: str) -> dict[str, list[str]]:
+    """One row per ligand: the protein's asset id, the residue (as
+    :meth:`Structure.residue_label` writes it), a molfile in the ligand's pose and where its
+    bond orders came from. A ligand RDKit cannot read is left out."""
+    rows: dict[str, list[str]] = {PROTEIN_COLUMN: [], LIGAND_ID_COLUMN: [], LIGAND_COLUMN: [],
+                                  BOND_ORDERS_COLUMN: []}  # fmt: skip
+    for residue in ligand_residues(structure).tolist():
+        try:
+            ligand = to_mol(structure, residue)
+            block = Chem.MolToMolBlock(ligand.mol)
+        except (ValueError, RuntimeError):
+            continue
+        rows[PROTEIN_COLUMN].append(protein)
+        rows[LIGAND_ID_COLUMN].append(structure.residue_label(residue))
+        rows[LIGAND_COLUMN].append(block)
+        rows[BOND_ORDERS_COLUMN].append(SOURCE_TITLES[ligand.source])
+    return rows
+
+
+def residue_named(structure: Structure, label: str) -> int:
+    """The residue :meth:`Structure.residue_label` calls ``label`` (-1 when there is none)."""
+    for residue in ligand_residues(structure).tolist():
+        if structure.residue_label(residue) == label:
+            return int(residue)
+    for residue in range(structure.n_residues):
+        if structure.residue_label(residue) == label:
+            return residue
+    return -1

@@ -79,3 +79,8 @@ def unpack(data: bytes) -> Structure:
         else:
             values[f.name] = arrays[f.name]
     return Structure(**values)
+
+
+def as_structure(payload) -> Structure:
+    """An asset's payload as a structure: a Structure as it is, stored bytes unpacked."""
+    return payload if isinstance(payload, Structure) else unpack(payload)

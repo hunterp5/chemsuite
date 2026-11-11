@@ -44,7 +44,7 @@ from chemsuite.molview.measure import describe
 from chemsuite.protein import display as displays
 from chemsuite.protein import scene as scenes
 from chemsuite.protein import store
-from chemsuite.protein.model import AMINO, LIGAND, NUCLEIC, Structure
+from chemsuite.protein.model import AMINO, LIGAND, NUCLEIC
 from chemsuite.protein.select import Mask, SelectionError, select
 
 KIND = "protein"
@@ -58,9 +58,7 @@ FOCUS_NEAR = "(water or ion) within 3.5 of $focus"
 Point = tuple[str, int]  # a protein id and an atom uid
 
 
-def structure_of(payload) -> Structure:
-    """An asset's structure, decoding stored bytes."""
-    return payload if isinstance(payload, Structure) else store.unpack(payload)
+structure_of = store.as_structure  # an asset's structure, decoding stored bytes
 
 
 class ProteinSession(QObject):

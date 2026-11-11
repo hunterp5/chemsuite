@@ -434,9 +434,8 @@ class _Response:
 
 
 def test_download_fetches_the_data_and_sets_the_config(window, qtbot, tmp_path, monkeypatch):
-    import urllib.request
-
     from chemsuite.app.settings_hub import settings_hub
+    from chemsuite.core import download
     from chemsuite.retro.config import CONFIG_TOOL
 
     urls = []
@@ -445,7 +444,7 @@ def test_download_fetches_the_data_and_sets_the_config(window, qtbot, tmp_path, 
         urls.append(request.full_url)
         return _Response(b"data")
 
-    monkeypatch.setattr(urllib.request, "urlopen", opener)
+    monkeypatch.setattr(download, "_open", opener)  # every download opens through here
     dialog = window.open_settings()
     tools = dialog.tools
     assert tools.download_button.isEnabled()
@@ -465,14 +464,14 @@ def test_download_fetches_the_data_and_sets_the_config(window, qtbot, tmp_path, 
 
 def test_download_failure_is_reported_on_the_row(window, qtbot, tmp_path, monkeypatch):
     import urllib.error
-    import urllib.request
 
+    from chemsuite.core import download
     from chemsuite.retro.config import CONFIG_TOOL
 
     def opener(request, timeout=None):
         raise urllib.error.URLError("no route to host")
 
-    monkeypatch.setattr(urllib.request, "urlopen", opener)
+    monkeypatch.setattr(download, "_open", opener)  # every download opens through here
     dialog = window.open_settings()
     job = dialog.tools.start_download(tmp_path / "aizynth")
     qtbot.waitUntil(lambda: not job.running, timeout=10_000)

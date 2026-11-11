@@ -39,7 +39,8 @@ from PySide6.QtWidgets import QAbstractItemView, QDialog, QDockWidget, QWidget
 from chemsuite.core.lists import RowLists
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
-from chemsuite.core.table.columns import REACTION, STRUCTURE, Column
+from chemsuite.core.table.columns import REACTION, STRUCTURE, Column, StructureColumn
+from chemsuite.core.table.history import Op
 
 from .jobs import QUEUE, Job
 
@@ -263,6 +264,41 @@ class ToolContext:
                 oids = oids[present]
             kept[name] = (oids, values)
         return table.apply_results(kept, label=label, overwrite=overwrite)
+
+    def add_rows(
+        self,
+        cells: Mapping[str, Sequence[str]],
+        label: str,
+        *,
+        structures: Collection[str] = (),
+        extra_ops: Sequence[Op] = (),
+    ) -> np.ndarray:
+        """Append rows (one undo step, with *extra_ops* such as adding a protein) and return
+        their oids. Columns named in *structures* are made Structure columns when new, parsed
+        now (a molfile shows as its SMILES and keeps its coordinates); other new columns are
+        text or numbers by their values."""
+        table = self.table
+        data: dict[str, Sequence[str] | Column] = {}
+        for name, values in cells.items():
+            if name in structures and (name not in table or table.kind(name) == STRUCTURE):
+                from chemsuite.core.mols import parse_structure
+
+                parsed = [parse_structure(str(v)) for v in values]
+                data[name] = StructureColumn.from_parsed([b for b, _ in parsed],
+                                                         [t for _, t in parsed])  # fmt: skip
+            else:
+                data[name] = list(values)
+        return table.add_rows(data, label=label, extra_ops=extra_ops)
+
+    def edit(self, label: str, ops: Sequence[Op]) -> None:
+        """Change the document with *ops* (e.g. adding a protein) as one undo step."""
+        self.table.edit(label, ops)
+
+    def network_allowed(self) -> bool:
+        """False when IT policy turns downloads off (say so instead of offering them)."""
+        from chemsuite.core.download import network_allowed
+
+        return network_allowed()
 
     # -- showing ------------------------------------------------------------------------------
     def add_panel(self, widget: QWidget, title: str) -> QDockWidget:

@@ -26,6 +26,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QColorDialog, QMenu, QWidget
 
 from chemsuite.protein import colours, scene
+from chemsuite.protein.io import MMCIF, PDB
 from chemsuite.protein.model import LIGAND
 from chemsuite.protein.select import SelectionError
 
@@ -81,7 +82,7 @@ def _need_selection(menu: QMenu, session: ProteinSession) -> None:
 
 
 def context_menu(
-    session: ProteinSession, atom: int, parent: QWidget, *, focus, copy_smiles=None
+    session: ProteinSession, atom: int, parent: QWidget, *, focus, copy_smiles=None, copy_as=None
 ) -> QMenu:
     """The right-click menu for scene atom ``atom`` (-1: empty space)."""
     menu = QMenu(parent)
@@ -137,4 +138,9 @@ def context_menu(
     framed.setEnabled(session.selected_count() > 0)
     clear = menu.addAction("Clear Selection", session.clear_selection)
     clear.setEnabled(session.selected_count() > 0)
+    if copy_as is not None:
+        copying = menu.addMenu("Copy Selection As")
+        copying.addAction("PDB", lambda: copy_as(PDB))
+        copying.addAction("mmCIF", lambda: copy_as(MMCIF))
+        copying.setEnabled(session.selected_count() > 0)
     return menu
