@@ -98,6 +98,8 @@ def _columns(m: np.ndarray) -> np.ndarray:
 class RhiView(QRhiWidget):
     atomClicked = Signal(int, object)  # atom index (as the subclass counts), modifiers
     atomHovered = Signal(int)  # atom index, -1 when none
+    atomDoubleClicked = Signal(int)  # atom index, -1 when none
+    contextRequested = Signal(int, object)  # a right-click: atom index, global QPoint
     cameraMoved = Signal()
     failed = Signal()  # the GPU could not be used
 
@@ -186,6 +188,11 @@ class RhiView(QRhiWidget):
             self._fit_now()
         else:
             self.camera_changed()
+
+    def frame(self, positions: np.ndarray, radii: np.ndarray | None = None) -> None:
+        """Fit these points to the view (the user's choice: not refitted on resize)."""
+        self.camera.fit(positions, radii, self._aspect())
+        self.set_camera(self.camera)
 
     def set_camera(self, camera: Camera) -> None:
         self.camera = camera
@@ -360,9 +367,18 @@ class RhiView(QRhiWidget):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self._press is not None and not self._dragged:
             pos = event.position()
-            self.atomClicked.emit(self.atom_at(pos.x(), pos.y()), event.modifiers())
+            atom = self.atom_at(pos.x(), pos.y())
+            if event.button() == Qt.MouseButton.RightButton:
+                self.contextRequested.emit(atom, event.globalPosition().toPoint())
+            else:
+                self.atomClicked.emit(atom, event.modifiers())
         self._press = self._last = None
         self._dragged = False
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position()
+            self.atomDoubleClicked.emit(self.atom_at(pos.x(), pos.y()))
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         steps = event.angleDelta().y() / 120.0
