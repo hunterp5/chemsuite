@@ -248,6 +248,79 @@ def test_proteins_are_drawn_picked_and_selected() -> None:
     assert b4 > 60 and b4 > 3 * r4 and b4 > 2 * g4, (r4, g4, b4)  # still drawn after the move
 
 
+RENDER_FIGURE = """
+import sys
+import numpy as np
+from PySide6.QtWidgets import QApplication
+app = QApplication([])
+from chemsuite.app.protein.view import ProteinView
+from chemsuite.protein import colours, io, scene
+from chemsuite.protein.select import select
+s = io.read(sys.argv[1])
+styles = np.where(select(s, "ligand or within 6 of ligand"), scene.default_styles(s), 0)
+geometry = scene.geometry(s, styles.astype(np.uint8))
+rgba = colours.colour(s)
+flags = scene.flags(s.n_atoms)
+view = ProteinView()
+view.resize(400, 300)
+view.set_scene(geometry, scene.sphere_look(geometry, rgba, flags),
+               scene.cylinder_look(geometry, rgba, flags), fit=True)
+try:
+    view.show()
+    for _ in range(20):
+        app.processEvents()
+except Exception as error:
+    print("NO-RHI", type(error).__name__)
+    sys.exit(0)
+if view.grabFramebuffer().isNull():
+    print("NO-RHI")
+    sys.exit(0)
+picture = view.picture(1200, 900, transparent=True)
+print("SIZE", picture.width(), picture.height())
+print("CORNER", picture.pixelColor(2, 2).alpha())
+print("BACK", view.background.alpha())
+carbons = np.flatnonzero(select(s, "ligand and elem C"))
+view.camera.orthographic = True
+view.camera_changed()
+for _ in range(10):
+    app.processEvents()
+drawn = view.grabFramebuffer()
+xy, depth = view.camera.project(s.coords[0][carbons], drawn.width(), drawn.height())
+front = int(np.argmin(depth))
+c = drawn.pixelColor(*(int(v) for v in xy[front]))
+print("ORTHO", c.red(), c.green(), c.blue())
+lx, ly = (int(v) for v in view.camera.project(s.coords[0][carbons[front:front + 1]],
+                                               view.width(), view.height())[0][0])
+print("PICK", view.atom_at(lx, ly) >= 0)
+"""
+
+
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
+    reason="needs a display for the GPU",
+)
+def test_figures_draw_at_any_size_and_orthographic() -> None:
+    """File > Export Image draws at the size asked for, with a see-through background when
+    asked, and leaves the view as it was; an orthographic view still ray-traces its atoms
+    where the camera projects them and picks them."""
+    env = {k: v for k, v in os.environ.items() if k != "QT_QPA_PLATFORM"}
+    out = subprocess.run(
+        [sys.executable, "-c", RENDER_FIGURE, str(KINASE)], capture_output=True, text=True,
+        env=env, cwd=ROOT, timeout=120,
+    )  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    if "NO-RHI" in out.stdout:
+        if os.environ.get("CHEMSUITE_REQUIRE_GPU"):
+            pytest.fail("no GPU drawing: " + out.stderr)
+        pytest.skip("no GPU drawing on this machine")
+    lines = {line.split()[0]: line.split()[1:] for line in out.stdout.splitlines()}
+    assert lines["SIZE"] == ["1200", "900"], out.stdout + out.stderr
+    assert lines["CORNER"] == ["0"] and lines["BACK"] == ["255"]
+    r, g, b = (int(v) for v in lines["ORTHO"])
+    assert g > 120 and g > r + 40 and g > b + 40, (r, g, b)  # ligand carbon green
+    assert lines["PICK"] == ["True"]
+
+
 RENDER_SHORT = """
 import sys
 import numpy as np

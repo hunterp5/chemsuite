@@ -40,12 +40,14 @@ vec3 look(vec3 base, vec3 n, vec3 dir, float raw, float depth)
 
 void main()
 {
-    vec3 dir = normalize(v_pos);
+    bool ortho = params.w > 0.5;               // rays straight down -z from the eye's plane
+    vec3 dir = ortho ? vec3(0.0, 0.0, -1.0) : normalize(v_pos);
+    vec3 o = ortho ? vec3(v_pos.xy, 0.0) : vec3(0.0);
     vec3 a = v_start.xyz;
     float r = v_start.w;
     vec3 ax = v_axis.xyz;
     float len = v_axis.w;
-    vec3 oc = -a;
+    vec3 oc = o - a;
     float dd = dot(dir, ax);
     float od = dot(oc, ax);
     vec3 dp = dir - ax * dd;
@@ -60,7 +62,7 @@ void main()
     float s = od + t * dd;
     if (s < 0.0 || s > len)
         discard;
-    vec3 p = dir * t;
+    vec3 p = o + dir * t;
     if (-p.z < slab.x || -p.z > slab.y)
         discard;
     vec3 n = normalize(p - (a + ax * s));

@@ -35,9 +35,10 @@ from __future__ import annotations
 from importlib.resources import files
 
 import numpy as np
-from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QPointF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
+    QImage,
     QMouseEvent,
     QRhi,
     QRhiBuffer,
@@ -114,6 +115,7 @@ class RhiView(QRhiWidget):
         self.highlight = QColor(255, 196, 0)  # the selection colour
         self.slab = NO_SLAB
         self.fog: tuple[float, float] | None = None  # view depths; None: the scene's back half
+        self.depth_cue = True  # fade with depth at all (fog)
         self.ghost = 0.75  # how far ghosted atoms fade into the background
         self._rhi_key = None  # the address of the QRhi the GPU resources belong to
         self._broken = False  # the GPU cannot run the shaders: draw nothing
@@ -220,6 +222,27 @@ class RhiView(QRhiWidget):
         back half of the scene (the default)."""
         self.fog = fog
         self.update()
+
+    def set_depth_cue(self, on: bool) -> None:
+        """Fade what lies further back into the background (fog), or draw everything fully."""
+        self.depth_cue = on
+        self.update()
+
+    def picture(self, width: int, height: int, transparent: bool = False) -> QImage:
+        """The scene drawn at *width* x *height* pixels (the view's own shape gives the same
+        framing), with a see-through background when *transparent*. Null when it cannot be
+        drawn (no GPU, or the view is not on screen)."""
+        background = QColor(self.background)
+        if transparent:
+            self.background.setAlpha(0)
+        self.setFixedColorBufferSize(QSize(width, height))
+        try:
+            image = self.grabFramebuffer()
+        finally:
+            self.setFixedColorBufferSize(QSize())
+            self.background = background
+            self.update()
+        return image
 
     # -- QRhiWidget -------------------------------------------------------------------------
     def initialize(self, cb) -> None:
@@ -340,6 +363,9 @@ class RhiView(QRhiWidget):
         frame[38] = camera.distance + camera.radius * 1.2
         if self.fog is not None:
             frame[37:39] = self.fog
+        if not self.depth_cue:
+            frame[37:39] = (1e7, 1e7 + 1.0)  # fog starts far behind everything
+        frame[39] = 1.0 if camera.orthographic else 0.0
         frame[40:44] = self.background.getRgbF()
         frame[44:47] = (self.slab[0], self.slab[1], self.ghost)
         frame[48:52] = self.highlight.getRgbF()

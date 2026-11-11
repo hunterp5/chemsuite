@@ -33,7 +33,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtGui import QKeySequence
+from PySide6.QtGui import QActionGroup, QColor, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar
 
 from chemsuite.protein import io as protein_io
@@ -42,6 +42,15 @@ from . import menus
 
 if TYPE_CHECKING:
     from .panel import ProteinPanel
+
+#: View ▸ Background: the theme's (light or dark), or a fixed colour for figures
+THEME = "theme"
+BACKGROUNDS = {
+    THEME: ("Theme", None),
+    "white": ("White", QColor(255, 255, 255)),
+    "grey": ("Grey", QColor(128, 128, 128)),
+    "black": ("Black", QColor(0, 0, 0)),
+}
 
 #: the commands a tool hands the panel (each opens its own dialog or job)
 OPEN = "open"
@@ -106,6 +115,9 @@ def _file(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
     saving.setEnabled(bool(shown))
     save = menu.addAction("Save Selection As…", lambda: save_selection(panel))
     save.setEnabled(panel.session.selected_count() > 0)
+    export = menu.addAction("Export Image…", panel.export_image)
+    export.setShortcut(QKeySequence("Ctrl+E"))
+    export.setEnabled(panel.view is not None and bool(shown))
     menu.addSeparator()
     removing = menu.addMenu("Remove Protein")
     for display in shown:
@@ -126,6 +138,9 @@ def _edit(menu: QMenu, panel: ProteinPanel) -> None:
     copying.addAction("PDB", lambda: panel.copy_selection(protein_io.PDB))
     copying.addAction("mmCIF", lambda: panel.copy_selection(protein_io.MMCIF))
     copying.setEnabled(selected)
+    image = menu.addAction("Copy Image", panel.copy_image)
+    image.setShortcut(QKeySequence("Ctrl+Shift+C"))
+    image.setEnabled(panel.view is not None and bool(panel.session.displays))
 
 
 def _select(menu: QMenu, panel: ProteinPanel) -> None:
@@ -184,6 +199,24 @@ def _view(menu: QMenu, panel: ProteinPanel) -> None:
         "Fit the selection (everything, when nothing is selected) to the view (F)"
     )
     menu.addAction("Reset View", panel.reset_view)
+    menu.addSeparator()
+    background = menu.addMenu("Background")
+    group = QActionGroup(background)
+    for key, (title, _colour) in BACKGROUNDS.items():
+        action = background.addAction(title, lambda k=key: panel.set_background(k))
+        action.setCheckable(True)
+        action.setChecked(panel.background == key)
+        group.addAction(action)
+    ortho = menu.addAction("Orthographic", lambda: panel.set_orthographic(not panel.orthographic))
+    ortho.setCheckable(True)
+    ortho.setChecked(panel.orthographic)
+    ortho.setToolTip("Parallel projection: no perspective, sizes compare across depth")
+    cue = menu.addAction("Depth Cue", lambda: panel.set_depth_cue(not panel.depth_cue))
+    cue.setCheckable(True)
+    cue.setChecked(panel.depth_cue)
+    cue.setToolTip("Fade what lies further back into the background (fog)")
+    for action in (ortho, cue):
+        action.setEnabled(panel.view is not None)
     menu.addSeparator()
     for title, widget in (("Proteins List", panel.tree), ("Sequence", panel.sequence)):
         action = menu.addAction(title, lambda w=widget: w.setVisible(not w.isVisible()))

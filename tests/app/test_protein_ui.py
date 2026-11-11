@@ -959,3 +959,54 @@ def test_the_menu_bar_holds_every_command(panel) -> None:
     action_in(select, "All").trigger()
     assert panel.session.selected_count() == panel.session.display("1ATP").active.sum()
     assert action_in(menu_of(panel, "Edit"), "Copy").isEnabled()
+
+
+# figures: export size, background, projection, depth cue
+
+
+def test_export_image_sizes_keep_the_views_shape(panel, qtbot) -> None:
+    from chemsuite.app.protein.export import CENTIMETRES, INCHES, MAX_PIXELS, ExportImageDialog
+
+    panel.view.resize(400, 300)
+    dialog = ExportImageDialog(panel)
+    qtbot.addWidget(dialog)
+    assert dialog.pixel_size() == (800, 600)  # twice the view
+    dialog.width.setValue(1000)
+    assert dialog.height.value() == 750 and dialog.primary.text() == "Export 1,000 × 750 px"
+    dialog.height.setValue(300)
+    assert dialog.width.value() == 400
+    dialog.units.set_value(INCHES)  # 400 px at 300 dpi
+    assert dialog.width.value() == pytest.approx(400 / 300, abs=0.01)
+    dialog.width.setValue(2.0)
+    assert dialog.pixel_size() == (600, 450)
+    dialog.units.set_value(CENTIMETRES)
+    assert dialog.width.value() == pytest.approx(5.08, abs=0.01)
+    dialog.dpi.setValue(600)
+    assert dialog.pixel_size() == (1200, 900)
+    dialog.units.set_value("px")
+    dialog.width.setValue(MAX_PIXELS + 1)
+    assert "At most" in dialog.status.text() and not dialog.primary.isEnabled()
+
+
+def test_the_view_menu_sets_background_projection_and_depth_cue(panel) -> None:
+    from PySide6.QtGui import QColor
+
+    view = menu_of(panel, "View")
+    background = action_in(view, "Background").menu()
+    action_in(background, "Black").trigger()
+    assert panel.view.background == QColor(0, 0, 0) and panel.background == "black"
+    action_in(view, "Orthographic").trigger()
+    assert panel.view.camera.orthographic
+    action_in(menu_of(panel, "View"), "Depth Cue").trigger()
+    assert not panel.view.depth_cue
+    view = menu_of(panel, "View")
+    assert action_in(view, "Orthographic").isChecked()
+    assert not action_in(view, "Depth Cue").isChecked()
+    state = panel.state()
+    panel.set_background("theme")
+    panel.set_orthographic(False)
+    panel.set_depth_cue(True)
+    assert panel.view.background == panel.palette().base().color()
+    panel.set_state(state)
+    assert panel.background == "black" and panel.view.camera.orthographic
+    assert not panel.view.depth_cue

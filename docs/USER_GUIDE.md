@@ -1212,8 +1212,8 @@ viewer does is in its menus and the right-click menu:
 
 - **File:** **Open Protein…** (Ctrl+O; PDB or mmCIF files, gzipped or not), **Fetch from
   PDB…** (Ctrl+Shift+O; download an entry by its ID, such as 1ATP), **Save Protein As ▸**
-  (every model and alternate location), **Save Selection As…** (PDB or mmCIF), **Remove
-  Protein ▸** and **Close Window** (Ctrl+W). Saving writes a temporary file first, so a save
+  (every model and alternate location), **Save Selection As…** (PDB or mmCIF), **Export
+  Image…** (Ctrl+E, below), **Remove Protein ▸** and **Close Window** (Ctrl+W). Saving writes a temporary file first, so a save
   that fails leaves the old file as it was. A selection across several proteins is written as
   one file; a chain whose ID another protein took first is renamed, and the status line says
   how. With no protein open, the middle of the window offers Open and Fetch. A protein can also
@@ -1221,8 +1221,8 @@ viewer does is in its menus and the right-click menu:
   in the table name it you choose **Delete Rows** or **Keep Rows**; either way one Undo brings
   it all back. A kept row whose protein is gone says so on the viewer's status line when you
   make it current.
-- **Edit:** **Copy** (Ctrl+C: the selected atoms as PDB text) and **Copy Selection As ▸ PDB /
-  mmCIF**.
+- **Edit:** **Copy** (Ctrl+C: the selected atoms as PDB text), **Copy Selection As ▸ PDB /
+  mmCIF** and **Copy Image** (Ctrl+Shift+C: the view at twice its size, labels included).
 - **Select:** **All** (Ctrl+A), the usual picks (ligands, binding site, protein, backbone,
   side chains, waters, ions…), **Chain ▸**, **Around ▸**, **Saved Selections ▸**, **Save
   Selection…** and **Clear Selection**.
@@ -1231,10 +1231,21 @@ viewer does is in its menus and the right-click menu:
 - **Ligand:** **Focus ▸** a ligand in its pocket, **Pocket Surface**, **Clear Focus**,
   **Interactions**, **Measure ▸**, **Ligands to Table** and **Interactions to Table** (both
   below).
-- **View:** **Frame Selection** (F), **Reset View**, whether the proteins list and the sequence
-  show, and **Full Screen**.
+- **View:** **Frame Selection** (F), **Reset View**, **Background ▸** (the theme's, white,
+  grey or black), **Orthographic** (parallel projection: no perspective, so sizes compare across
+  depth), **Depth Cue** (fade what lies further back; off draws everything fully), whether the
+  proteins list and the sequence show, and **Full Screen**. Background, projection and depth
+  cue are saved with the document.
 - **Window:** **Minimize** (Ctrl+M) and **Show Table**, which brings the document's table
   forward.
+
+**Figures.** **File ▸ Export Image…** draws the view again at the size you ask for, rather
+than enlarging the screen: give the width in pixels, centimetres or inches with a resolution
+(300 dpi to start; it is also written into the file), and the height follows, as the picture
+keeps the view's shape so labels and measurements land where they are on screen. **See-through
+background** leaves the background out (PNG and TIFF) for a coloured slide. PNG, TIFF and JPEG;
+at most 12,000 pixels a side. For a paper, a white background with Depth Cue off and
+Orthographic on is a common choice.
 
 Proteins are saved inside the document. Opening or fetching one adds only the protein: the
 table is not touched. Its ligands' bond orders are worked out as it loads (asking the PDB's

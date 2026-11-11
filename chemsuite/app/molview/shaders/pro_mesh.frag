@@ -21,7 +21,7 @@ void main()
 {
     if (-v_pos.z < slab.x || -v_pos.z > slab.y)
         discard;
-    vec3 dir = normalize(v_pos);
+    vec3 dir = params.w > 0.5 ? vec3(0.0, 0.0, -1.0) : normalize(v_pos);
     vec3 n = normalize(v_normal);
     if (dot(n, dir) > 0.0)
         n = -n;                                // two-sided: the inside of a cut surface

@@ -73,6 +73,7 @@ POCKET = "pocket"
 #: the commands a tool gives the viewer (see :mod:`.menubar`)
 OPEN, FETCH, EXTRACT, LIGAND = menubar.OPEN, menubar.FETCH, menubar.EXTRACT, menubar.LIGAND
 PROFILE, REMOVE, SHOW_TABLE = menubar.PROFILE, menubar.REMOVE, menubar.SHOW_TABLE
+THEME, BACKGROUNDS = menubar.THEME, menubar.BACKGROUNDS
 
 
 class ProteinPanel(QWidget):
@@ -96,6 +97,7 @@ class ProteinPanel(QWidget):
         commands = dict(commands or {})
         self.commands = commands
         self._fitted: set[str] = set()  # proteins the camera has been fitted to
+        self.background = THEME
         self.pocket_camera = PocketCamera(self)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
@@ -160,8 +162,45 @@ class ProteinPanel(QWidget):
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
-        if event.type() == QEvent.Type.PaletteChange and self.view is not None:
-            self.view.set_background(self.palette().base().color())  # light or dark
+        if event.type() == QEvent.Type.PaletteChange:
+            self._apply_background()  # light or dark, when following the theme
+
+    # how the view draws: background, projection, depth cue (View menu; saved)
+    def set_background(self, key: str) -> None:
+        self.background = key if key in BACKGROUNDS else THEME
+        self._apply_background()
+
+    def _apply_background(self) -> None:
+        if self.view is not None:
+            colour = BACKGROUNDS[self.background][1]
+            self.view.set_background(colour or self.palette().base().color())
+
+    @property
+    def orthographic(self) -> bool:
+        return self.view is not None and self.view.camera.orthographic
+
+    def set_orthographic(self, on: bool) -> None:
+        if self.view is not None:
+            self.view.camera.orthographic = on
+            self.view.camera_changed()
+
+    @property
+    def depth_cue(self) -> bool:
+        return self.view is None or self.view.depth_cue
+
+    def set_depth_cue(self, on: bool) -> None:
+        if self.view is not None:
+            self.view.set_depth_cue(on)
+
+    def export_image(self) -> None:
+        from .export import ExportImageDialog
+
+        ExportImageDialog(self).open()
+
+    def copy_image(self) -> bool:
+        from .export import copy_image
+
+        return copy_image(self)
 
     def _escape(self) -> None:
         if self.session.measuring:
@@ -213,7 +252,7 @@ class ProteinPanel(QWidget):
 
         self.view = ProteinView()
         self.view.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.view.set_background(self.palette().base().color())
+        self._apply_background()
         self.view.failed.connect(lambda: self._no_view(graphics.NO_GPU))
         self.view.atomHovered.connect(self.session.hover)
         self.view.atomClicked.connect(self._clicked)
@@ -425,9 +464,11 @@ class ProteinPanel(QWidget):
             "session": self.session.state(),
             "columns": self.columns.sizes(),
             "rows": self.rows.sizes(),
+            "background": self.background,
+            "depth_cue": self.depth_cue,
         }
         if self.view is not None:
-            state["camera"] = self.view.camera.state()
+            state["camera"] = self.view.camera.state()  # orthographic or not, too
         return state
 
     def set_state(self, state: dict) -> None:
@@ -436,6 +477,8 @@ class ProteinPanel(QWidget):
             sizes = state.get(key)
             if isinstance(sizes, list) and len(sizes) == splitter.count():
                 splitter.setSizes([int(v) for v in sizes])
+        self.set_background(str(state.get("background", THEME)))
+        self.set_depth_cue(state.get("depth_cue") is not False)
         camera = state.get("camera")
         if isinstance(camera, dict) and self.view is not None:
             self.view.set_camera(Camera.from_state(camera))

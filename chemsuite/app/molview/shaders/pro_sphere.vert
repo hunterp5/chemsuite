@@ -10,7 +10,7 @@ layout(std140, binding = 0) uniform Frame {
     mat4 view;
     mat4 proj;
     vec4 light;
-    vec4 params;      // x: 1 when clip depth runs 0..1; y: fog start; z: fog end
+    vec4 params;      // x: 1 when clip depth runs 0..1; y: fog start; z: fog end; w: 1 orthographic
     vec4 background;
     vec4 slab;        // x, y: view depths kept; z: ghost fade
     vec4 highlight;   // the selection colour
@@ -26,9 +26,11 @@ void main()
     vec3 c = (view * vec4(sphere.xyz, 1.0)).xyz;
     float r = sphere.w;
     float d = max(length(c), r * 1.0001);
-    vec3 toward = -c / d;
+    bool ortho = params.w > 0.5;               // parallel rays: the billboard faces the screen
+    vec3 toward = ortho ? vec3(0.0, 0.0, 1.0) : -c / d;
     float front = d - r;
-    float half_size = front * r / sqrt(max(d * d - r * r, 1e-8)) * 1.05 + 1e-4;
+    float half_size = ortho ? r * 1.05 + 1e-4
+                            : front * r / sqrt(max(d * d - r * r, 1e-8)) * 1.05 + 1e-4;
     vec3 helper = abs(toward.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
     vec3 right = normalize(cross(toward, helper));
     vec3 up = cross(right, toward);

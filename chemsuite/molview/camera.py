@@ -54,6 +54,9 @@ class Camera:
     distance: float = 20.0
     radius: float = MIN_RADIUS  # of the scene, for the near and far planes
     fov: float = FOV
+    #: parallel projection: everything at the scale the centre's depth has in perspective, so
+    #: switching keeps the framing (zooming still moves the eye, which changes that scale)
+    orthographic: bool = False
 
     # -- placing ----------------------------------------------------------------------------
     def fit(self, positions: np.ndarray, radii: np.ndarray | None = None, aspect: float = 1.0):
@@ -135,9 +138,22 @@ class Camera:
         far = self.distance + self.radius * 1.5
         return near, far
 
+    def half_height(self) -> float:
+        """Half the view's height in Å at the centre's depth (the whole view, when orthographic)."""
+        return self.distance * math.tan(math.radians(self.fov) / 2)
+
     def projection(self, aspect: float) -> np.ndarray:
-        """OpenGL-style perspective (clip z from -1 to 1); the renderer corrects it per API."""
+        """OpenGL-style perspective or parallel projection (clip z from -1 to 1); the renderer
+        corrects it per API."""
         near, far = self.clip_range()
+        if self.orthographic:
+            top = self.half_height()
+            m = np.eye(4)
+            m[0, 0] = 1.0 / (top * max(aspect, 1e-6))
+            m[1, 1] = 1.0 / top
+            m[2, 2] = -2.0 / (far - near)
+            m[2, 3] = -(far + near) / (far - near)
+            return m
         f = 1.0 / math.tan(math.radians(self.fov) / 2)
         m = np.zeros((4, 4))
         m[0, 0] = f / max(aspect, 1e-6)
@@ -152,9 +168,14 @@ class Camera:
 
     # -- screen <-> world -------------------------------------------------------------------
     def ray(self, x: float, y: float, width: float, height: float):
-        """The eye and the unit direction through pixel (x, y) of a width x height view."""
+        """The eye and the unit direction through pixel (x, y) of a width x height view (when
+        orthographic: the point on the eye's plane under the pixel, and the view direction)."""
         t = math.tan(math.radians(self.fov) / 2)
         aspect = width / max(height, 1.0)
+        if self.orthographic:
+            top = self.half_height()
+            across = np.array([(2 * x / width - 1) * top * aspect, (1 - 2 * y / height) * top, 0])
+            return self.eye() + self.rotation.T @ across, self.rotation.T @ np.array([0, 0, -1.0])
         d = np.array([(2 * x / width - 1) * t * aspect, (1 - 2 * y / height) * t, -1.0])
         d = self.rotation.T @ (d / np.linalg.norm(d))
         return self.eye(), d
@@ -167,12 +188,16 @@ class Camera:
         t = math.tan(math.radians(self.fov) / 2)
         aspect = width / max(height, 1.0)
         safe = np.where(depth > 1e-6, depth, 1e-6)
+        if self.orthographic:
+            safe = np.full_like(depth, self.distance)
         x = (v[:, 0] / (safe * t * aspect) + 1) * width / 2
         y = (1 - v[:, 1] / (safe * t)) * height / 2
         return np.stack([x, y], axis=1), depth
 
     def pixels_per_unit(self, depth: float, height: float) -> float:
         """How many pixels one Å spans at *depth* in front of the eye."""
+        if self.orthographic:
+            depth = self.distance
         return height / (2 * max(depth, 1e-6) * math.tan(math.radians(self.fov) / 2))
 
     # -- saving -----------------------------------------------------------------------------
@@ -182,6 +207,7 @@ class Camera:
             "centre": [float(v) for v in self.centre],
             "distance": float(self.distance),
             "radius": float(self.radius),
+            "orthographic": self.orthographic,
         }
 
     @classmethod
@@ -192,6 +218,7 @@ class Camera:
             camera.centre = np.array(state["centre"], float).reshape(3)
             camera.distance = float(state["distance"])
             camera.radius = float(state.get("radius", MIN_RADIUS))
+            camera.orthographic = state.get("orthographic") is True
         except (KeyError, TypeError, ValueError):
             return cls()
         return camera

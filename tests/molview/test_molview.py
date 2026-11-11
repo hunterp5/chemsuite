@@ -161,6 +161,29 @@ def test_camera_ray_and_project_agree() -> None:
     assert xy[0] == pytest.approx([150, 260], abs=1e-6)
 
 
+def test_an_orthographic_camera_keeps_the_framing_and_its_rays_agree() -> None:
+    camera = Camera()
+    camera.turn(40, -25)
+    camera.fit(np.array([[0.0, 0, 0], [6, 2, -3], [-2, 5, 1]]))
+    centre_xy, _ = camera.project(camera.centre[None], 400, 300)
+    near = camera.centre + camera.rotation.T @ np.array([2.0, 1.0, 0.0])  # on the centre plane
+    before, _ = camera.project(near[None], 400, 300)
+    camera.orthographic = True
+    after, _ = camera.project(near[None], 400, 300)
+    assert after[0] == pytest.approx(before[0])  # the centre's plane keeps its scale
+    deeper = near + camera.rotation.T @ np.array([0.0, 0.0, -4.0])  # further from the eye
+    assert camera.project(deeper[None], 400, 300)[0][0] == pytest.approx(after[0])  # parallel
+    origin, direction = camera.ray(150, 260, 400, 300)
+    assert direction == pytest.approx(camera.rotation.T @ np.array([0, 0, -1.0]))
+    point = origin + direction * 7.5
+    xy, depth = camera.project(point[None], 400, 300)
+    assert xy[0] == pytest.approx([150, 260], abs=1e-6) and depth[0] == pytest.approx(7.5)
+    clip = camera.projection(400 / 300) @ np.append(camera.view()[:3] @ np.append(near, 1), 1)
+    assert (clip[:2] / clip[3]) == pytest.approx((after[0] / [200, 150] - 1) * [1, -1])
+    assert centre_xy[0] == pytest.approx([200, 150], abs=1e-6)
+    assert Camera.from_state(camera.state()).orthographic
+
+
 def test_camera_state_round_trips() -> None:
     camera = Camera()
     camera.turn(10, 20)
