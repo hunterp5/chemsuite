@@ -359,7 +359,9 @@ class RowsChoice(Segmented):
         return ""
 
     def oids(self) -> np.ndarray:
-        return self.ctx.scope_oids(self.value())
+        from chemsuite.plotting.data import scope_oids
+
+        return scope_oids(self.ctx.table, self.ctx.selection.as_array(), self.value())
 
     def describe(self) -> str:
         return {"all": "", "shown": "shown ", "selected": "selected "}[self.value()]

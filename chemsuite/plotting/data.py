@@ -121,5 +121,15 @@ def shown_oids(table: Table) -> np.ndarray:
     return table.oids[table.view()]
 
 
+def scope_oids(table: Table, selected: np.ndarray, scope: str) -> np.ndarray:
+    """The rows in *scope*: ``"selected"`` (*selected*), ``"shown"`` (passing the filters, in
+    display order) or ``"all"`` (storage order)."""
+    if scope == "selected":
+        return selected
+    if scope == "shown":
+        return shown_oids(table)
+    return table.oids.copy()
+
+
 def is_plottable_axis(table: Table, name: str | None) -> bool:
     return bool(name) and name in table and table.kind(name) not in (STRUCTURE, REACTION)

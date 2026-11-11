@@ -49,7 +49,7 @@ from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import REACTION, STRUCTURE, Column, StructureColumn
 from chemsuite.core.table.history import Op
-from chemsuite.plotting.data import shown_oids
+from chemsuite.plotting.data import scope_oids
 
 from .jobs import QUEUE, Job
 from .widgets.panel import ToolPanel as ToolPanel  # what a tool's panel is built on
@@ -194,11 +194,7 @@ class ToolContext:
     def scope_oids(self, scope: str) -> np.ndarray:
         """The rows in *scope*: ``"selected"``, ``"shown"`` (passing the filters, in view
         order) or ``"all"`` (storage order)."""
-        if scope == "selected":
-            return self.selection.as_array()
-        if scope == "shown":
-            return shown_oids(self.table)
-        return self.table.oids.copy()
+        return scope_oids(self.table, self.selection.as_array(), scope)
 
     # -- work ---------------------------------------------------------------------------------
     def run(
