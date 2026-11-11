@@ -345,7 +345,7 @@ class PlotPanel(QWidget):
     def is_3d(self) -> bool:
         return self.kind.currentData() in KINDS_3D
 
-    def set_spec(self, **values) -> None:
+    def set_spec(self, **values) -> None:  # noqa: C901 - one branch per plot setting
         """Set controls by name (x, y, z, color, size, kind, bins, fit, curve, guide, aggregate,
         errors, drop, columns, camera); redraw now."""
         widgets = {"x": self.x, "y": self.y, "z": self.z, "color": self.color, "size": self.size}

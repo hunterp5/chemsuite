@@ -126,7 +126,7 @@ def _reference(counts: Counter[str]) -> str:
     return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
 
 
-def free_wilson(
+def free_wilson(  # noqa: C901 - the published method, step by step
     decomposition: Decomposition,
     activity: np.ndarray,
     *,

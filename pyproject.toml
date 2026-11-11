@@ -69,7 +69,11 @@ select = [
     "BLE001",        # no blind `except Exception` (allowed only where it logs and re-raises,
     "S110",          #   or at a top-level handler with an explicit noqa and a reason)
     "RUF100",        # no stale noqa comments
+    "C90",           # complexity: a branchy function is split, or exempted with a reason
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011"]

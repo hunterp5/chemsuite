@@ -56,13 +56,7 @@ def activity_combo(ctx: ToolContext) -> QComboBox:
 
 
 def structure_cells(ctx: ToolContext, column: str, oids: np.ndarray) -> list:
-    table = ctx.table
-    structures = table.column(column)
-    slots = table.slots_of(oids)
-    return [
-        blob if blob is not None else (text or None)
-        for blob, text in zip(structures.blobs(slots), structures.displays(slots), strict=True)
-    ]
+    return ctx.structure_inputs(column, oids)
 
 
 def saved_rows(ctx: ToolContext, state: dict, *columns: str) -> list[int]:

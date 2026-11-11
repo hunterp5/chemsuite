@@ -225,7 +225,7 @@ def _compute(ctx: ToolContext, recipe: dict, done):
     name = recipe["activity"]
     activity = numbers(ctx.table, name, oids) if name != NO_ACTIVITY else np.full(len(oids), np.nan)
     max_variable, min_pairs = int(recipe["max_variable"]), int(recipe["min_pairs"])
-    executor = ctx.process_pool() if len(cells) >= POOL_MIN_ROWS else None
+    executor = ctx.workers_for(len(cells), POOL_MIN_ROWS)
 
     def work(job):
         pairs = find_pairs(

@@ -1,5 +1,12 @@
 # chemsuite — rules for Claude
 
+## Architecture
+
+Read `docs/ARCHITECTURE.md` before structural changes. Tools use the app only through
+`ToolContext`; `tests/test_architecture.py` holds ratchets (budgets that only go down). Never
+raise a budget or widen an allowlist to make a change pass without asking the user: add a
+`ToolContext` helper or split the file instead.
+
 ## Testing: targeted, not the full suite
 
 The full suite (`pytest`, ~1500 tests) is slow. Do not run it for minor changes.

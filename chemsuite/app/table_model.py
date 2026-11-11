@@ -149,7 +149,7 @@ class TableModel(QAbstractTableModel):
     def columnCount(self, parent: Index = QModelIndex()) -> int:  # noqa: B008
         return 0 if parent.isValid() else len(self._columns)
 
-    def data(self, index: Index, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def data(self, index: Index, role: int = Qt.ItemDataRole.DisplayRole) -> Any:  # noqa: C901 - one branch per Qt role
         if not index.isValid():
             return None
         name = self._columns[index.column()]

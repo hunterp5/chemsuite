@@ -133,23 +133,17 @@ class PkaDialog(ToolDialog):
     # -- running ------------------------------------------------------------------------------
     def run(self):
         ctx = self.ctx
-        table = ctx.table
         oids = self.rows.oids()
-        column = table.column(self.structure.currentText())
-        slots = table.slots_of(oids)
-        cells = [  # unparsed cells go as text; the workers parse them
-            blob if blob is not None else (text or None)
-            for blob, text in zip(column.blobs(slots), column.displays(slots), strict=True)
-        ]
+        # unparsed cells go as text; the workers parse them
+        cells = ctx.structure_inputs(self.structure.currentText(), oids)
         ph = self.ph.value()
         chosen = self.chosen()
-        use_pool = len(cells) >= POOL_MIN_ROWS
 
         def work(job):
             return predict_pka(
                 cells,
                 ph,
-                executor=ctx.process_pool() if use_pool else None,
+                executor=ctx.workers_for(len(cells), POOL_MIN_ROWS),
                 progress=job.report,
                 cancel=job.cancel_token,
             )

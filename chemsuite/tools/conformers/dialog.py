@@ -158,23 +158,16 @@ class ConformerDialog(ToolDialog):
 
     def generate(self, settings: ConformerSettings):
         ctx = self.ctx
-        table = ctx.table
         name = self.structure.currentText()
         oids = self.rows.oids()
-        column = table.column(name)
-        slots = table.slots_of(oids)
-        cells = [
-            blob if blob is not None else (text or None)
-            for blob, text in zip(column.blobs(slots), column.displays(slots), strict=True)
-        ]
-        use_pool = len(cells) >= POOL_MIN_ROWS
+        cells = ctx.structure_inputs(name, oids)  # workers parse unparsed cells
         target = output_name(name)
 
         def work(job):
             return generate_conformers(
                 cells,
                 settings,
-                executor=ctx.process_pool() if use_pool else None,
+                executor=ctx.workers_for(len(cells), POOL_MIN_ROWS),
                 progress=job.report,
                 cancel=job.cancel_token,
             )

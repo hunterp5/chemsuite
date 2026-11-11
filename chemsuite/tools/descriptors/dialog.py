@@ -231,24 +231,16 @@ class DescriptorDialog(ToolDialog):
 
     def calculate(self, keys: list[str], fingerprints: Sequence[str] = ()):
         ctx = self.ctx
-        table = ctx.table
         name = self.structure.currentText()
         oids = self.rows.oids()
-        column = table.column(name)
-        slots = table.slots_of(oids)
-        # Unparsed cells go as text; workers parse them.
-        cells = [
-            blob if blob is not None else (text or None)
-            for blob, text in zip(column.blobs(slots), column.displays(slots), strict=True)
-        ]
-        use_pool = len(cells) >= POOL_MIN_ROWS
+        cells = ctx.structure_inputs(name, oids)  # workers parse unparsed cells
 
         n = len(cells)
         steps = (1 if keys else 0) + len(fingerprints)
 
         def work(job):
             """``(rows done, {column: values})``: descriptors, then each fingerprint."""
-            executor = ctx.process_pool() if use_pool else None
+            executor = ctx.workers_for(len(cells), POOL_MIN_ROWS)
             results: dict[str, object] = {}
             step = 0
 

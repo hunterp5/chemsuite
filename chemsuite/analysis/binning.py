@@ -117,7 +117,7 @@ def _closed(edges: Sequence[float]) -> tuple[Interval, ...]:
     return tuple(Interval(edges[i], edges[i + 1], i == n - 1) for i in range(n))
 
 
-def intervals_for(values: np.ndarray, spec: BinSpec) -> tuple[Interval, ...]:
+def intervals_for(values: np.ndarray, spec: BinSpec) -> tuple[Interval, ...]:  # noqa: C901 - one rule per binning mode
     x = np.asarray(values, dtype=np.float64)
     x = x[np.isfinite(x)]
     if spec.method == "custom":

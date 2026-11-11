@@ -186,7 +186,7 @@ def group_runs(sketch: Sketch, group: Group) -> tuple[list[tuple[str, str]], int
     return [r for r in runs if r[0]], 0
 
 
-def build(sketch: Sketch, report: Report) -> Scene:
+def build(sketch: Sketch, report: Report) -> Scene:  # noqa: C901 - one branch per drawn element
     scene = Scene(problems=dict(report.problems))
     hidden = sketch.hidden_atoms()
     labelled = {aid for aid in sketch.atoms if shows_label(sketch, aid)}

@@ -532,6 +532,14 @@ class ParsedColumn(Column):
         """Raw blobs, e.g. to send to a worker process without building objects."""
         return self._blobs[slots].tolist()
 
+    def worker_inputs(self, slots: np.ndarray) -> list[bytes | str | None]:
+        """Each cell as a worker process takes it: the stored blob, the text of a cell not
+        parsed yet (the worker parses it), or None for a blank cell."""
+        return [
+            blob if blob is not None else (text or None)
+            for blob, text in zip(self._blobs[slots].tolist(), self.displays(slots), strict=True)
+        ]
+
     def obj(self, slot: int):
         """The parsed object (a cached, shared object: copy it before modifying), or None.
 
