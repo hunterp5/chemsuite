@@ -66,3 +66,27 @@ def test_open_csv_parses_structures_in_background(qtbot, window, tmp_path: Path)
     qtbot.waitUntil(lambda: not column.pending_mask().any(), timeout=20_000)
     assert column.invalid_mask().tolist() == [False, True, False]
     assert window.workspace.table.history.is_clean  # parsing is not an edit
+
+
+def test_a_document_holding_only_a_protein_asks_to_save_and_is_not_reused(
+    window, monkeypatch
+) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from chemsuite.app.main_window import Workspace
+    from chemsuite.core.table import Asset, PutAsset
+
+    table = Table()
+    window._install(Workspace(table))
+    assert window.workspace.is_empty
+    table.edit("Add protein", [PutAsset("1ABC", None, Asset("1ABC", "protein", "1ABC", b""))])
+    assert not window.workspace.is_empty  # File ▸ Open must not replace it
+    asked: list[str] = []
+
+    def question(_parent, _title, text, *_a, **_k):
+        asked.append(text)
+        return QMessageBox.StandardButton.Cancel
+
+    monkeypatch.setattr(QMessageBox, "question", question)
+    assert not window.close()
+    assert asked == ["Save changes before closing?"]

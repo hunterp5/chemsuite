@@ -88,6 +88,24 @@ def test_the_session_follows_the_documents_proteins(panel, table) -> None:
     assert session.display("3HTB").structure.n_atoms == structure("3htb.cif.gz").n_atoms
 
 
+def test_a_reopened_protein_keeps_its_display_when_another_arrives(qtbot) -> None:
+    """A reopened document holds stored bytes: adding a protein (or any asset undo) must not
+    decode it again and lose its selection and focus."""
+    from chemsuite.app.protein.panel import ProteinPanel
+
+    table = Table()
+    add_protein(table, "1ATP", "1atp.cif.gz", packed=True)
+    widget = ProteinPanel(table)
+    qtbot.addWidget(widget)
+    session = widget.session
+    shown = session.display("1ATP")
+    session.select_text("resn ATP")
+    add_protein(table, "3HTB", "3htb.cif.gz", packed=True)
+    assert session.display("1ATP") is shown and shown.selected.any()
+    table.undo()
+    assert session.display("1ATP") is shown
+
+
 def test_hiding_a_protein_takes_it_out_of_the_scene(panel, table) -> None:
     add_protein(table, "3HTB", "3htb.cif.gz")
     session = panel.session

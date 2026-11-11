@@ -66,8 +66,10 @@ def unpack(data: bytes) -> Structure:
     except (ValueError, OSError, zipfile.BadZipFile) as error:
         raise StoreError(f"not a stored structure: {error}") from error
     version = int(arrays.pop(_FORMAT_KEY, np.array(0)))
-    if version != FORMAT:
-        raise StoreError(f"stored structure format {version}; this version reads {FORMAT}")
+    if version > FORMAT:
+        raise StoreError(f"stored by a newer chemsuite (format {version}; this one reads {FORMAT})")
+    if version < 1:
+        raise StoreError("not a stored structure: it has no format number")
     values: dict[str, Any] = {}
     for f in fields(Structure):
         if f.name == "meta":

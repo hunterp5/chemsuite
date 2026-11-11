@@ -180,7 +180,7 @@ class Workspace:
 
     @property
     def is_empty(self) -> bool:
-        return len(self.table) == 0 and not self.table.column_names
+        return not (len(self.table) or self.table.column_names or self.table.assets)
 
     @property
     def is_modified(self) -> bool:
@@ -1739,7 +1739,7 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
-        if self.workspace.is_modified and len(self.workspace.table):
+        if self.workspace.is_modified and not self.workspace.is_empty:
             answer = QMessageBox.question(
                 self,
                 "chemsuite",

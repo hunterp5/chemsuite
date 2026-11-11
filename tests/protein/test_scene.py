@@ -150,6 +150,24 @@ def test_another_model_moves_the_drawing_and_keeps_the_look(nmr: Structure) -> N
     assert not shown.set_model(1) and not shown.set_model(2) and not shown.set_model(-1)
 
 
+def test_colours_given_by_hand_are_saved(kinase: Structure) -> None:
+    from chemsuite.protein.display import Display
+
+    shown = Display("1ATP", "1ATP", kinase)
+    ligand = select(kinase, "ligand")
+    chain = select(kinase, "chain E and resi 50-60")
+    shown.colour(ligand, (1.0, 0.0, 0.5))
+    shown.colour_by(colours.CHAIN, chain)
+    again = Display("1ATP", "1ATP", kinase)
+    again.set_state(shown.state())
+    assert np.allclose(again.colours[:, :3], shown.colours[:, :3], atol=0.5 / 255)
+    assert np.array_equal(again.colours[:, 3], shown.colours[:, 3])
+    plain = Display("1ATP", "1ATP", kinase)
+    assert set(plain.state()["custom_colours"][::2]) == {-1}  # nothing given: one short run
+    again.set_state({**shown.state(), "custom_colours": [5, 3]})  # does not fit: ignored
+    assert np.allclose(again.colours, plain.colours)
+
+
 def test_the_model_shown_is_saved_and_a_bad_one_is_ignored(nmr: Structure) -> None:
     from chemsuite.protein.display import Display
 

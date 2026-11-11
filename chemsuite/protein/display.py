@@ -350,7 +350,17 @@ class Display:
             "cartoon": runs(self.cartoon.astype(np.uint8)),
             "surface": runs(self.surface.astype(np.uint8)),
             "interactions": runs(self.query.astype(np.uint8)),
+            "custom_colours": runs(self._custom_colours()),
         }
+
+    def _custom_colours(self) -> np.ndarray:
+        """Per atom, the colour given by hand as 0xRRGGBB, or -1 where the scheme's shows."""
+        own = np.full(self.structure.n_atoms, -1, np.int64)
+        scheme = schemes.colour(self.structure, self.scheme)
+        changed = np.any(np.abs(self.colours[:, :3] - scheme[:, :3]) > 1e-6, axis=1)
+        rgb = np.clip(np.round(self.colours[changed, :3] * 255), 0, 255).astype(np.int64)
+        own[changed] = rgb[:, 0] << 16 | rgb[:, 1] << 8 | rgb[:, 2]
+        return own
 
     def set_state(self, state: Mapping) -> None:
         n, r = self.structure.n_atoms, self.structure.n_residues
@@ -377,6 +387,11 @@ class Display:
         scheme = str(state.get("scheme", self.scheme))
         self.scheme = scheme if scheme in schemes.SCHEMES else schemes.ELEMENT
         self.colours = schemes.colour(self.structure, self.scheme)
+        own = unruns(state.get("custom_colours"), n)
+        if own is not None:
+            given = own >= 0
+            rgb = own[given] & 0xFFFFFF
+            self.colours[given, :3] = np.stack([rgb >> 16, rgb >> 8 & 255, rgb & 255], 1) / 255
         surface_scheme = str(state.get("surface_scheme", self.surface_scheme))
         if surface_scheme in schemes.SCHEMES:
             self.surface_scheme = surface_scheme

@@ -118,6 +118,7 @@ class ProteinSession(QObject):
         self.picked: list[Point] = []
         self._scene: displays.Scene | None = None
         self._pending: dict[str, dict] = {}  # saved display state for proteins not loaded yet
+        self._shown_assets: dict[str, object] = {}  # the asset each display was made from
         self._unsubscribe = table.subscribe(self._on_table_event)
         self.reload()
 
@@ -133,12 +134,15 @@ class ProteinSession(QObject):
         old = {d.id: d for d in self.displays}
         new: list[displays.Display] = []
         for asset in assets:
-            structure = structure_of(asset.payload)
             current = old.get(asset.id)
-            if current is not None and current.structure is structure:
+            same = self._shown_assets.get(asset.id) is asset or (
+                current is not None and current.structure is asset.payload
+            )  # assets are immutable: the same one (or a renamed one) needs no new display
+            if current is not None and same:
                 current.name = asset.name
                 new.append(current)
                 continue
+            structure = structure_of(asset.payload)
             shown = displays.Display(
                 asset.id, asset.name, structure, deferred=self.builder is not None
             )
@@ -149,6 +153,7 @@ class ProteinSession(QObject):
                 shown.set_state(state)
             new.append(shown)
         self.displays = new
+        self._shown_assets = {asset.id: asset for asset in assets}
         if self.focused is not None and self.display(self.focused[0]) is None:
             self.focused = self._site = None  # its protein was removed
         if self.pose is not None:

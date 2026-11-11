@@ -272,6 +272,17 @@ def test_stored_payload_is_not_a_pickle_and_bad_bytes_are_refused() -> None:
         store.unpack(b"\x80\x04K\x01.")  # a pickled 1
 
 
+def test_older_formats_are_read_and_newer_ones_refused(kinase: Structure, monkeypatch) -> None:
+    """A newer chemsuite still opens documents from an older one."""
+    old = kinase.to_bytes()
+    monkeypatch.setattr(store, "FORMAT", store.FORMAT + 1)
+    _assert_same(store.unpack(old), kinase)
+    newer = kinase.to_bytes()
+    monkeypatch.undo()
+    with pytest.raises(store.StoreError, match="newer"):
+        store.unpack(newer)
+
+
 def test_an_empty_structure_round_trips() -> None:
     back = store.unpack(empty().to_bytes())
     assert back.n_atoms == 0 and back.n_residues == 0
