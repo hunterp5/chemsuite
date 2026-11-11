@@ -53,6 +53,12 @@ PICKS = (
     ("Hydrogens", "hydrogen"),
 )
 SITE = "byres (polymer within 5 of ligand)"
+#: Select ▸ Around: distances (Å), and how the surroundings are taken
+AROUND = (3, 5, 8, 10)
+AROUND_KINDS = (
+    ("Residues", "byres (within {} of $selection)"),
+    ("Atoms", "within {} of $selection"),
+)
 _SYNTAX = (
     "chain A, resi 10-50, resn HIS+ASP, name CA, elem Fe; protein, ligand, water, ion, "
     "backbone, sidechain, helix, sheet; byres S, within 5 of S; and, or, not, ( ); $saved"
@@ -139,6 +145,16 @@ class SelectionBar(QWidget):
         for name in names:
             chains.addAction(name, lambda n=name: self._pick(f"chain {n}"))
         chains.setEnabled(bool(names))
+        around = self.menu.addMenu("Around")
+        for kind, template in AROUND_KINDS:
+            if around.actions():
+                around.addSeparator()
+            for distance in AROUND:
+                expression = template.format(distance)
+                around.addAction(f"{kind} Within {distance} Å",
+                                 lambda e=expression: self.grow(e))  # fmt: skip
+        around.setToolTip("Add what lies near the selection to it")
+        around.setEnabled(self.session.selected_count() > 0)
         self.menu.addSeparator()
         saved = self.menu.addMenu("Saved Selections")
         for name in sorted(self.session.named):
@@ -149,6 +165,12 @@ class SelectionBar(QWidget):
         self.menu.addSeparator()
         clear = self.menu.addAction("Clear Selection", self.session.clear_selection)
         clear.setEnabled(self.session.selected_count() > 0)
+
+    def grow(self, expression: str) -> None:
+        """Select by an expression of the selection itself (``$selection``): the field is
+        cleared, as its text no longer says what is selected."""
+        if self.select(expression):
+            self.field.clear()
 
     def _pick(self, expression: str) -> None:
         self.field.setText(expression)

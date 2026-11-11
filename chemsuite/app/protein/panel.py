@@ -74,7 +74,7 @@ SURFACE = "surface"
 LINES = "interactions"
 POCKET = "pocket"
 #: the commands a tool gives the viewer (see :mod:`.menubar`)
-OPEN, FETCH, EXTRACT = menubar.OPEN, menubar.FETCH, menubar.EXTRACT
+OPEN, FETCH, EXTRACT, LIGAND = menubar.OPEN, menubar.FETCH, menubar.EXTRACT, menubar.LIGAND
 
 
 class ProteinPanel(QWidget):
@@ -96,6 +96,7 @@ class ProteinPanel(QWidget):
         self._view_page: QWidget | None = None
         self._problem_page: QLabel | None = None
         commands = dict(commands or {})
+        self.commands = commands
         self._fitted: set[str] = set()  # proteins the camera has been fitted to
         self.pocket_camera = PocketCamera(self)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -328,6 +329,7 @@ class ProteinPanel(QWidget):
             focus=self.frame_selection,
             copy_smiles=self.copy_smiles,
             copy_as=self.copy_selection,
+            add_ligand=self.commands.get(LIGAND),
         )
         menu.exec(where)
 

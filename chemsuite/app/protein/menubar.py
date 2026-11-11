@@ -42,7 +42,8 @@ if TYPE_CHECKING:
 OPEN = "open"
 FETCH = "fetch"
 EXTRACT = "extract"
-Commands = Mapping[str, Callable[[], object]]
+LIGAND = "ligand"  # add one ligand's row: (protein id, residue)
+Commands = Mapping[str, Callable[..., object]]
 
 
 def build(panel: ProteinPanel, commands: Commands) -> QMenuBar:

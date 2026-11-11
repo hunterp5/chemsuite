@@ -27,7 +27,7 @@ from PySide6.QtCore import QObject, QPoint, Qt, Signal
 from chemsuite.core.table import Asset, PutAsset, Table
 from chemsuite.protein import io, scene, store
 from chemsuite.protein.model import Structure
-from chemsuite.protein.select import select
+from chemsuite.protein.select import SelectionError, select
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "protein"
 
@@ -336,6 +336,56 @@ def test_the_context_menu_offers_what_was_clicked(panel) -> None:
     assert panel.session.selected_count() > 31
     empty = context_menu(panel.session, -1, panel, focus=panel.frame_selection)
     assert [a.text() for a in empty.actions()][:3] == ["Show", "Hide", "Colour"]
+
+
+def test_the_context_menu_labels_measures_and_adds_a_ligand(panel) -> None:
+    from chemsuite.app.protein.menus import context_menu
+
+    s = structure("1atp.cif.gz")
+    atom = int(np.flatnonzero(s.atom_kind == 2)[0])
+    added = []
+    menu = context_menu(panel.session, atom, panel, focus=panel.frame_selection,
+                        add_ligand=lambda p, r: added.append((p, r)))  # fmt: skip
+    actions = {a.text(): a for a in menu.actions()}
+    actions["Add Ligand to Table"].trigger()
+    assert added == [("1ATP", int(s.residue_of[atom]))]
+    labels = {a.text(): a for a in actions["Label"].menu().actions()}
+    labels["Residue"].trigger()
+    assert panel.session.labelled()[1] == ["ATP 355"]
+    labels["Atom"].trigger()
+    assert panel.session.labelled()[1] == ["ATP 355", str(s.name[atom])]
+    measuring = {a.text(): a for a in actions["Measure From Here"].menu().actions()}
+    measuring["Angle"].trigger()
+    assert panel.session.measuring == 3 and panel.session.picked == [("1ATP", int(s.uid[atom]))]
+    protein_atom = int(np.flatnonzero(s.atom_kind == 0)[0])
+    plain = context_menu(panel.session, protein_atom, panel, focus=panel.frame_selection,
+                         add_ligand=lambda p, r: None)  # fmt: skip
+    assert "Add Ligand to Table" not in [a.text() for a in plain.actions()]
+
+
+def test_around_adds_what_lies_near_the_selection(panel) -> None:
+    from chemsuite.app.protein.selection_bar import AROUND
+
+    bar, session = panel.selection_bar, panel.session
+    bar._fill_menu()
+    around = next(a for a in bar.menu.actions() if a.text() == "Around")
+    assert not around.isEnabled()  # nothing selected
+    bar._pick("resn ATP")
+    atp = session.selected_count()
+    bar._fill_menu()
+    around = next(a for a in bar.menu.actions() if a.text() == "Around").menu()
+    titles = [a.text() for a in around.actions() if a.text()]
+    assert len(titles) == 2 * len(AROUND) and titles[1] == "Residues Within 5 Å"
+    next(a for a in around.actions() if a.text() == "Residues Within 5 Å").trigger()
+    shown = session.display("1ATP")
+    s = shown.structure
+    grown = session.selected_count()
+    assert grown > atp and bar.field.text() == ""
+    for residue in np.unique(s.residue_of[shown.selected]):  # whole residues
+        span = s.atoms_of(int(residue))
+        assert shown.selected[span][shown.active[span]].all()
+    with pytest.raises(SelectionError):
+        session.save_selection("selection")
 
 
 def test_alternate_locations_can_be_switched(qtbot, monkeypatch) -> None:

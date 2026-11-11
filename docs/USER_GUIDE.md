@@ -1237,8 +1237,9 @@ select it), the 3D view and the sequence underneath.
   in the sequence. Type in the selection field (point at it for the syntax): `chain A`,
   `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres (polymer within 5 of
   ligand)` (whole residues near a ligand; `byres` takes what follows it, hence the brackets),
-  `and`, `or`, `not`. **Select ▸** has the usual picks and **Save Selection…**;
-  saved selections are used as `$name`.
+  `and`, `or`, `not`. **Select ▸** has the usual picks, **Around ▸** (the residues or
+  atoms within 3, 5, 8 or 10 Å of the selection, added to it) and **Save Selection…**; saved
+  selections are used as `$name`, and `$selection` is what is selected now.
 - **Show, Hide, Colour** act on the selection: wire, sticks, ball and stick, spacefill,
   cartoon, surface; colour by element, chain, secondary structure, B-factor, hydrophobicity or
   a colour you choose.
@@ -1267,7 +1268,10 @@ select it), the 3D view and the sequence underneath.
   shown proteins have models, the list at its left picks which one the bar steps. The model
   shown is saved with the document.
 - Right-click an atom to select its residue, chain or surroundings, focus a ligand, switch an
-  alternate location, copy a ligand's SMILES, or **Copy Selection As ▸ PDB / mmCIF**.
+  alternate location, copy a ligand's SMILES, **Add Ligand to Table** (a cofactor, say, or a
+  ligand whose row you deleted), **Label ▸** its residue or the atom, start a **Measure From
+  Here ▸** distance, angle or dihedral with it as the first atom, or **Copy Selection As ▸
+  PDB / mmCIF**.
 
 Surfaces, interactions and the cartoons of very large proteins are built in the background,
 so the viewer never stops answering: each appears as soon as it is ready, and until then the

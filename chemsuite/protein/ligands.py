@@ -148,13 +148,17 @@ BOND_ORDERS_COLUMN = "Bond Orders"
 SOURCE_TITLES = {SMILES: "SMILES", TEMPLATE: "CCD template", GEOMETRY: "Guessed from geometry"}
 
 
-def ligand_rows(structure: Structure, protein: str) -> dict[str, list[str]]:
-    """One row per ligand: the protein's asset id, the residue (as
-    :meth:`Structure.residue_label` writes it), a molfile in the ligand's pose and where its
+def ligand_rows(
+    structure: Structure, protein: str, residues: list[int] | None = None
+) -> dict[str, list[str]]:
+    """One row per ligand (or per residue of ``residues``): the protein's asset id, the residue
+    (as :meth:`Structure.residue_label` writes it), a molfile in the ligand's pose and where its
     bond orders came from. A ligand RDKit cannot read is left out."""
     rows: dict[str, list[str]] = {PROTEIN_COLUMN: [], LIGAND_ID_COLUMN: [], LIGAND_COLUMN: [],
                                   BOND_ORDERS_COLUMN: []}  # fmt: skip
-    for residue in ligand_residues(structure).tolist():
+    if residues is None:
+        residues = ligand_residues(structure).tolist()
+    for residue in residues:
         try:
             ligand = to_mol(structure, residue)
             block = Chem.MolToMolBlock(ligand.mol)

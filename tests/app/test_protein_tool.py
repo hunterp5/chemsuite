@@ -138,6 +138,22 @@ def test_extract_ligands_fills_in_proteins_without_rows(opened) -> None:
     assert tool.extract_ligands(ctx) == 1
 
 
+def test_a_ligand_can_be_added_once_from_the_viewer(opened) -> None:
+    ctx = ToolContext(opened)
+    table = opened.workspace.table
+    panel = ctx.find_panel("protein")
+    shown = panel.session.display("1ATP")
+    atp = int(shown.structure.res_seq.tolist().index(355))
+    assert tool.add_ligand(ctx, "1ATP", atp) == 0  # it has its row already
+    assert "in the table already" in opened.statusBar().currentMessage()
+    table.remove_rows([int(table.oids[-1])])
+    rows = len(table.oids)
+    panel.commands["ligand"]("1ATP", atp)
+    assert len(table.oids) == rows + 1
+    assert table.cell("Ligand ID", int(table.oids[-1])) == "E/ATP 355"
+    assert tool.add_ligand(ctx, "NONE", 0) == 0
+
+
 def test_fetch_downloads_by_id(window, qtbot, monkeypatch) -> None:
     from chemsuite.protein import fetch as pdb
     from chemsuite.tools.protein.dialogs import FetchDialog

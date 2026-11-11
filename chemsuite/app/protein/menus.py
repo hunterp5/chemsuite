@@ -22,6 +22,7 @@ was clicked (its residue, chain or binding site), so the rest of it then applies
 
 from __future__ import annotations
 
+import numpy as np
 from PySide6.QtGui import QActionGroup, QColor
 from PySide6.QtWidgets import QColorDialog, QMenu, QWidget
 
@@ -33,6 +34,7 @@ from chemsuite.protein.model import LIGAND
 from chemsuite.protein.select import SelectionError
 
 from .session import ADD, ATOM_LABEL, RESIDUE_LABEL, SET, ProteinSession
+from .toolbar import MEASURES
 from .tree import residue_expression
 
 SHOW_STYLES = (
@@ -101,6 +103,19 @@ def fill_transparency(menu: QMenu, session: ProteinSession) -> None:
         group.addAction(action)
 
 
+def _label_here(menu: QMenu, session: ProteinSession, protein: str, structure, atom: int) -> None:
+    mask = np.zeros(structure.n_atoms, bool)
+    mask[atom] = True
+    for title, kind in (("Residue", RESIDUE_LABEL), ("Atom", ATOM_LABEL)):
+        menu.addAction(title, lambda k=kind: session.label(k, {protein: mask}))
+
+
+def _measure_from(session: ProteinSession, atoms: int, atom: int) -> None:
+    """Start a measurement of ``atoms`` atoms with this one picked."""
+    session.measure(atoms)
+    session.pick(atom)
+
+
 def _pick_colour(session: ProteinSession, parent: QWidget) -> None:
     colour = QColorDialog.getColor(QColor(46, 200, 74), parent, "Colour")
     if colour.isValid():
@@ -114,7 +129,14 @@ def _need_selection(menu: QMenu, session: ProteinSession) -> None:
 
 
 def context_menu(
-    session: ProteinSession, atom: int, parent: QWidget, *, focus, copy_smiles=None, copy_as=None
+    session: ProteinSession,
+    atom: int,
+    parent: QWidget,
+    *,
+    focus,
+    copy_smiles=None,
+    copy_as=None,
+    add_ligand=None,
 ) -> QMenu:
     """The right-click menu for scene atom ``atom`` (-1: empty space)."""
     menu = QMenu(parent)
@@ -142,6 +164,12 @@ def context_menu(
             menu.addAction("Focus This Ligand", lambda: session.focus(shown.id, residue))
         if copy_smiles is not None and structure.res_kind[residue] == LIGAND:
             menu.addAction("Copy Ligand SMILES", lambda: copy_smiles(shown, residue))
+        if add_ligand is not None and structure.res_kind[residue] == LIGAND:
+            menu.addAction("Add Ligand to Table", lambda: add_ligand(shown.id, residue))
+        _label_here(menu.addMenu("Label"), session, shown.id, structure, index)
+        measuring = menu.addMenu("Measure From Here")
+        for name, atoms in MEASURES:
+            measuring.addAction(name, lambda n=atoms: _measure_from(session, n, atom))
         alternates = sorted(set(structure.altloc[structure.atoms_of(residue)].tolist()) - {""})
         if alternates:
             alt = menu.addMenu("Alternate Location")

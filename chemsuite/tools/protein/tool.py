@@ -44,7 +44,7 @@ FILE_FILTER = "Protein files (*.pdb *.ent *.cif *.mmcif *.pdb.gz *.ent.gz *.cif.
 
 def open_viewer(ctx: ToolContext, state: dict | None = None):
     """Bring the open Protein Viewer forward, or open one (with *state* when reopening)."""
-    from chemsuite.app.protein.panel import EXTRACT, FETCH, OPEN, ProteinPanel
+    from chemsuite.app.protein.panel import EXTRACT, FETCH, LIGAND, OPEN, ProteinPanel
 
     if state is None:
         panel = ctx.find_panel(TOOL_ID)
@@ -55,6 +55,7 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         OPEN: lambda: open_protein(ctx),
         FETCH: lambda: fetch_from_pdb(ctx),
         EXTRACT: lambda: extract_ligands(ctx),
+        LIGAND: lambda protein, residue: add_ligand(ctx, protein, residue),
     }
 
     def run(label, work, on_done):  # surfaces and interactions: never hold up closing
@@ -176,6 +177,30 @@ def extract_ligands(ctx: ToolContext) -> int:
             added += len(rows[ligands.PROTEIN_COLUMN])
     ctx.show_message(f"Added {added} ligand row(s)" if added else "No new ligands to add")
     return added
+
+
+def add_ligand(ctx: ToolContext, protein: str, residue: int) -> int:
+    """Add a row for one ligand (a cofactor, say), unless the table has it already."""
+    asset = ctx.table.assets.get(protein)
+    if asset is None or asset.kind != KIND:
+        return 0
+    structure = store.as_structure(asset.payload)
+    label = structure.residue_label(residue)
+    table = ctx.table
+    if ligands.PROTEIN_COLUMN in table and ligands.LIGAND_ID_COLUMN in table:
+        for oid in table.oids:
+            o = int(oid)
+            if (table.cell(ligands.PROTEIN_COLUMN, o) == protein
+                    and table.cell(ligands.LIGAND_ID_COLUMN, o) == label):  # fmt: skip
+                ctx.show_message(f"{label} of {protein} is in the table already")
+                return 0
+    rows = ligands.ligand_rows(structure, protein, [residue])
+    if not rows[ligands.PROTEIN_COLUMN]:
+        ctx.show_message(f"{label} could not be read as a molecule")
+        return 0
+    ctx.add_rows(rows, f"Add ligand {label}", structures=(ligands.LIGAND_COLUMN,))
+    ctx.show_message(f"Added {label} of {protein}")
+    return 1
 
 
 TOOLS = [
