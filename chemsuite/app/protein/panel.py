@@ -18,8 +18,9 @@
 The viewer is a workspace of its own (it opens as its own window): a menu bar
 (:mod:`.menubar`: opening and fetching proteins, saving, copying, display, pocket work), a
 toolbar (Show, Hide, Colour; Interactions, Focus, Measure; Frame, Reset View) and the
-selection bar run across the top; below, the proteins list beside the 3D view, and the
-sequence strip under them. Everything reads and changes one :class:`~.session.ProteinSession`.
+selection bar run across the top; below, the proteins list beside the 3D view (with the
+models bar under it while a shown protein has several models), and the sequence strip under
+them. Everything reads and changes one :class:`~.session.ProteinSession`.
 
 In the view a click selects a residue, Alt-click an atom, a double-click its chain; Shift adds
 and Ctrl (Cmd) toggles; a click on nothing clears the selection; Esc clears it too. While
@@ -61,6 +62,7 @@ from chemsuite.protein import io as protein_io
 from chemsuite.protein import ligands
 
 from . import menubar, menus
+from .models_bar import ModelsBar
 from .selection_bar import SelectionBar
 from .sequence_view import SequenceView
 from .session import ADD, SET, TOGGLE, ProteinSession
@@ -127,12 +129,19 @@ class ProteinPanel(QWidget):
         self.views = QStackedWidget()
         self.empty = self._empty_page(commands)
         self.views.addWidget(self.empty)
+        self.models_bar = ModelsBar(self.session)
+        middle = QWidget()
+        stack = QVBoxLayout(middle)
+        stack.setContentsMargins(0, 0, 0, 0)
+        stack.setSpacing(0)
+        stack.addWidget(self.views, 1)
+        stack.addWidget(self.models_bar)
         self.status = QLabel()
         self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
         self.columns = QSplitter(Qt.Orientation.Horizontal)
         self.columns.addWidget(self.tree)
-        self.columns.addWidget(self.views)
+        self.columns.addWidget(middle)
         self.columns.setStretchFactor(1, 1)
         self.columns.setSizes([200, 700])
         self.rows = QSplitter(Qt.Orientation.Vertical)
@@ -150,6 +159,8 @@ class ProteinPanel(QWidget):
         layout.addWidget(self.status)
 
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._escape)
+        QShortcut(QKeySequence("["), self, lambda: self.models_bar.step(-1))
+        QShortcut(QKeySequence("]"), self, lambda: self.models_bar.step(1))
         self.session.sceneChanged.connect(self._redraw)
         self.session.focusChanged.connect(self._focus_changed)
         self.session.lookChanged.connect(self._relook)
@@ -300,6 +311,7 @@ class ProteinPanel(QWidget):
                 view.orient()
             view.fit()
             self._fitted |= new
+        self._apply_slab()  # a focused pocket moves with the model shown
 
     def _relook(self) -> None:
         if self.view is None:

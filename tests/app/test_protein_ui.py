@@ -260,6 +260,69 @@ def test_the_panel_reopens_as_it_was(panel, table, qtbot, monkeypatch) -> None:
     assert again.view.camera.distance == pytest.approx(panel.view.camera.distance)
 
 
+def test_the_models_bar_shows_only_while_a_shown_protein_has_several(panel, table) -> None:
+    bar = panel.models_bar
+    assert not bar.isVisibleTo(panel)  # 1ATP has one model
+    add_protein(table, "1D3Z", "1d3z_2models.cif.gz")
+    assert bar.isVisibleTo(panel)
+    assert bar.count.text() == "of 2" and bar.position.value() == 1
+    assert not bar._protein_action.isVisible()  # one protein to step: no list
+    panel.session.set_visible("1D3Z", False)
+    assert not bar.isVisibleTo(panel)
+
+
+def test_stepping_models_moves_the_atoms_and_keeps_the_selection(panel, table, qtbot) -> None:
+    add_protein(table, "1D3Z", "1d3z_2models.cif.gz")
+    session, bar = panel.session, panel.models_bar
+    nmr = session.display("1D3Z")
+    session.select_text("resi 10-20")
+    selected = session.selected_count()
+    assert not bar.previous.isEnabled() and bar.next.isEnabled()
+    bar.next.trigger()
+    assert nmr.model == 1 and bar.position.value() == 2 and bar.slider.value() == 1
+    drawn = session.scene
+    d = drawn.displays.index(nmr)
+    start, stop = drawn.atom_offsets[d], drawn.atom_offsets[d + 1]
+    own = (drawn.pick_atoms >= start) & (drawn.pick_atoms < stop)
+    local = drawn.pick_atoms[own] - start
+    assert own.any() and np.allclose(drawn.pick_centres[own], nmr.structure.xyz(1)[local])
+    assert session.selected_count() == selected
+    assert bar.previous.isEnabled() and not bar.next.isEnabled()
+    bar.position.setValue(1)  # typed: back to the first
+    assert nmr.model == 0
+    panel.models_bar.slider.setValue(1)
+    assert nmr.model == 1
+    state = panel.state()
+    again = type(panel)(table)
+    qtbot.addWidget(again)
+    again.set_state(state)
+    assert again.session.display("1D3Z").model == 1
+    assert again.models_bar.position.value() == 2
+
+
+def test_playing_loops_and_stops_when_the_protein_goes(panel, table) -> None:
+    add_protein(table, "1D3Z", "1d3z_2models.cif.gz")
+    bar, nmr = panel.models_bar, panel.session.display("1D3Z")
+    bar.play.setChecked(True)
+    assert bar.playing and bar.play.text() == "Pause"
+    bar._tick()
+    bar._tick()
+    assert nmr.model == 0  # 0 → 1 → back to 0
+    table.undo()  # the protein is gone
+    assert not bar.playing and not bar.play.isChecked()
+
+
+def test_the_list_picks_which_protein_the_bar_steps(panel, table) -> None:
+    add_protein(table, "1D3Z", "1d3z_2models.cif.gz")
+    add_protein(table, "1D3Z-2", "1d3z_2models.cif.gz")
+    bar = panel.models_bar
+    assert bar._protein_action.isVisible() and bar.protein.count() == 2
+    bar.protein.setCurrentIndex(1)
+    bar.next.trigger()
+    assert panel.session.display("1D3Z-2").model == 1
+    assert panel.session.display("1D3Z").model == 0
+
+
 def test_state_for_a_protein_not_loaded_yet_waits_for_it(qtbot, monkeypatch) -> None:
     from chemsuite.app import graphics
     from chemsuite.app.protein.panel import ProteinPanel

@@ -21,7 +21,8 @@ the tree, the sequence strip, the selection bar and the 3D view all read and cha
 session, never each other, and redraw on its signals:
 
 - ``proteinsChanged``: proteins came or went, or one was shown or hidden;
-- ``sceneChanged``: what is drawn changed (styles, cartoon, surface): geometry is rebuilt;
+- ``sceneChanged``: what is drawn changed (styles, cartoon, surface, the model shown):
+  geometry is rebuilt;
 - ``lookChanged``: only colours or the selection changed: only the look is uploaded;
 - ``hovered``: the atom under the pointer (the protein's id and atom index, or "" and -1);
 - ``focusChanged``: a ligand was focused or the focus cleared (the panel moves the camera);
@@ -242,6 +243,12 @@ class ProteinSession(QObject):
         shown = self.display(protein)
         if shown is not None:
             shown.choose_altloc(residue, letter)
+            self._changed(rebuilt=True)
+
+    def set_model(self, protein: str, model: int) -> None:
+        """Show another of the protein's models (NMR models; trajectory frames later)."""
+        shown = self.display(protein)
+        if shown is not None and shown.set_model(model):
             self._changed(rebuilt=True)
 
     # interactions

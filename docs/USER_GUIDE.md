@@ -1252,6 +1252,11 @@ select it), the 3D view and the sequence underneath.
   fading.
 - **Measure ▸ Distance / Angle / Dihedral**, then click two, three or four atoms. Esc stops
   measuring.
+- **Models.** A file with several models (an NMR ensemble) gets a bar under the view: step
+  with the arrows or `[` and `]`, type a model's number, drag the slider, or press Play to loop
+  through them. The selection, colours and measurements stay as the atoms move. When several
+  shown proteins have models, the list at its left picks which one the bar steps. The model
+  shown is saved with the document.
 - Right-click an atom to select its residue, chain or surroundings, focus a ligand, switch an
   alternate location, copy a ligand's SMILES, or **Copy Selection As ▸ PDB / mmCIF**.
 
