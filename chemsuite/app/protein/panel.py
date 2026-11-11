@@ -465,7 +465,13 @@ class ProteinPanel(QWidget):
             self.view.set_camera(Camera.from_state(camera))
             self._fitted = {d.id for d in self.session.displays if d.visible}
 
-    def closeEvent(self, event) -> None:
+    def close_panel(self) -> None:
+        """Let go of the document: its dock calls this when closed, then deletes the panel,
+        so a session left listening would fail on the next table change."""
         self._stop_watching()
+        self._stop_watching = lambda: None
         self.session.close()
+
+    def closeEvent(self, event) -> None:
+        self.close_panel()
         super().closeEvent(event)

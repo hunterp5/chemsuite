@@ -12,6 +12,8 @@ other machine can pick it up. Update it at the end of a session that leaves work
     the ⚠ there is right. 1ATP's ATP from the file. `samples/5GNK.cif` is a local copy.
   - Direct3D and WARP draw the same, light and dark. Fixed: ghosted (focus) and selected
     cartoons drew as yellow speckle on Direct3D, which interpolates the flag 4.0 as 3.9999.
+  - Fixed (found by hand): closing the viewer window left its deleted session listening to
+    the table, so the next Remove, Fetch or row change raised and the table view missed it.
 
   Still by hand:
   - Play 1D3Z's NMR models.

@@ -907,3 +907,28 @@ def test_the_view_follows_light_and_dark(panel) -> None:
     dark.setColor(QPalette.ColorRole.Base, QColor(20, 20, 24))
     panel.setPalette(dark)
     assert panel.view.background == QColor(20, 20, 24)
+
+
+def test_closing_the_viewer_window_lets_go_of_the_document(qtbot, table, monkeypatch) -> None:
+    """Closing the dock (as the window's close button does) must unsubscribe the session: a
+    deleted session left listening raised on the next table change, and the listeners after it
+    never heard of the change."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    from chemsuite.app import graphics
+    from chemsuite.app.panel_dock import PanelDock
+    from chemsuite.app.protein.panel import ProteinPanel
+
+    monkeypatch.setattr(graphics, "_problem", None)
+    stopped = []
+    panel = ProteinPanel(table, watch_current=lambda follow: lambda: stopped.append(True))
+    dock = PanelDock("Protein Viewer")
+    dock.setWidget(panel)
+    dock.show()
+    dock.close()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert stopped == [True]
+    heard = []
+    table.subscribe(heard.append)
+    add_protein(table, "2ATP", "1atp.cif.gz")
+    assert heard
