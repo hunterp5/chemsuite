@@ -373,6 +373,14 @@ class CorrelationTab(QWidget):
         plot.set_spec(x=self.result.names[column], y=self.result.names[row])
 
 
+def _form() -> QFormLayout:
+    """A form whose fields drop below their labels when the panel is docked narrow (Windows'
+    wider controls would otherwise set its minimum width)."""
+    form = QFormLayout()
+    form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+    return form
+
+
 def _column_combo() -> QComboBox:
     combo = QComboBox()
     compact(combo, chars=10)
@@ -414,7 +422,7 @@ class OutlierTab(QWidget):
         self.grid.horizontalHeader().setStretchLastSection(True)
         self.select_button = QPushButton("Select These Rows")
         self.select_button.clicked.connect(self.select_rows)
-        form = QFormLayout()
+        form = _form()
         form.addRow("Column:", self.column)
         form.addRow("Method:", self.method)
         self.threshold_label = QLabel()
@@ -507,7 +515,7 @@ class FitTab(QWidget):
         self.degree.setRange(1, 6)
         self.report = QPlainTextEdit()
         self.report.setReadOnly(True)
-        form = QFormLayout()
+        form = _form()
         form.addRow("X:", self.x)
         form.addRow("Y:", self.y)
         form.addRow("Model:", self.model)
@@ -563,7 +571,7 @@ class TestTab(QWidget):
         self.mean.setDecimals(4)
         self.report = QPlainTextEdit()
         self.report.setReadOnly(True)
-        self.form = QFormLayout()
+        self.form = _form()
         self.form.addRow("Test:", self.test)
         self.form.addRow("Column:", self.a)
         self.form.addRow("Second column:", self.b)

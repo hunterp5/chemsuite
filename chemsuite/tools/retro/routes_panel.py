@@ -617,9 +617,8 @@ class RoutesPanel(QWidget):
         if chosen in actions:
             mol = _parse(card.smiles)
             self.ctx.show_message(copy_structures([mol], actions[chosen]))
-        elif chosen is add and card.smiles:
-            if self.ctx.add_compound(card.smiles) is not None:
-                self.ctx.show_message(f"Added {card.smiles} as a new row")
+        elif chosen is add and card.smiles and self.ctx.add_compound(card.smiles) is not None:
+            self.ctx.show_message(f"Added {card.smiles} as a new row")
 
     def _draw_reaction(self, smiles: str) -> None:
         from chemsuite.app.sketcher import SketcherDialog

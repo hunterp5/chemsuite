@@ -155,6 +155,25 @@ def test_close_asks_about_running_jobs(window, qtbot, monkeypatch) -> None:
     release.set()
 
 
+def test_background_work_never_holds_up_closing(window, qtbot, monkeypatch) -> None:
+    """Work a panel makes ahead (the Structure Viewer's 3D) is cancelled without asking."""
+    ctx = ToolContext(window)
+    work, release = _gate()
+    job = ctx.run("Make 3D structures", work, lambda r: None, background=True)
+
+    def asked(*_a, **_k):
+        raise AssertionError("asked about a background job")
+
+    monkeypatch.setattr(QMessageBox, "question", asked)
+    window.workspace.mark_saved(
+        window.workspace.table.history.checkpoint(), window.workspace.lists.revision
+    )
+    assert window.close()
+    qtbot.waitUntil(lambda: not job.running, timeout=5000)
+    assert job.state == "cancelled"
+    release.set()
+
+
 def test_cancel_shows_cancelling_then_keeps_partial_results(window, qtbot) -> None:
     from chemsuite.core.jobs import Cancelled
 

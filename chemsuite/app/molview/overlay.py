@@ -13,8 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""What the 3D Viewer draws on top of the molecules: the atom under the pointer, the atoms
-picked for a measurement, and the measurement itself."""
+"""What the Structure Viewer's 3D view draws on top of the molecules: the atom under the
+pointer, the atoms picked for a measurement, and the measurement itself."""
 
 from __future__ import annotations
 

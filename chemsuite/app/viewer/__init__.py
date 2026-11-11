@@ -13,4 +13,4 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The 3D Viewer panel."""
+"""The Structure Viewer: one row at a time, drawn in 2D or in 3D, with column values over it."""

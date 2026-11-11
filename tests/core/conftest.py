@@ -62,5 +62,5 @@ def drug_sdf(tmp_path: Path) -> Path:
     broken = molblock("CC").replace("    0.0000 C ", "    0.0000 Xx", 1)  # unknown element
     records.append(sdf_record(broken, {"ID": "CPD-BAD", "pIC50": "4.00", "Name": "broken"}))
     path = tmp_path / "drugs.sdf"
-    path.write_text("".join(records), encoding="utf-8")
+    path.write_bytes("".join(records).encode())  # \n line endings on every system
     return path

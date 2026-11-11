@@ -160,7 +160,7 @@ def _on_star(smiles: str) -> str | None:
 def ketcher_groups(path: Path) -> dict[str, str]:
     """Ketcher's functional groups: name (upper case) -> canonical SMILES on [*]."""
     out: dict[str, str] = {}
-    for block in path.read_text().split("$$$$\n"):
+    for block in path.read_text(encoding="utf-8").split("$$$$\n"):
         block = block.lstrip("\n")  # Ketcher's files put a blank line after each $$$$
         if "M  END" not in block:
             continue

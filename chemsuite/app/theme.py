@@ -292,6 +292,11 @@ class PolishStyle(QProxyStyle):
 
 
 def _set_style(app: QApplication, name: str) -> None:
+    """Use *name* (with the app's polish) unless it is already in use: Qt deletes the style it
+    replaces, and a widget still holding the old one (one being torn down, say) would crash."""
+    current = app.style()
+    if isinstance(current, PolishStyle) and current.baseStyle().name().lower() == name.lower():
+        return
     app.setStyle(PolishStyle(name))
 
 
@@ -343,7 +348,7 @@ def reset() -> None:
     global _applied
     app = QApplication.instance()
     if _original and app is not None:
-        app.setStyle(str(_original["style"]))
+        _set_style(app, str(_original["style"]))
         app.setPalette(QPalette(_original["palette"]))
         app.setFont(QFont(_original["font"]))
         _set_colour_scheme(app, None)
