@@ -29,6 +29,7 @@ from chemsuite.core.settings import Policy, Settings, SettingsStore
 from .theme import apply_appearance
 
 CONFIG_ENV = "CHEMSUITE_CONFIG_DIR"  # tests and portable installs point this elsewhere
+CACHE_ENV = "CHEMSUITE_CACHE_DIR"
 
 
 def config_folder() -> Path:
@@ -37,6 +38,15 @@ def config_folder() -> Path:
         return Path(override)
     location = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation)
     return Path(location or Path.home() / ".chemsuite")
+
+
+def cache_folder() -> Path:
+    """Where downloaded files that can be fetched again are kept."""
+    override = os.environ.get(CACHE_ENV, "").strip()
+    if override:
+        return Path(override)
+    location = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation)
+    return Path(location or Path.home() / ".chemsuite" / "cache")
 
 
 class SettingsHub(QObject):

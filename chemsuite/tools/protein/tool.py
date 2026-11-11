@@ -32,6 +32,7 @@ from chemsuite.app.tools import Tool, ToolContext
 from chemsuite.core.table import Asset, PutAsset
 from chemsuite.protein import fetch as pdb
 from chemsuite.protein import io, ligands, store
+from chemsuite.protein.components import META_KEY, CcdCache
 from chemsuite.protein.model import Structure
 
 TOOL_ID = "protein"
@@ -97,13 +98,40 @@ def unique_id(ctx: ToolContext, name: str) -> str:
     return f"{name}-{n}"
 
 
-def add_protein(ctx: ToolContext, structure: Structure, name: str, source: str) -> str:
-    """Add the protein and its ligands (as rows) in one undo step, show it, and return its id."""
+def ccd(ctx: ToolContext, offline: bool = False) -> CcdCache:
+    """The Chemical Component Dictionary files kept on disk (``offline``: no downloads, for
+    work on the GUI thread)."""
+    return CcdCache(ctx.cache_folder("ccd"), offline=offline)
+
+
+def ligand_work(ctx: ToolContext):
+    """For a background job: the rows of a structure's ligands, the CCD asked when needed."""
+    cache = ccd(ctx)
+
+    def rows(structure: Structure, job) -> dict[str, list[str]]:
+        return ligands.ligand_rows(structure, "", ccd=cache, cancel=job.cancel_token)
+
+    return rows
+
+
+def add_protein(
+    ctx: ToolContext,
+    structure: Structure,
+    name: str,
+    source: str,
+    rows: dict[str, list[str]] | None = None,
+) -> str:
+    """Add the protein and its ligands (as rows, from :func:`ligand_work` when given) in one
+    undo step, show it, and return its id."""
     protein = unique_id(ctx, name)
-    meta = {k: str(v) for k, v in structure.meta.items() if v}
+    if rows is None:
+        rows = ligands.ligand_rows(structure, protein, ccd=ccd(ctx, offline=True))
+    rows[ligands.PROTEIN_COLUMN] = [protein] * len(rows[ligands.PROTEIN_COLUMN])
+    meta = {k: str(v) for k, v in structure.meta.items() if v and k != META_KEY}
     meta["source"] = source
+    if guessed := ligands.guessed(rows):
+        meta[ligands.GUESSED] = "\n".join(guessed)
     op = PutAsset(protein, None, Asset(protein, KIND, protein, structure, meta))
-    rows = ligands.ligand_rows(structure, protein)
     label = f"Add protein {protein}"
     if rows[ligands.PROTEIN_COLUMN]:
         ctx.add_rows(rows, label, structures=(ligands.LIGAND_COLUMN,), extra_ops=[op])
@@ -124,23 +152,27 @@ def open_protein(ctx: ToolContext, paths: list[str] | None = None):
     files = io.readable(paths)
     if not files:
         return None
+    rows_of = ligand_work(ctx)
 
-    def work(_job):
+    def work(job):
         out = []
         for path in files:
             try:
-                out.append((path, io.read(path), ""))
+                structure = io.read(path)
             except (io.ProteinFileError, OSError) as err:
-                out.append((path, None, str(err)))
+                out.append((path, None, None, str(err)))
+                continue
+            out.append((path, structure, rows_of(structure, job), ""))
         return out
 
     def done(read) -> None:
         problems = []
-        for path, structure, error in read:
+        for path, structure, rows, error in read:
             if structure is None:
                 problems.append(f"{Path(path).name}: {error}")
             else:
-                add_protein(ctx, structure, pdb.name_of(structure, _stem(path)), Path(path).name)
+                name = pdb.name_of(structure, _stem(path))
+                add_protein(ctx, structure, name, Path(path).name, rows)
         if problems:
             ctx.show_message("Could not read " + "; ".join(problems), 10_000)
 
@@ -170,7 +202,8 @@ def extract_ligands(ctx: ToolContext) -> int:
     for asset in list(table.assets.values()):
         if asset.kind != KIND or asset.id in linked:
             continue
-        rows = ligands.ligand_rows(store.as_structure(asset.payload), asset.id)
+        rows = ligands.ligand_rows(store.as_structure(asset.payload), asset.id,
+                                   ccd=ccd(ctx, offline=True))  # fmt: skip
         if rows[ligands.PROTEIN_COLUMN]:
             ctx.add_rows(rows, f"Extract ligands of {asset.id}",
                          structures=(ligands.LIGAND_COLUMN,))  # fmt: skip
@@ -194,7 +227,7 @@ def add_ligand(ctx: ToolContext, protein: str, residue: int) -> int:
                     and table.cell(ligands.LIGAND_ID_COLUMN, o) == label):  # fmt: skip
                 ctx.show_message(f"{label} of {protein} is in the table already")
                 return 0
-    rows = ligands.ligand_rows(structure, protein, [residue])
+    rows = ligands.ligand_rows(structure, protein, [residue], ccd=ccd(ctx, offline=True))
     if not rows[ligands.PROTEIN_COLUMN]:
         ctx.show_message(f"{label} could not be read as a molecule")
         return 0

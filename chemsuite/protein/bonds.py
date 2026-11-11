@@ -30,7 +30,7 @@ Two atoms in different alternate locations of the same residue are never bonded.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from functools import cache
 from importlib import resources
 
@@ -96,12 +96,14 @@ def perceive(
     res_kind: np.ndarray,
     chain_start: np.ndarray,
     links: Iterable[tuple[int, int]] = (),
+    library: Mapping[str, list[tuple[str, str, int]]] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Bonds ``(m, 2)`` int32 with ``i < j`` and their orders ``(m,)`` int8."""
+    """Bonds ``(m, 2)`` int32 with ``i < j`` and their orders ``(m,)`` int8. ``library`` adds
+    residue templates (the file's own components) to the bundled ones."""
     pairs: list[np.ndarray] = []
     orders: list[np.ndarray] = []
     templated = np.zeros(len(names), dtype=bool)
-    library = templates()
+    library = {**templates(), **(library or {})}
     for residue in range(len(res_name)):
         bonds = library.get(str(res_name[residue]))
         if not bonds:

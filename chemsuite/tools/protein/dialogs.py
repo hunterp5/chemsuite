@@ -53,19 +53,22 @@ class FetchDialog(ToolDialog):
 
 def fetch(ctx: ToolContext, code: str):
     """Download entry *code* in the background and add it (a message says what went wrong)."""
-    from .tool import add_protein
+    from .tool import add_protein, ligand_work
+
+    rows_of = ligand_work(ctx)
 
     def work(job):
         try:
-            return pdb.fetch(code, cancel=job.cancel_token), ""
+            structure = pdb.fetch(code, cancel=job.cancel_token)
         except (DownloadError, ProteinFileError) as err:
-            return None, str(err)
+            return None, None, str(err)
+        return structure, rows_of(structure, job), ""
 
     def done(result) -> None:
-        structure, error = result
+        structure, rows, error = result
         if structure is None:
             ctx.show_message(f"Could not fetch {code}: {error}", 10_000)
         else:
-            add_protein(ctx, structure, pdb.name_of(structure, code), f"PDB {code}")
+            add_protein(ctx, structure, pdb.name_of(structure, code), f"PDB {code}", rows)
 
     return ctx.run(f"Fetching {code}…", work, done)

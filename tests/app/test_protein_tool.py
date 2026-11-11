@@ -35,7 +35,25 @@ DATA = Path(__file__).resolve().parents[1] / "data" / "protein"
 
 @pytest.fixture(autouse=True)
 def network(tmp_path, monkeypatch):
+    """Downloads allowed, but the CCD is a stub that knows only 0G6 (and records each ask)."""
+    import urllib.error
+
+    from chemsuite.protein import components
+
     monkeypatch.setenv(POLICY_ENV, str(tmp_path / "no-policy.json"))
+    asked: list[str] = []
+
+    def ccd(request, timeout=None):
+        import gzip
+        import io
+
+        asked.append(request.full_url)
+        if request.full_url.endswith("/0G6.cif"):
+            return io.BytesIO(gzip.decompress((DATA / "0g6_ccd.cif.gz").read_bytes()))
+        raise urllib.error.HTTPError(request.full_url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(components, "fetch_bytes", _with_opener(components.fetch_bytes, ccd))
+    return asked
 
 
 @pytest.fixture
@@ -98,11 +116,43 @@ def test_opening_adds_the_protein_and_its_ligands_in_one_step(opened) -> None:
     oid = int(table.oids[-1])
     assert table.cell("Protein", oid) == "1ATP" and table.cell("Ligand ID", oid) == "E/ATP 355"
     assert table.kind("Ligand") == "structure" and table.cell("Ligand", oid).startswith("Nc1")
-    assert table.cell("Bond Orders", oid) == "CCD template"
+    assert table.cell("Bond Orders", oid) == "File"  # the file's own chemical component tables
     panel = ToolContext(opened).find_panel("protein")
     assert panel is not None and [d.id for d in panel.session.displays] == ["1ATP"]
     table.undo()
     assert not table.assets and len(table.oids) == 3 and "Ligand" not in table
+
+
+def test_a_ligand_the_file_does_not_define_comes_from_the_ccd_once(window, qtbot, network):
+    ctx = ToolContext(window)
+    for _ in range(2):
+        job = tool.open_protein(ctx, [str(DATA / "1ppb.cif.gz")])
+        qtbot.waitUntil(lambda job=job: not job.running, timeout=30_000)
+    table = window.workspace.table
+    oid = int(table.oids[-1])
+    assert table.cell("Ligand ID", oid) == "H/0G6 1"
+    assert table.cell("Bond Orders", oid) == "CCD (downloaded)"
+    assert network == ["https://files.rcsb.org/ligands/download/0G6.cif"]  # then the cache
+    assert "guessed" not in table.assets["1PPB"].meta
+
+
+def test_a_guessed_ligand_is_marked_in_the_tree(window, qtbot, tmp_path, monkeypatch) -> None:
+    from chemsuite.app import graphics
+
+    monkeypatch.setattr(graphics, "_problem", None)
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"network_allowed": False}))
+    monkeypatch.setenv(POLICY_ENV, str(policy))
+    job = tool.open_protein(ToolContext(window), [str(DATA / "1ppb.cif.gz")])
+    qtbot.waitUntil(lambda: not job.running, timeout=30_000)
+    table = window.workspace.table
+    assert table.cell("Bond Orders", int(table.oids[-1])) == "Guessed from geometry"
+    assert table.assets["1PPB"].meta["guessed"] == "H/0G6 1"
+    tree = ToolContext(window).find_panel("protein").tree
+    top = tree.topLevelItem(0)
+    item = next(top.child(i) for i in range(top.childCount())
+                if top.child(i).text(0).startswith("0G6"))  # fmt: skip
+    assert item.text(0).endswith("⚠") and "guessed" in item.toolTip(0)
 
 
 def test_a_second_copy_gets_its_own_id(opened, qtbot) -> None:

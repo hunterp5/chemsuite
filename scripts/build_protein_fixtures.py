@@ -30,6 +30,8 @@ package must handle:
   warhead on Cys797, a halogen bond to Leu788 O, and a drug-like ligand that is not among the
   bundled residue templates; the entry's own ``_chem_comp_atom``/``_chem_comp_bond`` rows are
   kept for the components left, as RCSB files carry them
+- 0G6 (PPACK) as the Chemical Component Dictionary serves it, with its leaving atom flagged:
+  a stand-in for the online dictionary
 """
 
 from __future__ import annotations
@@ -46,6 +48,9 @@ from chemsuite.core.download import ssl_context
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "tests" / "data" / "protein"
 URL = "https://files.rcsb.org/download/{}"
+CCD_URL = "https://files.rcsb.org/ligands/download/{}.cif"
+#: components fetched from the CCD itself
+COMPONENTS = ["0G6"]
 ENTRIES = ["1CRN.pdb", "1CRN.cif", "3HTB.cif", "1ATP.cif", "1PPB.cif"]
 #: (entry, ligand, radius in Å): cut to the residues near the ligand
 POCKETS = [("5GNK", "80U", 12.0)]
@@ -53,8 +58,8 @@ POCKETS = [("5GNK", "80U", 12.0)]
 COMPONENT_TABLES = ("_chem_comp_atom.", "_chem_comp_bond.")
 
 
-def fetch(name: str) -> bytes:
-    with urllib.request.urlopen(URL.format(name), timeout=60, context=ssl_context()) as response:
+def fetch(name: str, url: str = URL) -> bytes:
+    with urllib.request.urlopen(url.format(name), timeout=60, context=ssl_context()) as response:
         return response.read()
 
 
@@ -114,6 +119,10 @@ def main(only: list[str]) -> int:
             text = pocket(fetch(f"{entry}.cif").decode(), ligand, radius)
             path = OUT / f"{entry.lower()}_pocket.cif.gz"
             path.write_bytes(gzip.compress(text.encode(), mtime=0))
+    for name in COMPONENTS:
+        if wanted(f"{name}_ccd"):
+            data = fetch(name, CCD_URL)
+            (OUT / f"{name.lower()}_ccd.cif.gz").write_bytes(gzip.compress(data, mtime=0))
     for path in sorted(OUT.iterdir()):
         print(f"{path.name}: {path.stat().st_size // 1024} KB")
     return 0

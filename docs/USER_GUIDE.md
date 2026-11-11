@@ -1218,14 +1218,15 @@ own menus:
   ligands of proteins that have none yet).
 
 Proteins are saved inside the document. Adding one also adds a row for each of its ligands to
-the table, in one step you can undo:
+the table, in one step you can undo. Cofactors (ATP, NAD, FAD, haem, SAM…) get a row only when
+they are the protein's only ligand; **Add Ligand to Table** in the right-click menu adds one.
 
 | Column | What it holds |
 |---|---|
 | Protein | Which protein the ligand belongs to (a second copy of 1ATP becomes 1ATP-2) |
 | Ligand ID | Chain, residue name and number, such as `E/ATP 355` |
 | Ligand | The ligand as a structure, in its pose from the file (3D kept) |
-| Bond Orders | Where the bond orders came from: the PDB's chemical component dictionary (CCD), a SMILES, or **Guessed from geometry**, which is worth checking |
+| Bond Orders | Where the bond orders came from (the first that fits): **SMILES** (one the row already had), **File** (the file's own component tables, as PDB mmCIF files carry), **CCD (downloaded)** (the PDB's chemical component dictionary, fetched once per ligand and kept, when downloads are allowed), **CCD template** (bundled with chemsuite) or **Guessed from geometry**, which is worth checking. A guessed ligand is marked ⚠ in the proteins list |
 
 Make a ligand row current in the table and the viewer shows that ligand in its pocket.
 

@@ -29,6 +29,7 @@ import importlib.util
 from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import Executor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -293,6 +294,12 @@ class ToolContext:
     def edit(self, label: str, ops: Sequence[Op]) -> None:
         """Change the document with *ops* (e.g. adding a protein) as one undo step."""
         self.table.edit(label, ops)
+
+    def cache_folder(self, name: str) -> Path:
+        """A folder (not yet created) for downloads kept between sessions, such as ``ccd``."""
+        from .settings_hub import cache_folder
+
+        return cache_folder() / name
 
     def network_allowed(self) -> bool:
         """False when IT policy turns downloads off (say so instead of offering them)."""

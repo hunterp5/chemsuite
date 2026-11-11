@@ -26,6 +26,7 @@ import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QTreeWidget, QTreeWidgetItem, QWidget
 
+from chemsuite.protein.ligands import GUESSED
 from chemsuite.protein.model import ADDITIVE, AMINO, GLYCAN, ION, LIGAND, NUCLEIC, WATER, Structure
 
 from .session import ADD, SET, TOGGLE, ProteinSession
@@ -93,11 +94,17 @@ class ProteinTree(QTreeWidget):
                 name = structure.chain_name[c]
                 self._child(top, protein, f"Chain {name} ({polymer})",
                             f"chain {name} and polymer")  # fmt: skip
+        asset = self.session.table.assets.get(protein)
+        guessed = set(asset.meta.get(GUESSED, "").splitlines()) if asset is not None else set()
         for residue in np.flatnonzero(kinds == LIGAND):
             chain = structure.chain_name[structure.chain_of[residue]]
             label = f"{structure.res_name[residue]} {chain}{structure.res_seq[residue]}"
+            ligand_id = structure.residue_label(int(residue))
+            if ligand_id in guessed:
+                label += " ⚠"
+                ligand_id += "\nBond orders guessed from the geometry"
             item = self._child(top, protein, label, residue_expression(structure, int(residue)))
-            item.setToolTip(0, structure.residue_label(int(residue)))
+            item.setToolTip(0, ligand_id)
         for kind, title, expression in _GROUPS:
             count = int((kinds == kind).sum())
             if count:

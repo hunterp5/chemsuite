@@ -16,12 +16,17 @@
 """Ligands as RDKit molecules in their bound pose, with real bond orders.
 
 A structure file gives a ligand's atoms and positions but not its bond orders. They come from
-the first of these that fits the atoms (``AssignBondOrdersFromTemplate``):
+the first of these that fits the atoms:
 
 1. a SMILES the caller has: one the user gave, or the SMILES of the ligand's table row;
-2. the Chemical Component Dictionary's SMILES for the residue name (the bundled templates
-   now; the online dictionary later, when the network is allowed);
-3. the geometry (:mod:`.bond_orders`), marked as guessed.
+2. the file's own definition of the component (its ``_chem_comp_bond`` table);
+3. the Chemical Component Dictionary online (:class:`.components.CcdCache`), when the caller
+   allows a download;
+4. the templates bundled with chemsuite (common cofactors and additives);
+5. the geometry (:mod:`.bond_orders`), marked as guessed.
+
+A component fits by atom name when the residue has exactly its heavy atoms, which also takes the
+bonds from the dictionary; otherwise by matching the graph (``AssignBondOrdersFromTemplate``).
 
 Heavy atoms only: hydrogens are placed when a tool needs them.
 """
@@ -34,13 +39,22 @@ import numpy as np
 from rdkit import Chem, rdBase
 from rdkit.Chem import AllChem
 
-from . import bond_orders
+from chemsuite.core.jobs import CancelToken
+
+from . import bond_orders, components
 from .bonds import template_smiles
+from .components import CcdCache, Component
 from .model import LIGAND, Structure
 
 SMILES = "smiles"
+FILE = "file"
+CCD = "ccd"
 TEMPLATE = "template"
 GEOMETRY = "geometry"
+#: cofactors: a protein's ligand rows leave them out when it has another ligand
+COFACTORS = frozenset(["ATP", "ADP", "AMP", "ANP", "ACP", "AGS", "GTP", "GDP", "GNP", "GSP",
+                       "NAD", "NAI", "NAP", "NDP", "FAD", "FMN", "SAM", "SAH", "HEM", "HEC",
+                       "COA", "ACO", "PLP", "TPP", "BTN", "UDP", "CTP", "UTP", "TTP"])  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -64,8 +78,11 @@ def to_mol(
     smiles: str | None = None,
     active: np.ndarray | None = None,
     model: int = 0,
+    ccd: CcdCache | None = None,
+    cancel: CancelToken | None = None,
 ) -> Ligand:
-    """Residue ``residue`` as an RDKit molecule (heavy atoms) in its pose."""
+    """Residue ``residue`` as an RDKit molecule (heavy atoms) in its pose. ``ccd`` allows
+    asking the online dictionary."""
     if active is None:
         active = structure.active()
     span = structure.atoms_of(residue)
@@ -73,11 +90,24 @@ def to_mol(
              if active[i] and structure.element[i] != 1]  # fmt: skip
     bare = _connectivity(structure, residue, atoms, model)
     name = str(structure.res_name[residue])
-    for source, text in ((SMILES, smiles), (TEMPLATE, template_smiles(name))):
-        if text:
-            fitted = _from_template(bare, text)
+    if smiles:
+        fitted = _from_smiles(bare, smiles)
+        if fitted is not None:
+            return Ligand(fitted, residue, SMILES)
+    own = components.from_meta(structure.meta.get(components.META_KEY, "")).get(name)
+    if own is not None:
+        fitted = _from_component(bare, own)
+        if fitted is not None:
+            return Ligand(fitted, residue, FILE)
+    if ccd is not None:
+        online = ccd.get(name, cancel)
+        if online is not None:
+            fitted = _from_component(bare, online)
             if fitted is not None:
-                return Ligand(fitted, residue, source)
+                return Ligand(fitted, residue, CCD)
+    fitted = _from_smiles(bare, template_smiles(name)) if template_smiles(name) else None
+    if fitted is not None:
+        return Ligand(fitted, residue, TEMPLATE)
     return Ligand(bond_orders.guess(bare), residue, GEOMETRY)
 
 
@@ -112,11 +142,43 @@ def _connectivity(structure: Structure, residue: int, atoms: list[int], model: i
     return out
 
 
-def _from_template(bare: Chem.Mol, smiles: str) -> Chem.Mol | None:
-    template = Chem.MolFromSmiles(smiles)
-    if template is None:
-        return None
-    template = Chem.RemoveHs(template)
+def _from_smiles(bare: Chem.Mol, smiles: str) -> Chem.Mol | None:
+    with rdBase.BlockLogs():
+        template = Chem.MolFromSmiles(smiles)
+    return None if template is None else _from_template(bare, Chem.RemoveHs(template))
+
+
+def _from_component(bare: Chem.Mol, component: Component) -> Chem.Mol | None:
+    names = [atom.GetMonomerInfo().GetName().strip() for atom in bare.GetAtoms()]
+    defined = {name: (element, charge) for name, element, charge in component.atoms}
+    absent = defined.keys() - set(names)
+    if (len(set(names)) == len(names) and absent <= component.leaving
+            and all(defined.get(n, ("", 0))[0] == atom.GetSymbol().upper()
+                    for n, atom in zip(names, bare.GetAtoms(), strict=True))):  # fmt: skip
+        fitted = _by_name(bare, component, names, defined)
+        if fitted is not None:
+            return fitted
+    template = component.to_mol()
+    return None if template is None else _from_template(bare, template)
+
+
+def _by_name(
+    bare: Chem.Mol, component: Component, names: list[str], defined: dict[str, tuple[str, int]]
+) -> Chem.Mol | None:
+    """The dictionary's bonds, orders and charges on the residue's atoms, matched by name."""
+    mol = Chem.RWMol(bare)
+    for bond in list(mol.GetBonds()):
+        mol.RemoveBond(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx())
+    index = {name: i for i, name in enumerate(names)}
+    for a, b, order, _aromatic in component.bonds:
+        if a in index and b in index:  # not a leaving atom
+            mol.AddBond(index[a], index[b], components.bond_type(order))
+    for name, i in index.items():
+        mol.GetAtomWithIdx(i).SetFormalCharge(defined[name][1])
+    return _finish(mol)
+
+
+def _from_template(bare: Chem.Mol, template: Chem.Mol) -> Chem.Mol | None:
     if template.GetNumAtoms() != bare.GetNumAtoms():
         return None
     try:
@@ -124,7 +186,10 @@ def _from_template(bare: Chem.Mol, smiles: str) -> Chem.Mol | None:
             fitted = AllChem.AssignBondOrdersFromTemplate(template, bare)
     except (ValueError, Chem.MolSanitizeException):
         return None
-    fitted = Chem.RWMol(fitted)
+    return _finish(Chem.RWMol(fitted))
+
+
+def _finish(fitted: Chem.RWMol) -> Chem.Mol | None:
     for atom in fitted.GetAtoms():
         atom.SetNoImplicit(False)  # the template's hydrogens become implicit ones
         atom.SetNumRadicalElectrons(0)
@@ -145,22 +210,30 @@ PROTEIN_COLUMN = "Protein"
 LIGAND_ID_COLUMN = "Ligand ID"
 LIGAND_COLUMN = "Ligand"
 BOND_ORDERS_COLUMN = "Bond Orders"
-SOURCE_TITLES = {SMILES: "SMILES", TEMPLATE: "CCD template", GEOMETRY: "Guessed from geometry"}
+#: a protein asset's meta: the ligand IDs whose bond orders are a guess, one per line
+GUESSED = "guessed"
+SOURCE_TITLES = {SMILES: "SMILES", FILE: "File", CCD: "CCD (downloaded)", TEMPLATE: "CCD template",
+                 GEOMETRY: "Guessed from geometry"}  # fmt: skip
 
 
 def ligand_rows(
-    structure: Structure, protein: str, residues: list[int] | None = None
+    structure: Structure,
+    protein: str,
+    residues: list[int] | None = None,
+    ccd: CcdCache | None = None,
+    cancel: CancelToken | None = None,
 ) -> dict[str, list[str]]:
     """One row per ligand (or per residue of ``residues``): the protein's asset id, the residue
     (as :meth:`Structure.residue_label` writes it), a molfile in the ligand's pose and where its
-    bond orders came from. A ligand RDKit cannot read is left out."""
+    bond orders came from. A ligand RDKit cannot read is left out, and so are cofactors when the
+    protein has another ligand."""
     rows: dict[str, list[str]] = {PROTEIN_COLUMN: [], LIGAND_ID_COLUMN: [], LIGAND_COLUMN: [],
                                   BOND_ORDERS_COLUMN: []}  # fmt: skip
     if residues is None:
-        residues = ligand_residues(structure).tolist()
+        residues = row_residues(structure)
     for residue in residues:
         try:
-            ligand = to_mol(structure, residue)
+            ligand = to_mol(structure, residue, ccd=ccd, cancel=cancel)
             block = Chem.MolToMolBlock(ligand.mol)
         except (ValueError, RuntimeError):
             continue
@@ -169,6 +242,19 @@ def ligand_rows(
         rows[LIGAND_COLUMN].append(block)
         rows[BOND_ORDERS_COLUMN].append(SOURCE_TITLES[ligand.source])
     return rows
+
+
+def row_residues(structure: Structure) -> list[int]:
+    """The ligands that become rows: all of them, less the cofactors when there is another."""
+    found = ligand_residues(structure).tolist()
+    others = [r for r in found if str(structure.res_name[r]) not in COFACTORS]
+    return others or found
+
+
+def guessed(rows: dict[str, list[str]]) -> list[str]:
+    """The ligand IDs of ``rows`` whose bond orders are a guess."""
+    pairs = zip(rows[LIGAND_ID_COLUMN], rows[BOND_ORDERS_COLUMN], strict=True)
+    return [label for label, source in pairs if source == SOURCE_TITLES[GEOMETRY]]
 
 
 def residue_named(structure: Structure, label: str) -> int:
