@@ -95,6 +95,21 @@ def clear_clipboard():
         QGuiApplication.clipboard().clear()
 
 
+@pytest.fixture(autouse=True)
+def graphics_state():
+    """Each test starts with 3D as available as the session found it: a 3D view's ``failed``
+    signal (they cannot draw offscreen) arrives through a timer, sometimes in a later test,
+    and would turn 3D off for every test after it."""
+    if NO_GUI:
+        yield
+        return
+    from chemsuite.app import graphics
+
+    before = graphics.problem()
+    yield
+    graphics.set_problem(before)
+
+
 @pytest.fixture
 def window(qtbot):
     """A main window on a small table (ID, pIC50), closed without a save prompt."""

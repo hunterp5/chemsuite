@@ -193,6 +193,19 @@ drawn = view.grabFramebuffer()
 cxy, cdepth = view.camera.project(s.coords[0][trace], drawn.width(), drawn.height())
 c = drawn.pixelColor(*(int(v) for v in cxy[int(np.argmin(cdepth))]))
 print("CARTOON", c.red(), c.green(), c.blue())
+from PySide6.QtGui import QRhi
+print("HOLDS", any(isinstance(v, QRhi) for v in vars(view).values()))
+from PySide6.QtWidgets import QVBoxLayout, QWidget
+window = QWidget()
+QVBoxLayout(window).addWidget(view)  # another top-level, as when its dock floats
+window.resize(400, 400)
+window.show()
+for _ in range(20):
+    app.processEvents()
+moved = view.grabFramebuffer()
+mxy, mdepth = view.camera.project(s.coords[0][trace], moved.width(), moved.height())
+c = moved.pixelColor(*(int(v) for v in mxy[int(np.argmin(mdepth))]))
+print("MOVED", c.red(), c.green(), c.blue())
 print("FAILED" if failed else "OK", view.rhi().backendName())
 print("PICK", picked >= 0 and picked == int(geometry.atoms[hit]))
 for name, image in (("BEFORE", before), ("AFTER", after)):
@@ -228,3 +241,8 @@ def test_proteins_are_drawn_picked_and_selected() -> None:
     assert r2 > r + 40 and b2 < g2, (r2, g2, b2)  # tinted towards the selection's amber
     r3, g3, b3 = (int(v) for v in lines["CARTOON"])
     assert b3 > 60 and b3 > 3 * r3 and b3 > 2 * g3, (r3, g3, b3)  # the cartoon's blue
+    # holding the QRhi's wrapper outlives the QRhi when the view changes window, and PySide
+    # then hands that stale wrapper back for a new object at the same address (a QMenu)
+    assert lines["HOLDS"] == ["False"]
+    r4, g4, b4 = (int(v) for v in lines["MOVED"])
+    assert b4 > 60 and b4 > 3 * r4 and b4 > 2 * g4, (r4, g4, b4)  # still drawn after the move

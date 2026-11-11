@@ -53,6 +53,7 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtWidgets import QRhiWidget, QWidget
+from shiboken6 import getCppPointer
 
 from chemsuite.molview.camera import Camera
 
@@ -113,7 +114,7 @@ class RhiView(QRhiWidget):
         self.highlight = QColor(255, 196, 0)  # the selection colour
         self.slab = NO_SLAB
         self.ghost = 0.75  # how far ghosted atoms fade into the background
-        self._rhi = None  # the QRhi the GPU resources belong to
+        self._rhi_key = None  # the address of the QRhi the GPU resources belong to
         self._broken = False  # the GPU cannot run the shaders: draw nothing
         self._press: QPointF | None = None
         self._last: QPointF | None = None
@@ -216,9 +217,10 @@ class RhiView(QRhiWidget):
     # -- QRhiWidget -------------------------------------------------------------------------
     def initialize(self, cb) -> None:
         rhi = self.rhi()
-        if rhi is self._rhi:
+        key = getCppPointer(rhi)[0]
+        if key == self._rhi_key:
             return
-        self._rhi = rhi
+        self._rhi_key = key
         self.release_buffers()
         self._quad = self.static_buffer(QUAD)
         self._box = self.static_buffer(BOX)
@@ -245,7 +247,7 @@ class RhiView(QRhiWidget):
         cb.resourceUpdate(upload)
 
     def releaseResources(self) -> None:
-        self._rhi = None
+        self._rhi_key = None
         self.release_buffers()
 
     def render(self, cb) -> None:
@@ -265,7 +267,7 @@ class RhiView(QRhiWidget):
 
     # -- GPU helpers ------------------------------------------------------------------------
     def static_buffer(self, data: np.ndarray):
-        buf = self._rhi.newBuffer(
+        buf = self.rhi().newBuffer(
             QRhiBuffer.Type.Immutable, QRhiBuffer.UsageFlag.VertexBuffer, data.nbytes
         )
         buf.create()
@@ -278,7 +280,7 @@ class RhiView(QRhiWidget):
         if old is None or old.size() < data.nbytes:
             if old is not None:
                 old.deleteLater()
-            old = self._rhi.newBuffer(QRhiBuffer.Type.Static, usage, max(data.nbytes, 4096))
+            old = self.rhi().newBuffer(QRhiBuffer.Type.Static, usage, max(data.nbytes, 4096))
             old.create()
         batch.uploadStaticBuffer(old, 0, data.nbytes, np.ascontiguousarray(data).tobytes())
         return old
@@ -290,7 +292,7 @@ class RhiView(QRhiWidget):
         vertex, the rest per instance unless ``per_vertex``); ``attributes`` as (binding,
         location, format, offset). ``build=False`` returns it uncreated, to adjust first.
         """
-        pipe = self._rhi.newGraphicsPipeline()
+        pipe = self.rhi().newGraphicsPipeline()
         pipe.setShaderStages(
             [
                 QRhiShaderStage(QRhiShaderStage.Type.Vertex, shader(f"{name}.vert")),

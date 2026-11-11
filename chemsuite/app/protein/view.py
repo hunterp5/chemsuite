@@ -251,7 +251,7 @@ class ProteinView(RhiView):
                 (2, 5, FLOAT2, 32),
             ],
         )
-        self._wide_indices = self._rhi.isFeatureSupported(QRhi.Feature.ElementIndexUint)
+        self._wide_indices = self.rhi().isFeatureSupported(QRhi.Feature.ElementIndexUint)
         if not self._wide_indices:
             log.warning("no 32-bit indices on this GPU: cartoons and surfaces are not drawn")
         self._mesh_pipes = {mode: self._mesh_pipeline(mode) for mode in _MESH_MODES}
