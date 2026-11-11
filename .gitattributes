@@ -1,4 +1,16 @@
+# The project moves between macOS and Windows: text is LF in the repo and in every checkout,
+# whatever core.autocrlf says, so files read the same byte for byte on each system.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
 # Shader sources are hashed (shaders/manifest.json) and must read the same on every system.
 chemsuite/app/molview/shaders/*.vert text eol=lf
 chemsuite/app/molview/shaders/*.frag text eol=lf
-chemsuite/app/molview/shaders/*.qsb binary
+
+*.qsb binary
+*.gz binary
+*.npz binary
+*.png binary
+*.csd binary

@@ -28,3 +28,6 @@ scripts/.screenshot-config/
 # Local data and sessions
 /fda_approved.sdf
 /test_session.csd
+
+# Sample data (large; kept on each machine)
+/samples/
