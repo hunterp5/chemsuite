@@ -257,6 +257,26 @@ class ProteinSession(QObject):
             shown.colour(mask, rgb)
         self._changed(rebuilt=False)
 
+    @property
+    def hydrogens(self) -> str:
+        """Which hydrogens are drawn (all, polar, none), as the first protein has it."""
+        return self.displays[0].hydrogens if self.displays else displays.POLAR_H
+
+    def show_hydrogens(self, which: str) -> None:
+        for shown in self.displays:
+            shown.show_hydrogens(which)
+        self._changed(rebuilt=True)
+
+    @property
+    def transparency(self) -> float:
+        """How see-through surfaces are (0 opaque), as the first protein has it."""
+        return self.displays[0].transparency if self.displays else displays.SURFACE_TRANSPARENCY
+
+    def set_transparency(self, transparency: float) -> None:
+        for shown in self.displays:
+            shown.transparency = transparency
+        self._changed(rebuilt=False)
+
     def choose_altloc(self, protein: str, residue: int, letter: str) -> None:
         shown = self.display(protein)
         if shown is not None:

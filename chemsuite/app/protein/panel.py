@@ -17,7 +17,8 @@
 
 The viewer is a workspace of its own (it opens as its own window): a menu bar
 (:mod:`.menubar`: opening and fetching proteins, saving, copying, display, pocket work), a
-toolbar (Show, Hide, Colour; Interactions, Focus, Measure; Frame, Reset View) and the
+toolbar (:mod:`.toolbar`: Show, Hide, Colour, Hydrogens, Transparency; Interactions, Focus,
+Measure; Frame, Reset View) and the
 selection bar run across the top; below, the proteins list beside the 3D view (with the
 models bar under it while a shown protein has several models), and the sequence strip under
 them. Everything reads and changes one :class:`~.session.ProteinSession`.
@@ -39,18 +40,15 @@ from collections.abc import Callable
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QActionGroup, QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDockWidget,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QPushButton,
     QSplitter,
     QStackedWidget,
-    QToolBar,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -61,7 +59,7 @@ from chemsuite.molview.camera import Camera
 from chemsuite.protein import io as protein_io
 from chemsuite.protein import ligands
 
-from . import menubar, menus
+from . import menubar, menus, toolbar
 from .builds import Run
 from .models_bar import ModelsBar
 from .selection_bar import SelectionBar
@@ -74,7 +72,6 @@ CARTOON = "cartoon"
 SURFACE = "surface"
 LINES = "interactions"
 SLAB_PAD = 2.0  # Å beyond the focused pocket kept in the slab
-MEASURES = (("Distance", 2), ("Angle", 3), ("Dihedral", 4))
 #: the commands a tool gives the viewer (see :mod:`.menubar`)
 OPEN, FETCH, EXTRACT = menubar.OPEN, menubar.FETCH, menubar.EXTRACT
 
@@ -101,27 +98,7 @@ class ProteinPanel(QWidget):
         self._fitted: set[str] = set()  # proteins the camera has been fitted to
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        self.toolbar = QToolBar()
-        self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        for title, fill in (
-            ("Show", lambda m: menus.fill_show(m, self.session)),
-            ("Hide", lambda m: menus.fill_hide(m, self.session)),
-            ("Colour", lambda m: menus.fill_colour(m, self.session, self)),
-        ):
-            self._menu_button(title, fill)
-        self.toolbar.addSeparator()
-        self.interactions_action = self.toolbar.addAction("Interactions")
-        self.interactions_action.setCheckable(True)
-        self.interactions_action.setToolTip(
-            "Show the interactions of the selection, or of every ligand when nothing is selected"
-        )
-        self.interactions_action.triggered.connect(self.session.show_interactions)
-        self._menu_button("Focus", self.fill_focus)
-        self._menu_button("Measure", self.fill_measure)
-        self.toolbar.addSeparator()
-        self.frame_action = self.toolbar.addAction("Frame", self.frame_selection)
-        self.frame_action.setToolTip("Fit the selection to the view (double-click an entry)")
-        self.toolbar.addAction("Reset View", self.reset_view)
+        self.toolbar = toolbar.build(self)
         self.selection_bar = SelectionBar(self.session)
 
         self.tree = ProteinTree(self.session)
@@ -174,46 +151,6 @@ class ProteinPanel(QWidget):
         self._stop_watching = watch_current(self.follow_row) if watch_current else lambda: None
         if current is not None:
             self.follow_row(current())
-
-    def _menu_button(self, title: str, fill) -> None:
-        button = QToolButton()
-        button.setText(title)
-        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(button)
-        menu.aboutToShow.connect(lambda: fill(menu))
-        button.setMenu(menu)
-        self.toolbar.addWidget(button)
-
-    def fill_focus(self, menu: QMenu) -> None:
-        menu.clear()
-        session = self.session
-        several = len([d for d in session.displays if d.visible]) > 1
-        for protein, residue in session.ligands():
-            shown = session.display(protein)
-            label = shown.structure.residue_label(residue)
-            title = f"{shown.name}  {label}" if several else label
-            action = menu.addAction(title, lambda p=protein, r=residue: session.focus(p, r))
-            action.setCheckable(True)
-            action.setChecked(session.focused_residue() == (protein, residue))
-        if not menu.actions():
-            menu.addAction("No Ligands").setEnabled(False)
-        menu.addSeparator()
-        clear = menu.addAction("Clear Focus", session.clear_focus)
-        clear.setEnabled(session.focused is not None)
-
-    def fill_measure(self, menu: QMenu) -> None:
-        menu.clear()
-        group = QActionGroup(menu)
-        for title, atoms in MEASURES:
-            action = menu.addAction(title, lambda n=atoms: self.session.measure(n))
-            action.setCheckable(True)
-            action.setChecked(self.session.measuring == atoms)
-            group.addAction(action)
-        menu.addSeparator()
-        stop = menu.addAction("Stop Measuring", lambda: self.session.measure(0))
-        stop.setEnabled(bool(self.session.measuring))
-        clear = menu.addAction("Clear Measurements", self.session.clear_measurements)
-        clear.setEnabled(bool(self.session.measurements))
 
     def _escape(self) -> None:
         if self.session.measuring:

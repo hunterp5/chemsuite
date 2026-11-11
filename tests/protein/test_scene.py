@@ -202,3 +202,25 @@ def test_without_deferring_everything_is_built_at_once(kinase) -> None:
     shown = Display("1ATP", "1ATP", kinase)
     shown.show_surface(np.ones(kinase.n_atoms, bool))
     assert shown.pending() == [] and len(shown.surface_mesh().triangles)
+
+
+def test_hydrogens_and_transparency_are_saved_and_bad_ones_ignored(nmr: Structure) -> None:
+    from chemsuite.protein.display import SURFACE_TRANSPARENCY, Display
+
+    shown = Display("1D3Z", "1D3Z", nmr)
+    shown.show_hydrogens("all")
+    shown.transparency = 0.2
+    again = Display("1D3Z", "1D3Z", nmr)
+    again.set_state(shown.state())
+    assert again.hydrogens == "all" and again.transparency == 0.2
+    again.set_state({**shown.state(), "hydrogens": "some", "transparency": 1.5})
+    assert again.hydrogens == "polar" and again.transparency == SURFACE_TRANSPARENCY
+
+
+def test_a_hydrogen_is_drawn_as_its_atom_is(nmr: Structure) -> None:
+    styles = np.full(nmr.n_atoms, scene.HIDDEN, np.uint8)
+    amide = select(nmr, "resi 5 and name N")
+    styles[amide] = scene.SPACEFILL
+    shown = scene.shown_styles(nmr, styles, nmr.active(), "polar")
+    assert (shown[select(nmr, "resi 5 and name H")] == scene.SPACEFILL).all()
+    assert (shown[select(nmr, "resi 5 and name HA")] == scene.HIDDEN).all()

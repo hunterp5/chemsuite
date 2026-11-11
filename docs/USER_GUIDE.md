@@ -1212,8 +1212,8 @@ own menus:
   **Close Viewer**. With no protein open, the middle of the window offers Open and Fetch.
 - **Edit:** **Copy Selection As ▸ PDB / mmCIF**, **Select All**, **Clear Selection**, **Save
   Selection…**.
-- **View:** Show, Hide and Colour, Frame Selection, Reset View, and whether the proteins list
-  and the sequence show.
+- **View:** Show, Hide and Colour, Hydrogens, Surface Transparency, Frame Selection, Reset
+  View, and whether the proteins list and the sequence show.
 - **Pocket:** Interactions, Focus, Measure and **Extract Ligands to Table** (rows for the
   ligands of proteins that have none yet).
 
@@ -1241,6 +1241,9 @@ select it), the 3D view and the sequence underneath.
 - **Show, Hide, Colour** act on the selection: wire, sticks, ball and stick, spacefill,
   cartoon, surface; colour by element, chain, secondary structure, B-factor, hydrophobicity or
   a colour you choose.
+- **Hydrogens** (all, polar or none) and **Transparency** (of surfaces, from opaque to 80%)
+  apply to every protein. A hydrogen is drawn as the atom it is bonded to is shown, so showing
+  a residue as sticks shows its hydrogens too. Both are in the View menu as well.
 - **Interactions** draws dashed lines from the ligands (or the selection) to what they touch:
   hydrogen bonds (blue), salt bridges (magenta), π-stacking (green), cation–π (orange),
   hydrophobic contacts (grey), halogen bonds (cyan), metal contacts (purple) and water bridges

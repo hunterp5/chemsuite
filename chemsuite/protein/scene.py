@@ -34,6 +34,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from chemsuite.molview.elements import vdw_radii
+from chemsuite.molview.geometry import ALL_H, NO_H, POLAR_H
 
 from .model import ADDITIVE, AMINO, GLYCAN, ION, LIGAND, NUCLEIC, Structure
 
@@ -136,6 +137,40 @@ def nonpolar_hydrogens(structure: Structure) -> np.ndarray:
     elements = structure.element
     out[a[hydrogen[a] & (elements[b] == 6)]] = True
     out[b[hydrogen[b] & (elements[a] == 6)]] = True
+    return out
+
+
+def hydrogen_parents(structure: Structure) -> np.ndarray:
+    """The heavy atom each hydrogen is bonded to (-1 for none, and for other atoms)."""
+    out = np.full(structure.n_atoms, -1, np.int64)
+    if not len(structure.bonds):
+        return out
+    a, b = structure.bonds[:, 0], structure.bonds[:, 1]
+    hydrogen = structure.element == 1
+    first, second = hydrogen[a] & ~hydrogen[b], hydrogen[b] & ~hydrogen[a]
+    out[a[first]] = b[first]
+    out[b[second]] = a[second]
+    return out
+
+
+def shown_styles(
+    structure: Structure, styles: np.ndarray, active: np.ndarray, hydrogens: str = POLAR_H
+) -> np.ndarray:
+    """The style each atom is drawn in. A hydrogen takes its heavy atom's, so it follows
+    whatever that atom is shown as; then ``hydrogens`` (all, polar, none: the Structure
+    Viewer's choices) hides none, the non-polar, or all of them. Of alternate locations only
+    the shown one is drawn."""
+    out = np.array(styles, np.uint8)
+    hydrogen = np.flatnonzero(structure.element == 1)
+    if len(hydrogen):
+        parent = hydrogen_parents(structure)[hydrogen]
+        bonded = parent >= 0
+        out[hydrogen[bonded]] = styles[parent[bonded]]
+        if hydrogens == NO_H:
+            out[hydrogen] = HIDDEN
+        elif hydrogens != ALL_H:
+            out[nonpolar_hydrogens(structure)] = HIDDEN
+    out[~active] = HIDDEN
     return out
 
 

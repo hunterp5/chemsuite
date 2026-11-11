@@ -27,6 +27,7 @@ from PySide6.QtCore import QObject, QPoint, Qt, Signal
 from chemsuite.core.table import Asset, PutAsset, Table
 from chemsuite.protein import io, scene, store
 from chemsuite.protein.model import Structure
+from chemsuite.protein.select import select
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "protein"
 
@@ -199,6 +200,60 @@ def test_show_hide_and_colour_act_on_the_selection(panel, qtbot) -> None:
         shown.structure.atom_kind == 2).tolist())  # fmt: skip
     session.colour((1.0, 0.0, 1.0))
     assert np.allclose(shown.colours[shown.structure.atom_kind == 2, :3], (1, 0, 1))
+
+
+def test_hydrogens_follow_their_atom_and_the_choice(qtbot, monkeypatch) -> None:
+    from PySide6.QtWidgets import QMenu
+
+    from chemsuite.app import graphics
+    from chemsuite.app.protein.menus import fill_hydrogens
+    from chemsuite.app.protein.panel import ProteinPanel
+
+    monkeypatch.setattr(graphics, "_problem", None)
+    table = Table()
+    add_protein(table, "1D3Z", "1d3z_2models.cif.gz")  # NMR: it has hydrogens
+    panel = ProteinPanel(table)
+    qtbot.addWidget(panel)
+    session = panel.session
+    nmr = session.display("1D3Z")
+    s = nmr.structure
+    session.select_text("resi 10-20")
+    session.show_as(scene.STICK)
+
+    def drawn(text: str) -> int:
+        atoms = select(s, text)
+        return int(np.isin(session.scene.geometry.atoms, np.flatnonzero(atoms)).sum())
+
+    polar, nonpolar = "resi 10-20 and hydrogen and name H", "resi 10-20 and name HA"
+    assert drawn(polar) > 0 and drawn(nonpolar) == 0  # the default: polar ones
+    menu = QMenu()
+    fill_hydrogens(menu, session)
+    assert [a.text() for a in menu.actions() if a.isChecked()] == ["Polar Hydrogens"]
+    session.show_hydrogens("all")
+    assert drawn(nonpolar) == len(np.flatnonzero(select(s, nonpolar)))
+    session.show_hydrogens("none")
+    assert drawn("hydrogen") == 0
+    assert nmr.styles[select(s, polar)].max() == scene.STICK  # styles are never rewritten
+
+
+def test_surface_transparency_changes_only_the_look(panel, qtbot) -> None:
+    from PySide6.QtWidgets import QMenu
+
+    from chemsuite.app.protein.menus import fill_transparency
+
+    session = panel.session
+    session.select_text("chain I")
+    session.show_surface(True)
+    assert session.scene.surface_look[:, 3] == pytest.approx(0.6)
+    with qtbot.assertNotEmitted(session.sceneChanged):
+        session.set_transparency(0.8)
+    assert session.scene.surface_look[:, 3] == pytest.approx(0.2)
+    menu = QMenu()
+    fill_transparency(menu, session)
+    assert [a.text() for a in menu.actions()] == ["Opaque", "20%", "40%", "60%", "80%"]
+    assert [a.text() for a in menu.actions() if a.isChecked()] == ["80%"]
+    again = session.display("1ATP").state()
+    assert again["transparency"] == 0.8 and again["hydrogens"] == "polar"
 
 
 def test_the_context_menu_offers_what_was_clicked(panel) -> None:
@@ -532,13 +587,15 @@ def test_focus_shows_the_pocket_and_fades_the_rest(panel, qtbot) -> None:
 def test_the_focus_menu_lists_the_ligands(panel) -> None:
     from PySide6.QtWidgets import QMenu
 
+    from chemsuite.app.protein.toolbar import fill_focus
+
     menu = QMenu()
-    panel.fill_focus(menu)
+    fill_focus(menu, panel.session)
     titles = [a.text() for a in menu.actions() if a.text()]
     assert titles == ["E/ATP 355", "Clear Focus"]
     menu.actions()[0].trigger()
     assert panel.session.focused_residue() is not None
-    panel.fill_focus(menu)
+    fill_focus(menu, panel.session)
     assert menu.actions()[0].isChecked() and menu.actions()[-1].isEnabled()
 
 

@@ -13,8 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The protein viewer's menus: Show, Hide and Colour (on the selection), and the right-click
-menu on an atom.
+"""The protein viewer's menus: Show, Hide and Colour (on the selection), Hydrogens and
+Transparency (for every protein), and the right-click menu on an atom.
 
 Every menu acts on the session's selection; the right-click menu first offers to select what
 was clicked (its residue, chain or binding site), so the rest of it then applies there.
@@ -22,10 +22,12 @@ was clicked (its residue, chain or binding site), so the rest of it then applies
 
 from __future__ import annotations
 
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QActionGroup, QColor
 from PySide6.QtWidgets import QColorDialog, QMenu, QWidget
 
+from chemsuite.molview.geometry import HYDROGENS
 from chemsuite.protein import colours, scene
+from chemsuite.protein.display import TRANSPARENCIES
 from chemsuite.protein.io import MMCIF, PDB
 from chemsuite.protein.model import LIGAND
 from chemsuite.protein.select import SelectionError
@@ -67,6 +69,27 @@ def fill_colour(menu: QMenu, session: ProteinSession, parent: QWidget) -> None:
     menu.addSeparator()
     pick = menu.addAction("Colour…", lambda: _pick_colour(session, parent))
     pick.setEnabled(selected)
+
+
+def fill_hydrogens(menu: QMenu, session: ProteinSession) -> None:
+    menu.clear()
+    group = QActionGroup(menu)
+    for key, title in HYDROGENS.items():
+        action = menu.addAction(title, lambda k=key: session.show_hydrogens(k))
+        action.setCheckable(True)
+        action.setChecked(session.hydrogens == key)
+        group.addAction(action)
+
+
+def fill_transparency(menu: QMenu, session: ProteinSession) -> None:
+    menu.clear()
+    group = QActionGroup(menu)
+    for value in TRANSPARENCIES:
+        title = f"{value:.0%}" if value else "Opaque"
+        action = menu.addAction(title, lambda v=value: session.set_transparency(v))
+        action.setCheckable(True)
+        action.setChecked(abs(session.transparency - value) < 1e-6)
+        group.addAction(action)
 
 
 def _pick_colour(session: ProteinSession, parent: QWidget) -> None:

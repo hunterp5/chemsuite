@@ -46,6 +46,8 @@ from typing import Any
 
 import numpy as np
 
+from chemsuite.molview.geometry import HYDROGENS, POLAR_H
+
 from . import cartoon as cartoons
 from . import colours as schemes
 from . import interactions as contacts
@@ -54,8 +56,9 @@ from . import scene as scenes
 from . import surface as surfaces
 from .model import AMINO, NUCLEIC, Structure
 
-#: how see-through a surface is drawn
-SURFACE_ALPHA = 0.6
+#: how see-through a surface is drawn (0 opaque, 1 invisible), and the choices offered
+SURFACE_TRANSPARENCY = 0.4
+TRANSPARENCIES = (0.0, 0.2, 0.4, 0.6, 0.8)
 CARTOON_PICK_RADIUS = 1.2
 #: the parts a deferring display builds in the background
 DEFERRED = ("surface", "interactions", "cartoon")
@@ -93,6 +96,8 @@ class Display:
     altlocs: dict[int, str] = field(default_factory=dict)
     model: int = 0  # which of the structure's coordinate sets is shown
     deferred: bool = False  # slow parts are built through pending() and accept()
+    hydrogens: str = POLAR_H  # which hydrogens are drawn: all, polar, none
+    transparency: float = SURFACE_TRANSPARENCY  # of the surface
     styles: np.ndarray = field(init=False)
     cartoon: np.ndarray = field(init=False)  # bool per residue
     surface: np.ndarray = field(init=False)  # bool per atom
@@ -162,6 +167,15 @@ class Display:
         self.surface[atoms & heavy & self.active] = on
         self.touch("surface")
 
+    def show_hydrogens(self, which: str) -> None:
+        """Draw all, the polar or no hydrogens (each as its heavy atom is shown)."""
+        if which in HYDROGENS and which != self.hydrogens:
+            self.hydrogens = which
+            self.touch("geometry")
+
+    def surface_alpha(self) -> float:
+        return 1.0 - self.transparency
+
     def colour_by(self, scheme: str, atoms: np.ndarray | None = None) -> None:
         coloured = schemes.colour(self.structure, scheme)
         if atoms is None:
@@ -199,7 +213,8 @@ class Display:
         """What builds a part, with copies of what it reads."""
         s = self.structure
         if part == "geometry":
-            return scenes.geometry, (s, self.styles.copy(), self.model)
+            styles = scenes.shown_styles(s, self.styles, self.active, self.hydrogens)
+            return scenes.geometry, (s, styles, self.model)
         if part == "cartoon":
             return cartoons.build, (s, np.flatnonzero(self.cartoon), self.model, self.active)
         if part == "surface":
@@ -301,6 +316,8 @@ class Display:
             "surface_scheme": self.surface_scheme,
             "altlocs": {str(k): v for k, v in self.altlocs.items()},
             "model": self.model,
+            "hydrogens": self.hydrogens,
+            "transparency": self.transparency,
             "styles": runs(self.styles),
             "cartoon": runs(self.cartoon.astype(np.uint8)),
             "surface": runs(self.surface.astype(np.uint8)),
@@ -313,6 +330,11 @@ class Display:
         self.altlocs = {int(k): str(v) for k, v in dict(state.get("altlocs", {})).items()}
         model = state.get("model", 0)
         self.model = model if isinstance(model, int) and 0 <= model < self.n_models else 0
+        hydrogens = state.get("hydrogens", POLAR_H)
+        self.hydrogens = hydrogens if hydrogens in HYDROGENS else POLAR_H
+        transparency = state.get("transparency", SURFACE_TRANSPARENCY)
+        valid = isinstance(transparency, int | float) and 0 <= transparency < 1
+        self.transparency = float(transparency) if valid else SURFACE_TRANSPARENCY
         styles = unruns(state.get("styles"), n)
         if styles is not None:
             self.styles = styles.astype(np.uint8)
@@ -410,10 +432,7 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
     residue_flags = _cat([f for _, f in looks], np.float32)
     surface = meshes.join([_shifted(d.surface_mesh(), o) for d, o in
                            zip(shown, atom_offsets, strict=False)])  # fmt: skip
-    surface_colours = _cat(
-        [schemes.colour(d.structure, d.surface_scheme) for d in shown], np.float32, 4
-    )
-    surface_colours[:, 3] = SURFACE_ALPHA
+    surface_colours = _surface_colours(shown)
     traces = [d.trace()[1] for d in shown]
     pick_atoms = _cat([t + o for t, o in zip(traces, atom_offsets, strict=False)], np.int64)
     pick_centres = _cat([d.xyz[t] for d, t in zip(shown, traces, strict=True)], np.float32, 3)
@@ -463,10 +482,7 @@ def relook(scene: Scene) -> Scene:
     colours = _cat([d.colours for d in scene.displays], np.float32, 4)
     flags = _cat([d.flags() for d in scene.displays], np.float32)
     looks = [d.residue_look() for d in scene.displays]
-    surface_colours = _cat(
-        [schemes.colour(d.structure, d.surface_scheme) for d in scene.displays], np.float32, 4
-    )
-    surface_colours[:, 3] = SURFACE_ALPHA
+    surface_colours = _surface_colours(scene.displays)
     return replace(
         scene,
         sphere_look=scenes.sphere_look(scene.geometry, colours, flags),
@@ -478,6 +494,16 @@ def relook(scene: Scene) -> Scene:
         ),
         surface_look=meshes.look(scene.surface, surface_colours, flags),
     )
+
+
+def _surface_colours(shown: tuple[Display, ...]) -> np.ndarray:
+    """Per atom, each display's surface scheme with its surface's alpha."""
+    parts = []
+    for d in shown:
+        rgba = schemes.colour(d.structure, d.surface_scheme)
+        rgba[:, 3] = d.surface_alpha()
+        parts.append(rgba)
+    return _cat(parts, np.float32, 4)
 
 
 def _shifted(mesh: meshes.Mesh, offset: int) -> meshes.Mesh:

@@ -17,9 +17,9 @@
 display and pocket work live here rather than in the main window's menus.
 
 File: Open Protein…, Fetch from PDB…, Save Selection As…, Close. Edit: copying, selecting.
-View: Show, Hide, Colour, the camera, which areas show. Pocket: interactions, focus,
-measurements, ligands to the table. Menus are filled when they open, so they always match the
-session.
+View: Show, Hide, Colour, Hydrogens, Surface Transparency, the camera, which areas show.
+Pocket: interactions, focus, measurements, ligands to the table. Menus are filled when they
+open, so they always match the session.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar
 
 from chemsuite.protein import io as protein_io
 
-from . import menus
+from . import menus, toolbar
 
 if TYPE_CHECKING:
     from .panel import ProteinPanel
@@ -102,6 +102,8 @@ def _view(menu: QMenu, panel: ProteinPanel) -> None:
         menus.fill_show(menu.addMenu("Show"), session)
         menus.fill_hide(menu.addMenu("Hide"), session)
         menus.fill_colour(menu.addMenu("Colour"), session, panel)
+        menus.fill_hydrogens(menu.addMenu("Hydrogens"), session)
+        menus.fill_transparency(menu.addMenu("Surface Transparency"), session)
         menu.addSeparator()
         menu.addAction("Frame Selection", panel.frame_selection)
         menu.addAction("Reset View", panel.reset_view)
@@ -124,8 +126,8 @@ def _pocket(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
             not session.interactions_shown))  # fmt: skip
         shown.setCheckable(True)
         shown.setChecked(session.interactions_shown)
-        panel.fill_focus(menu.addMenu("Focus"))
-        panel.fill_measure(menu.addMenu("Measure"))
+        toolbar.fill_focus(menu.addMenu("Focus"), session)
+        toolbar.fill_measure(menu.addMenu("Measure"), session)
         menu.addSeparator()
         extract = menu.addAction("Extract Ligands to Table", commands.get(EXTRACT, lambda: None))
         extract.setEnabled(EXTRACT in commands and bool(session.displays))
