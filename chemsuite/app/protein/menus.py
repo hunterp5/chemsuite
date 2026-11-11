@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The protein viewer's menus: Show, Hide and Colour (on the selection), Hydrogens and
+"""The protein viewer's menus: Show, Hide, Colour and Label (on the selection), Hydrogens and
 Transparency (for every protein), and the right-click menu on an atom.
 
 Every menu acts on the session's selection; the right-click menu first offers to select what
@@ -32,7 +32,7 @@ from chemsuite.protein.io import MMCIF, PDB
 from chemsuite.protein.model import LIGAND
 from chemsuite.protein.select import SelectionError
 
-from .session import ADD, SET, ProteinSession
+from .session import ADD, ATOM_LABEL, RESIDUE_LABEL, SET, ProteinSession
 from .tree import residue_expression
 
 SHOW_STYLES = (
@@ -69,6 +69,15 @@ def fill_colour(menu: QMenu, session: ProteinSession, parent: QWidget) -> None:
     menu.addSeparator()
     pick = menu.addAction("Colour…", lambda: _pick_colour(session, parent))
     pick.setEnabled(selected)
+
+
+def fill_label(menu: QMenu, session: ProteinSession) -> None:
+    menu.clear()
+    selected = session.selected_count() > 0
+    menu.addAction("Residues", lambda: session.label(RESIDUE_LABEL)).setEnabled(selected)
+    menu.addAction("Atoms", lambda: session.label(ATOM_LABEL)).setEnabled(selected)
+    menu.addSeparator()
+    menu.addAction("Clear Labels", session.clear_labels).setEnabled(bool(session.labels))
 
 
 def fill_hydrogens(menu: QMenu, session: ProteinSession) -> None:

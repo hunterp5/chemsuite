@@ -17,7 +17,8 @@
 display and pocket work live here rather than in the main window's menus.
 
 File: Open Protein…, Fetch from PDB…, Save Selection As…, Close. Edit: copying, selecting.
-View: Show, Hide, Colour, Hydrogens, Surface Transparency, the camera, which areas show.
+View: Show, Hide, Colour, Label, Hydrogens, Surface Transparency, the camera, which areas
+show.
 Pocket: interactions, focus, measurements, ligands to the table. Menus are filled when they
 open, so they always match the session.
 """
@@ -102,6 +103,7 @@ def _view(menu: QMenu, panel: ProteinPanel) -> None:
         menus.fill_show(menu.addMenu("Show"), session)
         menus.fill_hide(menu.addMenu("Hide"), session)
         menus.fill_colour(menu.addMenu("Colour"), session, panel)
+        menus.fill_label(menu.addMenu("Label"), session)
         menus.fill_hydrogens(menu.addMenu("Hydrogens"), session)
         menus.fill_transparency(menu.addMenu("Surface Transparency"), session)
         menu.addSeparator()

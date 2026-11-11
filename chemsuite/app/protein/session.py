@@ -26,14 +26,15 @@ session, never each other, and redraw on its signals:
 - ``lookChanged``: only colours or the selection changed: only the look is uploaded;
 - ``hovered``: the atom under the pointer (the protein's id and atom index, or "" and -1);
 - ``focusChanged``: a ligand was focused or the focus cleared (the panel moves the camera);
-- ``measurementsChanged``: a measurement was added or removed, or atoms picked for one.
+- ``measurementsChanged``: a measurement was added or removed, or atoms picked for one;
+- ``labelsChanged``: labels were added or cleared.
 
 With a way to run work in the background (``run``, as a tool's ``ctx.run`` in the quick
 lane), slow parts (surfaces, interactions, large cartoons) are built off the GUI thread by a
 :class:`~.builds.Builder`; the scene shows the last one until the new one arrives.
 
-Selections are atom masks per protein. Saved ("named") selections, measurements and the
-focused ligand are kept as atom uids, so they survive edits of the structure.
+Selections are atom masks per protein. Saved ("named") selections, measurements, labels and
+the focused ligand are kept as atom uids, so they survive edits of the structure.
 """
 
 from __future__ import annotations
@@ -60,9 +61,12 @@ ADD = "add"
 TOGGLE = "toggle"
 REMOVE = "remove"
 #: Focus Ligand shows these as sticks and the rest faded
-FOCUS_SITE = "byres polymer within 5 of $focus"
+#: whole residues: ``byres`` takes what follows it, so the distance test is in brackets
+FOCUS_SITE = "byres (polymer within 5 of $focus)"
 FOCUS_NEAR = "(water or ion) within 3.5 of $focus"
 Point = tuple[str, int]  # a protein id and an atom uid
+ATOM_LABEL = "atom"
+RESIDUE_LABEL = "residue"
 
 
 structure_of = store.as_structure  # an asset's structure, decoding stored bytes
@@ -76,6 +80,7 @@ class ProteinSession(QObject):
     hovered = Signal(str, int)
     focusChanged = Signal()
     measurementsChanged = Signal()
+    labelsChanged = Signal()
 
     def __init__(self, table: Table, parent: QObject | None = None, run: Run | None = None) -> None:
         super().__init__(parent)
@@ -87,6 +92,7 @@ class ProteinSession(QObject):
         self.measurements: list[tuple[Point, ...]] = []
         self.measuring = 0  # how many atoms the next measurement takes (0: not measuring)
         self.pocket_surface = True  # Focus draws a skin over the pocket
+        self.labels: dict[Point, str] = {}  # what is labelled: an atom, or its residue
         self.picked: list[Point] = []
         self._scene: displays.Scene | None = None
         self._pending: dict[str, dict] = {}  # saved display state for proteins not loaded yet
@@ -400,6 +406,63 @@ class ProteinSession(QObject):
                 shown.show_pocket(site & shown.active if on else None)
         self._changed(rebuilt=True)
 
+    # labels
+    def label(self, kind: str, masks: Mapping[str, Mask] | None = None) -> None:
+        """Label the selected residues (``RESIDUE_LABEL``) or atoms (``ATOM_LABEL``), or those
+        of ``masks`` (atoms per protein)."""
+        masks = self.selection() if masks is None else masks
+        for shown in self.displays:
+            mask = masks.get(shown.id)
+            if mask is None or not mask.any():
+                continue
+            s = shown.structure
+            if kind == RESIDUE_LABEL:
+                atoms = s.res_start[:-1][np.unique(s.residue_of[mask])]
+            else:
+                atoms = np.flatnonzero(mask)
+            for uid in s.uid[atoms].tolist():
+                self.labels[(shown.id, int(uid))] = kind
+        self.labelsChanged.emit()
+
+    def clear_labels(self) -> None:
+        self.labels = {}
+        self.labelsChanged.emit()
+
+    def labelled(self) -> tuple[np.ndarray, list[str]]:
+        """Where each label goes that can be drawn, and its text: on a residue's CA (or the
+        middle of its atoms) and an atom itself; none on a protein hidden, an atom faded by
+        Focus or a residue not drawn at all."""
+        scene = self.scene
+        drawn = np.zeros(int(scene.atom_offsets[-1]), bool)
+        drawn[scene.geometry.atoms] = True
+        drawn[scene.pick_atoms] = True  # a cartoon's residues, through their trace atoms
+        positions, texts = [], []
+        for (protein, uid), kind in self.labels.items():
+            shown = self.display(protein)
+            if shown is None or shown not in scene.displays:
+                continue
+            s = shown.structure
+            index = int(s.indices(np.array([uid]))[0])
+            if index < 0 or shown.ghost[index]:
+                continue
+            offset = int(scene.global_atoms(shown, np.zeros(1, np.int64))[0])
+            if kind == RESIDUE_LABEL:
+                residue = int(s.residue_of[index])
+                span = s.atoms_of(residue)
+                atoms = np.arange(span.start, span.stop)[shown.active[span]]
+                if not len(atoms) or not drawn[atoms + offset].any():
+                    continue
+                ca = atoms[s.name[atoms] == "CA"]
+                where = shown.xyz[ca[0]] if len(ca) else shown.xyz[atoms].mean(axis=0)
+                text = f"{s.res_name[residue]} {s.res_seq[residue]}{s.icode[residue]}"
+            else:
+                if not drawn[index + offset]:
+                    continue
+                where, text = shown.xyz[index], str(s.name[index])
+            positions.append(where)
+            texts.append(text)
+        return np.array(positions, np.float32).reshape(-1, 3), texts
+
     # measurements
     def measure(self, atoms: int) -> None:
         """Measure between the next ``atoms`` atoms picked (2 distance, 3 angle, 4 dihedral;
@@ -470,6 +533,7 @@ class ProteinSession(QObject):
             "focused": list(self.focused) if self.focused else None,
             "measurements": [[list(p) for p in m] for m in self.measurements],
             "pocket_surface": self.pocket_surface,
+            "labels": [[p, uid, kind] for (p, uid), kind in self.labels.items()],
         }
 
     def set_state(self, state: Mapping) -> None:
@@ -484,6 +548,13 @@ class ProteinSession(QObject):
         self._pending = saved
         self.measurements = _points(state.get("measurements"))
         self.pocket_surface = state.get("pocket_surface", True) is not False
+        self.labels = {
+            (str(item[0]), item[1]): item[2]
+            for item in state.get("labels") or []
+            if isinstance(item, list) and len(item) == 3 and isinstance(item[1], int)
+            and item[2] in (ATOM_LABEL, RESIDUE_LABEL)
+        }  # fmt: skip
+        self.labelsChanged.emit()
         focused = _points([[state.get("focused")]])
         self.focused = focused[0][0] if focused else None
         if self.focused is not None:

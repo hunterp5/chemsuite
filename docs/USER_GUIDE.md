@@ -1212,7 +1212,7 @@ own menus:
   **Close Viewer**. With no protein open, the middle of the window offers Open and Fetch.
 - **Edit:** **Copy Selection As ▸ PDB / mmCIF**, **Select All**, **Clear Selection**, **Save
   Selection…**.
-- **View:** Show, Hide and Colour, Hydrogens, Surface Transparency, Frame Selection, Reset
+- **View:** Show, Hide, Colour and Label, Hydrogens, Surface Transparency, Frame Selection, Reset
   View, and whether the proteins list and the sequence show.
 - **Pocket:** Interactions, Focus, Measure and **Extract Ligands to Table** (rows for the
   ligands of proteins that have none yet).
@@ -1235,12 +1235,16 @@ select it), the 3D view and the sequence underneath.
 - **Selecting.** Click selects a residue, Alt-click an atom, double-click its chain; Shift adds
   and Ctrl (Cmd) toggles; click empty space or press Esc to clear. Click or drag across letters
   in the sequence. Type in the selection field (point at it for the syntax): `chain A`,
-  `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres polymer within 5 of
-  ligand`, `and`, `or`, `not`. **Select ▸** has the usual picks and **Save Selection…**;
+  `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres (polymer within 5 of
+  ligand)` (whole residues near a ligand; `byres` takes what follows it, hence the brackets),
+  `and`, `or`, `not`. **Select ▸** has the usual picks and **Save Selection…**;
   saved selections are used as `$name`.
 - **Show, Hide, Colour** act on the selection: wire, sticks, ball and stick, spacefill,
   cartoon, surface; colour by element, chain, secondary structure, B-factor, hydrophobicity or
   a colour you choose.
+- **Label ▸ Residues / Atoms** labels what is selected (a residue on its Cα, a ligand in its
+  middle); **Clear Labels** removes them. Labels stay legible: nearer ones win where they would
+  overlap, faded and sliced-away atoms lose theirs, and at most 300 show at once.
 - **Hydrogens** (all, polar or none) and **Transparency** (of surfaces, from opaque to 80%)
   apply to every protein. A hydrogen is drawn as the atom it is bonded to is shown, so showing
   a residue as sticks shows its hydrogens too. Both are in the View menu as well.

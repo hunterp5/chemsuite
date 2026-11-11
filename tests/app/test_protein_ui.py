@@ -256,6 +256,73 @@ def test_surface_transparency_changes_only_the_look(panel, qtbot) -> None:
     assert again["transparency"] == 0.8 and again["hydrogens"] == "polar"
 
 
+def test_label_layout_goes_front_to_back_and_skips_overlaps() -> None:
+    from chemsuite.app.protein import labels
+
+    boxes = np.array([[0, 0, 50, 10], [10, 5, 50, 10], [100, 0, 50, 10], [200, 0, 50, 10]])
+    depth = np.array([5.0, 1.0, 3.0, 40.0])
+    assert labels.layout(boxes, depth).tolist() == [1, 2, 3]  # 0 hides behind 1
+    assert labels.layout(boxes, depth, near=2.0, far=30.0).tolist() == [2, 0]  # in the slab
+    assert labels.layout(boxes, -depth).tolist() == []  # behind the camera
+    many = np.array([[i * 60.0, 0, 50, 10] for i in range(400)])
+    assert len(labels.layout(many, np.arange(400.0))) == labels.MAX_LABELS
+
+
+def test_residues_and_atoms_are_labelled_and_kept_by_uid(panel, table, qtbot) -> None:
+    from chemsuite.app.protein.session import ATOM_LABEL, RESIDUE_LABEL
+
+    session = panel.session
+    s = structure("1atp.cif.gz")
+    session.select_text("chain E and resi 72")
+    with qtbot.waitSignal(session.labelsChanged):
+        session.label(RESIDUE_LABEL)
+    positions, texts = session.labelled()
+    ca = np.flatnonzero(select(s, "chain E and resi 72 and name CA"))[0]
+    assert texts == ["LYS 72"] and np.allclose(positions[0], s.xyz(0)[ca])
+    session.select_text("resn ATP and name N6")
+    session.label(ATOM_LABEL)
+    session.select_text("resn ATP")
+    session.label(RESIDUE_LABEL)  # a ligand's label sits in its middle
+    positions, texts = session.labelled()
+    assert texts == ["LYS 72", "N6", "ATP 355"]
+    atp = select(s, "resn ATP") & s.active()
+    assert np.allclose(positions[2], s.xyz(0)[atp].mean(axis=0), atol=1e-4)
+    session.focus("1ATP", int(s.residue_of[np.flatnonzero(atp)[0]]))
+    assert "LYS 72" in session.labelled()[1]  # in the pocket: not faded
+    session.select_text("chain E and resi 200")
+    session.label(RESIDUE_LABEL)
+    assert "GLU 200" not in session.labelled()[1]  # faded by the focus
+    state = panel.state()
+    again = type(panel)(table)
+    qtbot.addWidget(again)
+    again.set_state(state)
+    assert again.session.labels == session.labels
+    session.clear_labels()
+    assert session.labelled()[1] == []
+    again.set_state({"session": {"labels": [["1ATP", "x", "atom"], ["1ATP", 3, "bond"], 7]}})
+    assert again.session.labels == {}
+
+
+def test_the_overlay_draws_labels_without_overlaps(panel) -> None:
+    from chemsuite.app.protein.session import ATOM_LABEL
+
+    panel.view.resize(800, 600)
+    panel.overlay.resize(800, 600)
+    panel.view.fit()
+    panel.session.select_text("resn ATP")
+    panel.session.label(ATOM_LABEL)
+    boxes, texts = panel.overlay.placed_labels()
+    assert 0 < len(texts) <= 31
+    for i in range(len(boxes)):
+        x, y, w, h = boxes[i]
+        others = np.delete(boxes, i, axis=0)
+        assert not (
+            (others[:, 0] < x + w) & (x < others[:, 0] + others[:, 2])
+            & (others[:, 1] < y + h) & (y < others[:, 1] + others[:, 3])
+        ).any()  # fmt: skip
+    panel.overlay.grab()  # paints without error
+
+
 def test_the_context_menu_offers_what_was_clicked(panel) -> None:
     from chemsuite.app.protein.menus import context_menu
 
@@ -565,6 +632,9 @@ def test_focus_shows_the_pocket_and_fades_the_rest(panel, qtbot) -> None:
     shown = session.display("1ATP")
     pocket = ~shown.ghost
     assert pocket[s.residue_of == atp].all()
+    for residue in np.unique(s.residue_of[pocket]):  # whole residues, never half faded
+        span = s.atoms_of(int(residue))
+        assert pocket[span][shown.active[span]].all(), s.residue_label(int(residue))
     site = np.unique(s.residue_of[pocket & (s.res_kind[s.residue_of] == 0)])
     assert {"LYS", "GLU", "VAL"} <= set(s.res_name[site].tolist()) and len(site) < 40
     assert (
@@ -623,6 +693,19 @@ def test_a_saved_focus_brings_its_pocket_skin_back(panel, table, qtbot, monkeypa
     qtbot.addWidget(later)
     later.set_state(panel.state())
     assert not later.session.pocket_surface and not len(later.session.scene.pocket.triangles)
+
+
+def test_the_binding_site_picks_whole_residues(panel) -> None:
+    from chemsuite.app.protein.selection_bar import PICKS
+
+    session = panel.session
+    for title in ("Binding Site", "Ligands and Binding Site"):
+        session.select_text(dict(PICKS)[title])
+        shown = session.display("1ATP")
+        s = shown.structure
+        for residue in np.unique(s.residue_of[shown.selected & (s.res_kind[s.residue_of] == 0)]):
+            span = s.atoms_of(int(residue))
+            assert shown.selected[span][shown.active[span]].all(), (title, s.residue_label(residue))
 
 
 def test_the_focus_menu_lists_the_ligands(panel) -> None:

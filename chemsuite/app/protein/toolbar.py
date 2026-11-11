@@ -15,7 +15,7 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """The Protein Viewer's toolbar, and the Focus and Measure menus it shares with the menu bar.
 
-Show, Hide and Colour act on the selection; Hydrogens and Transparency on every protein;
+Show, Hide, Colour and Label act on the selection; Hydrogens and Transparency on every protein;
 then Interactions, Focus and Measure for pocket work, and Frame and Reset View for the camera.
 """
 
@@ -45,6 +45,8 @@ def build(panel: ProteinPanel) -> QToolBar:
     menu_button(bar, "Show", lambda m: menus.fill_show(m, session))
     menu_button(bar, "Hide", lambda m: menus.fill_hide(m, session))
     menu_button(bar, "Colour", lambda m: menus.fill_colour(m, session, panel))
+    menu_button(bar, "Label", lambda m: menus.fill_label(m, session),
+                "Label the selected residues or atoms")  # fmt: skip
     menu_button(bar, "Hydrogens", lambda m: menus.fill_hydrogens(m, session),
                 "Which hydrogens to draw, on every protein")  # fmt: skip
     menu_button(bar, "Transparency", lambda m: menus.fill_transparency(m, session),

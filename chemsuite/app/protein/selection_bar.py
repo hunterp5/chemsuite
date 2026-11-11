@@ -41,8 +41,8 @@ from .session import SET, ProteinSession
 #: the Select menu's quick picks: title, expression
 PICKS = (
     ("Ligands", "ligand"),
-    ("Binding Site", "byres polymer within 5 of ligand"),
-    ("Ligands and Binding Site", "ligand or byres polymer within 5 of ligand"),
+    ("Binding Site", "byres (polymer within 5 of ligand)"),
+    ("Ligands and Binding Site", "ligand or byres (polymer within 5 of ligand)"),
     (None, None),
     ("Protein", "protein"),
     ("Backbone", "backbone"),
@@ -52,7 +52,7 @@ PICKS = (
     ("Hetero Atoms", "hetero"),
     ("Hydrogens", "hydrogen"),
 )
-SITE = "byres polymer within 5 of ligand"
+SITE = "byres (polymer within 5 of ligand)"
 _SYNTAX = (
     "chain A, resi 10-50, resn HIS+ASP, name CA, elem Fe; protein, ligand, water, ion, "
     "backbone, sidechain, helix, sheet; byres S, within 5 of S; and, or, not, ( ); $saved"
