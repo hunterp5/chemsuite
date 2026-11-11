@@ -141,6 +141,8 @@ def context_menu(
     """The right-click menu for scene atom ``atom`` (-1: empty space)."""
     menu = QMenu(parent)
     found = session.scene.locate(atom)
+    if found is not None and found[0] is session.pose:
+        found = None  # a pose's atoms: the menu for empty space
     if found is not None:
         shown, index = found
         structure = shown.structure

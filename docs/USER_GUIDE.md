@@ -1228,7 +1228,12 @@ they are the protein's only ligand; **Add Ligand to Table** in the right-click m
 | Ligand | The ligand as a structure, in its pose from the file (3D kept) |
 | Bond Orders | Where the bond orders came from (the first that fits): **SMILES** (one the row already had), **File** (the file's own component tables, as PDB mmCIF files carry), **CCD (downloaded)** (the PDB's chemical component dictionary, fetched once per ligand and kept, when downloads are allowed), **CCD template** (bundled with chemsuite) or **Guessed from geometry**, which is worth checking. A guessed ligand is marked ⚠ in the proteins list |
 
-Make a ligand row current in the table and the viewer shows that ligand in its pocket.
+Make a ligand row current in the table and the viewer shows that ligand in its pocket. When
+the row's **Ligand** is 3D and no longer sits where the file has it (a docked pose, or a ligand
+moved in the sketcher), the viewer shows the row's own pose instead: in ball and stick with its
+pocket and interactions, and the ligand of the file it stands in for faded beside it for
+comparison. Editing the current row's ligand updates the pose at once. The pose is not saved
+with the viewer; making the row current brings it back.
 
 **The viewer.** The proteins list (tick a protein to show or hide it; click a chain or ligand to
 select it), the 3D view and the sequence underneath.

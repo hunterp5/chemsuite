@@ -824,3 +824,10 @@ def test_bad_pocket_state_is_ignored(panel) -> None:
     panel.set_state({"session": {"focused": ["1ATP", "x"], "measurements": measurements}})
     assert panel.session.focused is None
     assert panel.session.measurements == [(("1ATP", 1),)]
+
+
+def test_every_part_built_in_the_background_has_a_job_title() -> None:
+    from chemsuite.app.protein import builds
+    from chemsuite.protein import display
+
+    assert set(display.DEFERRED) <= set(builds.TITLES)

@@ -287,3 +287,46 @@ def test_save_selection_writes_pdb_or_mmcif(opened, tmp_path) -> None:
         path = save_selection(panel, str(tmp_path / name))
         back = io.read(path)
         assert back.n_atoms == 31 and str(back.res_name[0]) == "ATP"
+
+
+def _moved_molblock(table, oid: int, by: float) -> str:
+    from rdkit import Chem
+
+    mol = Chem.Mol(table.column("Ligand").mol(int(table.slots_of([oid])[0])))
+    conformer = mol.GetConformer()
+    for i in range(mol.GetNumAtoms()):
+        p = conformer.GetAtomPosition(i)
+        conformer.SetAtomPosition(i, (p.x + by, p.y, p.z))
+    return Chem.MolToMolBlock(mol)
+
+
+def test_a_row_whose_ligand_moved_shows_as_a_pose(opened, qtbot) -> None:
+    ctx = ToolContext(opened)
+    table = opened.workspace.table
+    panel = ctx.find_panel("protein")
+    session = panel.session
+    atp = int(table.oids[-1])
+    ctx.set_current_oid(atp)
+    assert session.focused_residue() == ("1ATP", 338) and session.pose is None
+    # moved in the sketcher, say: the current row's ligand is edited, so the viewer follows
+    table.set_cells("Ligand", [atp], [_moved_molblock(table, atp, 0.8)])
+    pose = session.pose
+    assert pose is not None and session.pose_row == atp and session.focused is None
+    assert pose in session.scene.displays and pose.structure.n_atoms == 3070 - 31 + 31
+    shown = session.display("1ATP")
+    atp_atoms = shown.structure.residue_of == 338
+    assert shown.ghost[atp_atoms].all() and not shown.ghost.all()  # the crystal ATP, faded
+    assert session.focused_atoms() is not None
+    qtbot.waitUntil(lambda: len(pose.interactions().kind) > 0, timeout=30_000)
+    # a row with no protein takes the pose away; the moved row brings it back
+    ctx.set_current_oid(int(table.oids[0]))
+    assert session.pose is None and not shown.ghost.any()
+    ctx.set_current_oid(atp)
+    assert session.pose is not None
+    # not saved: the current row brings it back when the viewer reopens
+    restore = next(t for t in tool.TOOLS if t.id == "protein").restore
+    again = restore(ctx, panel.state())
+    assert "pose" not in str(panel.state()) and again.session.pose is not None
+    # back where the file has it: the residue itself is focused again
+    table.undo()
+    assert again.session.pose is None and again.session.focused_residue() == ("1ATP", 338)

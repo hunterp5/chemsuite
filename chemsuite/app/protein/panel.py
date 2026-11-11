@@ -62,7 +62,7 @@ from chemsuite.protein import ligands
 from . import menubar, menus, toolbar
 from .builds import Run
 from .models_bar import ModelsBar
-from .pocket import PocketCamera
+from .pocket import PocketCamera, follow_row
 from .selection_bar import SelectionBar
 from .sequence_view import SequenceView
 from .session import ADD, SET, TOGGLE, ProteinSession
@@ -153,6 +153,7 @@ class ProteinPanel(QWidget):
         self._stop_watching = watch_current(self.follow_row) if watch_current else lambda: None
         if current is not None:
             self.follow_row(current())
+            self.session.rowsEdited.connect(lambda oids: self._row_edited(current(), oids))
 
     def _escape(self) -> None:
         if self.session.measuring:
@@ -246,7 +247,7 @@ class ProteinPanel(QWidget):
         view.set_mesh(SURFACE, scene.surface, scene.surface_look, owner=ATOM, transparent=True)
         view.set_mesh(POCKET, scene.pocket, scene.pocket_look, owner=ATOM, transparent=True)
         view.set_mesh(LINES, scene.lines, scene.lines_look, owner=ATOM)
-        new = {d.id for d in scene.displays} - self._fitted
+        new = {d.id for d in scene.displays if d is not self.session.pose} - self._fitted
         view.set_scene(scene.geometry, scene.sphere_look, scene.cylinder_look)
         if new:
             if not self._fitted:
@@ -288,7 +289,7 @@ class ProteinPanel(QWidget):
     # picking in the view
     def _residue_mask(self, atom: int, whole_chain: bool = False, single: bool = False):
         found = self.session.scene.locate(atom)
-        if found is None:
+        if found is None or found[0] is self.session.pose:  # a pose is not selected
             return None
         shown, index = found
         s = shown.structure
@@ -335,22 +336,12 @@ class ProteinPanel(QWidget):
 
     # the table's current row: its ligand, in its pocket
     def follow_row(self, oid: int | None) -> bool:
-        """Focus the ligand that row *oid* names, if it names one shown here."""
-        table = self.session.table
-        columns = (ligands.PROTEIN_COLUMN, ligands.LIGAND_ID_COLUMN)
-        if oid is None or not all(c in table for c in columns) or oid not in table.oids:
-            return False
-        protein, label = (str(table.cell(c, oid) or "") for c in columns)
-        shown = self.session.display(protein)
-        if shown is None:
-            return False
-        residue = ligands.residue_named(shown.structure, label)
-        if residue < 0:
-            return False
-        self.session.set_visible(protein, True)
-        if self.session.focused_residue() != (protein, residue):
-            self.session.focus(protein, residue)
-        return True
+        """Focus the pose or ligand that row *oid* names, if its protein is shown here."""
+        return follow_row(self.session, oid)
+
+    def _row_edited(self, oid: int | None, oids: np.ndarray) -> None:
+        if oid is not None and oid in oids:
+            self.follow_row(oid)
 
     # copying
     def copy_selection(self, fmt: str) -> str:
@@ -371,7 +362,7 @@ class ProteinPanel(QWidget):
 
     # hover: the view and the sequence light up the residue; the status line names the atom
     def _hovered(self, protein: str, atom: int) -> None:
-        shown = self.session.display(protein)
+        shown = self.session.shown(protein)
         if shown is None:
             self.status.setText("")
             self._light(None, -1)

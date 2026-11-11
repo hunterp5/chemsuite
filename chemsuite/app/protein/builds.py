@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 Run = Callable[[str, Callable[[Any], Any], Callable[[Any], None]], "Job | None"]
 TITLES = {
     "surface": "Building a protein surface",
+    "pocket": "Building a pocket surface",
     "interactions": "Finding interactions",
     "cartoon": "Building a cartoon",
 }
@@ -103,7 +104,7 @@ class Builder(QObject):
         running = self._running.get(key)
         if running is not None and running[0] is build:
             del self._running[key]
-        if display not in self.session.displays or display.structure is not structure:
+        if display not in self.session.all_displays() or display.structure is not structure:
             return
         if display.accept(build.part, build.version, result):
             self.session.built()
