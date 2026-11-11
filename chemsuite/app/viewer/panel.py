@@ -625,15 +625,11 @@ class StructureViewer(QWidget):
         if self._run is None:
             self._made_3d(name, keys, make_3d(mols))
             return
-        self._run(
-            "Make 3D structures",
-            lambda _job: make_3d(mols),
-            lambda result: self._made_3d(name, keys, result),
-        )
+        alive = shiboken6.isValid  # the viewer can close while the job runs
+        self._run("Make 3D structures", lambda _job: make_3d(mols),
+                  lambda result: alive(self) and self._made_3d(name, keys, result))  # fmt: skip
 
     def _made_3d(self, name: str, keys: set, result: dict) -> None:
-        if not shiboken6.isValid(self):  # the viewer closed while the job ran
-            return
         self._waiting -= keys
         for oid, mol in (result or {}).items():
             self._made[(name, oid)] = mol

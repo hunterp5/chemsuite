@@ -348,13 +348,17 @@ def test_a_cells_browse_opens_the_browser_at_its_row(window, browser) -> None:
     window.panels[0].close()
 
 
-def test_3d_made_after_the_viewer_closed_is_dropped(window, browser) -> None:
+def test_3d_made_after_the_viewer_closed_is_dropped(window, browser, monkeypatch) -> None:
     import shiboken6
 
     browser.set_mode("3d")
     key = (browser.column_name(), browser.oid)
+    finish = []
+    monkeypatch.setattr(browser, "_run", lambda _label, _work, done: finish.append(done))
+    browser._made.pop(key, None)
+    browser._make_3d(key[0], {key[1]: None})
     shiboken6.delete(browser)  # closed while its Make 3D structures job ran
-    browser._made_3d(key[0], {key}, {})
+    finish[0]({})
 
 
 def test_a_cells_browse_opens_a_new_browser_in_2d(chem) -> None:
