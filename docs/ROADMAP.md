@@ -232,6 +232,35 @@ modified.
 
 ## 7. Proposed order
 
+### 7.0 High priority: graceful exit (added 2026-11-11)
+
+Closing the main window and accepting the exit prompt must shut chemsuite down completely: no
+windows left open and no Python process, worker process or external program still running.
+This must hold whatever is in flight: a job in the queue or quick lane, a file loading or
+being exported or saved, structures being parsed, a download, or an external tool (the warm
+AiZynthFinder worker, and later Vina, Gnina, OpenMM).
+
+What happens today: the window cancels its jobs and closes. Then, on `aboutToQuit`,
+`JobRunner.shutdown` cancels everything, waits up to 5 s for each thread pool, and shuts down
+the process pool without waiting, and the retro worker is closed.
+
+Gaps to close:
+- work that cannot see its cancel token (a long RDKit call, a C extension) keeps its thread
+  alive past the 5 s wait, and Python then waits for it at exit;
+- the process pool's workers are not waited for or killed, so a busy one can outlive the app;
+- external programs must be terminated, then killed after a grace period, including their
+  child processes;
+- floating panels (the Protein Viewer), dialogs and error reports must close with the last
+  document window;
+- a save or export cut short must leave the old file intact (write to a temporary file, then
+  rename), never a half-written one;
+- the "jobs still running" prompt must count every job that would be stopped, background
+  work included.
+
+Done when a test starts each kind of work, quits mid-way, and finds no child processes, no
+live threads and no open windows; and when a by-hand check on macOS, Windows and Linux shows
+the process gone from Activity Monitor, Task Manager or `ps`.
+
 ### 7a. Proteins (decided 2026-11-10)
 
 A protein viewer and editor for medicinal chemists, on the native QRhi renderer (no WebEngine).
