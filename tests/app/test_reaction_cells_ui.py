@@ -22,7 +22,7 @@ import pytest
 from PySide6.QtCore import QMimeData, QSize, Qt
 from PySide6.QtGui import QGuiApplication
 
-from chemsuite.app.table_model import KIND_ROLE, STATUS_ROLE
+from chemsuite.app.table.table_model import KIND_ROLE, STATUS_ROLE
 from chemsuite.core.io.rdf import rxn_block
 from chemsuite.core.reactions import reaction_from_text
 from chemsuite.core.table.columns import REACTION
@@ -38,7 +38,7 @@ AMIDE = "[CH3:1][C:2](=[O:3])[OH:4].[NH2:5][CH3:6]>>[CH3:1][C:2](=[O:3])[NH:5][C
 
 @pytest.fixture
 def reactions(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -69,7 +69,7 @@ def test_reaction_cells_report_kind_and_status(reactions) -> None:
 
 
 def test_reaction_cells_draw_as_pictures(reactions) -> None:
-    from chemsuite.app.table_view import StructureImages
+    from chemsuite.app.table.table_view import StructureImages
 
     images = StructureImages()
     column = reactions.workspace.table.column("Rxn")
@@ -158,7 +158,7 @@ def test_paste_an_rxn_file_into_a_reaction_cell(reactions) -> None:
 
 
 def test_column_type_menu_converts_to_reaction(window) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()

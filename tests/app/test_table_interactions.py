@@ -35,7 +35,7 @@ pytestmark = gui
 
 @pytest.fixture
 def structures(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -341,7 +341,7 @@ def test_number_format_is_display_only_and_undoable(window) -> None:
 
 
 def test_colour_dialog_gradient(window) -> None:
-    from chemsuite.app.column_colour import ColumnColourDialog
+    from chemsuite.app.table.column_colour import ColumnColourDialog
 
     table = window.workspace.table
     model = window.workspace.model
@@ -413,7 +413,7 @@ def test_chemistry_sketcher_adds_the_drawing_as_a_row(window) -> None:
 
 
 def test_frozen_columns_stay_put_and_follow_the_table(window, qtbot) -> None:
-    from chemsuite.app import session
+    from chemsuite.app.document import session
 
     table = window.workspace.table
     table.add_rows({"ID": [f"X{i}" for i in range(60)], "pIC50": ["1"] * 60}, undoable=False)
@@ -470,7 +470,7 @@ def test_frozen_columns_stay_put_and_follow_the_table(window, qtbot) -> None:
 
 
 def test_align_drawings_from_the_column_menu_and_saved_with_the_layout(structures) -> None:
-    from chemsuite.app import session
+    from chemsuite.app.document import session
 
     window = structures
     view = window.view
@@ -522,7 +522,7 @@ def test_structure_cells_preview_a_large_drawing_on_hover(structures) -> None:
 
 
 def test_short_row_numbers() -> None:
-    from chemsuite.app.table_model import short_row_number
+    from chemsuite.app.table.table_model import short_row_number
 
     assert [short_row_number(n) for n in (7, 999, 1000, 1234, 12_345, 123_456, 2_500_000)] == [
         "7",
@@ -560,7 +560,7 @@ def test_cell_selection_survives_sorting_and_row_header_selects_rows(window, qtb
 
 
 def test_row_menu_deletes_duplicates_and_freezes(window, qtbot) -> None:
-    from chemsuite.app import session
+    from chemsuite.app.document import session
 
     table = window.workspace.table
     view = window.view

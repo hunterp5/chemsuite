@@ -27,7 +27,7 @@ SMILES = ["CCO", "CCCO", "CCCCO", "c1ccccc1", "Cc1ccccc1", "CCc1ccccc1", "c1ccnc
 
 @pytest.fixture
 def chem(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -192,7 +192,7 @@ def test_cluster_dialog_uses_the_dialog_kit(chem, qtbot) -> None:
 
 def test_older_dialogs_follow_the_selection_and_close_with_the_document(chem) -> None:
     """Dialogs do not block the table, so their selected-row counts stay current."""
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = chem.workspace.table

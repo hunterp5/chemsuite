@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Application entry point: ``chemsuite [files…]`` or ``python -m chemsuite.app.main``."""
+"""Application entry point: ``chemsuite [files…]`` or ``python -m chemsuite.app.shell.main``."""
 
 from __future__ import annotations
 
@@ -40,12 +40,12 @@ def main(argv: list[str] | None = None) -> int:
     from PySide6.QtCore import QCoreApplication, qVersion
     from PySide6.QtWidgets import QApplication
 
+    from ..document.main_window import MainWindow
+    from ..table.table_view import StructureImages
     from . import graphics
     from .error_report import install_crash_handler
     from .jobs import JobRunner
-    from .main_window import MainWindow
     from .settings_hub import config_folder, settings_hub
-    from .table_view import StructureImages
 
     QCoreApplication.setApplicationName("chemsuite")  # before config_folder()
     QCoreApplication.setOrganizationName("chemsuite")

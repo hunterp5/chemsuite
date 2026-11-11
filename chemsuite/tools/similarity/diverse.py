@@ -21,8 +21,8 @@ import numpy as np
 from PySide6.QtWidgets import QCheckBox, QLineEdit, QSpinBox
 
 from chemsuite.analysis.diversity import Picks, maxmin_fingerprints, maxmin_numeric
-from chemsuite.app.dialogs import RowsChoice, ToolDialog, selected_only
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, selected_only
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.table.columns import NumberColumn
 

@@ -21,8 +21,8 @@ import numpy as np
 from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLineEdit, QSpinBox
 
 from chemsuite.analysis import clustering as cl
-from chemsuite.app.dialogs import RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
 
 from .common import FeatureChooser, fingerprint_task

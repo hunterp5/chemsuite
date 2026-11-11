@@ -92,7 +92,7 @@ def test_selected_columns_scope(window) -> None:
 def test_search_bar_starts_hidden_and_closing_clears_it(window, qtbot) -> None:
     from PySide6.QtCore import Qt
 
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     bar = window.search
@@ -139,7 +139,7 @@ def test_search_bar_searches_one_column(window) -> None:
 
 
 def test_search_bar_substructure_search(window, qtbot) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -167,7 +167,7 @@ def test_search_bar_substructure_search(window, qtbot) -> None:
 
 
 def test_search_bar_field_syntax_count_and_history(window, qtbot) -> None:
-    from chemsuite.app import session
+    from chemsuite.app.document import session
 
     bar = window.search
     bar.open()

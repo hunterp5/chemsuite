@@ -69,7 +69,7 @@ FIELD_WIDTH = 300
 #: the label column's minimum width, the same in every section of a dialog
 LABEL_WIDTH = 116
 #: the user guide, when it ships beside the code (a source checkout or an unpacked install)
-GUIDE = Path(__file__).resolve().parents[3] / "docs" / "USER_GUIDE.md"
+GUIDE = Path(__file__).resolve().parents[4] / "docs" / "USER_GUIDE.md"
 
 _FIXED_WIDTH_FIELDS = (QComboBox, QLineEdit, QAbstractSpinBox, QListWidget)
 

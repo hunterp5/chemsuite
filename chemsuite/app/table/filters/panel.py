@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 
-from ..glyphs import glyph
+from ...shell.glyphs import glyph
 from .cards import FILTER_TYPES, FilterCard, card_for, default_source, sources_for
 
 APPLY_DELAY_MS = 120

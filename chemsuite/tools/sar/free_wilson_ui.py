@@ -30,8 +30,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from chemsuite.app.dialogs import RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext, ToolPanel
+from chemsuite.app.document.tools import ToolContext, ToolPanel
+from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.mols import mol_to_blob, smiles_of
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 from chemsuite.plotting.data import numbers

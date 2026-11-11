@@ -59,8 +59,8 @@ from chemsuite.core.table.criteria import (
     ops_for,
 )
 
-from .flow_layout import FlowRow, compact
-from .pane import menu_button, pane_layout, section
+from ..widgets.flow_layout import FlowRow, compact
+from ..widgets.pane import menu_button, pane_layout, section
 from .structure_search import QueryInput, StructureSearcher
 
 FILTER_KEY = "advanced"

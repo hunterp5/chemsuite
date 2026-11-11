@@ -33,8 +33,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from chemsuite.app.flow_layout import FlowRow, compact, field
-from chemsuite.app.tools import ToolContext, ToolPanel
+from chemsuite.app.document.tools import ToolContext, ToolPanel
+from chemsuite.app.widgets.flow_layout import FlowRow, compact, field
 from chemsuite.core.table import Changed
 from chemsuite.plotting.data import number_columns, numbers, shown_oids
 from chemsuite.sar.matrix import AGGREGATES, SarMatrix, build_matrix

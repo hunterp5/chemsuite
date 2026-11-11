@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [project.gui-scripts]
-chemsuite = "chemsuite.app.main:main"
+chemsuite = "chemsuite.app.shell.main:main"
 
 [project.optional-dependencies]
 confab = ["openbabel>=3.2.0"]
@@ -45,7 +45,7 @@ include = ["chemsuite*"]
 "chemsuite.ionisation" = ["data/*"]  # MolGpKa weights, site templates, licence
 "chemsuite.sketch" = ["data/*"]  # Ketcher licence and notice; templates from P2
 "chemsuite.protein" = ["data/*"]  # residue templates from the wwPDB CCD (public domain)
-"chemsuite.app.molview" = ["shaders/*"]  # 3D Viewer shaders: sources and compiled .qsb
+"chemsuite.app.render3d" = ["shaders/*"]  # 3D Viewer shaders: sources and compiled .qsb
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

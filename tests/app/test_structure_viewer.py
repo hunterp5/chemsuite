@@ -57,7 +57,7 @@ def _conformers(smiles: str, count: int) -> Chem.Mol:
 @pytest.fixture
 def chem(window):
     """Rows A (butanol, 3 conformers), B (benzene, 1 conformer) and C (piperidine, 2D only)."""
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.mols import mol_to_blob
     from chemsuite.core.table import Table
     from chemsuite.core.table.columns import StructureColumn
@@ -255,7 +255,7 @@ def test_each_row_browsed_to_is_centred_and_fitted(chem, qtbot) -> None:
 
 
 def test_state_round_trip(chem, qtbot) -> None:
-    from chemsuite.app.tools import ToolContext
+    from chemsuite.app.document.tools import ToolContext
     from chemsuite.app.viewer.panel import BY_ROW
     from chemsuite.molview.geometry import SPACEFILL
     from chemsuite.tools.viewer.tool import open_viewer
@@ -276,7 +276,7 @@ def test_state_round_trip(chem, qtbot) -> None:
 
 
 def test_state_survives_save_and_reopen(chem, qtbot, tmp_path) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     panel = _open(chem, qtbot, 1)
@@ -302,7 +302,7 @@ def test_state_survives_save_and_reopen(chem, qtbot, tmp_path) -> None:
 @pytest.fixture
 def browser(window, qtbot):
     """Data ▸ Browser on rows A–D (D's SMILES is invalid), with a number column."""
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -571,7 +571,7 @@ from PySide6.QtWidgets import QApplication, QHBoxLayout, QWidget
 from rdkit import Chem
 from rdkit.Chem import AllChem
 app = QApplication([])
-from chemsuite.app.molview.renderer import MolRenderer
+from chemsuite.app.render3d.renderer import MolRenderer
 from chemsuite.app.plots.view3d import View3D
 from chemsuite.molview.geometry import SPACEFILL, combine, molecule_part
 mol = Chem.AddHs(Chem.MolFromSmiles("O=C=O"))
@@ -648,7 +648,7 @@ def test_molecules_and_3d_plots_draw_side_by_side() -> None:
 
 
 def test_3d_known_unavailable_at_start_up_is_never_tried(chem, qtbot, gpu, monkeypatch) -> None:
-    from chemsuite.app import graphics
+    from chemsuite.app.shell import graphics
     from chemsuite.app.viewer.panel import StructureViewer
 
     monkeypatch.setattr(StructureViewer, "_failed", gpu)

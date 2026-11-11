@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.selectivity import looks_like_assay
-from chemsuite.app.tools import ToolContext, ToolPanel
+from chemsuite.app.document.tools import ToolContext, ToolPanel
 from chemsuite.core.mols import mol_from_blob, mol_from_text
 from chemsuite.plotting.data import number_columns
 from chemsuite.sar.rgroups import Decomposition, decompose, parse_core, suggest_core
@@ -119,11 +119,11 @@ def cell_mol(cell):
 class CoreChooser(QWidget):
     """A structure column and a core (typed, or suggested from the selected compounds).
 
-    Its rows go into a dialog *section* (see ``chemsuite.app.dialogs``).
+    Its rows go into a dialog *section* (see ``chemsuite.app.widgets.dialogs``).
     """
 
     def __init__(self, ctx: ToolContext, section) -> None:
-        from chemsuite.app.dialogs import inline
+        from chemsuite.app.widgets.dialogs import inline
 
         super().__init__()
         self.ctx = ctx

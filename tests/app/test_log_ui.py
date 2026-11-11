@@ -22,7 +22,7 @@ import logging
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMessageBox
 
-from chemsuite.app.log_ui import LogWindow
+from chemsuite.app.shell.log_ui import LogWindow
 from chemsuite.core.logbook import Logbook, LogbookHandler
 
 from .conftest import gui
@@ -33,10 +33,13 @@ pytestmark = gui
 def _filled() -> Logbook:
     book = Logbook()
     book.add(logging.DEBUG, "chemsuite.io", "reading header")
-    book.add(logging.INFO, "chemsuite.app.jobs", "queued: Clustering", job=3)
+    book.add(logging.INFO, "chemsuite.app.shell.jobs", "queued: Clustering", job=3)
     book.add(logging.WARNING, "chemsuite.io", "2 rows have no structure")
     book.add(
-        logging.ERROR, "chemsuite.app.jobs", "failed: Hansch", details="Traceback…\nValueError"
+        logging.ERROR,
+        "chemsuite.app.shell.jobs",
+        "failed: Hansch",
+        details="Traceback…\nValueError",
     )
     return book
 
@@ -121,7 +124,7 @@ def test_crash_handler_shows_report_from_a_thread(qtbot, monkeypatch) -> None:
     import sys
     import threading
 
-    from chemsuite.app import error_report
+    from chemsuite.app.shell import error_report
 
     shown: list[tuple[str, str]] = []
     monkeypatch.setattr(

@@ -22,7 +22,7 @@ from collections.abc import Callable
 import numpy as np
 
 from chemsuite.analysis.embedding import Features
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
 from chemsuite.tools.similarity.common import FeatureChooser, fingerprint_task
 
 

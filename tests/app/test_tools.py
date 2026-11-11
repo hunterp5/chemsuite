@@ -26,7 +26,7 @@ pytestmark = gui
 
 @pytest.fixture
 def chem(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -78,14 +78,14 @@ def test_tool_enabled_once_there_are_structures(chem) -> None:
 
 
 def test_missing_requirement_disables_tool() -> None:
-    from chemsuite.app.tools import Tool
+    from chemsuite.app.document.tools import Tool
 
     tool = Tool("x", "X", ("Chemistry",), open=lambda ctx: None, requires=("no_such_module_q",))
     assert tool.missing() == ["no_such_module_q"]
 
 
 def test_context_skips_rows_deleted_while_running(chem) -> None:
-    from chemsuite.app.tools import ToolContext
+    from chemsuite.app.document.tools import ToolContext
 
     ctx = ToolContext(chem)
     table = ctx.table

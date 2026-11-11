@@ -27,8 +27,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from chemsuite.app.dialogs import RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext, ToolPanel
+from chemsuite.app.document.tools import ToolContext, ToolPanel
+from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import numbers
 from chemsuite.sar.sali import Cliffs, sali_pairs

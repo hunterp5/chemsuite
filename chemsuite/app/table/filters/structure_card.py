@@ -44,7 +44,7 @@ from chemsuite.analysis.structure_search import (
 from chemsuite.core.table import Table
 from chemsuite.core.table.filters import Filter, OidFilter
 
-from ..jobs import Job
+from ...shell.jobs import Job
 from ..structure_search import QueryInput, StructureSearcher, highlight_for
 from .cards import FilterCard
 

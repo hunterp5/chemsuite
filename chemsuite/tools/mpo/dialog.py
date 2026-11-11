@@ -37,8 +37,8 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.mpo import COMBINE, SHAPES, Desirability, MpoProfile
-from chemsuite.app.dialogs import RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import number_columns, numbers
 

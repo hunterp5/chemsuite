@@ -32,8 +32,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog, inline
-from chemsuite.app.tools import ToolContext, ToolPanel
+from chemsuite.app.document.tools import ToolContext, ToolPanel
+from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog, inline
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import numbers
 from chemsuite.sar.hansch import (

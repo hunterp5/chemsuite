@@ -82,9 +82,9 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
     from PySide6.QtCore import QCoreApplication, QEventLoop
     from PySide6.QtWidgets import QApplication
 
-    from chemsuite.app.jobs import JobRunner
-    from chemsuite.app.main_window import MainWindow, Workspace
-    from chemsuite.app.table_view import StructureImages
+    from chemsuite.app.document.main_window import MainWindow, Workspace
+    from chemsuite.app.shell.jobs import JobRunner
+    from chemsuite.app.table.table_view import StructureImages
     from chemsuite.core import logbook
     from chemsuite.core.io.load import load_table, parse_pending_structures
 
@@ -224,7 +224,7 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
         dialog.reject()
     import threading
 
-    from chemsuite.app.tools import ToolContext
+    from chemsuite.app.document.tools import ToolContext
     from chemsuite.core.jobs import check
 
     release = threading.Event()
@@ -282,7 +282,7 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
     settings.grab().save(str(out / "settings-dark.png"))
     window.grab().save(str(out / "main-dark.png"))
     settings.reject()
-    from chemsuite.app.custom_theme_dialog import CustomThemeDialog
+    from chemsuite.app.shell.custom_theme_dialog import CustomThemeDialog
 
     editor = CustomThemeDialog({}, None, window)
     editor.show()

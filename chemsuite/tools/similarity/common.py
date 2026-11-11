@@ -36,7 +36,7 @@ from chemsuite.analysis.fingerprints import (
     Fingerprints,
 )
 from chemsuite.analysis.fingerprints import fingerprint_task as cached_fingerprint_task
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
 from chemsuite.plotting.data import number_columns, numbers
 
 LABEL_COLUMNS = ("ID", "Name", "Title", "Compound", "Compound ID")
@@ -71,8 +71,8 @@ class FeatureChooser(QWidget):
     """Fingerprints of a structure column, a set of number columns, or (with *both*) the two
     together.
 
-    Its rows go into a dialog *section* (see ``chemsuite.app.dialogs``), sharing the dialog's
-    label column, and "Compare by" is a segmented choice.
+    Its rows go into a dialog *section* (see ``chemsuite.app.widgets.dialogs``), sharing the
+    dialog's label column, and "Compare by" is a segmented choice.
 
     With *both* there is no "Compare by": the Fingerprint field (which has a "None" choice) and
     the number columns are always shown, and any combination of the two is used.
@@ -99,7 +99,7 @@ class FeatureChooser(QWidget):
             self.use_fingerprints = QRadioButton()
             self.use_numbers = QRadioButton()
         else:
-            from chemsuite.app.dialogs import Segmented
+            from chemsuite.app.widgets.dialogs import Segmented
 
             self.compare = Segmented(
                 (("fingerprints", "Fingerprints"), ("numbers", "Number columns"))

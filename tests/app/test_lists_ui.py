@@ -126,7 +126,7 @@ def test_lists_are_saved_with_the_document(window, monkeypatch, tmp_path: Path) 
 
 
 def test_opening_a_document_restores_lists(qtbot, window, tmp_path: Path) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.document import save_document
     from chemsuite.core.table import Table
 

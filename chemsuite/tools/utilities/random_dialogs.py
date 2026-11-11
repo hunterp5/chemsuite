@@ -33,8 +33,8 @@ from chemsuite.analysis.random_values import (
     random_sample,
     sample_size,
 )
-from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.core.lists import ListError
 
 

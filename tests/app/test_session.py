@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""A saved document reopens as it was left (``chemsuite.app.session``)."""
+"""A saved document reopens as it was left (``chemsuite.app.document.session``)."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ TOOLS = Path(__file__).parents[2] / "chemsuite" / "tools"
 
 @pytest.fixture
 def chem(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -54,7 +54,7 @@ def chem(window):
 
 
 def reopen(window, qtbot, path: Path) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     assert window._save_to(path)
@@ -66,7 +66,7 @@ def reopen(window, qtbot, path: Path) -> None:
 
 @pytest.mark.parametrize("open_when_saved", [False, True])
 def test_filters_pane_reopens_as_it_was(chem, qtbot, tmp_path, open_when_saved) -> None:
-    from chemsuite.app.dock_layout import is_open
+    from chemsuite.app.document.dock_layout import is_open
 
     chem.filters.add_filter("Series").set_checked({"A"})
     chem.filters.apply_now()
@@ -93,7 +93,7 @@ def test_selection_current_cell_and_scroll_are_kept(chem, qtbot, tmp_path) -> No
 
 
 def test_damaged_session_parts_are_skipped(chem) -> None:
-    from chemsuite.app import session
+    from chemsuite.app.document import session
 
     session.restore(chem, {part.key: "junk" for part in session.PARTS})
     session.restore(chem, {"view": {"selected": ["x", 10**9], "current": [1], "top": "a"}})
@@ -103,7 +103,7 @@ def test_damaged_session_parts_are_skipped(chem) -> None:
 def _panel_classes() -> dict[str, str]:
     """Panel classes in chemsuite.tools with a tool id of their own: tool_id -> class name
     (a panel that stands in for others, such as RerunPanel, takes theirs)."""
-    from chemsuite.app.tools import ToolPanel
+    from chemsuite.app.document.tools import ToolPanel
 
     found = {}
     for info in pkgutil.walk_packages([str(TOOLS)], "chemsuite.tools."):
@@ -122,7 +122,7 @@ def _panel_classes() -> dict[str, str]:
 def test_every_tool_panel_is_saved_with_the_document() -> None:
     """A tool that opens a panel must save it: the panel class has ``tool_id`` and
     ``state()``, and the tool with that id has ``restore``. New panels are caught here."""
-    from chemsuite.app.main_window import registered_tools
+    from chemsuite.app.document.main_window import registered_tools
 
     tools = {tool.id: tool for tool in registered_tools()}
     panels = _panel_classes()

@@ -29,7 +29,7 @@ AROMATICS = [f"c1ccccc1{'C' * k}" for k in range(10)]
 
 @pytest.fixture
 def chem(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     rng = np.random.default_rng(0)

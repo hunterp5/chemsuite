@@ -23,8 +23,8 @@ import numpy as np
 from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QSpinBox
 
 from chemsuite.analysis import embedding as em
-from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.tools.sar.common import activity_combo
 from chemsuite.tools.similarity.common import FeatureChooser

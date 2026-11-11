@@ -45,7 +45,7 @@ from PySide6.QtWidgets import QToolTip, QWidget
 from rdkit import Chem
 from rdkit.Chem.Draw import rdMolDraw2D
 
-from chemsuite.app.theme import is_dark
+from chemsuite.app.shell.theme import is_dark
 from chemsuite.sketch import convert, edits, reaction, render, stereo, valence
 from chemsuite.sketch.edits import Change, History
 from chemsuite.sketch.model import (
@@ -416,7 +416,7 @@ class SketchCanvas(QWidget):
             self.erase_selection("Cut")
 
     def paste(self) -> bool:
-        from chemsuite.app.structure_clipboard import clipboard_structure_text
+        from chemsuite.app.table.structure_clipboard import clipboard_structure_text
 
         text = clipboard_structure_text()
         incoming = reaction.from_text(text) if reaction.looks_like_reaction(text) else None

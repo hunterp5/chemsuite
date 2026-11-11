@@ -30,8 +30,8 @@ from pathlib import Path
 
 import numpy as np
 
-from chemsuite.app.jobs import QUICK
-from chemsuite.app.tools import Tool, ToolContext
+from chemsuite.app.document.tools import Tool, ToolContext
+from chemsuite.app.shell.jobs import QUICK
 from chemsuite.core.table import Asset, PutAsset
 from chemsuite.protein import fetch as pdb
 from chemsuite.protein import io, ligands, profile, store

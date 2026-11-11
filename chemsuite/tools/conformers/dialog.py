@@ -28,8 +28,8 @@ from PySide6.QtWidgets import (
     QSpinBox,
 )
 
-from chemsuite.app.dialogs import RowsChoice, ToolDialog, inline
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, inline
 from chemsuite.conformers.etkdg import ConformerSettings, generate_conformers
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 

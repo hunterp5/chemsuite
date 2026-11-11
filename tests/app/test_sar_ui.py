@@ -34,7 +34,7 @@ CORE = "[*:1]c1ccc(C(N)=O)cc1[*:2]"
 @pytest.fixture
 def series(window):
     """Benzamides with additive activity; Cl/F is not made. Plus one compound off-series."""
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     smiles, ids, activity = [], [], []

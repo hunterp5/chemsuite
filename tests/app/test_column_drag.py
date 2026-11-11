@@ -23,7 +23,7 @@ from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
-from chemsuite.app.table_view import EDGE_MAX_SPEED, EDGE_MIN_SPEED, edge_speed
+from chemsuite.app.table.table_view import EDGE_MAX_SPEED, EDGE_MIN_SPEED, edge_speed
 
 from .conftest import gui
 

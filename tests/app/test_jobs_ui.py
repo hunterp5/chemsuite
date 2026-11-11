@@ -22,8 +22,8 @@ import threading
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMessageBox
 
-from chemsuite.app.jobs import FAILED, QUEUE, RUNNING
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.shell.jobs import FAILED, QUEUE, RUNNING
 from chemsuite.core.jobs import check
 
 from .conftest import gui
@@ -75,7 +75,7 @@ def test_tool_job_runs_in_background_and_records_its_result(window, qtbot) -> No
 
 
 def test_result_dropped_when_document_replaced(window, qtbot) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     ctx = ToolContext(window)
@@ -251,7 +251,7 @@ def test_jobs_window_removes_ended_jobs_one_by_one(window, qtbot) -> None:
 
 
 def test_notification_commands_pass_text_as_arguments(monkeypatch) -> None:
-    from chemsuite.app import notify
+    from chemsuite.app.shell import notify
 
     title, message = 'Conformers "x" (a.csd)', 'Done" & do shell script "rm -rf ~'
     argv = notify.command(title, message, "darwin")
@@ -271,9 +271,9 @@ def test_notification_commands_pass_text_as_arguments(monkeypatch) -> None:
 
 
 def test_a_long_job_ending_unseen_notifies_unless_turned_off(window, monkeypatch) -> None:
-    from chemsuite.app import notify
-    from chemsuite.app.jobs import Job
-    from chemsuite.app.settings_hub import settings_hub
+    from chemsuite.app.shell import notify
+    from chemsuite.app.shell.jobs import Job
+    from chemsuite.app.shell.settings_hub import settings_hub
 
     posted = []
     monkeypatch.setattr(notify, "notify", lambda title, text: posted.append((title, text)))

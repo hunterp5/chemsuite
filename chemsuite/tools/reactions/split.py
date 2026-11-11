@@ -22,8 +22,8 @@ import numpy as np
 from PySide6.QtWidgets import QCheckBox, QComboBox
 
 from chemsuite.analysis.reactions import POOL_MIN_ROWS, SPLIT_ROLES, split_cells
-from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.core.mols import parse_structure
 from chemsuite.core.table.columns import StructureColumn
 

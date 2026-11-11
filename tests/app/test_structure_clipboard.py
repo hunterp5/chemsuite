@@ -33,7 +33,7 @@ ASPIRIN_SMILES = "CC(=O)Oc1ccccc1C(=O)O"
 
 @pytest.fixture
 def structures(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -54,14 +54,14 @@ def set_clipboard_molfile(smiles: str) -> str:
 
 
 def test_clipboard_reads_a_molfile_before_plain_text(qapp) -> None:
-    from chemsuite.app.structure_clipboard import clipboard_structure_text
+    from chemsuite.app.table.structure_clipboard import clipboard_structure_text
 
     block = set_clipboard_molfile(ASPIRIN_SMILES)
     assert clipboard_structure_text() == block
 
 
 def test_mdlct_clipboard_format() -> None:
-    from chemsuite.app.structure_clipboard import _mdlct_to_text
+    from chemsuite.app.table.structure_clipboard import _mdlct_to_text
 
     lines = ["", "  ChemDraw", "", "  0  0  0  0  0  0  0  0  0  0999 V2000", "M  END"]
     data = b"".join(bytes([len(line)]) + line.encode() for line in lines)

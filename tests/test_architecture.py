@@ -59,17 +59,17 @@ def _over(found: dict[str, int], budget: dict[str, int], default: int = 0) -> li
 
 # -- rules ----------------------------------------------------------------------------------------
 
-#: The app modules a tool may import. ToolContext (chemsuite.app.tools) is the API; the rest are
-#: shared widgets. Adding one here is an architecture decision: say why in the commit.
+#: The app modules a tool may import. ToolContext (chemsuite.app.document.tools) is the API; the
+#: rest are shared widgets. Adding one here is an architecture decision: say why in the commit.
 TOOL_APP_IMPORTS = {
-    "chemsuite.app.tools",  # Tool, ToolContext: the tool API
-    "chemsuite.app.jobs",  # lane names
-    "chemsuite.app.dialogs",  # the dialog kit every tool dialog is built on
-    "chemsuite.app.dialogs.kit",
-    "chemsuite.app.flow_layout",  # compact combo boxes for narrow panels
-    "chemsuite.app.glyphs",  # toolbar icons
-    "chemsuite.app.settings_hub",  # read-only settings (fingerprint defaults)
-    "chemsuite.app.structure_copy",  # Copy as SMILES / molfile
+    "chemsuite.app.document.tools",  # Tool, ToolContext: the tool API
+    "chemsuite.app.shell.jobs",  # lane names
+    "chemsuite.app.widgets.dialogs",  # the dialog kit every tool dialog is built on
+    "chemsuite.app.widgets.dialogs.kit",
+    "chemsuite.app.widgets.flow_layout",  # compact combo boxes for narrow panels
+    "chemsuite.app.shell.glyphs",  # toolbar icons
+    "chemsuite.app.shell.settings_hub",  # read-only settings (fingerprint defaults)
+    "chemsuite.app.table.structure_copy",  # Copy as SMILES / molfile
     "chemsuite.app.sketcher",  # the structure editor, opened by tools that draw
     "chemsuite.app.plots.panel",  # plots opened by analysis tools
     "chemsuite.app.viewer.panel",  # the Structure Viewer, opened by its tool
@@ -178,9 +178,9 @@ def test_fallbacks_and_blind_excepts_do_not_grow() -> None:
 #: of the window) rather than raise its budget.
 MAX_LINES = 1000
 LONG_FILES = {
-    "chemsuite/app/main_window.py": 1653,
+    "chemsuite/app/document/main_window.py": 1653,
     "chemsuite/app/sketcher/canvas.py": 1341,
-    "chemsuite/app/table_view.py": 1139,
+    "chemsuite/app/table/table_view.py": 1139,
     "chemsuite/app/viewer/panel.py": 1021,
 }
 

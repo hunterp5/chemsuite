@@ -27,7 +27,7 @@ pytestmark = gui
 
 @pytest.fixture
 def data(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()

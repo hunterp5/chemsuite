@@ -48,7 +48,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..flow_layout import compact
+from ..widgets.flow_layout import compact
 
 #: when cards show: key -> menu title
 WHEN = {

@@ -51,8 +51,8 @@ from chemsuite.core.table.columns import REACTION, STRUCTURE, Column, StructureC
 from chemsuite.core.table.history import Op
 from chemsuite.plotting.data import scope_oids
 
-from .jobs import QUEUE, Job
-from .widgets.panel import ToolPanel as ToolPanel  # what a tool's panel is built on
+from ..shell.jobs import QUEUE, Job
+from ..widgets.panel import ToolPanel as ToolPanel  # what a tool's panel is built on
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -324,7 +324,7 @@ class ToolContext:
 
     def cache_folder(self, name: str) -> Path:
         """A folder (not yet created) for downloads kept between sessions, such as ``ccd``."""
-        from .settings_hub import cache_folder
+        from ..shell.settings_hub import cache_folder
 
         return cache_folder() / name
 

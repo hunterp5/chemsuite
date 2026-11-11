@@ -28,8 +28,8 @@ from chemsuite.analysis.selectivity import (
     selectivity,
     selectivity_name,
 )
-from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import number_columns, numbers
 

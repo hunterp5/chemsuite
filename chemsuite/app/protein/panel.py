@@ -50,7 +50,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from chemsuite.app import graphics
+from chemsuite.app.shell import graphics
 from chemsuite.app.widgets.panel import ToolPanel
 from chemsuite.core.table import Table
 from chemsuite.molview.camera import Camera

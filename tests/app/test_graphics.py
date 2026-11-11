@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from chemsuite.app import graphics
+from chemsuite.app.shell import graphics
 from chemsuite.core.settings import valid
 
 from .conftest import gui

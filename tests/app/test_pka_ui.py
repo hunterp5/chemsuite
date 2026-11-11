@@ -29,7 +29,7 @@ SMILES = ["CC(=O)O", "C1CCNCC1", "NCC(=O)O", "c1ccccc1", ""]
 
 @pytest.fixture
 def chem(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()

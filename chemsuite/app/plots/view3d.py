@@ -71,7 +71,7 @@ _FLOAT4 = QRhiVertexInputAttribute.Format.Float4
 
 
 def _shader(name: str) -> QShader:
-    data = (files("chemsuite.app.molview") / "shaders" / f"{name}.qsb").read_bytes()
+    data = (files("chemsuite.app.render3d") / "shaders" / f"{name}.qsb").read_bytes()
     return QShader.fromSerialized(data)
 
 

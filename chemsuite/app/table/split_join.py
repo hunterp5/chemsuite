@@ -48,7 +48,7 @@ from chemsuite.core.table.split_join import (
     unescape,
 )
 
-from .dialogs import FIELD_WIDTH, LABEL_WIDTH, RowsChoice, ToolDialog, inline
+from ..widgets.dialogs import FIELD_WIDTH, LABEL_WIDTH, RowsChoice, ToolDialog, inline
 
 PREVIEW_ROWS = 8
 SPLIT_TITLES = {

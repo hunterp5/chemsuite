@@ -28,7 +28,7 @@ from PySide6.QtWidgets import QWidget
 
 from chemsuite.core.depict import alignment_core
 
-from .dialogs import FIELD_WIDTH, ToolDialog
+from ..widgets.dialogs import FIELD_WIDTH, ToolDialog
 from .structure_search import QueryInput
 
 

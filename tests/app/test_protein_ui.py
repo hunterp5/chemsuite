@@ -63,8 +63,8 @@ def action_in(menu, text: str):
 
 @pytest.fixture
 def panel(qtbot, table, monkeypatch):
-    from chemsuite.app import graphics
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import graphics
 
     monkeypatch.setattr(graphics, "_problem", None)
     widget = ProteinPanel(table)
@@ -234,9 +234,9 @@ def test_show_hide_and_colour_act_on_the_selection(panel, qtbot) -> None:
 def test_hydrogens_follow_their_atom_and_the_choice(qtbot, monkeypatch) -> None:
     from PySide6.QtWidgets import QMenu
 
-    from chemsuite.app import graphics
     from chemsuite.app.protein.menus import fill_hydrogens
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import graphics
 
     monkeypatch.setattr(graphics, "_problem", None)
     table = Table()
@@ -417,8 +417,8 @@ def test_around_adds_what_lies_near_the_selection(panel) -> None:
 
 
 def test_alternate_locations_can_be_switched(qtbot, monkeypatch) -> None:
-    from chemsuite.app import graphics
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import graphics
 
     monkeypatch.setattr(graphics, "_problem", None)
     t = Table()
@@ -438,8 +438,8 @@ def test_alternate_locations_can_be_switched(qtbot, monkeypatch) -> None:
 
 
 def test_the_panel_reopens_as_it_was(panel, table, qtbot, monkeypatch) -> None:
-    from chemsuite.app import graphics
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import graphics
 
     session = panel.session
     session.select_text("chain I")
@@ -553,8 +553,8 @@ class _Runner:
 
 @pytest.fixture
 def deferring(qtbot, table, monkeypatch):
-    from chemsuite.app import graphics
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import graphics
 
     monkeypatch.setattr(graphics, "_problem", None)
     runner = _Runner()
@@ -612,8 +612,8 @@ def test_closing_the_viewer_cancels_its_work(deferring) -> None:
 
 
 def test_state_for_a_protein_not_loaded_yet_waits_for_it(qtbot, monkeypatch) -> None:
-    from chemsuite.app import graphics
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import graphics
     from chemsuite.protein.display import runs
 
     monkeypatch.setattr(graphics, "_problem", None)
@@ -634,8 +634,8 @@ def test_bad_state_is_ignored(panel) -> None:
 
 
 def test_without_3d_the_view_says_why_and_the_rest_works(qtbot, table, monkeypatch) -> None:
-    from chemsuite.app import graphics
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import graphics
 
     monkeypatch.setattr(graphics, "_problem", graphics.TURNED_OFF)
     panel = ProteinPanel(table)
@@ -650,7 +650,7 @@ def test_without_3d_the_view_says_why_and_the_rest_works(qtbot, table, monkeypat
 
 
 def test_a_view_that_fails_when_drawn_is_replaced(panel, monkeypatch) -> None:
-    from chemsuite.app import graphics
+    from chemsuite.app.shell import graphics
 
     monkeypatch.setattr(graphics, "_problem", None)
     panel.view.failed.emit()
@@ -756,8 +756,8 @@ def test_focus_draws_a_skin_over_the_pocket(panel) -> None:
 
 
 def test_a_saved_focus_brings_its_pocket_skin_back(panel, table, qtbot, monkeypatch) -> None:
-    from chemsuite.app import graphics
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import graphics
 
     s = structure("1atp.cif.gz")
     panel.session.focus("1ATP", int(s.residue_of[_atp_atom("N6")]))
@@ -823,8 +823,8 @@ def test_measuring_takes_the_clicks(panel) -> None:
 
 
 def test_pocket_work_reopens_as_it_was(panel, table, qtbot, monkeypatch) -> None:
-    from chemsuite.app import graphics
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import graphics
 
     session = panel.session
     atp = int(structure("1atp.cif.gz").residue_of[_atp_atom("N6")])
@@ -880,7 +880,7 @@ def test_the_viewers_own_keys_while_focus_is_inside(panel, qtbot) -> None:
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QGuiApplication
 
-    from chemsuite.app.document_windows import ToolWindow
+    from chemsuite.app.shell.windows import ToolWindow
 
     window = ToolWindow(panel, "Protein Viewer", name=lambda: "", menu_bar=panel.menu_bar)
     with qtbot.waitActive(window):  # a shortcut needs its window active
@@ -946,9 +946,9 @@ def test_closing_the_viewer_window_lets_go_of_the_document(qtbot, table, monkeyp
     raised on the next table change, and the listeners after it never heard of the change."""
     from PySide6.QtCore import QCoreApplication, QEvent
 
-    from chemsuite.app import graphics
-    from chemsuite.app.document_windows import ToolWindow
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import graphics
+    from chemsuite.app.shell.windows import ToolWindow
 
     monkeypatch.setattr(graphics, "_problem", None)
     stopped = []

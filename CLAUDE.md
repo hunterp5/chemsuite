@@ -32,7 +32,7 @@ change pass without asking the user: add a `ToolContext` helper or split the fil
   dialog passes `keep_partial=True` to `ctx.run`. Not for whole-dataset results (clustering,
   embeddings, model fits).
 - **Documents reopen exactly as saved.** New window state registers as a `Part` in
-  `chemsuite/app/session.py`; tool panels need `tool_id`, `state()` and a `restore`.
+  `chemsuite/app/document/session.py`; tool panels need `tool_id`, `state()` and a `restore`.
 - **Big new features start in plan mode** (required for the conformer work, ROADMAP §7.0b, and
   each protein phase, §7a).
 
@@ -73,7 +73,7 @@ changes.
   (`Section.row(..., help=...)`). The only text a dialog shows is a problem that blocks running
   (`ToolDialog.problem()`, marked ⚠). Optional settings go in a folded section
   (`self.section("More Options", collapsed=True)`).
-- **Every tool dialog uses the kit** in `chemsuite/app/dialogs/kit.py` (`ToolDialog` with
+- **Every tool dialog uses the kit** in `chemsuite/app/widgets/dialogs/kit.py` (`ToolDialog` with
   Input / Method / Output `Section`s, `RowsChoice`, `OutputChoice`; non-modal via
   `ctx.show_dialog`).
 - **Polish:** native look (system fonts and controls, 8/12/20 px spacing). Fix freely, show
@@ -97,6 +97,6 @@ changes.
 - Keep the repo and venv out of OneDrive/iCloud-synced folders (sync hid `.venv` files and Qt
   could not find its plugins).
 - 3D draws with Direct3D 11 on Windows (WARP software fallback), Metal on macOS.
-  `chemsuite/app/graphics.py` checks 3D once at start-up.
+  `chemsuite/app/shell/graphics.py` checks 3D once at start-up.
 - Text files are LF on both systems (`.gitattributes`). `samples/` is local test data and is
   not committed.

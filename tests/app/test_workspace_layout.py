@@ -33,7 +33,7 @@ BOTTOM = Qt.DockWidgetArea.BottomDockWidgetArea
 
 @pytest.fixture
 def data(window, qtbot):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -58,7 +58,7 @@ def geometry(dock):
 
 
 def test_new_panels_tab_and_split_below_stacks_them(data, qtbot):
-    from chemsuite.app import dock_layout
+    from chemsuite.app.document import dock_layout
 
     first, second = two_plots(data)
     assert second in data.tabifiedDockWidgets(first)
@@ -71,7 +71,7 @@ def test_new_panels_tab_and_split_below_stacks_them(data, qtbot):
 
 
 def test_split_beside_a_pane_that_has_tabs_keeps_its_tabs(data, qtbot):
-    from chemsuite.app import dock_layout
+    from chemsuite.app.document import dock_layout
 
     first, second = two_plots(data)
     data.open_tool("scatter")
@@ -84,7 +84,7 @@ def test_split_beside_a_pane_that_has_tabs_keeps_its_tabs(data, qtbot):
 
 
 def test_arrange_all_and_move_to_a_side(data, qtbot):
-    from chemsuite.app import dock_layout
+    from chemsuite.app.document import dock_layout
 
     first, second = two_plots(data)
     assert dock_layout.arrange(data, dock_layout.SIDE) == 2
@@ -100,7 +100,7 @@ def test_arrange_all_and_move_to_a_side(data, qtbot):
 
 
 def test_arrange_menu_lists_the_other_panes(data):
-    from chemsuite.app import dock_layout
+    from chemsuite.app.document import dock_layout
 
     first, second = two_plots(data)
     menu = QMenu()
@@ -116,8 +116,8 @@ def test_arrange_menu_lists_the_other_panes(data):
 
 
 def test_layout_widths_and_search_are_saved_with_the_document(data, qtbot, tmp_path):
-    from chemsuite.app import dock_layout
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document import dock_layout
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     first, second = two_plots(data)
@@ -148,7 +148,7 @@ def test_layout_widths_and_search_are_saved_with_the_document(data, qtbot, tmp_p
 
 
 def test_damaged_layout_is_ignored(data):
-    from chemsuite.app import dock_layout
+    from chemsuite.app.document import dock_layout
 
     dock_layout.restore(data, {"docks": "%%%", "widths": {"MW": "x"}, "search": 3})
     dock_layout.restore(data, "junk")
@@ -158,7 +158,7 @@ def test_tabbed_panes_show_their_tabs_in_the_header(data, qtbot):
     from PySide6.QtCore import QPointF
     from PySide6.QtWidgets import QTabBar
 
-    from chemsuite.app import dock_layout
+    from chemsuite.app.document import dock_layout
 
     first, second = two_plots(data)
     qtbot.waitUntil(lambda: second.title_bar.tabs.isVisible())
@@ -188,7 +188,7 @@ def test_tabbed_panes_show_their_tabs_in_the_header(data, qtbot):
 
 
 def test_header_tabs_share_the_width_when_crowded():
-    from chemsuite.app.panel_dock import _fit
+    from chemsuite.app.document.panel_dock import _fit
 
     assert _fit([50, 60], 200, 44) == [50, 60]
     fitted = _fit([200, 60, 100], 240, 44)
@@ -196,8 +196,8 @@ def test_header_tabs_share_the_width_when_crowded():
 
 
 def test_splitter_positions_are_saved_with_the_document(data, qtbot, tmp_path):
-    from chemsuite.app import dock_layout
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document import dock_layout
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     data.resize(1400, 900)
@@ -228,7 +228,7 @@ def right_edge(dock):
 
 
 def test_filters_stay_pinned_right_at_a_fixed_width(data, qtbot):
-    from chemsuite.app import dock_layout
+    from chemsuite.app.document import dock_layout
 
     data.filter_column("MW")
     first, second = two_plots(data)  # opened after Filters
@@ -260,7 +260,7 @@ def test_filters_stay_pinned_right_at_a_fixed_width(data, qtbot):
 
 def test_a_first_panel_takes_half_the_window_beside_filters(window, qtbot) -> None:
     """Re-pinning Filters on the right used to squeeze a new panel to a sliver."""
-    from chemsuite.app.main_window import PANEL_MIN_WIDTH
+    from chemsuite.app.document.main_window import PANEL_MIN_WIDTH
 
     window.resize(1400, 900)
     window.show()

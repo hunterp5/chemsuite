@@ -40,9 +40,9 @@ def main(argv: list[str]) -> int:
     from PySide6.QtWidgets import QApplication
 
     app = QApplication([argv[0]])
-    from chemsuite.app import theme
-    from chemsuite.app.document_windows import ToolWindow
     from chemsuite.app.protein.panel import ProteinPanel
+    from chemsuite.app.shell import theme
+    from chemsuite.app.shell.windows import ToolWindow
     from chemsuite.core.settings import DARK, LIGHT, Appearance
     from chemsuite.core.table import Asset, PutAsset, Table
     from chemsuite.protein import io, ligands

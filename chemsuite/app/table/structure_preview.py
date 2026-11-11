@@ -27,7 +27,7 @@ from rdkit import Chem
 
 from chemsuite.core.depict import render_png
 
-from .theme import is_dark
+from ..shell.theme import is_dark
 
 #: logical size of the drawing in the tooltip
 PREVIEW_WIDTH = 360

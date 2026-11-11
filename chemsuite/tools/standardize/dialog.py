@@ -22,8 +22,8 @@ import numpy as np
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, QWidget
 
 from chemsuite.analysis.standardize import Options, StandardizeResults, standardize_cells
-from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.core.table.columns import StructureColumn
 
 POOL_MIN_ROWS = 200

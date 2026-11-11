@@ -16,12 +16,12 @@
 """Tool windows, and saving and reopening tool panels with the document.
 
 A tool shows its work either in a dock beside the table (``ToolContext.add_panel``) or, for a
-workspace of its own such as the Protein Viewer, in a :class:`ToolWindow`
-(``ToolContext.add_window``): a top-level window with its own menu bar, titled after the
-document, that cannot be docked. Either way it belongs to the document: it closes with it, and
-when its widget is a ``ToolPanel`` with a ``tool_id`` it is saved with it and reopened by the
-tool's ``restore`` (a window also gets its size and place back). :class:`DocumentPanels` owns
-both lists.
+workspace of its own such as the Protein Viewer, in a
+:class:`~chemsuite.app.shell.windows.ToolWindow` (``ToolContext.add_window``): a top-level
+window with its own menu bar, titled after the document, that cannot be docked. Either way it
+belongs to the document: it closes with it, and when its widget is a ``ToolPanel`` with a
+``tool_id`` it is saved with it and reopened by the tool's ``restore`` (a window also gets its
+size and place back). :class:`DocumentPanels` owns both lists.
 """
 
 from __future__ import annotations
@@ -32,12 +32,12 @@ from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING
 
 import shiboken6
-from PySide6.QtCore import QByteArray, Qt
-from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDockWidget, QMainWindow, QMenu, QMenuBar, QWidget
+from PySide6.QtCore import QByteArray
+from PySide6.QtWidgets import QDockWidget, QMenu, QMenuBar, QWidget
 
+from ..shell.windows import ToolWindow
+from ..widgets.panel import ToolPanel
 from .panel_dock import DockHost, PanelDock
-from .widgets.panel import ToolPanel
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -46,52 +46,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 GEOMETRY = "geometry"  # a saved window's size and place (base64 of saveGeometry)
-
-
-class ToolWindow(QMainWindow):
-    """A top-level window around a tool's widget, closed with its document.
-
-    *name* gives the document's name (the title reads "Protein Viewer — Kinases") and
-    *on_close* lets the widget go of the document before the window is deleted.
-    """
-
-    def __init__(
-        self,
-        widget: QWidget,
-        title: str,
-        *,
-        name: Callable[[], str],
-        menu_bar: QMenuBar | None = None,
-        on_close: Callable[[], None] | None = None,
-    ) -> None:
-        super().__init__(None)  # its own window: not kept above the table, its own taskbar entry
-        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.panel = widget
-        self._title = title
-        self._name = name
-        self._on_close = on_close
-        self.setCentralWidget(widget)
-        if menu_bar is not None:
-            self.setMenuBar(menu_bar)
-            menu_bar.show()
-        self.retitle()
-
-    def retitle(self) -> None:
-        name = self._name()
-        self.setWindowTitle(f"{self._title} — {name}" if name else self._title)
-
-    def bring_forward(self) -> None:
-        if self.isMinimized():
-            self.showNormal()
-        self.show()
-        self.raise_()
-        self.activateWindow()
-
-    def closeEvent(self, event: QCloseEvent) -> None:
-        if self._on_close is not None:
-            self._on_close()
-            self._on_close = None
-        super().closeEvent(event)
 
 
 class DocumentPanels(DockHost):

@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SHADERS = ROOT / "chemsuite" / "app" / "molview" / "shaders"
+SHADERS = ROOT / "chemsuite" / "app" / "render3d" / "shaders"
 TARGETS = ["--glsl", "100es,120,150,330", "--hlsl", "50", "--msl", "12"]
 MANIFEST = SHADERS / "manifest.json"  # each source's hash when its .qsb was built
 

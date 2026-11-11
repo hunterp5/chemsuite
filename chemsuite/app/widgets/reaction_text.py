@@ -24,7 +24,7 @@ from collections.abc import Callable
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
-from chemsuite.app.dialogs.kit import FIELD_WIDTH
+from chemsuite.app.widgets.dialogs.kit import FIELD_WIDTH
 from chemsuite.core.reactions import reaction_from_text, reaction_smiles
 
 

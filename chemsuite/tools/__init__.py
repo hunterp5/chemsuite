@@ -16,7 +16,8 @@
 """Tool packages, one folder per menu feature.
 
 Tools are listed here explicitly rather than discovered at run time, so a frozen build
-(PyInstaller) sees every import. Each module defines ``TOOL`` (see :mod:`chemsuite.app.tools`).
+(PyInstaller) sees every import. Each module defines ``TOOL`` (see
+:mod:`chemsuite.app.document.tools`).
 Keep these modules light: heavy imports belong inside the function that opens the tool.
 """
 

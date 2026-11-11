@@ -56,9 +56,9 @@ from chemsuite.analysis.statistics import (
     run_test,
     summarize,
 )
-from chemsuite.app.flow_layout import FlowRow, compact, field
-from chemsuite.app.jobs import QUICK
-from chemsuite.app.tools import ToolContext, ToolPanel
+from chemsuite.app.document.tools import ToolContext, ToolPanel
+from chemsuite.app.shell.jobs import QUICK
+from chemsuite.app.widgets.flow_layout import FlowRow, compact, field
 from chemsuite.core.table import Changed
 from chemsuite.core.table.columns import TEXT
 from chemsuite.plotting.data import number_columns, numbers, shown_oids

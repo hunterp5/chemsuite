@@ -691,7 +691,7 @@ def test_drawn_query_reaches_structure_search_as_smarts(qapp, monkeypatch):
     from dataclasses import replace
 
     from chemsuite.app.sketcher import SketcherDialog
-    from chemsuite.app.structure_search import QueryInput
+    from chemsuite.app.table.structure_search import QueryInput
     from chemsuite.sketch.model import ATOM_LIST
 
     sketch = from_text("Clc1ccccc1")

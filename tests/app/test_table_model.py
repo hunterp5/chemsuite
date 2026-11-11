@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 from PySide6.QtCore import QPersistentModelIndex, Qt
 
-from chemsuite.app.table_model import KIND_ROLE, OID_ROLE, STATUS_ROLE, TableModel
+from chemsuite.app.table.table_model import KIND_ROLE, OID_ROLE, STATUS_ROLE, TableModel
 from chemsuite.core.mols import parse_structures
 from chemsuite.core.table import RangeFilter, Table
 from chemsuite.core.table.columns import StructureColumn

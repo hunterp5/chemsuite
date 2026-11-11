@@ -24,7 +24,7 @@ model compares the mirror with the table and tells Qt precisely what happened:
 * same rows, new order (sort)  -> ``layoutChanged``, with selections and the current cell
                                   carried to the rows' new positions
 * rows or columns differ       -> a model reset (the view restores selection and scroll
-                                  position from oids; see :mod:`chemsuite.app.table_view`)
+                                  position from oids; see :mod:`chemsuite.app.table.table_view`)
 
 All edits go through the table, so they are undoable; the model never stores cell values.
 """

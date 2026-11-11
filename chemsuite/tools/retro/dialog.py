@@ -28,9 +28,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from chemsuite.app.dialogs import RowsChoice, ToolDialog
-from chemsuite.app.settings_hub import settings_hub
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.shell.settings_hub import settings_hub
+from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.retro import (
     OUTPUT_COLUMNS,
     SearchOptions,

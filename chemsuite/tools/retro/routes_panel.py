@@ -64,9 +64,9 @@ from PySide6.QtWidgets import (
 )
 from rdkit import Chem, rdBase
 
-from chemsuite.app.flow_layout import FlowRow, compact, field
-from chemsuite.app.structure_copy import FORMATS, copy_structures
-from chemsuite.app.tools import ToolContext, ToolPanel
+from chemsuite.app.document.tools import ToolContext, ToolPanel
+from chemsuite.app.table.structure_copy import FORMATS, copy_structures
+from chemsuite.app.widgets.flow_layout import FlowRow, compact, field
 from chemsuite.core.depict import render_png
 from chemsuite.retro.routes import leaf_stock_counts, route_tree, sort_routes
 

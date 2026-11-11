@@ -67,34 +67,34 @@ from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import REACTION, STRUCTURE
 
+from ..shell.commands import apply_shortcuts, register
+from ..shell.error_report import show_log_folder
+from ..shell.job_host import JobHost
+from ..shell.jobs import Job, JobRunner
+from ..shell.jobs_ui import JobsIndicator, JobsWindow
+from ..shell.log_ui import LogWindow
+from ..shell.settings_hub import settings_hub
+from ..table.advanced_search import AdvancedSearchPanel
+from ..table.column_actions import ColumnActions
+from ..table.filters.cards import FilterCard
+from ..table.filters.panel import FilterPanel
+from ..table.find_replace import FindReplaceDialog
+from ..table.list_actions import ListActions
+from ..table.search_bar import SearchBar
+from ..table.split_join import JoinColumnsDialog, SplitColumnDialog
+from ..table.structure_clipboard import copy_structure
+from ..table.structure_copy import FORMATS as COPY_FORMATS
+from ..table.structure_copy import REACTION_FORMATS, copy_reactions, copy_structures
+from ..table.structure_search import StructureSearchDialog, StructureSearcher
+from ..table.table_model import TableModel
+from ..table.table_view import StructureImages, TableView
+from ..widgets.panel import ToolPanel
 from . import dock_layout, session
-from .advanced_search import AdvancedSearchPanel
-from .column_actions import ColumnActions
-from .commands import apply_shortcuts, register
 from .dock_layout import LAYOUT_KEY
-from .document_windows import DocumentPanels
-from .error_report import show_log_folder
-from .filters.cards import FilterCard
-from .filters.panel import FilterPanel
-from .find_replace import FindReplaceDialog
-from .job_host import JobHost
-from .jobs import Job, JobRunner
-from .jobs_ui import JobsIndicator, JobsWindow
-from .list_actions import ListActions
-from .log_ui import LogWindow
 from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader
-from .search_bar import SearchBar
-from .settings_hub import settings_hub
-from .split_join import JoinColumnsDialog, SplitColumnDialog
+from .panels import DocumentPanels
 from .status_bar import StatusBar
-from .structure_clipboard import copy_structure
-from .structure_copy import FORMATS as COPY_FORMATS
-from .structure_copy import REACTION_FORMATS, copy_reactions, copy_structures
-from .structure_search import StructureSearchDialog, StructureSearcher
-from .table_model import TableModel
-from .table_view import StructureImages, TableView
 from .tools import BROWSER_TOOL, Tool, ToolContext, load_tools
-from .widgets.panel import ToolPanel
 
 log = logging.getLogger(__name__)
 
@@ -850,7 +850,7 @@ class MainWindow(QMainWindow):
         help_menu.addAction(about)
 
     def open_user_guide(self) -> None:
-        from .dialogs.kit import GUIDE
+        from ..widgets.dialogs.kit import GUIDE
 
         if GUIDE.exists():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(GUIDE)))
@@ -920,7 +920,7 @@ class MainWindow(QMainWindow):
             settings_hub().update(lambda s: setattr(s.appearance, "status_bar", visible))
 
     def open_settings(self):
-        from .settings_dialog import SettingsDialog
+        from ..shell.settings_dialog import SettingsDialog
 
         dialog = SettingsDialog(self, self.jobs)
         dialog.open()
@@ -1148,7 +1148,7 @@ class MainWindow(QMainWindow):
 
     def align_drawings(self, column: str):
         """Align Drawings… for *column*: ask for the core, then draw the column aligned."""
-        from .align_drawings import AlignDrawingsDialog
+        from ..table.align_drawings import AlignDrawingsDialog
 
         def current_structure() -> str:
             index = self.view.currentIndex()

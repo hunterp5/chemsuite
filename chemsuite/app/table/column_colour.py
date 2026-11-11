@@ -38,7 +38,7 @@ from chemsuite.core.table import NUMBER, ColourRule, Table
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.core.table.style import CATEGORIES, GRADIENT, GRADIENT3, HIGH, LOW, MID
 
-from .dialogs import ToolDialog
+from ..widgets.dialogs import ToolDialog
 
 OFF = "off"
 MODES = (

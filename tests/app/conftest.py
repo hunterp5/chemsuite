@@ -75,8 +75,8 @@ def private_settings(tmp_path, monkeypatch):
     if NO_GUI:
         yield
         return
-    from chemsuite.app import theme
-    from chemsuite.app.settings_hub import reset_hub
+    from chemsuite.app.shell import theme
+    from chemsuite.app.shell.settings_hub import reset_hub
 
     reset_hub()
     yield
@@ -104,7 +104,7 @@ def graphics_state():
     if NO_GUI:
         yield
         return
-    from chemsuite.app import graphics
+    from chemsuite.app.shell import graphics
 
     before = graphics.problem()
     yield
@@ -114,9 +114,9 @@ def graphics_state():
 @pytest.fixture
 def window(qtbot):
     """A main window on a small table (ID, pIC50), closed without a save prompt."""
-    from chemsuite.app.jobs import JobRunner
-    from chemsuite.app.main_window import MainWindow, Workspace
-    from chemsuite.app.table_view import StructureImages
+    from chemsuite.app.document.main_window import MainWindow, Workspace
+    from chemsuite.app.shell.jobs import JobRunner
+    from chemsuite.app.table.table_view import StructureImages
 
     runner = JobRunner()
     from chemsuite.core.table import Table

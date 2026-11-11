@@ -39,8 +39,8 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis import formula as fx
-from chemsuite.app.dialogs import FIELD_WIDTH, LABEL_WIDTH, RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import FIELD_WIDTH, LABEL_WIDTH, RowsChoice, ToolDialog
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.table import NUMBER
 from chemsuite.core.table.columns import STRUCTURE

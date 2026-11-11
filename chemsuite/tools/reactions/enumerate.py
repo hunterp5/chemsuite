@@ -32,8 +32,8 @@ from chemsuite.analysis.reactions import (
     enumerate_rows,
     parse_template,
 )
-from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.mols import parse_structure
 from chemsuite.core.table import Table

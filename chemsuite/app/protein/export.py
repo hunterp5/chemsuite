@@ -30,7 +30,7 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QGuiApplication, QImage, QPainter, QRegion
 from PySide6.QtWidgets import QCheckBox, QDoubleSpinBox, QFileDialog, QSpinBox, QWidget
 
-from chemsuite.app.dialogs import Segmented, ToolDialog
+from chemsuite.app.widgets.dialogs import Segmented, ToolDialog
 
 if TYPE_CHECKING:
     from .panel import ProteinPanel

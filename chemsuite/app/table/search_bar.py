@@ -175,7 +175,7 @@ class SearchBar(QWidget):
 
     def _paint_glyphs(self) -> None:
         """Glyphs and the flat toolbar look, in the palette's colours (again on theme changes)."""
-        from .glyphs import flat_buttons, glyph
+        from ..shell.glyphs import flat_buttons, glyph
 
         palette = self.palette()
         ink = palette.text().color()

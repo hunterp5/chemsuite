@@ -57,12 +57,12 @@ from chemsuite.core.lists import ListError
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import STRUCTURE
 
-from .dialogs import FIELD_WIDTH, RowsChoice, Segmented, ToolDialog
-from .jobs import QUICK, Job
+from ..shell.jobs import QUICK, Job
+from ..widgets.dialogs import FIELD_WIDTH, RowsChoice, Segmented, ToolDialog
 from .table_view import Highlight
 
 if TYPE_CHECKING:
-    from .main_window import MainWindow
+    from ..document.main_window import MainWindow
 
 Run = Callable[..., Job]
 #: ``on_done(oids searched, result)``
@@ -231,7 +231,7 @@ class QueryInput(QWidget):
         self.draw_button.clicked.connect(self.draw)
 
     def _paint_pencil(self) -> None:
-        from .glyphs import glyph
+        from ..shell.glyphs import glyph
 
         self.draw_button.setIcon(glyph("pencil", self.palette().text().color()))
 

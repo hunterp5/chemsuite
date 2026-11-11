@@ -28,7 +28,7 @@ MAX_PANEL_MIN_WIDTH = 300
 def test_flow_row_wraps_instead_of_widening(qtbot) -> None:
     from PySide6.QtWidgets import QPushButton
 
-    from chemsuite.app.flow_layout import FlowRow
+    from chemsuite.app.widgets.flow_layout import FlowRow
 
     flow = FlowRow()
     qtbot.addWidget(flow)

@@ -54,7 +54,7 @@ from chemsuite.core.table.filters import (
 )
 from chemsuite.core.table.numbers import format_general
 
-from ..glyphs import flat_buttons, glyph
+from ...shell.glyphs import flat_buttons, glyph
 from .range_slider import RangeSlider
 
 #: Text columns with at most this many distinct values get a category card by default.
@@ -633,7 +633,7 @@ def card_for(table: Table, column: str, kind: str | None = None, searcher=None) 
     the best fit.
 
     Structure and reaction cards need a
-    :class:`~chemsuite.app.structure_search.StructureSearcher`; without one, those columns get
+    :class:`~chemsuite.app.table.structure_search.StructureSearcher`; without one, those columns get
     a text card.
     """
     if kind is None:

@@ -25,7 +25,7 @@ pytestmark = gui
 
 @pytest.fixture
 def panel(qapp):
-    from chemsuite.app.filters.panel import FilterPanel
+    from chemsuite.app.table.filters.panel import FilterPanel
     from chemsuite.core.table import Table
 
     table = Table()
@@ -48,7 +48,7 @@ def shown_ids(panel) -> list[str]:
 
 
 def test_card_types_follow_the_column(panel) -> None:
-    from chemsuite.app.filters.cards import CategoryCard, RangeCard, TextCard
+    from chemsuite.app.table.filters.cards import CategoryCard, RangeCard, TextCard
 
     assert isinstance(panel.add_filter("pIC50"), RangeCard)
     assert isinstance(panel.add_filter("Series"), CategoryCard)
@@ -82,7 +82,7 @@ def test_range_slider_and_edits_stay_in_step(panel) -> None:
 
 
 def test_category_card_and_unlisted_values(panel, monkeypatch) -> None:
-    import chemsuite.app.filters.cards as cards
+    import chemsuite.app.table.filters.cards as cards
 
     card = panel.add_filter("Series")
     assert card.listed_values()[:2] == ["A", "B"]  # most frequent first
@@ -183,7 +183,7 @@ def test_cards_are_striped_compact_and_use_glyphs(panel) -> None:
 
 
 def test_add_by_type_then_choose_the_column(panel) -> None:
-    from chemsuite.app.filters.cards import CategoryCard, RangeCard, TextCard, sources_for
+    from chemsuite.app.table.filters.cards import CategoryCard, RangeCard, TextCard, sources_for
 
     panel._fill_add_menu()
     titles = [a.text() for a in panel.add_menu.actions()]

@@ -33,8 +33,8 @@ CALLS = {"flags": 0, "row labels": 0}
 
 @pytest.fixture
 def big(qtbot, window, monkeypatch):
-    from chemsuite.app.main_window import Workspace
-    from chemsuite.app.table_model import TableModel
+    from chemsuite.app.document.main_window import Workspace
+    from chemsuite.app.table.table_model import TableModel
     from chemsuite.core.table import Table
 
     flags, header_data = TableModel.flags, TableModel.headerData

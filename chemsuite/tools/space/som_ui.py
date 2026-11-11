@@ -35,9 +35,9 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.som import MAX_SIDE, Som, default_size, som
-from chemsuite.app.dialogs import RowsChoice, ToolDialog, inline
-from chemsuite.app.flow_layout import FlowRow, compact, field
-from chemsuite.app.tools import ToolContext, ToolPanel
+from chemsuite.app.document.tools import ToolContext, ToolPanel
+from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, inline
+from chemsuite.app.widgets.flow_layout import FlowRow, compact, field
 from chemsuite.core.table import Changed
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.plotting.data import number_columns, numbers, shown_oids

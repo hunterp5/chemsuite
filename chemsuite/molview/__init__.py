@@ -18,5 +18,5 @@
 A scene is packed numpy arrays ready for the GPU: one row per atom sphere and one per bond
 cylinder (:mod:`.geometry`). The camera (:mod:`.camera`), picking (:mod:`.pick`), measuring
 (:mod:`.measure`) and conformer alignment (:mod:`.align`) work on plain coordinates, so all of
-it is tested without a window. ``chemsuite.app.molview`` draws a scene.
+it is tested without a window. ``chemsuite.app.render3d`` draws a scene.
 """

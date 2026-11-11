@@ -39,7 +39,7 @@ import numpy as np
 from PySide6.QtGui import QRhi, QRhiBuffer, QRhiCommandBuffer, QRhiGraphicsPipeline
 from PySide6.QtWidgets import QWidget
 
-from chemsuite.app.molview.rhi_view import BOX, FLOAT, FLOAT2, FLOAT3, FLOAT4, QUAD, RhiView
+from chemsuite.app.render3d.rhi_view import BOX, FLOAT, FLOAT2, FLOAT3, FLOAT4, QUAD, RhiView
 from chemsuite.protein import mesh as meshes
 from chemsuite.protein.pick import ScreenPicker
 from chemsuite.protein.scene import (

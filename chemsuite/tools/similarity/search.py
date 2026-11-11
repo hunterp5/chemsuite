@@ -27,9 +27,9 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.fingerprints import max_similarity, query_fingerprint, similarity
-from chemsuite.app.dialogs import RowsChoice, Segmented, ToolDialog, follow_rows, inline
-from chemsuite.app.glyphs import glyph
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.shell.glyphs import glyph
+from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog, follow_rows, inline
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table.columns import NumberColumn

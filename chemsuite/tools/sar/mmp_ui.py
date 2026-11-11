@@ -29,8 +29,8 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.selectivity import looks_like_assay
-from chemsuite.app.dialogs import RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext, ToolPanel
+from chemsuite.app.document.tools import ToolContext, ToolPanel
+from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.plotting.data import number_columns, numbers
 from chemsuite.sar.mmp import Pair, Transform, find_pairs, readable, transforms
 from chemsuite.tools.similarity.common import labels

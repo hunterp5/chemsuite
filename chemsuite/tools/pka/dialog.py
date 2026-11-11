@@ -21,8 +21,8 @@ from __future__ import annotations
 import numpy as np
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QVBoxLayout, QWidget
 
-from chemsuite.app.dialogs import RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 from chemsuite.ionisation.predict import PkaResults, predict_pka
 

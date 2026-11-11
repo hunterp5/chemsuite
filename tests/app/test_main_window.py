@@ -55,7 +55,7 @@ def test_open_csv_parses_structures_in_background(qtbot, window, tmp_path: Path)
     csv = tmp_path / "mols.csv"
     csv.write_text("SMILES,ID\nCCO,a\nC1CC,b\nc1ccccc1,c\n")
     window.workspace.table.history.mark_clean()
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
 
     window._install(Workspace(Table()))  # an empty window is reused by open_path
     window.open_path(csv)
@@ -73,7 +73,7 @@ def test_a_document_holding_only_a_protein_asks_to_save_and_is_not_reused(
 ) -> None:
     from PySide6.QtWidgets import QMessageBox
 
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Asset, PutAsset
 
     table = Table()

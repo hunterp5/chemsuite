@@ -18,8 +18,8 @@ in 2D or 3D, in a panel."""
 
 from __future__ import annotations
 
-from chemsuite.app.jobs import QUICK
-from chemsuite.app.tools import Tool, ToolContext
+from chemsuite.app.document.tools import Tool, ToolContext
+from chemsuite.app.shell.jobs import QUICK
 
 TOOL_ID = "viewer"
 

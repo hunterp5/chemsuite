@@ -13,31 +13,5 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Tool dialogs built from one kit, so every tool's dialog is laid out the same way.
 
-See :mod:`chemsuite.app.dialogs.kit` for the layout rules.
-"""
-
-from .kit import (
-    FIELD_WIDTH,
-    LABEL_WIDTH,
-    RowsChoice,
-    Section,
-    Segmented,
-    ToolDialog,
-    follow_rows,
-    inline,
-    selected_only,
-)
-
-__all__ = [
-    "FIELD_WIDTH",
-    "LABEL_WIDTH",
-    "RowsChoice",
-    "Section",
-    "Segmented",
-    "ToolDialog",
-    "follow_rows",
-    "inline",
-    "selected_only",
-]
+"""The compound table's view: the table itself, its column actions, search and filters."""

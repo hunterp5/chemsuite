@@ -57,8 +57,8 @@ from chemsuite.core.table.search import (
     searchable_columns,
 )
 
-from .dialogs import Section, inline
-from .dialogs.kit import muted
+from ..widgets.dialogs import Section, inline
+from ..widgets.dialogs.kit import muted
 from .table_view import TableView
 
 MODES = {"contains": "Contains", "whole": "Whole cell", "regex": "Regular expression"}

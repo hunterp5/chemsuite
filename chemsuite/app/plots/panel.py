@@ -57,9 +57,9 @@ from chemsuite.core.table.columns import NUMBER, STRUCTURE, TEXT
 from chemsuite.plotting.data import colorable_columns, number_columns, shown_oids
 from chemsuite.plotting.stats import AGGREGATES, CURVES
 
-from .. import graphics
-from ..flow_layout import compact
-from ..glyphs import glyph
+from ..shell import graphics
+from ..shell.glyphs import glyph
+from ..widgets.flow_layout import compact
 from ..widgets.panel import OptionsPopup, ToolPanel
 from .cards import (
     SIZES,

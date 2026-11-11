@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QLineEdit
 
-from chemsuite.app.dialogs import ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import ToolDialog
 from chemsuite.core.download import DownloadError
 from chemsuite.protein import fetch as pdb
 from chemsuite.protein.io import ProteinFileError

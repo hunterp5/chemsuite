@@ -44,7 +44,7 @@ CTRL = Qt.KeyboardModifier.ControlModifier
 
 @pytest.fixture
 def data(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -177,7 +177,7 @@ def test_plot_menu(data) -> None:
 
 
 def test_hover_card_draws_the_structure(window, qtbot) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -220,7 +220,7 @@ def test_box_plot_without_groups(data) -> None:
 
 
 def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.app.plots.cards import CardOptions
     from chemsuite.core.table import Table
 
@@ -518,7 +518,7 @@ def test_radar_draws_selected_rows(data) -> None:
 
 @pytest.fixture
 def cube(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -674,7 +674,7 @@ def test_scatter_item_places_points_like_pyqtgraph(qtbot) -> None:
 
 
 def test_3d_kinds_say_why_when_the_graphics_cannot_draw(cube, monkeypatch) -> None:
-    from chemsuite.app import graphics
+    from chemsuite.app.shell import graphics
 
     monkeypatch.setattr(graphics, "_problem", graphics.NO_GPU)
     panel = cube.open_tool("scatter3d")
@@ -686,7 +686,7 @@ def test_3d_kinds_say_why_when_the_graphics_cannot_draw(cube, monkeypatch) -> No
 def test_3d_that_fails_when_drawn_falls_back_to_2d(cube, gpu, monkeypatch) -> None:
     """Graphics that pass the start-up check but cannot draw (found only when drawing, as on
     Windows): the plot goes flat and the 3D kinds say why, here and in later plots."""
-    from chemsuite.app import graphics
+    from chemsuite.app.shell import graphics
 
     monkeypatch.setattr(graphics, "_problem", None)
     panel = cube.open_tool("scatter3d")

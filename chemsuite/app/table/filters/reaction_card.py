@@ -33,7 +33,7 @@ from chemsuite.analysis.reactions import ROLES, QueryError, ReactionQuery, parse
 from chemsuite.core.table import Table
 from chemsuite.core.table.filters import Filter, OidFilter
 
-from ..jobs import Job
+from ...shell.jobs import Job
 from ..structure_search import StructureSearcher
 from .cards import FilterCard
 

@@ -37,7 +37,7 @@ from PySide6.QtCore import QObject
 from chemsuite.protein.display import Build, Display
 
 if TYPE_CHECKING:
-    from chemsuite.app.jobs import Job
+    from chemsuite.app.shell.jobs import Job
 
     from .session import ProteinSession
 

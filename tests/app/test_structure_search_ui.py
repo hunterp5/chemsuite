@@ -28,7 +28,7 @@ AROMATIC = [0, 2]  # rows with a benzene ring
 
 @pytest.fixture
 def chem(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -158,7 +158,7 @@ def test_highlighted_drawing(chem) -> None:
     from PySide6.QtCore import QSize
 
     from chemsuite.analysis.structure_search import StructureQuery
-    from chemsuite.app.structure_search import highlight_for
+    from chemsuite.app.table.structure_search import highlight_for
 
     table = chem.workspace.table
     column = table.column("SMILES")

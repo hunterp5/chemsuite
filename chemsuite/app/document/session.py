@@ -44,9 +44,9 @@ import numpy as np
 from PySide6.QtCore import QItemSelectionModel
 from PySide6.QtWidgets import QAbstractItemView
 
+from ..table.advanced_search import EXTRAS_KEY as ADVANCED_KEY
+from ..table.filters.panel import EXTRAS_KEY as FILTERS_KEY
 from . import dock_layout
-from .advanced_search import EXTRAS_KEY as ADVANCED_KEY
-from .filters.panel import EXTRAS_KEY as FILTERS_KEY
 
 if TYPE_CHECKING:
     from .main_window import MainWindow

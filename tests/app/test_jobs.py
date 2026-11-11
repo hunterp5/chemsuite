@@ -20,7 +20,7 @@ import threading
 
 import pytest
 
-from chemsuite.app.jobs import JobRunner
+from chemsuite.app.shell.jobs import JobRunner
 from chemsuite.core.jobs import check
 
 
@@ -90,7 +90,7 @@ def _gate():
 
 
 def test_queue_runs_one_at_a_time_in_order(qtbot, runner: JobRunner) -> None:
-    from chemsuite.app.jobs import QUEUE, QUEUED, RUNNING
+    from chemsuite.app.shell.jobs import QUEUE, QUEUED, RUNNING
 
     order: list[str] = []
     work, release = _gate()
@@ -110,7 +110,7 @@ def test_queue_runs_one_at_a_time_in_order(qtbot, runner: JobRunner) -> None:
 
 
 def test_cancel_queued_job_ends_it_without_running(qtbot, runner: JobRunner) -> None:
-    from chemsuite.app.jobs import CANCELLED, QUEUE, RUNNING
+    from chemsuite.app.shell.jobs import CANCELLED, QUEUE, RUNNING
 
     ran: list[bool] = []
     work, release = _gate()
@@ -126,7 +126,7 @@ def test_cancel_queued_job_ends_it_without_running(qtbot, runner: JobRunner) -> 
 
 
 def test_quick_lane_does_not_wait_for_the_queue(qtbot, runner: JobRunner) -> None:
-    from chemsuite.app.jobs import FINISHED, QUEUE, QUICK
+    from chemsuite.app.shell.jobs import FINISHED, QUEUE, QUICK
 
     work, release = _gate()
     heavy = runner.submit("heavy", work, lane=QUEUE)
@@ -138,7 +138,7 @@ def test_quick_lane_does_not_wait_for_the_queue(qtbot, runner: JobRunner) -> Non
 
 
 def test_failure_keeps_traceback_and_cancel_all_by_owner(qtbot, runner: JobRunner) -> None:
-    from chemsuite.app.jobs import FAILED, QUEUE
+    from chemsuite.app.shell.jobs import FAILED, QUEUE
 
     def broken(job):
         raise ValueError("no structures")
@@ -161,7 +161,7 @@ def test_failure_keeps_traceback_and_cancel_all_by_owner(qtbot, runner: JobRunne
 
 
 def test_keep_awake_follows_the_queue(qtbot, qapp, monkeypatch) -> None:
-    from chemsuite.app.jobs import QUEUE
+    from chemsuite.app.shell.jobs import QUEUE
     from chemsuite.core.jobs import awake
 
     calls: list[bool] = []

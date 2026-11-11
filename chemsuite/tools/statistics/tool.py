@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from chemsuite.app.tools import Tool, ToolContext
+from chemsuite.app.document.tools import Tool, ToolContext
 
 
 def _open(ctx: ToolContext, state: dict | None = None):

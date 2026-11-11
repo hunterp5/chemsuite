@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QPushButton
 
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
 from chemsuite.core.settings import POLICY_ENV
 from chemsuite.tools.protein import tool
 
@@ -60,7 +60,7 @@ def network(tmp_path, monkeypatch):
 @pytest.fixture
 def opened(window, qtbot, monkeypatch):
     """1ATP opened from a file into the small ID/pIC50 table."""
-    from chemsuite.app import graphics
+    from chemsuite.app.shell import graphics
 
     monkeypatch.setattr(graphics, "_problem", None)
     job = tool.open_protein(ToolContext(window), [str(DATA / "1atp.cif.gz")])
@@ -100,8 +100,8 @@ def test_the_viewer_has_a_menu_of_its_own(window) -> None:
 
 
 def test_the_viewer_opens_as_its_own_window(window, qtbot, monkeypatch) -> None:
-    from chemsuite.app import graphics
-    from chemsuite.app.document_windows import ToolWindow
+    from chemsuite.app.shell import graphics
+    from chemsuite.app.shell.windows import ToolWindow
 
     monkeypatch.setattr(graphics, "_problem", None)
     window.resize(1400, 900)
@@ -182,7 +182,7 @@ def test_a_ligand_the_file_does_not_define_comes_from_the_ccd_once(window, qtbot
 
 
 def test_a_guessed_ligand_is_marked_in_the_tree(window, qtbot, tmp_path, monkeypatch) -> None:
-    from chemsuite.app import graphics
+    from chemsuite.app.shell import graphics
 
     monkeypatch.setattr(graphics, "_problem", None)
     policy = tmp_path / "policy.json"

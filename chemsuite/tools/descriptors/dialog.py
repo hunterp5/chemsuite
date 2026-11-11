@@ -34,8 +34,8 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.analysis.fingerprints import KINDS, as_hex, compute_fingerprints
-from chemsuite.app.dialogs import FIELD_WIDTH, RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import FIELD_WIDTH, RowsChoice, ToolDialog
 from chemsuite.core.jobs import Cancelled
 from chemsuite.descriptors.catalog import CATALOG, COMMON, GROUPS, in_group
 from chemsuite.descriptors.compute import compute_descriptors

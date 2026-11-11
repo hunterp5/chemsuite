@@ -26,7 +26,7 @@ pytestmark = gui
 
 @pytest.fixture
 def chem(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -143,7 +143,7 @@ def test_saved_with_the_document(chem, tmp_path, qtbot) -> None:
     panel.run("show")
     target = tmp_path / "search.csd"
     assert chem._save_to(target)
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     chem._install(Workspace(Table()))
@@ -157,7 +157,7 @@ def test_saved_with_the_document(chem, tmp_path, qtbot) -> None:
 
 
 def test_advanced_search_is_its_own_window(chem, qtbot) -> None:
-    from chemsuite.app import dock_layout
+    from chemsuite.app.document import dock_layout
 
     chem.show()
     qtbot.waitExposed(chem)
@@ -213,7 +213,7 @@ def test_not_in_one_column_and_not_in_another(chem) -> None:
 
 
 def test_groups_are_saved_with_the_document(chem, qtbot, tmp_path) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     panel = chem.show_advanced_search()

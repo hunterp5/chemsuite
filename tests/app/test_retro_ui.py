@@ -43,8 +43,8 @@ SMILES = [recorded.TARGET, "CCO", ""]
 @pytest.fixture
 def chem(window, tmp_path, monkeypatch):
     """A window on three structures, with the fake AiZynthFinder configured."""
-    from chemsuite.app.main_window import Workspace
-    from chemsuite.app.settings_hub import settings_hub
+    from chemsuite.app.document.main_window import Workspace
+    from chemsuite.app.shell.settings_hub import settings_hub
     from chemsuite.core.table import Table
 
     recorded_environment(
@@ -101,7 +101,7 @@ def test_the_dialog_offers_what_the_config_holds(chem) -> None:
 
 
 def test_a_missing_install_blocks_the_run(window) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -114,7 +114,7 @@ def test_a_missing_install_blocks_the_run(window) -> None:
 
 
 def test_a_config_that_would_leave_the_machine_blocks_the_run(chem, tmp_path) -> None:
-    from chemsuite.app.settings_hub import settings_hub
+    from chemsuite.app.shell.settings_hub import settings_hub
 
     remote = write_config(
         tmp_path / "remote",
@@ -258,7 +258,7 @@ def test_a_card_copies_as_smiles(chem, qtbot) -> None:
         for item in panel.canvas.scene().items()
         if isinstance(item, _MoleculeCard) and item.smiles == recorded.AMINOPHENOL
     )
-    from chemsuite.app.structure_copy import copy_structures
+    from chemsuite.app.table.structure_copy import copy_structures
     from chemsuite.tools.retro.routes_panel import _parse
 
     copy_structures([_parse(card.smiles)], "smiles")
@@ -266,8 +266,8 @@ def test_a_card_copies_as_smiles(chem, qtbot) -> None:
 
 
 def test_the_pane_comes_back_with_the_document(chem, qtbot) -> None:
-    from chemsuite.app import session
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document import session
+    from chemsuite.app.document.main_window import Workspace
 
     dialog = chem.open_tool("retrosynthesis")
     dialog.rows.set_value("all")
@@ -434,7 +434,7 @@ class _Response:
 
 
 def test_download_fetches_the_data_and_sets_the_config(window, qtbot, tmp_path, monkeypatch):
-    from chemsuite.app.settings_hub import settings_hub
+    from chemsuite.app.shell.settings_hub import settings_hub
     from chemsuite.core import download
     from chemsuite.retro.config import CONFIG_TOOL
 
@@ -484,8 +484,8 @@ def test_download_failure_is_reported_on_the_row(window, qtbot, tmp_path, monkey
 def test_policy_can_turn_downloads_off(tmp_path, monkeypatch, qtbot) -> None:
     import json
 
-    from chemsuite.app.settings_dialog import NETWORK_OFF_TIP, SettingsDialog
-    from chemsuite.app.settings_hub import reset_hub
+    from chemsuite.app.shell.settings_dialog import NETWORK_OFF_TIP, SettingsDialog
+    from chemsuite.app.shell.settings_hub import reset_hub
 
     policy = tmp_path / "policy.json"
     policy.write_text(json.dumps({"network_allowed": False}))

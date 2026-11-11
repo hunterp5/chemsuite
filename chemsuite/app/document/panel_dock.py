@@ -62,8 +62,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .glyphs import glyph
-from .widgets.panel import ToolPanel
+from ..shell.glyphs import glyph
+from ..widgets.panel import ToolPanel
 
 #: panes sit flush against each other, as in native macOS split views
 INSET = 0

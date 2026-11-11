@@ -29,7 +29,7 @@ from PySide6.QtCore import QEvent, QSignalBlocker, QSize, Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QComboBox, QLabel, QSizePolicy, QSlider, QSpinBox, QToolBar
 
-from chemsuite.app.glyphs import glyph
+from chemsuite.app.shell.glyphs import glyph
 from chemsuite.protein.display import Display
 
 from .session import ProteinSession

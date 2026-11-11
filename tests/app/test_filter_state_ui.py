@@ -26,7 +26,7 @@ pytestmark = gui
 
 @pytest.fixture
 def chem(window):
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     table = Table()
@@ -63,7 +63,7 @@ def add_cards(window) -> None:
 
 
 def test_filters_are_saved_with_the_document(chem, tmp_path, qtbot) -> None:
-    from chemsuite.app.main_window import Workspace
+    from chemsuite.app.document.main_window import Workspace
     from chemsuite.core.table import Table
 
     add_cards(chem)

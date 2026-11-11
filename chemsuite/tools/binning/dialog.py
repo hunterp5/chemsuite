@@ -40,8 +40,8 @@ from chemsuite.analysis.binning import (
     parse_names,
     parse_numbers,
 )
-from chemsuite.app.dialogs import FIELD_WIDTH, RowsChoice, ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import FIELD_WIDTH, RowsChoice, ToolDialog
 from chemsuite.plotting.data import number_columns, numbers
 
 

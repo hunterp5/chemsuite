@@ -22,7 +22,7 @@ import json
 from PySide6.QtGui import QKeySequence, QPalette
 from PySide6.QtWidgets import QApplication
 
-from chemsuite.app.settings_hub import settings_hub
+from chemsuite.app.shell.settings_hub import settings_hub
 
 from .conftest import gui
 
@@ -76,7 +76,7 @@ def test_groovy_reroll(window) -> None:
 
 
 def test_custom_theme_editor(qtbot, monkeypatch) -> None:
-    from chemsuite.app.custom_theme_dialog import CustomThemeDialog
+    from chemsuite.app.shell.custom_theme_dialog import CustomThemeDialog
 
     editor = CustomThemeDialog({}, None)
     qtbot.addWidget(editor)
@@ -101,7 +101,7 @@ def test_custom_theme_editor(qtbot, monkeypatch) -> None:
 
 
 def test_custom_theme_applies_from_settings(window, monkeypatch) -> None:
-    from chemsuite.app import custom_theme_dialog
+    from chemsuite.app.shell import custom_theme_dialog
 
     class Fake:
         themes = {"Mine": {"base": "#204060"}}
@@ -158,8 +158,8 @@ def test_policy_locks_settings(tmp_path, monkeypatch, qtbot) -> None:
         json.dumps({"settings": {"appearance.theme": "dark", "tool_paths": {"obabel": "/x"}}})
     )
     monkeypatch.setenv("CHEMSUITE_POLICY", str(policy))
-    from chemsuite.app.settings_dialog import SettingsDialog
-    from chemsuite.app.settings_hub import reset_hub
+    from chemsuite.app.shell.settings_dialog import SettingsDialog
+    from chemsuite.app.shell.settings_hub import reset_hub
 
     reset_hub()
     dialog = SettingsDialog()
@@ -204,7 +204,7 @@ def test_general_page_workers(window) -> None:
 
 
 def test_light_and_dark_are_fixed_whatever_the_os_uses(qapp) -> None:
-    from chemsuite.app import theme
+    from chemsuite.app.shell import theme
     from chemsuite.core.settings import Appearance
 
     light = theme.light_palette()

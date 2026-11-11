@@ -33,7 +33,7 @@ from chemsuite.core.table.style import (
 )
 from chemsuite.core.table.summary import FORMAT_TITLES
 
-from .dialogs import ToolDialog
+from ..widgets.dialogs import ToolDialog
 
 AS_TYPED = "as_typed"
 #: (key, title, example value for the tooltip)

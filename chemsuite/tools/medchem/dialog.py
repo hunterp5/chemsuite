@@ -23,8 +23,8 @@ import numpy as np
 from PySide6.QtWidgets import QCheckBox, QComboBox
 
 from chemsuite.analysis import medchem_space as ms
-from chemsuite.app.dialogs import ToolDialog
-from chemsuite.app.tools import ToolContext
+from chemsuite.app.document.tools import ToolContext
+from chemsuite.app.widgets.dialogs import ToolDialog
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.descriptors.catalog import CATALOG
 from chemsuite.descriptors.compute import compute_descriptors

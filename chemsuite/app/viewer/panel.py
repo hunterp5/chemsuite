@@ -75,8 +75,8 @@ from chemsuite.molview.geometry import (
     molecule_part,
 )
 
-from .. import graphics
-from ..glyphs import glyph
+from ..shell import graphics
+from ..shell.glyphs import glyph
 from ..widgets.panel import OptionsPopup, ToolPanel
 from .caption import CaptionOverlay, caption_columns, default_caption, paint_caption
 from .depiction import Depiction2D, structure_image
@@ -398,8 +398,8 @@ class StructureViewer(ToolPanel):
             return
         from chemsuite.molview.camera import Camera
 
-        from ..molview.overlay import MolOverlay
-        from ..molview.renderer import MolRenderer
+        from ..render3d.overlay import MolOverlay
+        from ..render3d.renderer import MolRenderer
 
         self.renderer = MolRenderer()
         self.renderer.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
