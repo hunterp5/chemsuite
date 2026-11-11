@@ -48,7 +48,7 @@ import base64
 import math
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtCore import QByteArray, Qt, QTimer
 from PySide6.QtWidgets import QDockWidget, QMenu
 
 if TYPE_CHECKING:
@@ -119,6 +119,18 @@ def _pin(window: MainWindow, dock: QDockWidget) -> None:
         window.tabifyDockWidget(dock, d)
         _put(d)
     current.raise_()
+
+
+def widen(window: MainWindow, dock: QDockWidget, width: int) -> None:
+    """Give a newly docked panel ``width`` pixels. Done now and again once the layout has
+    settled: re-pinning Filters and showing the dock both share the space out again."""
+
+    def resize() -> None:
+        if dock.isVisible() and not dock.isFloating():
+            window.resizeDocks([dock], [width], Qt.Orientation.Horizontal)
+
+    resize()
+    QTimer.singleShot(0, resize)
 
 
 def float_search(window: MainWindow, *, show: bool = True) -> None:

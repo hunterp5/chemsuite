@@ -50,33 +50,70 @@ def trigger(menu, title: str) -> None:
     raise AssertionError(f"no menu item {title!r} in {menu_titles(menu)}")
 
 
-def test_menu_offers_then_sort_only_with_an_existing_sort(window) -> None:
+def submenu(menu, title: str):
+    return next(a.menu() for a in menu.actions() if a.text() == title)
+
+
+def test_sort_submenu_offers_then_sort_only_with_an_existing_sort(window) -> None:
     table = window.workspace.table
-    menu = window.columns.build_menu("pIC50", [], 1)
-    assert "Then Sort Ascending" not in menu_titles(menu)
-    assert not next(a for a in menu.actions() if a.text() == "Clear Sort").isEnabled()
-    trigger(menu, "Sort Descending")
+    sort = submenu(window.columns.build_menu("pIC50", [], 1), "Sort")
+    assert menu_titles(sort) == ["Ascending", "Descending", "Clear"]
+    assert not sort.actions()[-1].isEnabled()
+    trigger(sort, "Descending")
     assert table.sort_keys == (("pIC50", False),)
-    trigger(window.columns.build_menu("ID", [], 0), "Then Sort Ascending")
+    sort = submenu(window.columns.build_menu("ID", [], 0), "Sort")
+    assert menu_titles(sort) == ["Ascending", "Descending", "Then Ascending", "Then Descending",
+                                 "Clear"]  # fmt: skip
+    trigger(sort, "Then Ascending")
     assert table.sort_keys == (("pIC50", False), ("ID", True))
     header = window.view.horizontalHeader()
     assert header.sortIndicatorSection() == 1  # primary key shown, secondary kept
     assert header.sortIndicatorOrder() == Qt.SortOrder.DescendingOrder
+    trigger(submenu(window.columns.build_menu("ID", [], 0), "Sort"), "Clear")
+    assert table.sort_keys == ()
 
 
-def test_rename_insert_delete_are_undoable(window, monkeypatch) -> None:
+def test_the_menu_holds_no_insert_split_or_join(window) -> None:
+    titles = menu_titles(window.columns.build_menu("ID", ["ID", "pIC50"], 0))
+    assert titles[:4] == ["Sort", "Filter", "Search", "Select"]
+    assert not [t for t in titles if t.startswith(("Insert", "Split", "Join"))]
+
+
+def test_search_opens_the_bar_on_the_column(window) -> None:
+    trigger(window.columns.build_menu("pIC50", [], 1), "Search")
+    assert window.search.is_open and window.search.column_name() == "pIC50"
+
+
+def test_select_picks_rows_by_value(window) -> None:
+    table = window.workspace.table
+    table.add_rows({"ID": ["D", "E"], "pIC50": ["6", ""]}, undoable=False)
+    selection = window.workspace.selection
+
+    def chosen() -> list[str]:
+        oids = [o for o in table.visible_oids().tolist() if o in selection]
+        return table.column("ID").values(table.slots_of(oids)).tolist()
+
+    select = submenu(window.columns.build_menu("pIC50", [], 1), "Select")
+    assert menu_titles(select) == ["Empty", "Not Empty", "First Occurrence", "Duplicates",
+                                   "All Duplicated Values"]  # fmt: skip
+    trigger(select, "Empty")
+    assert chosen() == ["E"]
+    trigger(select, "First Occurrence")
+    assert chosen() == ["A", "B", "C"]
+    trigger(select, "Duplicates")
+    assert chosen() == ["D"]
+    trigger(select, "All Duplicated Values")
+    assert chosen() == ["B", "D"]
+    assert "2 row(s)" in window.statusBar().currentMessage()
+
+
+def test_rename_and_delete_are_undoable(window, monkeypatch) -> None:
     table = window.workspace.table
     answer_text(monkeypatch, "Potency")
     trigger(window.columns.build_menu("pIC50", [], 1), "Rename…")
     assert table.column_names == ["ID", "Potency"]
-    answer_text(monkeypatch, "Notes")
-    trigger(window.columns.build_menu("ID", [], 0), "Insert Column Right…")
-    assert table.column_names == ["ID", "Notes", "Potency"]
-    answer_text(monkeypatch, "ID")  # duplicate name: refused with a warning
-    warnings: list[str] = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
-    trigger(window.columns.build_menu("ID", [], 0), "Insert Column Left…")
-    assert warnings and table.column_names == ["ID", "Notes", "Potency"]
+    trigger(window.columns.build_menu("ID", [], 0), "Delete Column")
+    assert table.column_names == ["Potency"]
     table.undo()
     table.undo()
     assert table.column_names == ["ID", "pIC50"]

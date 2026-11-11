@@ -401,8 +401,10 @@ class SearchBar(QWidget):
     def is_open(self) -> bool:
         return not self.isHidden()
 
-    def focus(self) -> None:
-        """Open the bar and put the cursor in it."""
+    def focus(self, column: str | None = None) -> None:
+        """Open the bar and put the cursor in it; ``column`` also chooses where to look."""
+        if column is not None:
+            self.set_column(column)
         self.open()
         self.edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
         self.edit.selectAll()

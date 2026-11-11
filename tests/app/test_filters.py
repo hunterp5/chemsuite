@@ -140,7 +140,7 @@ def test_cards_refresh_when_data_changes(qtbot, panel) -> None:
 def test_header_menu_adds_a_filter(window) -> None:
     from .test_column_actions import trigger
 
-    trigger(window.columns.build_menu("pIC50", [], 1), "Filter This Column")
+    trigger(window.columns.build_menu("pIC50", [], 1), "Filter")
     assert [c.column for c in window.filters.cards] == ["pIC50"]
     assert window.filter_dock.isVisibleTo(window)
 
