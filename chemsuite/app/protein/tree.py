@@ -23,7 +23,8 @@ also frames it in the view (``focusRequested``).
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from chemsuite.protein.ligands import GUESSED
 from chemsuite.protein.model import ADDITIVE, AMINO, GLYCAN, ION, LIGAND, NUCLEIC, WATER, Structure
+from chemsuite.protein.select import select
 
 from .session import ADD, SET, TOGGLE, ProteinSession
 
@@ -67,7 +69,9 @@ class ProteinTree(QTreeWidget):
         self.itemDoubleClicked.connect(self._item_double_clicked)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context_menu)
+        self._masks: dict[int, np.ndarray] = {}  # id(item) -> the atoms it selects, when asked
         session.proteinsChanged.connect(self.reload)
+        session.selectionChanged.connect(self.show_selection)
         self.reload()
 
     def reload(self) -> None:
@@ -94,6 +98,41 @@ class ProteinTree(QTreeWidget):
             self.addTopLevelItem(top)
             top.setExpanded(shown.id in expanded or len(self.session.displays) == 1)
         self._filling = False
+        self._masks = {}
+        self.show_selection()
+
+    def show_selection(self) -> None:
+        """Mark the items whose atoms are all selected (highlighted) or some (bold)."""
+        palette = self.palette()
+        fill = palette.color(QPalette.ColorRole.Highlight)
+        ink = palette.color(QPalette.ColorRole.HighlightedText)
+        self._filling = True
+        blocked = self.blockSignals(True)
+        try:
+            for i in range(self.topLevelItemCount()):
+                top = self.topLevelItem(i)
+                for item in [top] + [top.child(k) for k in range(top.childCount())]:
+                    self._mark(item, fill, ink)
+        finally:
+            self.blockSignals(blocked)
+            self._filling = False
+
+    def _mark(self, item: QTreeWidgetItem, fill: QColor, ink: QColor) -> None:
+        shown = self.session.display(str(item.data(0, _PROTEIN)))
+        some = every = False
+        if shown is not None and shown.selected.any():
+            mask = self._masks.get(id(item))
+            if mask is None:
+                mask = select(shown.structure, str(item.data(0, _SELECTS))) & shown.active
+                self._masks[id(item)] = mask
+            chosen = shown.selected[mask]
+            some = bool(chosen.any())
+            every = some and bool(chosen.all())
+        font = item.font(0)
+        font.setBold(some and not every)
+        item.setFont(0, font)
+        item.setBackground(0, QBrush(fill) if every else QBrush())
+        item.setForeground(0, QBrush(ink) if every else QBrush())
 
     def _fill(self, top: QTreeWidgetItem, protein: str, structure: Structure) -> None:
         kinds = structure.res_kind
@@ -164,8 +203,18 @@ class ProteinTree(QTreeWidget):
         menu.exec(self.viewport().mapToGlobal(where))
 
     def keyPressEvent(self, event) -> None:
+        if event.matches(QKeySequence.StandardKey.SelectAll) or event.matches(
+            QKeySequence.StandardKey.Copy
+        ):
+            event.ignore()  # the viewer's: select every atom, copy the selection
+            return
         item = self.currentItem()
         if item is not None and event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.removeRequested.emit(str(item.data(0, _PROTEIN)))
             return
         super().keyPressEvent(event)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self.show_selection()  # the highlight's colours, light or dark

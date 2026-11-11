@@ -27,7 +27,14 @@ from dataclasses import dataclass
 
 import numpy as np
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QFontDatabase, QMouseEvent, QPainter, QPaintEvent, QPalette
+from PySide6.QtGui import (
+    QFontDatabase,
+    QKeyEvent,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPalette,
+)
 from PySide6.QtWidgets import QScrollArea, QWidget
 
 from chemsuite.protein.sequence import ChainSequence, chain_sequences
@@ -51,6 +58,7 @@ class SequenceStrip(QWidget):
     """The painted rows; lives in a :class:`SequenceView` (a scroll area)."""
 
     residueHovered = Signal(str, int)  # protein, residue (-1: none)
+    cursorMoved = Signal(QRect)  # where the keyboard's cursor is now (to scroll to it)
 
     def __init__(self, session: ProteinSession, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -61,6 +69,8 @@ class SequenceStrip(QWidget):
         self._cache: dict[int, list[ChainSequence]] = {}
         self._hover: tuple[int, int] | None = None  # row, position
         self._anchor: tuple[int, int] | None = None
+        self._cursor: tuple[int, int] | None = None  # the keyboard's row and position
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._press_mode = SET
         session.proteinsChanged.connect(self.reload)
         session.selectionChanged.connect(self.update)
@@ -102,6 +112,7 @@ class SequenceStrip(QWidget):
                                  sequence.letters, numbers))  # fmt: skip
         self.rows = rows
         self._hover = None
+        self._cursor = self._anchor = None
         self.updateGeometry()
         self.adjustSize()
         self.update()
@@ -162,9 +173,10 @@ class SequenceStrip(QWidget):
                     number = str(int(row.numbers[k]))
                     painter.drawText(QRect(x, top, cell * _EVERY, line),
                                      Qt.AlignmentFlag.AlignLeft, number)  # fmt: skip
-            if self._hover is not None and self._hover[0] == r:
+            marked = self._hover if self._hover is not None else self._focused_cursor()
+            if marked is not None and marked[0] == r:
                 painter.setPen(text)
-                painter.drawRect(QRect(label_width + self._hover[1] * cell, top + line,
+                painter.drawRect(QRect(label_width + marked[1] * cell, top + line,
                                        cell - 1, line - 1))  # fmt: skip
         painter.end()
 
@@ -178,7 +190,7 @@ class SequenceStrip(QWidget):
             self._select_range(self._anchor, hit, ADD)
             return
         self._press_mode = TOGGLE if modifiers & Qt.KeyboardModifier.ControlModifier else SET
-        self._anchor = hit
+        self._anchor = self._cursor = hit
         self._select_range(hit, hit, self._press_mode)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
@@ -199,6 +211,51 @@ class SequenceStrip(QWidget):
         if self._hover is not None:
             self._hover = None
             self.update()
+            self.residueHovered.emit("", -1)
+
+    # keyboard: arrows move a cursor, Shift+arrows select from where it started, Return
+    # selects the residue under it
+    def _focused_cursor(self) -> tuple[int, int] | None:
+        return self._cursor if self.hasFocus() else None
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if not self.rows:
+            super().keyPressEvent(event)
+            return
+        row, position = self._cursor or (0, 0)
+        key = event.key()
+        steps = {Qt.Key.Key_Left: (0, -1), Qt.Key.Key_Right: (0, 1),
+                 Qt.Key.Key_Up: (-1, 0), Qt.Key.Key_Down: (1, 0)}  # fmt: skip
+        if key in steps:
+            row = min(max(row + steps[key][0], 0), len(self.rows) - 1)
+            position += steps[key][1]
+        elif key == Qt.Key.Key_Home:
+            position = 0
+        elif key == Qt.Key.Key_End:
+            position = len(self.rows[row].letters) - 1
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self._cursor is not None:
+            self._anchor = self._cursor
+            self._select_range(self._cursor, self._cursor, SET)
+            return
+        else:
+            super().keyPressEvent(event)
+            return
+        position = min(max(position, 0), len(self.rows[row].letters) - 1)
+        extend = event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+        if not extend or self._anchor is None or self._anchor[0] != row:
+            self._anchor = (row, position)
+        self._cursor = (row, position)
+        if extend:
+            self._select_range(self._anchor, self._cursor, SET)
+        self.update()
+        self.residueHovered.emit(self.rows[row].protein, self.residue_at(row, position))
+        self.cursorMoved.emit(QRect(self.label_width + position * self.cell,
+                                    row * self.row_height, self.cell, self.row_height))  # fmt: skip
+
+    def focusOutEvent(self, event) -> None:
+        super().focusOutEvent(event)
+        self.update()
+        if self._hover is None:
             self.residueHovered.emit("", -1)
 
     def _select_range(self, start: tuple[int, int], end: tuple[int, int], mode: str) -> None:
@@ -233,6 +290,10 @@ class SequenceView(QScrollArea):
         self.setWidgetResizable(False)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # the strip inside takes the keys
+        self.strip.cursorMoved.connect(
+            lambda box: self.ensureVisible(box.center().x(), box.center().y(), 60, 0)
+        )
 
     def sizeHint(self) -> QSize:
         hint = self.strip.sizeHint()

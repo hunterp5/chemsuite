@@ -39,8 +39,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import numpy as np
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QGuiApplication, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDockWidget,
     QGridLayout,
@@ -146,6 +146,8 @@ class ProteinPanel(QWidget):
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._escape)
         QShortcut(QKeySequence("["), self, lambda: self.models_bar.step(-1))
         QShortcut(QKeySequence("]"), self, lambda: self.models_bar.step(1))
+        frame = QShortcut(QKeySequence(Qt.Key.Key_F), self, lambda: self.frame_selection())
+        frame.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)  # text fields keep "f"
         self.session.sceneChanged.connect(self._redraw)
         self.session.lookChanged.connect(self._relook)
         self.session.proteinsChanged.connect(self._proteins_changed)
@@ -157,6 +159,35 @@ class ProteinPanel(QWidget):
         if current is not None:
             self.follow_row(current())
             self.session.rowsEdited.connect(lambda oids: self._row_edited(current(), oids))
+
+        QWidget.setTabOrder(self.selection_bar.field, self.tree)
+        QWidget.setTabOrder(self.tree, self.views)
+        QWidget.setTabOrder(self.views, self.sequence.strip)
+
+    # keys: the viewer's own while focus is inside it (the main window has ⌘A and ⌘C too)
+    def _own_key(self, event: QKeyEvent) -> bool:
+        return event.matches(QKeySequence.StandardKey.SelectAll) or event.matches(
+            QKeySequence.StandardKey.Copy
+        )
+
+    def event(self, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.ShortcutOverride and self._own_key(event):
+            event.accept()  # a text field inside takes these first: it accepts them itself
+            return True
+        return super().event(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.matches(QKeySequence.StandardKey.SelectAll):
+            self.session.select_text("all")
+        elif event.matches(QKeySequence.StandardKey.Copy):
+            self.copy_selection(protein_io.PDB)
+        else:
+            super().keyPressEvent(event)
+
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange and self.view is not None:
+            self.view.set_background(self.palette().base().color())  # light or dark
 
     def _escape(self) -> None:
         if self.session.measuring:
@@ -204,7 +235,7 @@ class ProteinPanel(QWidget):
         from .view import ProteinView
 
         self.view = ProteinView()
-        self.view.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.view.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.view.set_background(self.palette().base().color())
         self.view.failed.connect(lambda: self._no_view(graphics.NO_GPU))
         self.view.atomHovered.connect(self.session.hover)

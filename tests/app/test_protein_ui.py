@@ -831,3 +831,79 @@ def test_every_part_built_in_the_background_has_a_job_title() -> None:
     from chemsuite.protein import display
 
     assert set(display.DEFERRED) <= set(builds.TITLES)
+
+
+# the polish pass: selection feedback, keys, light and dark
+
+
+def test_the_tree_shows_what_is_selected(panel) -> None:
+    from PySide6.QtCore import Qt
+
+    tree = panel.tree
+    top = tree.topLevelItem(0)
+    chain_e, chain_i = top.child(0), top.child(1)
+    panel.session.select_text("chain I and polymer")
+    assert chain_i.background(0).style() != Qt.BrushStyle.NoBrush  # all of it: highlighted
+    assert chain_e.background(0).style() == Qt.BrushStyle.NoBrush and not chain_e.font(0).bold()
+    assert top.font(0).bold()  # some of the protein
+    panel.session.clear_selection()
+    assert chain_i.background(0).style() == Qt.BrushStyle.NoBrush and not top.font(0).bold()
+
+
+def test_the_viewers_own_keys_while_focus_is_inside(panel, qtbot) -> None:
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QGuiApplication
+
+    with qtbot.waitActive(panel):  # a shortcut needs its window active
+        panel.show()
+        panel.activateWindow()
+    panel.tree.setFocus()
+    qtbot.keyClick(panel.tree, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    shown = panel.session.display("1ATP")
+    assert shown.selected[shown.active].all()
+    panel.session.select_text("ligand")
+    qtbot.keyClick(panel.tree, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    assert QGuiApplication.clipboard().text().count("HETATM") == 31
+    framed: list[int] = []
+    panel.frame_selection = lambda: framed.append(1)
+    qtbot.keyClick(panel.tree, Qt.Key.Key_F)
+    assert framed == [1]
+    field = panel.selection_bar.field  # a text field keeps its own ⌘A and its letters
+    field.setFocus()
+    qtbot.keyClicks(field, "f")
+    assert field.text() == "f" and framed == [1]
+
+
+def test_the_sequence_strip_by_keyboard(panel, qtbot) -> None:
+    from PySide6.QtCore import Qt
+
+    strip = panel.sequence.strip
+    shown = panel.session.display("1ATP")
+    s = shown.structure
+    modelled = np.flatnonzero(strip.rows[0].sequence.residue_at >= 0)
+    at = int(modelled[0]) + 3  # the first residues of the sequence are not in the model
+    strip.setFocus()
+    for _ in range(at):
+        qtbot.keyClick(strip, Qt.Key.Key_Right)
+    assert strip._cursor == (0, at) and not shown.selected.any()
+    qtbot.keyClick(strip, Qt.Key.Key_Return)
+    first = np.unique(s.residue_of[shown.selected])
+    assert len(first) == 1 and first[0] == strip.residue_at(0, at)
+    for _ in range(2):
+        qtbot.keyClick(strip, Qt.Key.Key_Right, Qt.KeyboardModifier.ShiftModifier)
+    assert len(np.unique(s.residue_of[shown.selected])) == 3
+    qtbot.keyClick(strip, Qt.Key.Key_Down)
+    assert strip._cursor[0] == 1
+    qtbot.keyClick(strip, Qt.Key.Key_End)
+    assert strip._cursor == (1, len(strip.rows[1].letters) - 1)
+
+
+def test_the_view_follows_light_and_dark(panel) -> None:
+    from PySide6.QtGui import QColor, QPalette
+
+    if panel.view is None:
+        return
+    dark = QPalette(panel.palette())
+    dark.setColor(QPalette.ColorRole.Base, QColor(20, 20, 24))
+    panel.setPalette(dark)
+    assert panel.view.background == QColor(20, 20, 24)
