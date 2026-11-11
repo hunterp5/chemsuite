@@ -225,12 +225,43 @@ modified.
 | Feature | Notes |
 |---|---|
 | pKa and permeability models | torch, unipka and chemprop make the install about 2 GB larger, so this is an optional "predictions" add-on. Settles the open question about the "(est.)" descriptors. pKa: MolGpKa is built into the base install (Chemistry ▸ Predict pKa); Uni-pKa stays an optional add-on, see [PKA_PLAN.md](PKA_PLAN.md). |
-| Protein viewer, simulation, sequence/MSA, docking (Gnina), interaction fingerprints, pose browser | openmm, pdbfixer, meeko, gemmi, prolif and MAFFT. **3D viewer decided and built:** a native Qt RHI renderer (GPU impostor spheres and cylinders, `chemsuite/molview` + `chemsuite/app/molview`), no PyVista or WebEngine. Proteins and surfaces plug into it later. |
+| Protein viewer and editor, sequence alignment, docking, preparation, MD simulation | Planned in phases: see **§7a Proteins** below. |
 | QSAR, Quick QSAR, CoMSIA | Skipped for now (phase 7d). |
 
 ---
 
 ## 7. Proposed order
+
+### 7a. Proteins (decided 2026-11-10)
+
+A protein viewer and editor for medicinal chemists, on the native QRhi renderer (no WebEngine).
+Proteins are stored in the document; ligands, poses and scores are table rows linked to their
+protein by a `Protein` column, so plots, filters and SAR work on them. gemmi is in the base
+install; preparation, minimisation and simulation need the optional `chemsuite[protein]` add-on
+(OpenMM, PDBFixer, Meeko, propka/pdb2pqr). Each phase is usable on its own.
+
+1. **Viewer and selection** (next). Open PDB/mmCIF or fetch by PDB ID; several proteins per
+   document; cartoon, sticks and surface; select chains, residues and atoms in 3D, in the
+   sequence strip or with a selection language; binding site with interactions; measurements;
+   the table's current row shows its pose in the protein.
+2. **Editing.** Delete and rename, protonation states and flips, mutations from a rotamer
+   library, ligand edits in the sketcher placed back in the pocket; every edit undoable.
+3. **Preparation and minimisation.** PDBFixer, propka protonation at a pH, OpenMM minimisation
+   with restraints, in a separate process.
+4. **Alignment.** Pairwise sequence alignment and superposition (whole chain or pocket); MSA
+   through MAFFT.
+5. **Docking and poses.** AutoDock Vina (an external program, all platforms), optional Gnina
+   rescoring (Linux, Windows through WSL); poses and scores as table rows; interaction
+   fingerprints.
+6. **MD simulation.** OpenMM: system setup (force fields for protein and ligand, explicit or
+   implicit solvent, ions), **restraints from any selection** (positional with a force
+   constant, distances between picked atoms, frozen atoms), a minimise / heat / equilibrate /
+   produce protocol that resumes from checkpoints and uses the GPU when present, and results:
+   a trajectory player in the protein view, RMSD, RMSF per residue (cartoon coloured by it),
+   ligand RMSD and interaction occupancy plots, and representative frames as table rows.
+   Trajectories are kept beside the document. Later: MM/GBSA rescoring and relative binding
+   free energy (openfe) as a separate add-on.
+
 
 **Done (2026-11-10): 3D plots on QRhi.** The 3D scatter and landscape plots moved off
 pyqtgraph.opengl onto Qt's RHI, as the Structure Viewer's 3D view already was, and PyOpenGL
