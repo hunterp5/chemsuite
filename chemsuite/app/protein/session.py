@@ -23,10 +23,12 @@ session, never each other, and redraw on its signals:
 - ``proteinsChanged``: proteins came or went, or one was shown or hidden;
 - ``sceneChanged``: what is drawn changed (styles, cartoon, surface): geometry is rebuilt;
 - ``lookChanged``: only colours or the selection changed: only the look is uploaded;
-- ``hovered``: the atom under the pointer (the protein's id and atom index, or "" and -1).
+- ``hovered``: the atom under the pointer (the protein's id and atom index, or "" and -1);
+- ``focusChanged``: a ligand was focused or the focus cleared (the panel moves the camera);
+- ``measurementsChanged``: a measurement was added or removed, or atoms picked for one.
 
-Selections are atom masks per protein. Saved ("named") selections are kept as atom uids, so
-they survive edits of the structure.
+Selections are atom masks per protein. Saved ("named") selections, measurements and the
+focused ligand are kept as atom uids, so they survive edits of the structure.
 """
 
 from __future__ import annotations
@@ -38,9 +40,11 @@ from PySide6.QtCore import QObject, Signal
 
 from chemsuite.core.table import AssetsChanged, Table
 from chemsuite.core.table.events import Changed
+from chemsuite.molview.measure import describe
 from chemsuite.protein import display as displays
+from chemsuite.protein import scene as scenes
 from chemsuite.protein import store
-from chemsuite.protein.model import Structure
+from chemsuite.protein.model import AMINO, LIGAND, NUCLEIC, Structure
 from chemsuite.protein.select import Mask, SelectionError, select
 
 KIND = "protein"
@@ -48,6 +52,10 @@ SET = "set"
 ADD = "add"
 TOGGLE = "toggle"
 REMOVE = "remove"
+#: Focus Ligand shows these as sticks and the rest faded
+FOCUS_SITE = "byres polymer within 5 of $focus"
+FOCUS_NEAR = "(water or ion) within 3.5 of $focus"
+Point = tuple[str, int]  # a protein id and an atom uid
 
 
 def structure_of(payload) -> Structure:
@@ -61,12 +69,18 @@ class ProteinSession(QObject):
     lookChanged = Signal()
     selectionChanged = Signal()
     hovered = Signal(str, int)
+    focusChanged = Signal()
+    measurementsChanged = Signal()
 
     def __init__(self, table: Table, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.table = table
         self.displays: list[displays.Display] = []
         self.named: dict[str, dict[str, list[int]]] = {}
+        self.focused: Point | None = None  # the focused ligand: one of its atoms
+        self.measurements: list[tuple[Point, ...]] = []
+        self.measuring = 0  # how many atoms the next measurement takes (0: not measuring)
+        self.picked: list[Point] = []
         self._scene: displays.Scene | None = None
         self._pending: dict[str, dict] = {}  # saved display state for proteins not loaded yet
         self._unsubscribe = table.subscribe(self._on_table_event)
@@ -230,6 +244,152 @@ class ProteinSession(QObject):
             shown.choose_altloc(residue, letter)
             self._changed(rebuilt=True)
 
+    # interactions
+    @property
+    def interactions_shown(self) -> bool:
+        return any(d.query.any() for d in self.displays)
+
+    def show_interactions(self, on: bool = True) -> None:
+        """Show the interactions of the selection, or of every ligand when nothing is
+        selected; ``on=False`` hides them."""
+        selected = self.selected_count() > 0
+        for shown in self.displays:
+            if not on or not shown.visible:
+                shown.show_interactions(None)
+            elif selected:
+                shown.show_interactions(shown.selected if shown.selected.any() else None)
+            else:
+                s = shown.structure
+                shown.show_interactions(s.res_kind[s.residue_of] == LIGAND)
+        self._changed(rebuilt=True)
+
+    def interactions_of(self, protein: str, atom: int) -> list[str]:
+        """The shown interactions this atom takes part in, in words."""
+        from chemsuite.protein.interactions import describe as say
+
+        shown = self.display(protein)
+        if shown is None or shown not in self.scene.displays:
+            return []
+        found = self.scene.interactions[self.scene.displays.index(shown)]
+        rows = np.flatnonzero((found.a == atom) | (found.b == atom))
+        return [say(shown.structure, found, int(k)) for k in rows]
+
+    # focus
+    def ligands(self) -> list[tuple[str, int]]:
+        """(protein id, residue) of every ligand in the visible proteins."""
+        return [(d.id, int(r)) for d in self.displays if d.visible
+                for r in np.flatnonzero(d.structure.res_kind == LIGAND)]  # fmt: skip
+
+    def focus(self, protein: str, residue: int, restyle: bool = True) -> None:
+        """Show this ligand in its pocket: the pocket's residues as sticks, the waters and ions
+        touching it, its interactions; the rest of this protein faded, and its other waters,
+        ions and small molecules hidden. ``restyle=False`` only
+        fades (a saved focus coming back: the styles were saved already)."""
+        shown = self.display(protein)
+        if shown is None:
+            return
+        s = shown.structure
+        ligand = (s.residue_of == residue) & shown.active
+        named = {"focus": ligand}
+        site = select(s, FOCUS_SITE, named=named) & shown.active
+        waters = select(s, FOCUS_NEAR, named=named) & shown.active
+        for other in self.displays:
+            other.ghost = np.zeros(other.structure.n_atoms, bool)
+            if restyle:
+                other.show_interactions(None)
+        if restyle:
+            polymer = np.isin(s.res_kind[s.residue_of], (AMINO, NUCLEIC))
+            shown.show(~(site | waters | ligand | polymer), scenes.HIDDEN)
+            shown.show(site, scenes.STICK)
+            shown.show(waters, scenes.BALL_AND_STICK)
+            shown.show(ligand, scenes.BALL_AND_STICK)
+            shown.show_interactions(ligand)
+        shown.ghost = ~(site | waters | ligand)
+        self.focused = (protein, int(s.uid[s.atoms_of(residue).start]))
+        self._changed(rebuilt=True)
+        self.focusChanged.emit()
+
+    def focused_atoms(self) -> tuple[displays.Display, np.ndarray] | None:
+        """The focused ligand's display and its pocket's atoms (ligand, site, waters)."""
+        if self.focused is None:
+            return None
+        shown = self.display(self.focused[0])
+        if shown is None or not shown.visible:
+            return None
+        return shown, ~shown.ghost
+
+    def focused_residue(self) -> tuple[str, int] | None:
+        if self.focused is None:
+            return None
+        shown = self.display(self.focused[0])
+        index = -1 if shown is None else int(shown.structure.indices(
+            np.array([self.focused[1]]))[0])  # fmt: skip
+        if index < 0:
+            return None
+        return shown.id, int(shown.structure.residue_of[index])
+
+    def clear_focus(self) -> None:
+        if self.focused is None:
+            return
+        self.focused = None
+        for shown in self.displays:
+            shown.ghost = np.zeros(shown.structure.n_atoms, bool)
+        self._changed(rebuilt=False)
+        self.focusChanged.emit()
+
+    # measurements
+    def measure(self, atoms: int) -> None:
+        """Measure between the next ``atoms`` atoms picked (2 distance, 3 angle, 4 dihedral;
+        0 stops)."""
+        self.measuring = atoms if atoms in (2, 3, 4) else 0
+        self.picked = []
+        self.measurementsChanged.emit()
+
+    def pick(self, atom: int) -> bool:
+        """Add scene ``atom`` to the measurement being made; False when not measuring."""
+        if not self.measuring:
+            return False
+        found = self.scene.locate(atom)
+        if found is None:
+            return True
+        shown, index = found
+        point = (shown.id, int(shown.structure.uid[index]))
+        if point in self.picked:
+            self.picked.remove(point)
+        else:
+            self.picked.append(point)
+        if len(self.picked) == self.measuring:
+            self.measurements.append(tuple(self.picked))
+            self.picked = []
+        self.measurementsChanged.emit()
+        return True
+
+    def clear_measurements(self) -> None:
+        self.measurements = []
+        self.picked = []
+        self.measurementsChanged.emit()
+
+    def where(self, point: Point) -> tuple[int, np.ndarray] | None:
+        """A point's scene atom and position, or None when it is not drawn."""
+        shown = self.display(point[0])
+        scene = self.scene
+        if shown is None or shown not in scene.displays:
+            return None
+        index = int(shown.structure.indices(np.array([point[1]]))[0])
+        if index < 0:
+            return None
+        return int(scene.global_atoms(shown, np.array([index]))[0]), shown.structure.xyz(0)[index]
+
+    def measured(self) -> list[tuple[list[np.ndarray], str]]:
+        """Each measurement whose atoms are all drawn: its positions and value in words."""
+        out = []
+        for points in self.measurements:
+            places = [self.where(p) for p in points]
+            if all(p is not None for p in places):
+                xyz = [p[1] for p in places]
+                out.append((xyz, describe(xyz)))
+        return out
+
     # hover, from the view or the sequence
     def hover(self, atom: int) -> None:
         """``atom`` is an index into the scene (-1: nothing)."""
@@ -244,6 +404,8 @@ class ProteinSession(QObject):
         return {
             "proteins": {d.id: d.state() for d in self.displays},
             "named": self.named,
+            "focused": list(self.focused) if self.focused else None,
+            "measurements": [[list(p) for p in m] for m in self.measurements],
         }
 
     def set_state(self, state: Mapping) -> None:
@@ -256,6 +418,27 @@ class ProteinSession(QObject):
             if shown.id in saved:
                 shown.set_state(saved.pop(shown.id))
         self._pending = saved
+        self.measurements = _points(state.get("measurements"))
+        focused = _points([[state.get("focused")]])
+        self.focused = focused[0][0] if focused else None
+        if self.focused is not None:
+            place = self.focused_residue()
+            if place is not None:
+                self.focus(*place, restyle=False)
         self._scene = None
         self.proteinsChanged.emit()
         self.sceneChanged.emit()
+
+
+def _points(data) -> list[tuple[Point, ...]]:
+    """Measurements from saved state: lists of [protein id, uid] pairs; bad entries are
+    dropped."""
+    out = []
+    for item in data if isinstance(data, list) else []:
+        if not isinstance(item, list) or not 1 <= len(item) <= 4:
+            continue
+        points = [(str(p[0]), int(p[1])) for p in item
+                  if isinstance(p, list) and len(p) == 2 and isinstance(p[1], int)]  # fmt: skip
+        if len(points) == len(item):
+            out.append(tuple(points))
+    return out

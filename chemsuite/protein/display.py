@@ -38,6 +38,7 @@ import numpy as np
 
 from . import cartoon as cartoons
 from . import colours as schemes
+from . import interactions as contacts
 from . import mesh as meshes
 from . import scene as scenes
 from . import surface as surfaces
@@ -63,6 +64,7 @@ class Display:
     colours: np.ndarray = field(init=False)  # rgba per atom
     selected: np.ndarray = field(init=False)  # bool per atom
     ghost: np.ndarray = field(init=False)  # bool per atom
+    query: np.ndarray = field(init=False)  # bool per atom: whose interactions are shown
     _cache: dict = field(default_factory=dict, init=False, repr=False)
     _versions: dict = field(init=False, repr=False)
 
@@ -75,7 +77,9 @@ class Display:
         self.colours = schemes.colour(s, self.scheme)
         self.selected = np.zeros(s.n_atoms, bool)
         self.ghost = np.zeros(s.n_atoms, bool)
-        self._versions = {"geometry": 0, "cartoon": 0, "surface": 0, "trace": 0}
+        self.query = np.zeros(s.n_atoms, bool)
+        self._versions = {"geometry": 0, "cartoon": 0, "surface": 0, "trace": 0,
+                          "interactions": 0}  # fmt: skip
 
     # what changed
     def touch(self, *parts: str) -> None:
@@ -129,7 +133,12 @@ class Display:
                 self.styles[i] = self.styles[span.start + twins[0]] if len(twins) else 0
         self.styles[~now] = scenes.HIDDEN
         self.surface &= now
-        self.touch("geometry", "cartoon", "surface", "trace")
+        self.touch("geometry", "cartoon", "surface", "trace", "interactions")
+
+    def show_interactions(self, atoms: np.ndarray | None) -> None:
+        """Show the interactions of these atoms with the rest (None: none)."""
+        self.query = np.zeros(self.structure.n_atoms, bool) if atoms is None else atoms.copy()
+        self.touch("interactions")
 
     # built parts, cached by version
     def _cached(self, part: str, build):
@@ -158,6 +167,13 @@ class Display:
         shown = self.cartoon[residues]
         return residues[shown], atoms[shown]
 
+    def interactions(self) -> contacts.Interactions:
+        if not self.query.any():
+            return contacts.Interactions.empty()
+        return self._cached(
+            "interactions", lambda: contacts.find(self.structure, self.query, self.active)
+        )
+
     def flags(self) -> np.ndarray:
         return scenes.flags(self.structure.n_atoms, selected=self.selected, ghost=self.ghost)
 
@@ -183,6 +199,7 @@ class Display:
             "styles": runs(self.styles),
             "cartoon": runs(self.cartoon.astype(np.uint8)),
             "surface": runs(self.surface.astype(np.uint8)),
+            "interactions": runs(self.query.astype(np.uint8)),
         }
 
     def set_state(self, state: Mapping) -> None:
@@ -198,13 +215,15 @@ class Display:
         surface = unruns(state.get("surface"), n)
         if surface is not None:
             self.surface = surface.astype(bool)
+        query = unruns(state.get("interactions"), n)
+        self.query = np.zeros(n, bool) if query is None else query.astype(bool)
         scheme = str(state.get("scheme", self.scheme))
         self.scheme = scheme if scheme in schemes.SCHEMES else schemes.ELEMENT
         self.colours = schemes.colour(self.structure, self.scheme)
         surface_scheme = str(state.get("surface_scheme", self.surface_scheme))
         if surface_scheme in schemes.SCHEMES:
             self.surface_scheme = surface_scheme
-        self.touch("geometry", "cartoon", "surface")
+        self.touch("geometry", "cartoon", "surface", "interactions")
 
 
 def runs(values: np.ndarray) -> list[int]:
@@ -243,6 +262,9 @@ class Scene:
     surface_look: np.ndarray
     pick_atoms: np.ndarray  # global atoms of the cartoon trace
     pick_centres: np.ndarray
+    interactions: tuple[contacts.Interactions, ...] = ()  # per display
+    lines: meshes.Mesh = field(default_factory=meshes.Mesh.empty)  # owners: global atoms
+    lines_look: np.ndarray = field(default_factory=lambda: np.zeros((0, meshes.LOOK_FLOATS)))
 
     def locate(self, atom: int) -> tuple[Display, int] | None:
         """The display and its own atom index for a global atom index."""
@@ -289,6 +311,8 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
     pick_atoms = _cat([t + o for t, o in zip(traces, atom_offsets, strict=False)], np.int64)
     pick_centres = _cat([d.structure.xyz(0)[t] for d, t in zip(shown, traces, strict=True)],
                         np.float32, 3)  # fmt: skip
+    found = tuple(d.interactions() for d in shown)
+    lines, lines_look = interaction_lines(found, atom_offsets)
     return Scene(
         displays=shown,
         atom_offsets=atom_offsets,
@@ -302,7 +326,28 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
         surface_look=meshes.look(surface, surface_colours, flags),
         pick_atoms=pick_atoms,
         pick_centres=pick_centres,
+        interactions=found,
+        lines=lines,
+        lines_look=lines_look,
     )
+
+
+def interaction_lines(found, atom_offsets) -> tuple[meshes.Mesh, np.ndarray]:
+    """Dashed lines for the interactions, coloured by kind; each line is owned by its
+    query atom, so hovering that atom lights its lines."""
+    found = [f for f in found]
+    if not any(len(f) for f in found):
+        return meshes.Mesh.empty(), np.zeros((0, meshes.LOOK_FLOATS), np.float32)
+    starts = np.concatenate([f.start for f in found])
+    ends = np.concatenate([f.end for f in found])
+    owners = np.concatenate([f.a + o for f, o in zip(found, atom_offsets, strict=False)])
+    kinds = np.concatenate([f.kind for f in found])
+    lines = meshes.dashes(starts, ends)
+    palette = np.array([(*contacts.COLOURS[k], 1.0) for k in sorted(contacts.COLOURS)],
+                       np.float32)  # fmt: skip
+    look = np.zeros((len(lines), meshes.LOOK_FLOATS), np.float32)
+    look[:, :4] = palette[kinds[lines.owner]]
+    return meshes.Mesh(lines.vertices, lines.triangles, owners[lines.owner]), look
 
 
 def relook(scene: Scene) -> Scene:

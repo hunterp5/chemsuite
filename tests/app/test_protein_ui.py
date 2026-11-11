@@ -317,3 +317,128 @@ def test_stored_proteins_round_trip_through_a_document(tmp_path) -> None:
     back, _extras = load_document(path)
     restored = store.unpack(back.assets["1ATP"].data())
     assert np.array_equal(restored.uid, structure("1atp.cif.gz").uid)
+
+
+# pocket work: interactions, focus, measurements
+
+
+def _atp_atom(name: str) -> int:
+    s = structure("1atp.cif.gz")
+    return int(np.flatnonzero((s.res_name[s.residue_of] == "ATP") & (s.name == name))[0])
+
+
+def test_interactions_of_the_ligands_or_the_selection(panel) -> None:
+    session = panel.session
+    panel.interactions_action.trigger()  # nothing selected: every ligand
+    assert panel.interactions_action.isChecked()
+    shown = session.display("1ATP")
+    s = shown.structure
+    assert np.array_equal(shown.query, s.res_kind[s.residue_of] == 2)
+    assert len(session.scene.lines) > 0
+    assert "interactions" in panel.view.mesh_names
+    session.select_text("chain I")
+    session.show_interactions()
+    assert np.array_equal(shown.query, s.atom_chain == 1)
+    panel.interactions_action.trigger()
+    assert not panel.interactions_action.isChecked() and not shown.query.any()
+    assert len(session.scene.lines) == 0
+
+
+def test_hovering_an_atom_names_its_interactions(panel) -> None:
+    panel.session.show_interactions()
+    panel._hovered("1ATP", _atp_atom("N6"))
+    assert "Hydrogen Bond" in panel.status.text() and "GLU 121/O" in panel.status.text()
+
+
+def test_focus_shows_the_pocket_and_fades_the_rest(panel, qtbot) -> None:
+    session = panel.session
+    s = structure("1atp.cif.gz")
+    atp = int(s.residue_of[_atp_atom("N6")])
+    with qtbot.waitSignal(session.focusChanged):
+        session.focus("1ATP", atp)
+    shown = session.display("1ATP")
+    pocket = ~shown.ghost
+    assert pocket[s.residue_of == atp].all()
+    site = np.unique(s.residue_of[pocket & (s.res_kind[s.residue_of] == 0)])
+    assert {"LYS", "GLU", "VAL"} <= set(s.res_name[site].tolist()) and len(site) < 40
+    assert (
+        shown.styles[pocket & shown.active & (s.res_kind[s.residue_of] == 0)] == scene.STICK
+    ).all()
+    assert shown.query[s.residue_of == atp].all() and len(session.scene.lines) > 0
+    ions = s.res_kind[s.residue_of] == 4
+    assert pocket[ions].all()  # both Mn bind the phosphates
+    far_waters = (s.res_kind[s.residue_of] == 3) & ~pocket
+    assert far_waters.any() and (shown.styles[far_waters] == scene.HIDDEN).all()
+    near, far = panel.view.slab
+    assert 0 < far - near < 60
+    panel.view.camera.zoom(0.5)
+    panel.view.camera_changed()
+    assert panel.view.slab != (near, far)  # the slab follows the camera
+    session.clear_focus()
+    assert not shown.ghost.any() and panel.view.slab[1] > 1e8
+
+
+def test_the_focus_menu_lists_the_ligands(panel) -> None:
+    from PySide6.QtWidgets import QMenu
+
+    menu = QMenu()
+    panel._fill_focus(menu)
+    titles = [a.text() for a in menu.actions() if a.text()]
+    assert titles == ["E/ATP 355", "Clear Focus"]
+    menu.actions()[0].trigger()
+    assert panel.session.focused_residue() is not None
+    panel._fill_focus(menu)
+    assert menu.actions()[0].isChecked() and menu.actions()[-1].isEnabled()
+
+
+def test_measuring_takes_the_clicks(panel) -> None:
+    session = panel.session
+    a, b, c = _atp_atom("PG"), _atp_atom("PB"), _atp_atom("PA")
+    session.measure(2)
+    panel._clicked(a, Qt.KeyboardModifier.NoModifier)
+    assert session.picked and session.selected_count() == 0  # not a selection
+    panel._clicked(b, Qt.KeyboardModifier.NoModifier)
+    assert len(session.measurements) == 1 and not session.picked
+    (points, text), = session.measured()  # fmt: skip
+    assert text.endswith(" Å") and 2.5 < float(text.split()[0]) < 3.5
+    assert panel.overlay.labels()[0][1] == text
+    session.measure(3)
+    for atom in (a, b, c):
+        panel._clicked(atom, Qt.KeyboardModifier.NoModifier)
+    assert session.measured()[1][1].endswith("°")
+    panel._escape()
+    assert session.measuring == 0
+    panel._clicked(a, Qt.KeyboardModifier.NoModifier)
+    assert session.selected_count() > 0  # selecting again
+    session.clear_measurements()
+    assert session.measured() == []
+
+
+def test_pocket_work_reopens_as_it_was(panel, table, qtbot, monkeypatch) -> None:
+    from chemsuite.app import graphics
+    from chemsuite.app.protein.panel import ProteinPanel
+
+    session = panel.session
+    atp = int(structure("1atp.cif.gz").residue_of[_atp_atom("N6")])
+    session.focus("1ATP", atp)
+    session.measure(2)
+    panel._clicked(_atp_atom("PG"), Qt.KeyboardModifier.NoModifier)
+    panel._clicked(_atp_atom("PB"), Qt.KeyboardModifier.NoModifier)
+    state = panel.state()
+    monkeypatch.setattr(graphics, "_problem", None)
+    again = ProteinPanel(table)
+    qtbot.addWidget(again)
+    again.resize(900, 600)
+    again.set_state(state)
+    old, new = session.display("1ATP"), again.session.display("1ATP")
+    assert np.array_equal(old.ghost, new.ghost) and np.array_equal(old.query, new.query)
+    assert again.session.measured()[0][1] == session.measured()[0][1]
+    assert again.session.focused == session.focused
+    assert again.view.slab[1] < 1e8
+
+
+def test_bad_pocket_state_is_ignored(panel) -> None:
+    measurements = [[["1ATP", 1]], "junk", [["1ATP", "y"]]]
+    panel.set_state({"session": {"focused": ["1ATP", "x"], "measurements": measurements}})
+    assert panel.session.focused is None
+    assert panel.session.measurements == [(("1ATP", 1),)]

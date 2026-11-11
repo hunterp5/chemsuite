@@ -26,6 +26,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QColorDialog, QMenu, QWidget
 
 from chemsuite.protein import colours, scene
+from chemsuite.protein.model import LIGAND
 from chemsuite.protein.select import SelectionError
 
 from .session import ADD, SET, ProteinSession
@@ -104,7 +105,9 @@ def context_menu(
         menu.addAction("Add Residue to Selection", lambda: pick(here, ADD))
         menu.addAction("Select Chain", lambda: pick(chain))
         menu.addAction("Select Residues Within 5 Å", lambda: pick(f"byres within 5 of ({here})"))
-        if copy_smiles is not None and structure.res_kind[residue] == 2:
+        if structure.res_kind[residue] == LIGAND:
+            menu.addAction("Focus This Ligand", lambda: session.focus(shown.id, residue))
+        if copy_smiles is not None and structure.res_kind[residue] == LIGAND:
             menu.addAction("Copy Ligand SMILES", lambda: copy_smiles(shown, residue))
         alternates = sorted(set(structure.altloc[structure.atoms_of(residue)].tolist()) - {""})
         if alternates:
@@ -123,6 +126,12 @@ def context_menu(
     fill_hide(hide, session)
     colour = menu.addMenu("Colour")
     fill_colour(colour, session, parent)
+    if session.interactions_shown:
+        menu.addAction("Hide Interactions", lambda: session.show_interactions(False))
+    else:
+        menu.addAction("Show Interactions", session.show_interactions)
+    if session.focused is not None:
+        menu.addAction("Clear Focus", session.clear_focus)
     menu.addSeparator()
     framed = menu.addAction("Frame Selection", focus)
     framed.setEnabled(session.selected_count() > 0)

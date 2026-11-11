@@ -15,21 +15,24 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """The Protein Viewer panel: layout and wiring only.
 
-A toolbar (Show, Hide, Colour, Frame, Reset View) and the selection bar run across the top;
-below, the proteins list beside the 3D view, and the sequence strip under them. Everything
-reads and changes one :class:`~.session.ProteinSession`.
+A toolbar (Show, Hide, Colour; Interactions, Focus, Measure; Frame, Reset View) and the
+selection bar run across the top; below, the proteins list beside the 3D view, and the
+sequence strip under them. Everything reads and changes one :class:`~.session.ProteinSession`.
 
 In the view a click selects a residue, Alt-click an atom, a double-click its chain; Shift adds
-and Ctrl (Cmd) toggles; a click on nothing clears the selection; Esc clears it too. When the
-computer cannot draw 3D, the view's place says why and the rest keeps working.
+and Ctrl (Cmd) toggles; a click on nothing clears the selection; Esc clears it too. While
+measuring, clicks pick atoms instead and Esc stops. A focused ligand keeps a slab (a slice of
+depth around its pocket) as the camera moves. When the computer cannot draw 3D, the view's
+place says why and the rest keeps working.
 """
 
 from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QGridLayout,
     QLabel,
     QMenu,
     QSplitter,
@@ -53,6 +56,9 @@ from .tree import ProteinTree
 TOOL_ID = "protein"
 CARTOON = "cartoon"
 SURFACE = "surface"
+LINES = "interactions"
+SLAB_PAD = 2.0  # Å beyond the focused pocket kept in the slab
+MEASURES = (("Distance", 2), ("Angle", 3), ("Dihedral", 4))
 
 
 class ProteinPanel(QWidget):
@@ -61,6 +67,7 @@ class ProteinPanel(QWidget):
         self.tool_id = TOOL_ID
         self.session = ProteinSession(table, self)
         self.view = None
+        self.overlay = None
         self._fitted: set[str] = set()  # proteins the camera has been fitted to
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
@@ -72,6 +79,15 @@ class ProteinPanel(QWidget):
             ("Colour", lambda m: menus.fill_colour(m, self.session, self)),
         ):
             self._menu_button(title, fill)
+        self.toolbar.addSeparator()
+        self.interactions_action = self.toolbar.addAction("Interactions")
+        self.interactions_action.setCheckable(True)
+        self.interactions_action.setToolTip(
+            "Show the interactions of the selection, or of every ligand when nothing is selected"
+        )
+        self.interactions_action.triggered.connect(self.session.show_interactions)
+        self._menu_button("Focus", self._fill_focus)
+        self._menu_button("Measure", self._fill_measure)
         self.toolbar.addSeparator()
         self.frame_action = self.toolbar.addAction("Frame", self.frame_selection)
         self.frame_action.setToolTip("Fit the selection to the view (double-click an entry)")
@@ -103,8 +119,9 @@ class ProteinPanel(QWidget):
         layout.addWidget(self.rows, 1)
         layout.addWidget(self.status)
 
-        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self.session.clear_selection)
+        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._escape)
         self.session.sceneChanged.connect(self._redraw)
+        self.session.focusChanged.connect(self._focus_changed)
         self.session.lookChanged.connect(self._relook)
         self.session.proteinsChanged.connect(self._proteins_changed)
         self.session.hovered.connect(self._hovered)
@@ -120,6 +137,43 @@ class ProteinPanel(QWidget):
         button.setMenu(menu)
         self.toolbar.addWidget(button)
 
+    def _fill_focus(self, menu: QMenu) -> None:
+        menu.clear()
+        session = self.session
+        several = len([d for d in session.displays if d.visible]) > 1
+        for protein, residue in session.ligands():
+            shown = session.display(protein)
+            label = shown.structure.residue_label(residue)
+            title = f"{shown.name}  {label}" if several else label
+            action = menu.addAction(title, lambda p=protein, r=residue: session.focus(p, r))
+            action.setCheckable(True)
+            action.setChecked(session.focused_residue() == (protein, residue))
+        if not menu.actions():
+            menu.addAction("No Ligands").setEnabled(False)
+        menu.addSeparator()
+        clear = menu.addAction("Clear Focus", session.clear_focus)
+        clear.setEnabled(session.focused is not None)
+
+    def _fill_measure(self, menu: QMenu) -> None:
+        menu.clear()
+        group = QActionGroup(menu)
+        for title, atoms in MEASURES:
+            action = menu.addAction(title, lambda n=atoms: self.session.measure(n))
+            action.setCheckable(True)
+            action.setChecked(self.session.measuring == atoms)
+            group.addAction(action)
+        menu.addSeparator()
+        stop = menu.addAction("Stop Measuring", lambda: self.session.measure(0))
+        stop.setEnabled(bool(self.session.measuring))
+        clear = menu.addAction("Clear Measurements", self.session.clear_measurements)
+        clear.setEnabled(bool(self.session.measurements))
+
+    def _escape(self) -> None:
+        if self.session.measuring:
+            self.session.measure(0)
+        else:
+            self.session.clear_selection()
+
     def title(self) -> str:
         return "Protein Viewer"
 
@@ -128,6 +182,7 @@ class ProteinPanel(QWidget):
         if reason := graphics.problem():
             self._no_view(reason)
             return
+        from .overlay import ProteinOverlay
         from .view import ProteinView
 
         self.view = ProteinView()
@@ -138,7 +193,14 @@ class ProteinPanel(QWidget):
         self.view.atomClicked.connect(self._clicked)
         self.view.atomDoubleClicked.connect(self._double_clicked)
         self.view.contextRequested.connect(self._context_menu)
-        self.views.addWidget(self.view)
+        self.view.cameraMoved.connect(self._apply_slab)
+        self.overlay = ProteinOverlay(self.view, self.session)
+        page = QWidget()
+        grid = QGridLayout(page)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.addWidget(self.view, 0, 0)
+        grid.addWidget(self.overlay, 0, 0)
+        self.views.addWidget(page)
 
     def _no_view(self, reason: str) -> None:
         graphics.set_problem(reason)
@@ -149,10 +211,12 @@ class ProteinPanel(QWidget):
         self.views.setCurrentWidget(label)
         if self.view is not None:
             self.view.hide()
+            self.overlay.hide()
             self.view = None
 
     # redrawing
     def _redraw(self) -> None:
+        self.interactions_action.setChecked(self.session.interactions_shown)
         if self.view is None:
             return
         from .view import ATOM
@@ -164,6 +228,7 @@ class ProteinPanel(QWidget):
         )
         view.set_mesh(CARTOON, scene.cartoon, scene.cartoon_look)
         view.set_mesh(SURFACE, scene.surface, scene.surface_look, owner=ATOM, transparent=True)
+        view.set_mesh(LINES, scene.lines, scene.lines_look, owner=ATOM)
         new = {d.id for d in scene.displays} - self._fitted
         view.set_scene(scene.geometry, scene.sphere_look, scene.cylinder_look)
         if new:
@@ -200,6 +265,33 @@ class ProteinPanel(QWidget):
         if self.view is not None:
             self.view.reset_view()
 
+    # focus: frame the pocket and keep a slab of depth around it
+    def _focus_changed(self) -> None:
+        if self.view is None:
+            return
+        found = self.session.focused_atoms()
+        if found is None:
+            from chemsuite.app.molview.rhi_view import NO_SLAB
+
+            self.view.set_slab(*NO_SLAB)
+            return
+        shown, atoms = found
+        positions = shown.structure.xyz(0)[atoms]
+        self.view.frame(positions, np.full(len(positions), 1.5))
+        self._apply_slab()
+
+    def _apply_slab(self) -> None:
+        found = self.session.focused_atoms()
+        if self.view is None or found is None:
+            return
+        shown, atoms = found
+        positions = shown.structure.xyz(0)[atoms]
+        centre = positions.mean(axis=0)
+        radius = float(np.linalg.norm(positions - centre, axis=1).max()) + SLAB_PAD
+        _xy, depth = self.view.camera.project(centre[None], self.view.width(),
+                                              self.view.height())  # fmt: skip
+        self.view.set_slab(max(float(depth[0]) - radius, 0.0), float(depth[0]) + radius)
+
     # picking in the view
     def _residue_mask(self, atom: int, whole_chain: bool = False, single: bool = False):
         found = self.session.scene.locate(atom)
@@ -217,6 +309,8 @@ class ProteinPanel(QWidget):
         return {shown.id: mask & shown.active}
 
     def _clicked(self, atom: int, modifiers) -> None:
+        if self.session.pick(atom):  # measuring
+            return
         mode = SET
         if modifiers & Qt.KeyboardModifier.ShiftModifier:
             mode = ADD
@@ -247,7 +341,9 @@ class ProteinPanel(QWidget):
             return
         s = shown.structure
         b = f"  B {s.b[atom]:.1f}" if s.b[atom] else ""
-        self.status.setText(f"{shown.name}  {s.atom_label(atom)}{b}")
+        contacts = self.session.interactions_of(protein, atom)
+        more = "".join(f"  ·  {c}" for c in contacts[:2])
+        self.status.setText(f"{shown.name}  {s.atom_label(atom)}{b}{more}")
         self._light(shown, int(s.residue_of[atom]))
 
     def _sequence_hovered(self, protein: str, residue: int) -> None:

@@ -135,3 +135,17 @@ def test_joined_meshes_keep_their_triangles(crambin: Structure) -> None:
     assert len(both) == len(a) + len(b)
     assert mesh.open_edges(both) == 0
     assert np.array_equal(both.triangles[len(a.triangles) :], b.triangles + len(a))
+
+
+def test_dashes_are_centred_and_owned_by_their_line() -> None:
+    starts = np.zeros((2, 3))
+    ends = np.array([[3.0, 0.0, 0.0], [0.0, 0.0, 0.1]])
+    lines = mesh.dashes(starts, ends)
+    dashes_per_line = np.bincount(lines.owner) // 12  # 6 sides, two rings
+    assert dashes_per_line.tolist() == [7, 1]  # a short line is one dash, never none
+    first = lines.positions[lines.owner == 0]
+    assert first[:, 0].min() == pytest.approx(3.0 - first[:, 0].max(), abs=1e-5)
+    radial = np.linalg.norm(first[:, 1:], axis=1)
+    assert np.allclose(radial, mesh.DASH_RADIUS, atol=1e-6)
+    assert lines.triangles.max() < len(lines)
+    assert len(mesh.dashes(np.zeros((0, 3)), np.zeros((0, 3)))) == 0

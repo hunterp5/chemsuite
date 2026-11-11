@@ -83,3 +83,52 @@ def open_edges(mesh: Mesh) -> int:
     edges.sort(axis=1)
     _, counts = np.unique(edges, axis=0, return_counts=True)
     return int((counts != 2).sum())
+
+
+DASH = 0.25  # Å of tube, then a gap
+GAP = 0.2
+DASH_RADIUS = 0.05
+_DASH_SIDES = 6
+
+
+def dashes(starts: np.ndarray, ends: np.ndarray, radius: float = DASH_RADIUS) -> Mesh:
+    """Dashed lines from ``starts`` to ``ends`` (k, 3) as thin open tubes; a vertex's owner is
+    its line's index. The dashes are centred, so a line looks the same from either end."""
+    starts = np.asarray(starts, np.float64).reshape(-1, 3)
+    ends = np.asarray(ends, np.float64).reshape(-1, 3)
+    if not len(starts):
+        return Mesh.empty()
+    axis = ends - starts
+    length = np.linalg.norm(axis, axis=1)
+    count = np.maximum(1, np.floor((length + GAP) / (DASH + GAP))).astype(np.int64)
+    line = np.repeat(np.arange(len(starts)), count)
+    k = np.arange(count.sum()) - np.repeat(np.cumsum(count) - count, count)
+    used = count * DASH + (count - 1) * GAP
+    first = (length - np.minimum(used, length)) / 2
+    unit = axis / np.maximum(length, 1e-9)[:, None]
+    begin = first[line] + k * (DASH + GAP)
+    stop = np.minimum(begin + DASH, length[line])
+    a = starts[line] + unit[line] * begin[:, None]
+    b = starts[line] + unit[line] * stop[:, None]
+    # a ring of sides around each end, on two axes perpendicular to the line
+    d = unit[line]
+    helper = np.where(np.abs(d[:, :1]) < 0.9, [[1.0, 0.0, 0.0]], [[0.0, 1.0, 0.0]])
+    u = np.cross(d, helper)
+    u /= np.linalg.norm(u, axis=1, keepdims=True)
+    v = np.cross(d, u)
+    angles = np.linspace(0.0, 2 * np.pi, _DASH_SIDES, endpoint=False)
+    ring = np.cos(angles)[None, :, None] * u[:, None] + np.sin(angles)[None, :, None] * v[:, None]
+    n = len(a)
+    positions = np.concatenate([a[:, None] + radius * ring, b[:, None] + radius * ring], axis=1)
+    normals = np.concatenate([ring, ring], axis=1)
+    vertices = np.concatenate([positions, normals], axis=2).reshape(-1, VERTEX_FLOATS)
+    s = _DASH_SIDES
+    j = np.arange(s)
+    nxt = (j + 1) % s
+    quad = np.stack([np.stack([j, nxt, s + nxt], 1), np.stack([j, s + nxt, s + j], 1)], 1)
+    triangles = (quad.reshape(-1, 3)[None] + (2 * s * np.arange(n))[:, None, None]).reshape(-1, 3)
+    return Mesh(
+        vertices.astype(np.float32),
+        triangles.astype(np.uint32),
+        np.repeat(line, 2 * s).astype(np.int64),
+    )
