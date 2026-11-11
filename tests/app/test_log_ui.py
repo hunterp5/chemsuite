@@ -105,8 +105,8 @@ def test_window_log_menu_and_open_failure(window, qtbot, tmp_path) -> None:
         assert window.show_log() is log_window  # one per application
         assert window.command_action("help.log_folder").text() == "Show &Log Folder"
         window.open_path(tmp_path / "missing.csv")
-        qtbot.waitUntil(lambda: getattr(window, "_failure_box", None) is not None, timeout=5000)
-        box = window._failure_box
+        qtbot.waitUntil(lambda: window.jobs.failure_box is not None, timeout=5000)
+        box = window.jobs.failure_box
         assert isinstance(box, QMessageBox) and "Opening missing.csv failed" in box.text()
         assert "Traceback" in box.detailedText()
         texts = [b.text() for b in box.buttons()]

@@ -31,7 +31,7 @@ from typing import Any
 
 import numpy as np
 import shiboken6
-from PySide6.QtCore import QEvent, QEventLoop, QModelIndex, QPoint, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QModelIndex, QPoint, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -42,7 +42,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
-    QProgressDialog,
     QVBoxLayout,
     QWidget,
 )
@@ -74,12 +73,13 @@ from .column_actions import ColumnActions
 from .commands import apply_shortcuts, register
 from .dock_layout import LAYOUT_KEY
 from .document_windows import DocumentPanels
-from .error_report import details_of, show_error, show_log_folder
+from .error_report import show_log_folder
 from .filters.cards import FilterCard
 from .filters.panel import FilterPanel
 from .find_replace import FindReplaceDialog
-from .jobs import QUEUE, QUICK, Job, JobRunner
-from .jobs_ui import JobsIndicator, JobsWindow, duration
+from .job_host import JobHost
+from .jobs import Job, JobRunner
+from .jobs_ui import JobsIndicator, JobsWindow
 from .list_actions import ListActions
 from .log_ui import LogWindow
 from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader
@@ -112,7 +112,6 @@ EXPORT_FILTER = (
 
 _windows: list[MainWindow] = []
 _jobs_windows: dict[int, JobsWindow] = {}
-NOTIFY_AFTER_S = 30  # a background job this long gets a "done" notice
 
 
 _log_windows: dict[int, LogWindow] = {}
@@ -232,6 +231,8 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__(parent)
         self._runner = runner
+        self.jobs = JobHost(self, runner, current=lambda: self._workspace,
+                            name=lambda: self.document_name, message=self.show_message)  # fmt: skip
         self._images = images
         self._workspace: Workspace | None = None
         self._view: TableView | None = None
@@ -320,7 +321,7 @@ class MainWindow(QMainWindow):
         self._view = TableView(workspace.model, workspace.selection, self._images)
         self._searcher = StructureSearcher(
             workspace.table,
-            self._run_with_progress,
+            self.jobs.run,
             self._runner.process_pool,
             lambda column, highlight: self.view.set_highlight(column, highlight),
         )
@@ -921,7 +922,7 @@ class MainWindow(QMainWindow):
     def open_settings(self):
         from .settings_dialog import SettingsDialog
 
-        dialog = SettingsDialog(self)
+        dialog = SettingsDialog(self, self.jobs)
         dialog.open()
         return dialog
 
@@ -1466,7 +1467,7 @@ class MainWindow(QMainWindow):
             audit("open", path=path, rows=len(table))
             self._remember_path(path)
 
-        self._run_with_progress(f"Opening {path.name}…", work, opened)
+        self.jobs.run(f"Opening {path.name}…", work, opened)
 
     def save(self) -> bool:
         if self.workspace.path is None:
@@ -1508,7 +1509,7 @@ class MainWindow(QMainWindow):
             self._remember_path(path)
             saved.append(True)
 
-        self._run_with_progress(f"Saving {path.name}…", work, done, wait=True)
+        self.jobs.run(f"Saving {path.name}…", work, done, wait=True)
         return bool(saved)
 
     def export_dialog(self, selected_only: bool) -> None:
@@ -1538,113 +1539,9 @@ class MainWindow(QMainWindow):
             log.info("exported %s (%d rows)", path, rows)
             audit("export", path=path, rows=rows, selected_only=selected_only)
 
-        self._run_with_progress(f"Exporting {Path(path).name}…", work, done)
+        self.jobs.run(f"Exporting {Path(path).name}…", work, done)
 
     # -- background work ---------------------------------------------------------------------
-    def _run_with_progress(
-        self,
-        label: str,
-        work: Callable[[Job], Any],
-        on_done: Callable[[Any], None],
-        *,
-        wait: bool = False,
-        lane: str = QUICK,
-        guard: bool = False,
-        keep_partial: bool = False,
-    ) -> Job:
-        """Run *work* in the background; its progress shows in the status bar and Jobs window.
-
-        *wait* blocks (with a progress dialog) until the job ends, for callers that need the
-        outcome now, such as Save from the close prompt. With *guard*, the result is dropped
-        if this window has moved on to another document meanwhile.
-        """
-        workspace = self._workspace
-        job = self._runner.submit(label, work, lane=lane, owner=self, document=self.document_name)
-
-        def finished(result: Any) -> None:
-            if guard and self._workspace is not workspace:
-                log.info("dropping the result of %r: its document is gone", label)
-                job.set_summary("Not applied: the document was closed")
-                return
-            on_done(result)
-            if job.lane == QUEUE and job.elapsed > NOTIFY_AFTER_S:
-                self.statusBar().showMessage(f"{label.rstrip('…')}: done", 8000)
-                self._notify_unseen(job, job.summary or "Done")
-
-        job.finished.connect(finished)
-        if lane == QUEUE:
-            job.failed.connect(lambda err: self._report_failure(job, err))
-        else:
-            job.failed.connect(lambda err: self._show_error(label, err))
-
-        def cancelled() -> None:
-            name = label.rstrip("…")
-            if keep_partial and job.partial_result is not None:
-                if guard and self._workspace is not workspace:
-                    job.set_summary("Cancelled; partial results not applied: document closed")
-                    return
-                on_done(job.partial_result)  # writes what was finished before the cancel
-                kept = job.summary or "kept the finished rows"
-                job.set_summary(f"Cancelled, partial results kept: {kept}")
-                self.show_message(f"Cancelled: {name}; partial results kept", 6000)
-            else:
-                self.show_message(f"Cancelled: {name}", 3000)
-
-        job.cancelled.connect(cancelled)
-        if wait:
-            self._wait_for(job)
-        return job
-
-    def _wait_for(self, job: Job) -> None:
-        dialog = QProgressDialog(job.title, "Cancel", 0, 0, self)
-        dialog.setWindowTitle("chemsuite")
-        dialog.setMinimumDuration(400)
-        dialog.setAutoClose(False)
-        dialog.setAutoReset(False)
-        dialog.setModal(True)
-        timer = QTimer(dialog)
-
-        def poll() -> None:
-            done, total = job.progress
-            if total:
-                dialog.setMaximum(1000)
-                dialog.setValue(int(1000 * min(done, total) / total))
-
-        timer.timeout.connect(poll)
-        timer.start(100)
-        dialog.canceled.connect(job.cancel)
-        loop = QEventLoop()
-        job.done.connect(timer.stop)
-        job.done.connect(dialog.close)
-        job.done.connect(loop.quit)
-        if job.running:  # `done` is delivered on this thread, so it cannot be missed
-            loop.exec()
-        dialog.deleteLater()
-
-    def _notify_unseen(self, job: Job, outcome: str) -> None:
-        """A long job ended while this window was not in front: alert the dock or taskbar and,
-        unless Settings ▸ General turns it off, post a desktop notification."""
-        if self.isActiveWindow():
-            return
-        QApplication.alert(self)
-        if settings_hub().settings.jobs.notify:
-            from .notify import notify
-
-            where = f" ({job.document})" if job.document else ""
-            notify(f"{job.name}{where}", f"{outcome} after {duration(job.elapsed)}")
-
-    def _report_failure(self, job: Job, error: BaseException) -> None:
-        """A background job failed: say so without blocking; details are one click away."""
-        if job.elapsed > NOTIFY_AFTER_S:
-            self._notify_unseen(job, f"Failed: {error}" if str(error) else "Failed")
-        self.statusBar().showMessage(f"{job.title.rstrip('…')} failed: {error}", 10000)
-        self._failure_box = show_error(
-            self,
-            f"{job.title.rstrip('…')} failed.",
-            str(error) or type(error).__name__,
-            job.error_text,
-        )
-
     def show_jobs(self) -> JobsWindow:
         window = _jobs_window(self._runner)
         window.show()
@@ -1653,14 +1550,6 @@ class MainWindow(QMainWindow):
         for w in _windows:
             w.jobs_indicator.acknowledge()
         return window
-
-    def _show_error(self, label: str, error: BaseException) -> None:
-        self._failure_box = show_error(
-            self,
-            f"{label.rstrip('…')} failed.",
-            str(error) or type(error).__name__,
-            details_of(error),
-        )
 
     def show_log(self) -> LogWindow:
         window = _log_window(self._runner)
@@ -1712,7 +1601,7 @@ class MainWindow(QMainWindow):
         job.partial.connect(apply)
         job.finished.connect(finished)
         job.failed.connect(
-            lambda err: shiboken6.isValid(self) and self._show_error("Reading structures", err)
+            lambda err: shiboken6.isValid(self) and self.jobs.show_error("Reading structures", err)
         )
         job.done.connect(
             lambda: shiboken6.isValid(self) and self._parse_again and self._start_parsing()

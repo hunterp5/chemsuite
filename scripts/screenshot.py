@@ -246,7 +246,7 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
     failed = ctx.run("Hansch analysis…", broken, lambda r: None)
     while failed.running:
         settle()
-    window._failure_box.close()
+    window.jobs.failure_box.close()
     running = ctx.run("Generating conformers for 7 row(s)…", slow, lambda r: None)
     ctx.run("Finding matched pairs…", lambda job: None, lambda r: None)
     ctx.run("Making a UMAP map…", lambda job: None, lambda r: None)

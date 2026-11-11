@@ -72,6 +72,7 @@ from chemsuite.retro.config import CONFIG_TOOL as RETRO_CONFIG_TOOL
 from chemsuite.retro.config import PYTHON_TOOL as RETRO_PYTHON_TOOL
 
 from .commands import Portable, all_shortcuts, commands, conflicts
+from .job_host import JobHost
 from .settings_hub import settings_hub
 
 LOCK = "🔒 "
@@ -81,9 +82,11 @@ THEME_TITLES = {"system": "System", "light": "Light", "dark": "Dark", "groovy": 
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, jobs: JobHost | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
+        #: runs the dialog's own work (a download) as the document window's job
+        self.jobs = jobs
         self.hub = settings_hub()
         self.user = self.hub.user.copy()
         self._reroll = False
@@ -560,9 +563,9 @@ class ToolsPage(QWidget):
 
         from .jobs import CANCELLED, FAILED, QUEUE
 
-        window = self.dialog.parentWidget()
+        jobs = self.dialog.jobs
         result = self.results[RETRO_CONFIG_TOOL]
-        if not hasattr(window, "_run_with_progress"):
+        if jobs is None:
             result.setText("✗ Open Settings from a document window to download.")
             result.show()
             return None
@@ -580,7 +583,7 @@ class ToolsPage(QWidget):
                 self.edits[RETRO_CONFIG_TOOL].setText(str(path))
                 result.setText(f"✓ Downloaded; config {path}")
                 result.show()
-            window.show_message(f"AiZynthFinder data downloaded; config set to {path}", 8000)
+            jobs.message(f"AiZynthFinder data downloaded; config set to {path}", 8000)
 
         def ended() -> None:
             global _retro_download
@@ -594,7 +597,7 @@ class ToolsPage(QWidget):
             elif job.state == CANCELLED:
                 result.setText("✗ Cancelled; Download again resumes where it stopped.")
 
-        job = window._run_with_progress("Downloading AiZynthFinder data…", work, done, lane=QUEUE)
+        job = jobs.run("Downloading AiZynthFinder data…", work, done, lane=QUEUE)
         _retro_download = job
         job.done.connect(ended)
         self.download_button.setEnabled(False)

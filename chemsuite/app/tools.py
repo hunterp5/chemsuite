@@ -223,7 +223,7 @@ class ToolContext:
             finally:
                 self._finishing = None
 
-        job = self._window._run_with_progress(
+        job = self._window.jobs.run(
             label, work, finish, lane=lane, guard=True, keep_partial=keep_partial
         )
         job.background = background
@@ -232,7 +232,7 @@ class ToolContext:
 
     def process_pool(self) -> Executor:
         """The shared worker processes, for CPU-heavy work inside a job."""
-        return self._window._runner.process_pool()
+        return self._window.jobs.runner.process_pool()
 
     def workers_for(self, rows: int, min_rows: int) -> Executor | None:
         """The shared worker processes when *rows* is at least *min_rows* (each tool knows

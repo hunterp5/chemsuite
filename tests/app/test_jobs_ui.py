@@ -97,7 +97,7 @@ def test_failed_job_reports_without_blocking(window, qtbot) -> None:
 
     job = ctx.run("Clustering…", broken, lambda r: None)
     qtbot.waitUntil(lambda: job.state == FAILED, timeout=5000)
-    box = window._failure_box
+    box = window.jobs.failure_box
     assert box.isVisible() and "bad input" in box.informativeText()
     assert "RuntimeError" in box.detailedText()
     assert "1 failed" in window.jobs_indicator.button.text()
@@ -280,16 +280,16 @@ def test_a_long_job_ending_unseen_notifies_unless_turned_off(window, monkeypatch
     monkeypatch.setattr(window, "isActiveWindow", lambda: False)
     job = Job("Generating conformers…", document="a.csd")
     job.started_at, job.ended_at = 0.0, 75.0
-    window._notify_unseen(job, "500 conformers")
+    window.jobs.notify_unseen(job, "500 conformers")
     assert posted == [("Generating conformers (a.csd)", "500 conformers after 1:15")]
 
     def off(settings) -> None:
         settings.jobs.notify = False
 
     settings_hub().update(off)
-    window._notify_unseen(job, "again")
+    window.jobs.notify_unseen(job, "again")
     assert len(posted) == 1
     monkeypatch.setattr(window, "isActiveWindow", lambda: True)
     settings_hub().update(lambda s: setattr(s.jobs, "notify", True))
-    window._notify_unseen(job, "seen")
+    window.jobs.notify_unseen(job, "seen")
     assert len(posted) == 1  # the window is in front: nothing to tell

@@ -225,7 +225,7 @@ def test_status_bar_is_slim_while_a_job_runs(window, qtbot) -> None:
     bar = window.statusBar()
     idle = bar.height()
     release = threading.Event()
-    window._run_with_progress("Calculating…", lambda job: release.wait(5), lambda _r: None)
+    window.jobs.run("Calculating…", lambda job: release.wait(5), lambda _r: None)
     qtbot.waitUntil(window.jobs_indicator.isVisible)
     assert bar.height() == idle <= bar.fontMetrics().height() + 8
     release.set()
