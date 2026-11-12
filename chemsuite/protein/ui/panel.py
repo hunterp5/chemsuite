@@ -38,7 +38,7 @@ pockets.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 import numpy as np
 from PySide6.QtCore import QEvent, Qt
@@ -592,24 +592,42 @@ class ProteinPanel(ToolPanel):
         self.view.set_hover(atoms, scene.global_residues(shown, np.array([residue])))
 
     # saving
+    def view_state(self) -> dict:
+        """How the view draws: background, depth cue and camera (the document's protein
+        workspace keeps them)."""
+        state = {"background": self.background, "depth_cue": self.depth_cue}
+        if self.view is not None:
+            state["camera"] = self.view.camera.state()  # orthographic or not, too
+        return state
+
+    def set_view_state(self, state: Mapping) -> None:
+        self.set_background(str(state.get("background", THEME)))
+        self.set_depth_cue(state.get("depth_cue") is not False)
+        camera = state.get("camera")
+        if isinstance(camera, dict) and self.view is not None:
+            self.view.set_camera(Camera.from_state(camera))
+            self._fitted = {d.id for d in self.session.displays if d.visible}
+
     def state(self) -> dict:
+        """The window's layout (column sizes, the Sequence window). A panel with a session of
+        its own adds the session and the view; a document's workspace saves those itself."""
         state = {
-            "session": self.session.state(),
             "columns": self.columns.sizes(),
             "sequence": (
                 self._sequence_window.state()
                 if self._sequence_window is not None
                 else self._sequence_state
             ),
-            "background": self.background,
-            "depth_cue": self.depth_cue,
         }
-        if self.view is not None:
-            state["camera"] = self.view.camera.state()  # orthographic or not, too
+        if self._owns_session:
+            state["session"] = self.session.state()
+            state.update(self.view_state())
         return state
 
-    def set_state(self, state: dict) -> None:
-        self.session.set_state(state.get("session", {}))
+    def set_state(self, state: Mapping) -> None:
+        session = state.get("session")
+        if isinstance(session, dict):
+            self.session.set_state(session)
         sizes = state.get("columns")
         if isinstance(sizes, list) and len(sizes) == self.columns.count():
             self.columns.setSizes([int(v) for v in sizes])
@@ -617,12 +635,8 @@ class ProteinPanel(ToolPanel):
         self._sequence_state = dict(sequence) if isinstance(sequence, dict) else {}
         if self._sequence_window is not None or self._sequence_state.get("open") is True:
             self.sequence_window.set_state(self._sequence_state)
-        self.set_background(str(state.get("background", THEME)))
-        self.set_depth_cue(state.get("depth_cue") is not False)
-        camera = state.get("camera")
-        if isinstance(camera, dict) and self.view is not None:
-            self.view.set_camera(Camera.from_state(camera))
-            self._fitted = {d.id for d in self.session.displays if d.visible}
+        if any(key in state for key in ("background", "depth_cue", "camera")):
+            self.set_view_state(state)
 
     def close_panel(self) -> None:
         """Let go of the session and the document: its window calls this when closed, then

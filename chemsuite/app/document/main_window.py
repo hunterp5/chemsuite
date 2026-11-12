@@ -49,11 +49,8 @@ from PySide6.QtWidgets import (
 from chemsuite.analysis.structure_search import StructureQuery
 from chemsuite.core.document import SUFFIX as DOCUMENT_SUFFIX
 from chemsuite.core.document import load_document, save_document
-from chemsuite.core.lists import EXTRAS_KEY as LISTS_KEY
-from chemsuite.core.lists import RowLists
 from chemsuite.core.logbook import audit
 from chemsuite.core.mols import smiles_of
-from chemsuite.core.selection import Selection
 from chemsuite.core.settings import Settings, add_recent
 from chemsuite.core.structure_input import molblock_of, read_structure
 from chemsuite.core.table import Changed, Table
@@ -86,7 +83,6 @@ from ..table.structure_clipboard import copy_structure
 from ..table.structure_copy import FORMATS as COPY_FORMATS
 from ..table.structure_copy import REACTION_FORMATS, copy_reactions, copy_structures
 from ..table.structure_search import StructureSearchDialog, StructureSearcher
-from ..table.table_model import TableModel
 from ..table.table_view import StructureImages, TableView
 from ..widgets.panel import ToolPanel
 from . import dock_layout, session
@@ -95,6 +91,7 @@ from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader
 from .panels import DocumentPanels
 from .status_bar import StatusBar
 from .tools import BROWSER_TOOL, Tool, ToolContext, load_tools
+from .workspace import Workspace
 
 log = logging.getLogger(__name__)
 
@@ -150,61 +147,6 @@ def registered_tools() -> tuple[Tool, ...]:
     from chemsuite.tools import TOOL_MODULES
 
     return tuple(load_tools(TOOL_MODULES))
-
-
-class Workspace:
-    """Everything that belongs to one open table."""
-
-    def __init__(
-        self,
-        table: Table,
-        path: Path | None = None,
-        extras: dict[str, Any] | None = None,
-        *,
-        unsaved: bool = False,
-    ) -> None:
-        self.table = table
-        #: new content that was never saved (e.g. rows copied from another document)
-        self._unsaved = unsaved
-        self.path = path
-        self.selection = Selection(table)
-        self.model = TableModel(table)
-        self.lists = RowLists(table)
-        if extras and LISTS_KEY in extras:
-            self.lists.load_json(extras[LISTS_KEY])
-        #: the window session saved with the document (see ``session.PARTS``), put back when
-        #: the window installs this workspace
-        self.saved_session: dict[str, Any] = {
-            key: value for key, value in (extras or {}).items() if key in session.KEYS
-        }
-        self._saved_lists = self.lists.revision
-
-    @property
-    def is_empty(self) -> bool:
-        return not (len(self.table) or self.table.column_names or self.table.assets)
-
-    @property
-    def is_modified(self) -> bool:
-        """Unsaved table edits or list changes, or content that was never saved."""
-        return (
-            self._unsaved
-            or not self.table.history.is_clean
-            or self.lists.revision != self._saved_lists
-        )
-
-    def extras(self) -> dict[str, Any]:
-        """Document state saved beside the table."""
-        return {LISTS_KEY: self.lists.to_json()} if len(self.lists) else {}
-
-    def mark_saved(self, checkpoint: Any, lists_revision: int) -> None:
-        self.table.history.mark_clean(checkpoint)
-        self._saved_lists = lists_revision
-        self._unsaved = False
-
-    def close(self) -> None:
-        self.model.close()
-        self.selection.close()
-        self.lists.close()
 
 
 #: Panes meet at a 1 px line in the middle of a 5 px separator that is easy to grab.
@@ -1490,6 +1432,7 @@ class MainWindow(QMainWindow):
         snapshot = workspace.table.snapshot()
         checkpoint = workspace.table.history.checkpoint()
         extras, lists_revision = workspace.extras(), workspace.lists.revision
+        parts = workspace.part_revisions()
         extras.update(session.capture(self))
         saved: list[bool] = []
 
@@ -1500,7 +1443,7 @@ class MainWindow(QMainWindow):
 
         def done(_result: None) -> None:
             # The saved state is the snapshot's; edits made while saving stay unsaved.
-            workspace.mark_saved(checkpoint, lists_revision)
+            workspace.mark_saved(checkpoint, lists_revision, parts)
             workspace.path = path
             self._update_title()
             self.statusBar().showMessage(f"Saved {path.name}", 4000)

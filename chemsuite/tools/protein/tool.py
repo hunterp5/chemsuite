@@ -21,6 +21,13 @@ commands). A protein is stored in the document as an asset (``protein``, see
 to it by the ``Protein`` column, only when asked (Ligand ▸ Ligands to Table, Add Ligand to
 Table, Interactions to Table); the viewer then shows a row's ligand in its pocket when that row
 is current. Reading, fetching and working out ligands' bond orders run in the background.
+
+How the proteins look, named selections, focus, labels, measurements and the view live in the
+document's protein workspace (:class:`~chemsuite.protein.workspace.workspace.ProteinWorkspace`,
+a document part saved under ``protein_workspace``), not in the window: they are saved with the
+document whether or not the viewer is open, and the window attaches to the workspace's session
+when it opens. Documents saved before kept them with the window; they move into the workspace
+when the window is restored.
 """
 
 from __future__ import annotations
@@ -37,12 +44,15 @@ from chemsuite.protein.structure import fetch as pdb
 from chemsuite.protein.structure import io
 from chemsuite.protein.structure.components import META_KEY, CcdCache
 from chemsuite.protein.structure.model import Structure
+from chemsuite.protein.workspace.workspace import ProteinWorkspace
 
 from .follow import TableRow
 from .rows import PROTEIN_COLUMN, ligand_rows
 from .rows import guessed as guessed_ligands
 
 TOOL_ID = "protein"
+#: the document part holding the protein workspace
+WORKSPACE_KEY = "protein_workspace"
 KIND = "protein"
 MENU = ("Protein",)
 #: the viewer's window: this share of the main window, centred over it
@@ -69,6 +79,9 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         panel = ctx.find_panel(TOOL_ID)
         if panel is not None:
             return panel
+    workbench = protein_workspace(ctx)
+    if state is not None and "session" in state:  # saved before the workspace kept it
+        workbench.adopt(state)
     commands = {
         OPEN: lambda: open_protein(ctx),
         FETCH: lambda: fetch_from_pdb(ctx),
@@ -84,20 +97,40 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
 
     panel = ProteinPanel(
         ctx.table,
+        session=workbench.session(),
         current=ctx.current_oid,
         watch_current=ctx.watch_current,
         commands=commands,
         run=run,
         linked=TableRow(ctx),
     )
+    panel.set_view_state(workbench.view)
     if state is not None:
-        panel.set_state(state)
-    window = ctx.add_window(panel, panel.title(), menu_bar=panel.menu_bar,
-                            on_close=panel.close_panel)  # fmt: skip
+        panel.set_state({k: v for k, v in state.items() if k in ("columns", "sequence")})
+    workbench.view_source = panel.view_state
+
+    def closed() -> None:
+        if workbench.view_source == panel.view_state:
+            workbench.set_view(panel.view_state())
+            workbench.view_source = None
+        panel.close_panel()
+
+    window = ctx.add_window(panel, panel.title(), menu_bar=panel.menu_bar, on_close=closed)
     if state is None:
         centre_over(window, ctx.parent)
     panel.setFocus()
     return panel
+
+
+def protein_workspace(ctx: ToolContext) -> ProteinWorkspace:
+    """The document's protein workspace (made, from what the document saved, when first
+    asked for)."""
+    rows = TableRow(ctx)
+
+    def make(saved) -> ProteinWorkspace:
+        return ProteinWorkspace(ctx.table, saved, relabel=rows.relabel, count_named=rows.naming)
+
+    return ctx.document_part(WORKSPACE_KEY, make)
 
 
 def centre_over(window, parent) -> None:

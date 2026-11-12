@@ -154,7 +154,10 @@ def test_saved_selections_survive_by_uid(panel) -> None:
 def test_a_selection_only_changes_the_look(panel, qtbot) -> None:
     session = panel.session
     before = session.scene
-    with qtbot.waitSignal(panel.signals.lookChanged), qtbot.assertNotEmitted(panel.signals.sceneChanged):
+    with (
+        qtbot.waitSignal(panel.signals.lookChanged),
+        qtbot.assertNotEmitted(panel.signals.sceneChanged),
+    ):
         session.select_text("chain I")
     after = session.scene
     assert after.geometry is before.geometry and after.cartoon is before.cartoon

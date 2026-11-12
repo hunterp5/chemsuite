@@ -104,8 +104,17 @@ is usually better than an exemption.
   `Structure` keyed by atom uids (selections, labels, measurements and focus survive edits),
   a `Display` per protein holding how it looks, and a composed `Scene` the view uploads as a
   geometry buffer and a separate look buffer, so a selection change re-uploads colours only.
-  The app side (`chemsuite/protein/ui`) is a session object that the tree, sequence, selection
-  bar and view read and change, never each other.
+  The session (`protein/workspace/session.py`, Qt-free, with plain events) is what the tree,
+  sequence, selection bar and view read and change, never each other; each viewer window
+  relays its events as Qt signals (`protein/ui/session.py`, `SessionSignals`), so a closing
+  window lets go cleanly while the session lives on with the document.
+- **Document parts** (`app/document/workspace.py`, `ToolContext.document_part`): state a tool
+  keeps with the document rather than a window, saved under its own key whether or not the
+  window is open, with a `revision` the document compares on save. What a file holds under a
+  key no part has claimed yet is saved back as it was. The protein workspace
+  (`protein/workspace/workspace.py`) is one: it keeps the saved state untouched until the
+  viewer first opens, then holds the session; documents that saved the viewer's state with
+  its window move it in when the window is restored.
 - **One `RhiView` base for 3D views** (`app/render3d/rhi_view.py`): camera, picking, slab and
   fog. Meshes fall back to 16-bit index chunks where the GPU lacks 32-bit indices.
 - **A workspace of its own is a window, not a dock.** `ToolContext.add_window` hosts a tool's

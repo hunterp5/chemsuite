@@ -499,3 +499,92 @@ def test_renaming_a_ligand_renames_its_row_in_the_same_step(with_rows) -> None:
     assert session.display("1ATP").structure.residue_label(atp) == "E/ATP 355"
     atoms = session.display("1ATP").structure.residue_of == atp
     assert session.rows_naming("1ATP", atoms) == 1
+
+
+# -- the document's protein workspace -------------------------------------------------------------
+
+
+def _reopen(window, qtbot, path: Path) -> None:
+    from chemsuite.app.document.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    window._install(Workspace(Table()))
+    window.open_path(path)
+    qtbot.waitUntil(lambda: window.workspace.path == path, timeout=10_000)
+    qtbot.wait(20)
+
+
+def test_the_workspace_is_saved_with_the_viewer_closed(opened, qtbot, tmp_path) -> None:
+    panel = ToolContext(opened).find_panel("protein")
+    panel.session.select_text("resn ATP")
+    panel.session.save_selection("atp")
+    panel.set_background("black")
+    panel.window().close()
+    qtbot.waitUntil(lambda: ToolContext(opened).find_panel("protein") is None)
+    path = tmp_path / "closed.csd"
+    assert opened._save_to(path)
+    _reopen(opened, qtbot, path)
+    assert ToolContext(opened).find_panel("protein") is None
+    again = tool.open_viewer(ToolContext(opened))
+    assert set(again.session.named) == {"atp"} and again.background == "black"
+
+
+def test_a_document_saves_its_workspace_back_unopened(opened, qtbot, tmp_path) -> None:
+    from chemsuite.core.document import load_document
+
+    panel = ToolContext(opened).find_panel("protein")
+    panel.session.select_text("resn ATP")
+    panel.session.save_selection("atp")
+    first, second = tmp_path / "first.csd", tmp_path / "second.csd"
+    assert opened._save_to(first)
+    panel.window().close()
+    _reopen(opened, qtbot, first)
+    for widget in list(opened.tool_panels.windows):
+        widget.close()
+    assert opened._save_to(second)
+    saved = [load_document(p)[1][tool.WORKSPACE_KEY]["session"]["named"] for p in (first, second)]
+    assert saved[0] == saved[1] and "atp" in saved[0]
+
+
+def test_a_look_change_marks_the_document_modified_but_a_selection_does_not(
+    opened, tmp_path
+) -> None:
+    panel = ToolContext(opened).find_panel("protein")
+    assert opened._save_to(tmp_path / "saved.csd")
+    assert not opened.workspace.is_modified
+    panel.session.select_text("resn ATP")
+    assert not opened.workspace.is_modified
+    panel.session.colour((1.0, 0.0, 0.0))
+    assert opened.workspace.is_modified
+
+
+def test_an_older_document_moves_its_viewer_state_into_the_workspace(
+    opened, qtbot, tmp_path
+) -> None:
+    from chemsuite.core.document import load_document, save_document
+
+    panel = ToolContext(opened).find_panel("protein")
+    panel.session.select_text("resn ATP")
+    panel.session.save_selection("atp")
+    old_state = {  # what the viewer window saved before the workspace kept it
+        "session": panel.session.state(),
+        "columns": [150, 750],
+        "sequence": {},
+        "background": "grey",
+        "depth_cue": False,
+    }
+    path, older = tmp_path / "now.csd", tmp_path / "older.csd"
+    assert opened._save_to(path)
+    table, extras = load_document(path)
+    extras.pop(tool.WORKSPACE_KEY)
+    extras["panels"] = [{"tool": "protein", "state": old_state}]
+    save_document(table, older, extras=extras)
+    panel.window().close()
+    _reopen(opened, qtbot, older)
+    again = ToolContext(opened).find_panel("protein")
+    assert set(again.session.named) == {"atp"}
+    assert again.background == "grey"  # (the depth cue lives on the 3D view: none offscreen)
+    entry = next(e for e in opened.panel_states() if e["tool"] == "protein")
+    assert "session" not in entry["state"]
+    saved = opened.workspace.extras()[tool.WORKSPACE_KEY]
+    assert saved["session"]["named"] == old_state["session"]["named"]

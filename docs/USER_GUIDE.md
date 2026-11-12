@@ -1255,7 +1255,11 @@ at most 12,000 pixels a side. For a paper, a white background with Depth Cue off
 Orthographic on is a common choice.
 
 Proteins are saved inside the document, with how they look (colours given by hand
-included), and closing a document that holds only proteins still asks to save it. Opening or
+included), saved selections, the focused ligand, labels, measurements and the view. These
+belong to the document, not the window: closing the viewer keeps them, it opens again as you
+left it, and they are saved even while the viewer is closed. Changing how proteins look marks
+the document as changed; selecting atoms or turning the camera does not. Closing a document
+that holds only proteins still asks to save it. Opening or
 fetching one adds only the protein: the table is not touched. Its ligands' bond orders are worked out as it loads (asking the PDB's
 chemical component dictionary when needed), and a ligand whose bond orders had to be guessed is
 marked ⚠ in the proteins list. Ligands become table rows only when you ask:

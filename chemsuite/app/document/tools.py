@@ -30,7 +30,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import Executor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 from PySide6.QtCore import QItemSelectionModel, QSize
@@ -57,6 +57,8 @@ from ..widgets.panel import ToolPanel as ToolPanel  # what a tool's panel is bui
 if TYPE_CHECKING:
     from .main_window import MainWindow
 
+
+T = TypeVar("T")
 
 #: the tool behind Data ▸ Browser and a cell's Browse (its ``open_at``)
 BROWSER_TOOL = "viewer"
@@ -328,6 +330,12 @@ class ToolContext:
         """The ops that write *values* into *column* at *oids*, to run with others as one
         undo step (:meth:`edit`, or a protein edit in the workbench)."""
         return self.table.cell_ops(column, oids, values)
+
+    def document_part(self, key: str, make: Callable[[Any], T]) -> T:
+        """The document's part saved under *key*, made by ``make(saved)`` when first asked for
+        (see :class:`~.workspace.DocumentPart`): state that lives and is saved with the
+        document whether or not the tool's window is open."""
+        return self._window.workspace.part(key, make)
 
     def cache_folder(self, name: str) -> Path:
         """A folder (not yet created) for downloads kept between sessions, such as ``ccd``."""

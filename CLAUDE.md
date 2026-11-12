@@ -25,10 +25,16 @@ change pass without asking the user: add a `ToolContext` helper or split the fil
 
 - **Qt-free packages** (`core`, `analysis`, `sketch`, `protein` outside `protein/ui`,
   `ionisation`, …) never import Qt or the app (`tests/test_import_boundaries.py`).
-- **The Protein Workbench is a subproject** (`chemsuite/protein`): Qt-free `structure`, `chem`
-  and `look`, and the Qt `ui`. `protein/ui` never imports `app.document`, `app.table` or a
-  tool; it reaches the current row through the `LinkedRow` it is handed. Only the bridge,
+- **The Protein Workbench is a subproject** (`chemsuite/protein`): Qt-free `structure`, `chem`,
+  `look` and `workspace` (the session, with plain events, and the document's
+  `ProteinWorkspace`), and the Qt `ui` (`SessionSignals` relays the session's events per
+  window). Neither `protein/ui` nor the engine imports `core.table`; they read proteins through
+  an `AssetHost` (`core/assets.py`) and the current row through the `LinkedRow` they are handed.
+  `protein/ui` never imports `app.document`, `app.table` or a tool. Only the bridge,
   `tools/protein`, knows both the table and the workbench.
+- **State that lives with the document, not a window,** is a document part
+  (`ToolContext.document_part`, `app/document/workspace.py`): saved under its own key whether or
+  not the tool's window is open, with a `revision` for "needs saving".
 - **Move modules with `scripts/move_modules.py`** (a moves file of `old new` lines): it runs
   `git mv` and rewrites imports, dotted names and paths everywhere. Then `ruff check --fix`,
   `ruff format`, and the full suite.
@@ -59,7 +65,10 @@ changes.
 - Changed imports between packages → also run `tests/test_import_boundaries.py`.
 - Run the full suite only for broad or risky changes (shared infrastructure such as
   `core/table`, `jobs`, document save/load, the renderer, cross-cutting refactors), or right
-  before a release merge to `main` — and say so when you do.
+  before a release merge to `main` — and say so when you do. It is token-heavy: in a session of
+  several steps or commits, run it once at the end (before the merge), not after each step;
+  between steps run the targeted tests plus `tests/test_architecture.py` and
+  `tests/test_import_boundaries.py`.
 - When you add a test for a fix, check it fails without the fix.
 - Lint with `ruff check` / `ruff format` on the touched paths (or `chemsuite tests scripts`),
   never `ruff format .`.

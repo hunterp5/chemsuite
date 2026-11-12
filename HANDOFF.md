@@ -24,8 +24,11 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - Not moved in Phase B: `protein/workspace` (Phase C creates it), and the plan's shared
     choosers (`tools/*/common` widgets into `app/widgets`), which merge code rather than move
     files (Phase E).
-  - Next, Phase C (`core/{history,assets,container}.py`, the protein workspace engine and its
-    document Part), Phase D (`.cspx`, the shared start-up, scoped commands, standalone
+  - Phase C, done 2026-11-12: `core/history.py`, `core/assets.py` (`AssetStore`, `AssetHost`),
+    `core/container.py`; the Qt-free `protein/workspace` session with `SessionSignals` in the
+    UI; the workspace saved as a document part (`ToolContext.document_part`) with the viewer
+    closed, old documents migrated. `Workspace` moved to `app/document/workspace.py`.
+  - Next, Phase D (`.cspx`, the shared start-up, scoped commands, standalone
     `chemsuite --protein`), and Phase E (ToolContext helpers, one 3D stack, tool hooks and
     external workers, splitting long files). After that, viewer Phases 3–5 (presets and views,
     look undo, analysis).
@@ -87,7 +90,11 @@ Still owed by the user: the ChemDraw hotkey list.
   - `look/`: `display` (how each protein looks, with background `Build`s:
     `pending()`/`accept()`); `scene`, `cartoon`, `surface`, `mesh`, `colours`, `pick`: what is
     drawn.
-  - `ui/`: the Qt workbench. `session.py` is the one object every other part talks to;
+  - `workspace/`: `session.py` (`WorkbenchSession`, Qt-free, plain `events.Event`s, reads an
+    `AssetHost`) is the one object every other part talks to; `workspace.py`
+    (`ProteinWorkspace`) is the document part (`protein_workspace`) that keeps it and the view.
+  - `ui/`: the Qt workbench. `session.py` is `SessionSignals` (the session's events as Qt
+    signals, one per window);
     `host.py` holds `LinkedRow`; `panel.py` (a `ToolPanel`), `menubar.py`, `menus.py`,
     `export.py`, `tree.py`, `sequence_view.py`, `selection_bar.py`, `models_bar.py`,
     `pocket.py`, `labels.py`, `overlay.py`; `builds.py` runs builds as background jobs and
