@@ -32,6 +32,7 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 from chemsuite.ionisation.profile import Profile, profile
 
 from . import medchem
+from .scaffold import murcko
 
 TEXT = None  # ``decimals`` for descriptors whose value is text
 
@@ -77,17 +78,8 @@ def _count(atomic_number: int) -> Callable[[Chem.Mol], int]:
     return lambda mol: sum(1 for atom in mol.GetAtoms() if atom.GetAtomicNum() == atomic_number)
 
 
-def _scaffold(mol: Chem.Mol) -> Chem.Mol:
-    """The Bemis-Murcko scaffold, taken from a copy without properties: RDKit 2026.9.2's
-    MurckoDecompose fails on macOS ("bad any cast") on a molecule carrying a 3D build's."""
-    bare = Chem.MolFromSmiles(Chem.MolToSmiles(mol))
-    if bare is None:
-        raise ValueError("no scaffold")
-    return MurckoScaffold.GetScaffoldForMol(bare)
-
-
 def _murcko(mol: Chem.Mol) -> str:
-    return Chem.MolToSmiles(_scaffold(mol))
+    return Chem.MolToSmiles(murcko(mol))
 
 
 def _shape(fn: Callable[..., float]) -> Callable[[Chem.Mol], float]:
@@ -155,7 +147,7 @@ def _tpsa_sp(mol: Chem.Mol) -> float:
 
 
 def _generic_murcko(mol: Chem.Mol) -> str:
-    core = _scaffold(mol)
+    core = murcko(mol)
     return Chem.MolToSmiles(MurckoScaffold.MakeScaffoldGeneric(core)) if core.GetNumAtoms() else ""
 
 
