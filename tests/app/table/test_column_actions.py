@@ -75,7 +75,7 @@ def test_sort_submenu_offers_then_sort_only_with_an_existing_sort(window) -> Non
 
 def test_the_menu_holds_no_insert_split_or_join(window) -> None:
     titles = menu_titles(window.columns.build_menu("ID", ["ID", "pIC50"], 0))
-    assert titles[:4] == ["Sort", "Filter", "Search", "Select"]
+    assert titles[:3] == ["Select", "Sort", "Colour Column…"]
     assert not [t for t in titles if t.startswith(("Insert", "Split", "Join"))]
 
 

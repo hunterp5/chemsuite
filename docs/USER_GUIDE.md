@@ -26,7 +26,7 @@ read Ctrl as ⌘.
 12. [Similarity](#12-similarity)
 13. [SAR](#13-sar)
 14. [Chemical space](#14-chemical-space)
-15. [Settings](#15-settings)
+15. [Preferences](#15-preferences)
 16. [The log and reporting problems](#16-the-log-and-reporting-problems)
 17. [Keyboard shortcuts](#17-keyboard-shortcuts)
 
@@ -41,11 +41,12 @@ Each document has its own window. From top to bottom:
   | Menu | Holds |
   |---|---|
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close |
-  | Edit | Undo, Copy and Paste, selecting rows, Delete Selection, Settings |
-  | View | Search Bar, Arrange Panes, Jobs, Log, Status Bar |
-  | Tools | Add compounds, rows and columns; Split and Join columns; Sketcher; Calculator; random numbers and rows; Lists |
-  | Chemistry | Calculate Descriptors, Standardize, Predict pKa, Structure Viewer, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
-  | Data | Search ▸, Plot ▸, Filters, Browser, then Bin Values, Statistics, Similarity Search, Diverse Subset, Cluster, SAR ▸, Scoring ▸, Chemical Space ▸ |
+  | Edit | Undo, Copy and Paste, selecting rows, Delete Selection, Status Bar, Preferences |
+  | Tools | Utilities ▸ (Calculator, Random ▸ Random Numbers and Random Rows), Sketcher |
+  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Structure Viewer, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis, Enumerate Products), Routes, R-Group Decomposition |
+  | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸, Plot ▸ and Browser; Filters and Search ▸ |
+  | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
+  | Data ▸ Similarity | Cluster, Bin Values, Similarity Search, Diverse Subset |
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
   | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
   | Protein | Protein Viewer: the workspace for proteins, with its own menus |
@@ -85,8 +86,17 @@ Each document has its own window. From top to bottom:
   - **Arranging panels.** For stacked plots beside the table, open a second plot (it joins
     the first as a tab), then choose Arrange ▸ Below ▸ *the first plot*. You can also drag a
     panel by its header onto the top, bottom or side of another panel to split its space, or
-    onto its middle to tab them. **View ▸ Arrange Panes** lays out every docked panel at once:
-    **As Tabs**, **Side by Side**, **Stacked** or as a **Grid**.
+    onto its middle to tab them.
+  - **Layout**, at the right end of the menu bar (**Window ▸ Layout** on macOS), lays out every
+    docked panel at once. Each choice keeps the other two and applies straight away:
+    - how: **As Tabs**, **Side by Side**, **Stacked** or as a **Grid**;
+    - where: **Right of the Table**, **Left of the Table** or **Below the Table**;
+    - how much room: **Table Focus** (the panels take a third of the window), **Balanced**
+      (half) or **Pane Focus** (two thirds).
+
+    **Dock Floating Panes** brings undocked panels back into the arrangement. **Reset Layout**
+    docks every panel as tabs right of the table, at half the window. The menu's icons show
+    each layout, and the last choice is saved with the document.
   - **The Filters panel stays put.** It always sits at the right edge of the window at a fixed
     width, whatever you do with the other panels: new panels, arrangements and moves all go
     to its left. It has no Arrange or Undock button and cannot be dragged elsewhere.
@@ -94,12 +104,12 @@ Each document has its own window. From top to bottom:
 - **Status bar**, on one line:
   - At the left: what the current background job is doing, such as "Generating conformers…
     (120/500)" or "Calculating UMAP…", followed by "· 2 queued" or "· 1 failed" when that
-    applies. Click it to open the Jobs window.
+    applies. Click it to see the jobs in the Log window.
   - Next to it: the latest message, such as "Opened compounds.sdf" or "Cancelled:
     Generating conformers; partial results kept".
   - At the far right: the row and selection counts ("200 rows · 3 selected").
 
-  View ▸ Status Bar hides or shows it.
+  Edit ▸ Status Bar hides or shows it.
 
 ### Tool dialogs
 
@@ -242,17 +252,33 @@ scrolled to, the moved column stays in view and, if it was selected, stays selec
 
 Right-click a column header for:
 
-- **Sort ▸ Ascending / Descending.** **Then Ascending / Then Descending** add a second (third…)
-  sort key; **Clear** returns rows to their original order.
-- **Filter.** Adds a filter card for the column (see [Filters](#7-filters)).
-- **Search.** Opens the search bar set to this column, ready to type.
 - **Select ▸** picks shown rows by this column's value, top to bottom: **Empty**, **Not Empty**,
   **First Occurrence** (the first row of each value), **Duplicates** (every row whose value
   appears in a row above it, so deleting them keeps one of each) and **All Duplicated Values**
   (every row whose value appears more than once). Structures count as the same when they are
   the same molecule, however they were written.
+- **Sort ▸ Ascending / Descending.** **Then Ascending / Then Descending** add a second (third…)
+  sort key; **Clear** returns rows to their original order.
+- **Colour Column…** Colours cell backgrounds: **Low → high** or **Low → middle → high**
+  gradients for numbers, or **One colour per value** for any column (the same value always gets
+  the same colour). Range ends left empty follow the data. Choose **None** to remove the
+  colours.
 - **Rename…**, **Duplicate Column** (a copy, with its formatting, to the right),
   **Delete Column**. Delete acts on all selected columns when you right-click one of them.
+- **Filter.** Adds a filter card for the column (see [Filters](#7-filters)).
+- **Search.** Opens the search bar set to this column, ready to type.
+- **Freeze Columns up to Here** keeps that column and every column left of it in place while
+  the rest of the table scrolls sideways; **Unfreeze Columns** lets them scroll again. Drag the
+  columns you want to keep in view (ID, Structure) to the front first. Frozen columns are saved
+  with the document.
+- **Align Drawings…** (Structure columns). Type, draw or take from the current row a core
+  (SMILES or SMARTS); every structure that contains it is drawn with the core in the same place
+  and orientation, so a series lines up down the column. Structures without the core keep
+  their usual drawing. Only the drawings change, not the structures. **Stop Aligning
+  Drawings** brings the usual drawings back. The core is saved with the document's layout.
+- **Column Type ▸ Text / Number / Structure / Reaction.** Converting to Number warns you if
+  some values are not numbers; those cells would be cleared. Converting to Structure or
+  Reaction reads each cell's text; cells that do not read are kept and marked invalid.
 - **Logarithmic (log₁₀)** (Number columns). Converts the values to log₁₀; choose it again to
   convert them back (10ˣ). The header shows "(log₁₀)". It needs every value above zero. One
   step you can undo.
@@ -270,29 +296,13 @@ Right-click a column header for:
   The stored values are not rounded, so sorting, filters and tools still use the full numbers,
   and editing a cell starts from the number as typed. The quick search and Find match what the
   cells show.
-- **Colour Column…** Colours cell backgrounds: **Low → high** or **Low → middle → high**
-  gradients for numbers, or **One colour per value** for any column (the same value always gets
-  the same colour). Range ends left empty follow the data. Choose **None** to remove the
-  colours.
-- **Align Drawings…** (Structure columns). Type, draw or take from the current row a core
-  (SMILES or SMARTS); every structure that contains it is drawn with the core in the same place
-  and orientation, so a series lines up down the column. Structures without the core keep
-  their usual drawing. Only the drawings change, not the structures. **Stop Aligning
-  Drawings** brings the usual drawings back. The core is saved with the document's layout.
 - **Hover over a structure cell** for a large drawing of the structure with its SMILES below.
-- **Freeze Columns up to Here** keeps that column and every column left of it in place while
-  the rest of the table scrolls sideways; **Unfreeze Columns** lets them scroll again. Drag the
-  columns you want to keep in view (ID, Structure) to the front first. Frozen columns are saved
-  with the document.
 - Number formats, Logarithmic and colours are saved in the document and can be undone.
 - **Hover over a column's header** for a summary of the column: how many cells are filled and
   blank, and for numbers the range, mean ± standard deviation and median, or for text the
   number of distinct values and the commonest one.
-- **Column Type ▸ Text / Number / Structure / Reaction.** Converting to Number warns you if
-  some values are not numbers; those cells would be cleared. Converting to Structure or
-  Reaction reads each cell's text; cells that do not read are kept and marked invalid.
 
-From Tools:
+From Data ▸ Table:
 
 | Command | What it does |
 |---|---|
@@ -336,7 +346,7 @@ From Tools:
   programs.
 - A structure that cannot be read is shown as **invalid**. Its original text is kept, so you
   can fix it.
-- Rows are taller when the table has a structure column. Change the height under Settings ▸
+- Rows are taller when the table has a structure column. Change the height under Preferences ▸
   Appearance.
 
 ### Reactions in the table
@@ -379,7 +389,7 @@ or SMARTS, or click **Draw…** and draw the query in the sketcher.
 
 ### Split Reactions
 
-Chemistry ▸ Split Reactions… writes the parts of each reaction as structure columns.
+Chemistry ▸ Reaction ▸ Split Reactions… writes the parts of each reaction as structure columns.
 
 - **One per role**: a Reactants, an Agents and a Products column, each holding all of that
   role's components.
@@ -390,7 +400,7 @@ Chemistry ▸ Split Reactions… writes the parts of each reaction as structure 
 
 ### Enumerate Products
 
-Chemistry ▸ Enumerate Products… applies a reaction template to building blocks.
+Chemistry ▸ Reaction ▸ Enumerate Products… applies a reaction template to building blocks.
 
 - **Template**: an atom-mapped reaction SMARTS, such as
   `[C:1](=[O:2])[OH].[N;H2,H1;!$(NC=O):3]>>[C:1](=[O:2])[N:3]` (amide coupling), or
@@ -644,7 +654,7 @@ step. If a Structure Viewer is already open, it is brought forward and switched 
 Lists are saved sets of rows, such as "actives", "to make" or "sent for assay". They are saved
 with the document.
 
-- **Tools ▸ Lists ▸ Add Selected to List… (Ctrl+L)** adds the selected rows to a new or existing
+- **Data ▸ Lists ▸ Add Selected to List… (Ctrl+L)** adds the selected rows to a new or existing
   list.
 - Each list has its own submenu:
 
@@ -829,14 +839,20 @@ descriptors, conformers, clustering, maps and searches.
   - Quick jobs, like a small search, never wait behind them.
 - **Status bar.** The job's progress shows at the far left of the status bar: "Generating
   conformers… (120/500)", or just "Calculating UMAP…" when there is no count. Click it to open
-  the Jobs window.
-- **View ▸ Jobs** lists running, queued and finished jobs with their elapsed time and result.
+  the Log window at its Jobs tab.
+- **Log**, at the right end of the menu bar (**Window ▸ Log** on macOS), opens the Log window.
+  A dot beside it shows that jobs are running (accent colour) or that one failed and you have
+  not looked yet (red). The window opens at **Jobs** while jobs run or a failure is unseen,
+  otherwise at **Messages** (see [The log](#16-the-log-and-reporting-problems)).
+- The **Jobs** tab lists running, queued and finished jobs with their elapsed time and result.
+  The tab's title counts the running and queued jobs, and turns red when one has failed.
   From there you can:
   - cancel a job;
   - remove a queued job, or move it up or down;
   - **Remove** finished, failed or cancelled jobs from the list (select one or several, or
     press Delete); **Clear Finished** removes them all;
-  - copy an error.
+  - copy an error;
+  - **Show Messages**: the job's log messages, on the Messages tab (or double-click the job).
 
   Right-click a job for the same commands.
 - **Cancelling.** A job stops within about a tenth of a second. While it stops, the status bar
@@ -866,7 +882,7 @@ descriptors, conformers, clustering, maps and searches.
   - The computer is kept awake while jobs run.
   - When a job that took more than 30 seconds finishes or fails while chemsuite is not in
     front, the dock icon (taskbar on Windows) asks for attention and a desktop notification
-    names the job and its result. Settings ▸ General ▸ **Notify when a long job finishes** turns
+    names the job and its result. Preferences ▸ General ▸ **Notify when a long job finishes** turns
     the notification off.
 
 ---
@@ -1071,6 +1087,8 @@ existing columns** under **More Options**. Hover over **Plot** for what the plot
 
 ### Calculate Descriptors (Ctrl+Shift+D)
 
+Chemistry ▸ Calculate ▸ Descriptors…
+
 Pick a structure column, the rows (All, Shown or Selected), and the properties you want.
 **Find** narrows the list; **Common Set**, **All** and **None** tick or untick many at once.
 Each property becomes a number (or text) column. An existing column is never replaced:
@@ -1106,7 +1124,7 @@ calculating MW again adds "MW (2)".
 
 ### Predict pKa
 
-Chemistry ▸ Predict pKa predicts the pKa of every ionisable site with **MolGpKa**, a
+Chemistry ▸ Calculate ▸ pKa… predicts the pKa of every ionisable site with **MolGpKa**, a
 graph-convolutional network (Pan et al., J. Chem. Inf. Model. 2021). Its authors report a mean
 absolute error of about 0.6 pKa units on their literature test set. The model ships with
 chemsuite and runs on the CPU, at roughly 2 ms per molecule.
@@ -1255,7 +1273,7 @@ it, so the 2D view works on any computer. On Windows, if the graphics card canno
 (common on remote desktops, virtual machines and VDI), Windows draws it in software instead:
 slower, but it works. chemsuite checks the graphics when it starts; where 3D cannot be drawn,
 the viewer stays in 2D, the 3D switch and the 3D plot types are greyed out, and their
-tooltips give the reason. Settings ▸ General ▸ 3D graphics can force software drawing
+tooltips give the reason. Preferences ▸ General ▸ 3D graphics can force software drawing
 (Windows and Linux) or turn 3D off.
 
 ### Proteins
@@ -1429,7 +1447,7 @@ only sends the ID, over HTTPS; when IT turns downloads off it says so instead.
 
 ### Retrosynthesis
 
-Chemistry ▸ Retrosynthesis plans synthetic routes to each structure with
+Chemistry ▸ Reaction ▸ Retrosynthesis plans synthetic routes to each structure with
 [AiZynthFinder](https://github.com/MolecularAI/aizynthfinder) (AstraZeneca, MIT). A
 neural-network policy proposes reactions, a tree search takes the molecule apart, and a route
 counts as **solved** when every precursor it ends on is in a stock file you supply.
@@ -1445,11 +1463,11 @@ environment:
 1. Create an environment with Python 3.10–3.12, for example
    `conda create -n aizynth python=3.12`.
 2. In it, run `python -m pip install aizynthfinder "pyarrow>=19,<26"`.
-3. In **Settings ▸ External Tools**, set **AiZynthFinder Python** to that environment's
+3. In **Preferences ▸ External Tools**, set **AiZynthFinder Python** to that environment's
    `python` and press **Test**: it reports the AiZynthFinder version it found.
 4. Press **Download…** on the **AiZynthFinder config** row and choose a folder. chemsuite
    fetches AiZynthFinder's public USPTO policies, ring-breaker policy, filter and the ZINC stock
-   (about 1.5 GB, from Zenodo and figshare) in the background (follow it in View ▸ Jobs), writes
+   (about 1.5 GB, from Zenodo and figshare) in the background (follow it in the Log window's Jobs tab), writes
    a `config.yml` beside them, and sets the config path when it is done. Files already in the
    folder are not fetched again, and a cancelled or interrupted download resumes where it
    stopped. A `config.yml` of your own in that folder is left alone; the new one is then
@@ -1576,7 +1594,7 @@ log selectivity (1 = 10-fold).
 
 ### Bin Values
 
-Data ▸ Bin Values… groups a number column into bins.
+Data ▸ Similarity ▸ Bin Values… groups a number column into bins.
 
 - **Methods:** equal width, equal count, or custom edges.
 - **Options:** a fixed width, from/to limits, and open-ended bins below the first edge and above
@@ -1590,7 +1608,7 @@ Data ▸ Bin Values… groups a number column into bins.
 
 ### Calculator
 
-Tools ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
+Tools ▸ Utilities ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
 formula is checked as you type, and **Preview** shows the result for the first shown rows.
 **Insert ▸ Column** and **Insert ▸ Function** put a column name or function at the cursor.
 
@@ -1623,7 +1641,7 @@ Formulas cannot run code, open files or reach outside the table.
 
 ### Random Numbers
 
-Tools ▸ Random Numbers… fills a column with random values:
+Tools ▸ Utilities ▸ Random ▸ Random Numbers… fills a column with random values:
 
 | Distribution | Settings |
 |---|---|
@@ -1638,7 +1656,7 @@ Leave it empty for a new draw each time.
 
 ### Random Rows
 
-Tools ▸ Random Rows… picks a random sample from all, the shown or the
+Tools ▸ Utilities ▸ Random ▸ Random Rows… picks a random sample from all, the shown or the
 selected rows, either a number of rows or a percentage. It then **selects them**, **adds them
 to the selection**, or saves them as a **new list** (for example a test set). A seed picks the
 same rows again.
@@ -1663,7 +1681,7 @@ cached per column, so a second run on the same column is much faster.
 
 ### Similarity Search
 
-Data ▸ Similarity Search… scores **All**, **Shown** or **Selected** rows against one of two
+Data ▸ Similarity ▸ Similarity Search… scores **All**, **Shown** or **Selected** rows against one of two
 references (**Compare With**):
 
 - **A Structure** you type or paste, draw (the pencil), or take from the current row
@@ -1680,7 +1698,7 @@ Cancelling keeps the rows already scored.
 
 ### Diverse Subset
 
-Data ▸ Diverse Subset… picks *N* compounds that cover the chemistry, using MaxMin:
+Data ▸ Similarity ▸ Diverse Subset… picks *N* compounds that cover the chemistry, using MaxMin:
 each pick is the compound farthest from all the earlier picks.
 
 - **Pick from** all, shown or selected rows, and set **How many**.
@@ -1692,7 +1710,7 @@ each pick is the compound farthest from all the earlier picks.
 
 ### Cluster
 
-Data ▸ Cluster… groups compounds using one of three methods:
+Data ▸ Similarity ▸ Cluster… groups compounds using one of three methods:
 
 | Method | You set |
 |---|---|
@@ -1795,7 +1813,7 @@ Data ▸ SAR ▸ Activity Cliffs… lists similar compounds with very different 
 
 ### Dimensionality Reduction
 
-Data ▸ Chemical Space ▸ Dimensionality Reduction… places compounds on a 2D or 3D map by
+Data ▸ Dimensionality Reduction… places compounds on a 2D or 3D map by
 fingerprints, number columns, or both. Choose a **Fingerprint** (or **None**) and tick any
 **Columns**: a fingerprint alone maps by its bits, columns alone by their z-scores, and a
 fingerprint with ticked columns uses the two together, for rows that have all of them: the
@@ -1836,7 +1854,7 @@ are weighted equally so neither drowns out the other (distances are Euclidean).
 
 ### Self-Organizing Map
 
-Data ▸ Chemical Space ▸ Self-Organizing Map… trains a grid of cells. Similar compounds land in
+Data ▸ Self-Organizing Map… trains a grid of cells. Similar compounds land in
 the same or neighbouring cells.
 
 - **Grid.** Set rows × columns, or tick **Automatic** to let the size follow the number of
@@ -1846,9 +1864,9 @@ the same or neighbouring cells.
 
 ---
 
-## 15. Settings
+## 15. Preferences
 
-Edit ▸ Settings… (Ctrl+,) has four pages. Changes preview immediately in every window. **OK**
+Edit ▸ Preferences… (Ctrl+,) has four pages. Changes preview immediately in every window. **OK**
 keeps them and **Cancel** puts everything back.
 
 | Page | Contents |
@@ -1865,7 +1883,10 @@ padlock.
 
 ## 16. The log and reporting problems
 
-- **View ▸ Log** shows the session's log. Filter it by level and text.
+- The **Messages** tab of the Log window (**Log**, at the right end of the menu bar; Window ▸
+  Log on macOS) shows the session's log. Filter it by level and text. A job's messages
+  (Show Messages on the Jobs tab) show with the job's name above the list; click it to show
+  every message again. Double-click a message from a job to find the job on the Jobs tab.
 - **Help ▸ Show Log Folder** opens the folder of log files to attach to a bug report.
 - **Help ▸ chemsuite User Guide** opens this guide; **About chemsuite** (in the chemsuite menu
   on macOS) shows the version and licence.
@@ -1876,7 +1897,7 @@ padlock.
 
 ## 17. Keyboard shortcuts
 
-You can change any of these in Settings ▸ Keyboard.
+You can change any of these in Preferences ▸ Keyboard.
 
 | Action | Shortcut |
 |---|---|
@@ -1895,4 +1916,4 @@ You can change any of these in Settings ▸ Keyboard.
 | Filters | Ctrl+Shift+F |
 | Browser (Structure Viewer in 2D) | Ctrl+Shift+B |
 | Structure Viewer in 3D | Ctrl+Shift+3 |
-| Settings | Ctrl+, |
+| Preferences | Ctrl+, |

@@ -13,9 +13,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The jobs indicator in each window's status bar, and the Jobs window (View ▸ Jobs)."""
+"""The jobs indicator in each window's status bar, and the Log window's Jobs tab."""
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 from PySide6.QtCore import QItemSelectionModel, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QKeySequence, QShortcut
@@ -77,12 +79,14 @@ def progress_text(job: Job) -> str:
 
 class JobsIndicator(QWidget):
     """The running job's progress as a sentence, plus what else is running, queued or failed:
-    ``Generating conformers… (120/500) · 3 queued``. Click to open the Jobs window.
+    ``Generating conformers… (120/500) · 3 queued``. Click to open the Log window's jobs.
 
-    Failures stay flagged until the Jobs window has been seen.
+    Failures stay flagged until the jobs have been seen.
     """
 
     clicked = Signal()
+    #: after each refresh (the Log button follows it)
+    refreshed = Signal()
 
     def __init__(self, runner: JobRunner, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -92,7 +96,7 @@ class JobsIndicator(QWidget):
         self.button.setAutoRaise(True)
         self.button.setStyleSheet(BUTTON_STYLE)
         self.button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.button.setToolTip("Show the Jobs window")
+        self.button.setToolTip("Show the jobs")
         self.button.clicked.connect(self.clicked)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -104,9 +108,12 @@ class JobsIndicator(QWidget):
         self.refresh()
 
     def acknowledge(self) -> None:
-        """The user has seen the failures (the Jobs window opened)."""
+        """The user has seen the failures (the jobs were shown)."""
         self._seen_failures |= {j.id for j in self.runner.jobs if j.state == FAILED}
         self.refresh()
+
+    def unseen_failures(self) -> int:
+        return sum(j.state == FAILED and j.id not in self._seen_failures for j in self.runner.jobs)
 
     def current_job(self) -> Job | None:
         """The job the status bar describes: the running queue job, else any running job."""
@@ -117,7 +124,7 @@ class JobsIndicator(QWidget):
         jobs = self.runner.jobs
         running = [j for j in jobs if j.state == RUNNING]
         queued = sum(j.state == QUEUED for j in jobs)
-        failed = sum(j.state == FAILED and j.id not in self._seen_failures for j in jobs)
+        failed = self.unseen_failures()
         current = self.current_job()
         parts = []
         if current is not None:
@@ -130,9 +137,9 @@ class JobsIndicator(QWidget):
             parts.append(f"{failed} failed")
         self.button.setText(" · ".join(parts))
         self.button.setToolTip(
-            f"{current.title} for {duration(current.elapsed)}. Click for the Jobs window."
+            f"{current.title} for {duration(current.elapsed)}. Click to show the jobs."
             if current is not None
-            else "Show the Jobs window"
+            else "Show the jobs"
         )
         colour = FAILED_COLOUR.name() if failed and current is None else ""
         self.button.setStyleSheet(
@@ -143,17 +150,24 @@ class JobsIndicator(QWidget):
             self._timer.start()
         else:
             self._timer.stop()
+        self.refreshed.emit()
 
 
-class JobsWindow(QWidget):
-    """Every job of the session: running, queued and ended, with controls."""
+class JobsPanel(QWidget):
+    """Every job of the session: running, queued and ended, with controls (the Log window's
+    Jobs tab). *show_messages(job)* shows a job's log messages."""
 
     COLUMNS = ("Job", "Document", "Status", "Progress", "Time", "Result")
 
-    def __init__(self, runner: JobRunner, parent: QWidget | None = None) -> None:
-        super().__init__(parent, Qt.WindowType.Window)
-        self.setWindowTitle("Jobs")
+    def __init__(
+        self,
+        runner: JobRunner,
+        show_messages: Callable[[Job], None] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
         self.runner = runner
+        self._show_messages = show_messages
         self.table = QTableWidget(0, len(self.COLUMNS))
         self.table.setHorizontalHeaderLabels(list(self.COLUMNS))
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -168,10 +182,18 @@ class JobsWindow(QWidget):
         header.setStretchLastSection(True)
         self.table.setColumnWidth(0, 260)
         self.table.itemSelectionChanged.connect(self._update_buttons)
+        self.table.itemDoubleClicked.connect(lambda _item: self._with_current(self.show_messages))
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setDefaultSectionSize(self.fontMetrics().height() + 8)
         self.cancel_button = QPushButton("Cancel Job")
         self.up_button = QPushButton("Move Up")
         self.down_button = QPushButton("Move Down")
         self.copy_button = QPushButton("Copy Details")
+        self.messages_button = QPushButton("Show Messages")
+        self.messages_button.setToolTip("Show the selected job's log messages")
+        self.messages_button.setVisible(show_messages is not None)
+        self.messages_button.clicked.connect(lambda: self._with_current(self.show_messages))
         self.remove_button = QPushButton("Remove")
         self.remove_button.setToolTip("Remove the selected ended jobs from the list (Delete)")
         clear = QPushButton("Clear Finished")
@@ -190,19 +212,23 @@ class JobsWindow(QWidget):
             "alongside them."
         )
         buttons = QHBoxLayout()
-        for button in (self.cancel_button, self.up_button, self.down_button, self.copy_button):
+        for button in (self.cancel_button, self.up_button, self.down_button):
             buttons.addWidget(button)
+        buttons.addSpacing(12)
+        buttons.addWidget(self.copy_button)
+        buttons.addWidget(self.messages_button)
         buttons.addStretch(1)
         buttons.addWidget(self.remove_button)
         buttons.addWidget(clear)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
         layout.addWidget(self.table, 1)
         layout.addLayout(buttons)
         self._timer = QTimer(self)
         self._timer.setInterval(TICK_MS * 2)
         self._timer.timeout.connect(self.refresh)
         runner.changed.connect(self.refresh)
-        self.resize(820, 360)
         self.refresh()
 
     # -- contents ----------------------------------------------------------------------------------
@@ -291,6 +317,9 @@ class JobsWindow(QWidget):
         remove.setEnabled(any(not job.running for job in jobs))
         copy = menu.addAction("Copy Details")
         copy.setEnabled(len(jobs) == 1)
+        messages = menu.addAction("Show Messages")
+        messages.setEnabled(len(jobs) == 1)
+        messages.setVisible(self._show_messages is not None)
         chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
         if chosen is cancel:
             self.cancel_selected()
@@ -298,6 +327,12 @@ class JobsWindow(QWidget):
             self.remove_selected()
         elif chosen is copy:
             self.copy_details(jobs[0])
+        elif chosen is messages:
+            self.show_messages(jobs[0])
+
+    def show_messages(self, job: Job) -> None:
+        if self._show_messages is not None:
+            self._show_messages(job)
 
     def select(self, job: Job) -> None:
         for row in range(self.table.rowCount()):
@@ -320,6 +355,7 @@ class JobsWindow(QWidget):
         self.up_button.setEnabled(job in queue and queue.index(job) > 0)
         self.down_button.setEnabled(job in queue and queue.index(job) < len(queue) - 1)
         self.copy_button.setEnabled(job is not None)
+        self.messages_button.setEnabled(job is not None)
 
     def copy_details(self, job: Job) -> str:
         lines = [

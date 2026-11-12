@@ -22,7 +22,7 @@ import logging
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMessageBox
 
-from chemsuite.app.shell.log_ui import LogWindow
+from chemsuite.app.shell.log_ui import LogPanel
 from chemsuite.core.logbook import Logbook, LogbookHandler
 from tests.gui import gui
 
@@ -44,7 +44,7 @@ def _filled() -> Logbook:
 
 
 def test_filters_by_level_and_text(qtbot) -> None:
-    window = LogWindow(_filled())
+    window = LogPanel(_filled())
     qtbot.addWidget(window)
     assert window.model.rowCount() == 3  # Info and above
     window.level.setCurrentIndex(0)
@@ -62,7 +62,7 @@ def test_filters_by_level_and_text(qtbot) -> None:
 
 def test_new_entries_arrive_and_clear(qtbot) -> None:
     book = _filled()
-    window = LogWindow(book)
+    window = LogPanel(book)
     qtbot.addWidget(window)
     window.show()
     book.add(logging.INFO, "x", "late arrival")
@@ -75,7 +75,7 @@ def test_new_entries_arrive_and_clear(qtbot) -> None:
 
 def test_copy_details_and_job_link(qtbot) -> None:
     opened: list[int] = []
-    window = LogWindow(_filled(), show_job=opened.append)
+    window = LogPanel(_filled(), show_job=opened.append)
     qtbot.addWidget(window)
     window.view.selectRow(2)  # the error
     assert "ValueError" in window.details.toPlainText()
@@ -89,7 +89,7 @@ def test_copy_details_and_job_link(qtbot) -> None:
 def test_save_as(qtbot, tmp_path, monkeypatch) -> None:
     from PySide6.QtWidgets import QFileDialog
 
-    window = LogWindow(_filled())
+    window = LogPanel(_filled())
     qtbot.addWidget(window)
     target = tmp_path / "log.txt"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(target), ""))

@@ -592,3 +592,20 @@ def test_row_menu_deletes_duplicates_and_freezes(window, qtbot) -> None:
     assert not view._frozen_corner.isVisible()
     session.restore(window, extras)
     assert window.view.frozen_row_count == 2
+
+
+def _menu_layout(menu) -> list[str]:
+    return ["--" if a.isSeparator() else a.text() for a in menu.actions()]
+
+
+def test_column_menu_order(window, structures) -> None:
+    window.workspace.table.convert_column("IC50", "number")
+    common = ["Rename…", "Duplicate Column", "Delete Column", "--", "Filter", "Search"]
+    assert _menu_layout(window.columns.build_menu("IC50", [], 2)) == [
+        "Select", "Sort", "Colour Column…", "--", *common, "Freeze Columns up to Here",
+        "Column Type", "--", "Logarithmic (log₁₀)", "Number Format…",
+    ]  # fmt: skip
+    assert _menu_layout(window.columns.build_menu("SMILES", [], 1)) == [
+        "Select", "Sort", "Colour Column…", "--", *common, "Freeze Columns up to Here",
+        "Align Drawings…", "Column Type", "--", "Logarithmic (log₁₀)", "Number Format…",
+    ]  # fmt: skip

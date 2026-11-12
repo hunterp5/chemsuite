@@ -96,10 +96,9 @@ def test_search_bar_starts_hidden_and_closing_clears_it(window, qtbot) -> None:
     from chemsuite.core.table import Table
 
     bar = window.search
-    action = window.command_action("view.search_bar")
-    assert not bar.is_open and not action.isChecked()
+    assert not bar.is_open
     window.command_action("edit.search").trigger()  # Search Rows opens and focuses it
-    assert bar.is_open and action.isChecked()
+    assert bar.is_open
     bar.edit.setText("b")
     bar.apply_now()
     assert ids_shown(window) == ["B"]
@@ -107,19 +106,19 @@ def test_search_bar_starts_hidden_and_closing_clears_it(window, qtbot) -> None:
     assert bar.is_open and bar.edit.text() == ""
     bar.edit.setText("b")
     bar.apply_now()
-    action.trigger()  # View ▸ Search Bar off: hides and clears the search
+    bar.dismiss()  # the close button: hides and clears the search
     assert not bar.is_open and "search" not in window.workspace.table.filters
     assert ids_shown(window) == ["A", "B", "C"]
-    action.trigger()
+    window.command_action("edit.search").trigger()
     assert bar.is_open
     qtbot.keyClick(bar.edit, Qt.Key.Key_Escape)  # Esc in an empty box closes the bar
-    assert not bar.is_open and not action.isChecked()
+    assert not bar.is_open
     # A newly loaded document starts with the bar hidden too.
     window.search.focus()
     table = Table()
     table.add_rows({"ID": ["X"]}, undoable=False)
     window._install(Workspace(table))
-    assert not window.search.is_open and not action.isChecked()
+    assert not window.search.is_open
 
 
 def test_search_bar_searches_one_column(window) -> None:

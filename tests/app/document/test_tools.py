@@ -41,11 +41,29 @@ def chem(window):
 
 def test_menu_bar_order(window) -> None:
     titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
-    assert titles == ["File", "Edit", "View", "Tools", "Chemistry", "Data", "Protein", "Help"]
-    data = window.menuBar().actions()[5].menu()
-    entries = [a.text().replace("&", "") for a in data.actions() if not a.isSeparator()]
-    # Search, Plot and the panes lead the Data menu
-    assert entries[:6] == ["Search", "Plot", "Filters", "Browser", "Bin Values…", "Statistics…"]
+    assert titles[:6] == ["File", "Edit", "Tools", "Chemistry", "Data", "Protein"]
+    assert titles[-1] == "Help"
+    if window.menuBar().isNativeMenuBar():  # macOS: Layout and Log in a Window menu
+        assert titles[6:-1] == ["Window"]
+    else:  # at the right end of the menu bar
+        assert titles[6:-1] == []
+        assert window.layout_button.text() == "Layout"
+        assert window.log_button.text() == "Log"
+    data = window.menuBar().actions()[4].menu()
+    groups: list[list[str]] = [[]]
+    for a in data.actions():
+        if a.isSeparator():
+            groups.append([])
+        else:
+            groups[-1].append(a.text().replace("&", ""))
+    # every group in order, Filters and Search at the bottom
+    assert groups == [
+        ["Table", "Lists"],
+        ["Scoring", "Similarity"],
+        ["Dimensionality Reduction…", "Self-Organizing Map…"],
+        ["Statistics…", "SAR", "Plot", "Browser"],
+        ["Filters", "Search"],
+    ]
 
 
 def test_tools_fill_slots_among_menu_commands(window) -> None:
@@ -59,18 +77,32 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
         "Reaction Search…",
         "Clear Highlighting",
     ]
-    tools = [t for t in visible(menus["Tools"]) if t]  # no separators
-    assert tools[:5] == [
-        "Add Compound…",
-        "Add Rows…",
-        "Add Column…",
-        "Split Column…",
-        "Join Columns…",
+
+    def submenu(menu, title):
+        return next(a.menu() for a in menu.actions() if a.text().replace("&", "") == title)
+
+    assert [t for t in visible(menus["Tools"]) if t] == ["Utilities", "Sketcher…"]
+    utilities = submenu(menus["Tools"], "Utilities")
+    assert [t for t in visible(utilities) if t] == ["Calculator…", "Random"]
+    assert visible(submenu(utilities, "Random")) == ["Random Numbers…", "Random Rows…"]
+    table = [t for t in visible(submenu(menus["Data"], "Table")) if t]
+    assert table == ["Add Compound…", "Add Rows…", "Add Column…", "Split Column…",
+                     "Join Columns…"]  # fmt: skip
+    # two modules fill Similarity, in MENU_ORDER's order
+    assert visible(submenu(menus["Data"], "Similarity")) == [
+        "Cluster…",
+        "Bin Values…",
+        "Similarity Search…",
+        "Diverse Subset…",
     ]
-    assert tools.index("Join Columns…") < tools.index("Sketcher…") < tools.index("Calculator…")
-    assert tools[-1] == "Lists"  # the registered tools go before Lists
-    assert "Clear Sort" not in tools and "New Document from Shown Rows" not in tools
+    assert visible(submenu(menus["Data"], "Scoring")) == ["MPO Score…", "Selectivity…"]
     assert "R-Group Decomposition…" in visible(menus["Chemistry"])
+    calculate = submenu(menus["Chemistry"], "Calculate")
+    assert visible(calculate) == ["Descriptors…", "pKa…"]
+    reaction = submenu(menus["Chemistry"], "Reaction")
+    assert visible(reaction) == ["Split Reactions…", "Retrosynthesis…", "Enumerate Products…"]
+    assert "Preferences…" in visible(menus["Edit"])
+    assert "Status Bar" in visible(menus["Edit"])
     assert "Sketcher…" not in visible(menus["Chemistry"])
     edit = visible(menus["Edit"])
     assert "Delete Selection" in edit
@@ -80,7 +112,7 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
 
 def test_registry_builds_the_chemistry_menu(window) -> None:
     action = window.tool_action("descriptors")
-    assert action.text() == "Calculate Descriptors…"
+    assert action.text() == "Descriptors…"
     assert not action.isEnabled()  # the fixture table has no structures
 
 

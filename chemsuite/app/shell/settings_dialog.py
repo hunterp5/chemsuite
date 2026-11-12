@@ -84,7 +84,7 @@ THEME_TITLES = {"system": "System", "light": "Light", "dark": "Dark", "groovy": 
 class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, jobs: JobHost | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Settings")
+        self.setWindowTitle("Preferences")
         #: runs the dialog's own work (a download) as the document window's job
         self.jobs = jobs
         self.hub = settings_hub()

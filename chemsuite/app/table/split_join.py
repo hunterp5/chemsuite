@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tools ▸ Split Column and Join Columns, with a live preview of the result."""
+"""Data ▸ Table ▸ Split Column and Join Columns, with a live preview of the result."""
 
 from __future__ import annotations
 

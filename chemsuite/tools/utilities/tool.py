@@ -20,7 +20,8 @@ from __future__ import annotations
 
 from chemsuite.app.document.tools import Tool, ToolContext
 
-MENU = ("Tools",)
+MENU = ("Tools", "Utilities")
+RANDOM = (*MENU, "Random")
 
 
 def _calculator(ctx: ToolContext):
@@ -49,12 +50,11 @@ TOOLS = (
         shortcut="Ctrl+Shift+=",
         tip="A new column from a formula: math, text, statistics and chemistry functions "
         "over other columns, e.g. 9 - log10([IC50 (nM)]) or MW([Structure]).",
-        separator_after=True,
     ),
     Tool(
         id="random_numbers",
         title="Random Numbers…",
-        menu=MENU,
+        menu=RANDOM,
         open=_dialog("RandomNumbersDialog"),
         tip="Fill a column with random numbers: uniform, whole numbers, normal, log-normal or "
         "a random order, with an optional seed.",
@@ -62,7 +62,7 @@ TOOLS = (
     Tool(
         id="random_rows",
         title="Random Rows…",
-        menu=MENU,
+        menu=RANDOM,
         open=_dialog("RandomRowsDialog"),
         tip="Pick a random sample of rows (a number or a percentage) and select them or save "
         "them as a list.",

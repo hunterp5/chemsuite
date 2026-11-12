@@ -13,13 +13,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Data ▸ Chemical Space ▸ Dimensionality Reduction…, Self-Organizing Map…"""
+"""Data ▸ Dimensionality Reduction…, Self-Organizing Map…"""
 
 from __future__ import annotations
 
 from chemsuite.app.document.tools import Tool, ToolContext
 
-MENU = ("Data", "Chemical Space")
+MENU = ("Data",)
 
 
 def _map(ctx: ToolContext):
@@ -65,5 +65,6 @@ TOOLS = (
         open=_som,
         restore=_som_panel,
         tip="Bin compounds onto a grid where similar compounds share or neighbour a cell.",
+        separator_after=True,
     ),
 )

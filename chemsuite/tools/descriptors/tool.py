@@ -30,8 +30,8 @@ def _open(ctx: ToolContext):
 
 TOOL = Tool(
     id="descriptors",
-    title="Calculate Descriptors…",
-    menu=("Chemistry",),
+    title="Descriptors…",
+    menu=("Chemistry", "Calculate"),
     open=_open,
     requires=("rdkit",),
     needs_structures=True,

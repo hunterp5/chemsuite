@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMenu
@@ -271,3 +273,70 @@ def test_a_first_panel_takes_half_the_window_beside_filters(window, qtbot) -> No
     want = max(PANEL_MIN_WIDTH, window.width() // 2)
     qtbot.waitUntil(lambda: abs(dock.width() - want) < 40, timeout=2000)
     assert window.filter_dock.isVisible()
+
+
+def test_layout_menu_places_and_sizes_the_panes(data, qtbot):
+    from chemsuite.app.document import dock_layout
+
+    first, second = two_plots(data)
+    menu = QMenu()
+    dock_layout.fill_layout_menu(menu, data)
+    titles = [a.text() for a in menu.actions() if not a.isSeparator()]
+    assert titles == [
+        "As Tabs", "Side by Side", "Stacked", "Grid",
+        "Right of the Table", "Left of the Table", "Below the Table",
+        "Table Focus", "Balanced", "Pane Focus",
+        "Dock Floating Panes", "Reset Layout",
+    ]  # fmt: skip
+    checked = [a.text() for a in menu.actions() if a.isChecked()]
+    assert checked == ["As Tabs", "Right of the Table", "Balanced"]
+    below = next(a for a in menu.actions() if a.text() == "Below the Table")
+    below.trigger()  # keeps As Tabs and Balanced
+    assert data.arrangement == dock_layout.Arrangement(dock_layout.TABS, dock_layout.BELOW)
+    assert data.dockWidgetArea(first) == BOTTOM and second in data.tabifiedDockWidgets(first)
+    dock_layout.fill_layout_menu(menu, data)
+    next(a for a in menu.actions() if a.text() == "Side by Side").trigger()
+    qtbot.wait(50)
+    assert data.dockWidgetArea(second) == BOTTOM
+    assert geometry(second)[0].x() > geometry(first)[0].x()
+    choice = dock_layout.Arrangement(dock_layout.STACKED, dock_layout.LEFT, 2 / 3)
+    assert dock_layout.apply_arrangement(data, choice) == 2
+    qtbot.wait(50)
+    assert data.dockWidgetArea(first) == LEFT and geometry(second)[0].y() > geometry(first)[0].y()
+    assert first.width() > data.width() / 2  # Pane Focus
+    dock_layout.apply_arrangement(data, dataclasses.replace(choice, share=1 / 3))
+    qtbot.wait(50)
+    assert first.width() < data.width() / 2  # Table Focus
+
+
+def test_dock_floating_panes_and_reset(data, qtbot):
+    from chemsuite.app.document import dock_layout
+
+    first, second = two_plots(data)
+    second.setFloating(True)
+    menu = QMenu()
+    dock_layout.fill_layout_menu(menu, data)
+    dock_all = next(a for a in menu.actions() if a.text() == "Dock Floating Panes")
+    assert dock_all.isEnabled()
+    dock_all.trigger()
+    assert not second.isFloating() and second in data.tabifiedDockWidgets(first)
+    dock_layout.apply_arrangement(data, dock_layout.Arrangement(dock_layout.GRID, dock_layout.LEFT))
+    dock_layout.fill_layout_menu(menu, data)
+    next(a for a in menu.actions() if a.text() == "Reset Layout").trigger()
+    assert data.arrangement == dock_layout.Arrangement()
+    assert data.dockWidgetArea(first) == RIGHT
+
+
+def test_the_layout_choice_is_saved_with_the_document(data):
+    from chemsuite.app.document import dock_layout
+
+    two_plots(data)
+    assert "arrangement" not in dock_layout.capture(data)  # the default is not written
+    choice = dock_layout.Arrangement(dock_layout.GRID, dock_layout.BELOW, 1 / 3)
+    dock_layout.apply_arrangement(data, choice)
+    saved = dock_layout.capture(data)
+    data.arrangement = dock_layout.Arrangement()
+    dock_layout.restore(data, saved)
+    assert data.arrangement == choice
+    damaged = {"how": "spiral", "side": 3, "share": 5}
+    assert dock_layout.Arrangement.from_saved(damaged) == dock_layout.Arrangement()

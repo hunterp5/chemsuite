@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Chemistry ▸ Predict pKa."""
+"""Chemistry ▸ Calculate ▸ pKa."""
 
 from __future__ import annotations
 

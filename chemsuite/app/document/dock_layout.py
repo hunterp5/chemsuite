@@ -29,8 +29,10 @@ the pane exactly:
 * **Left of / Right of / Below the Table**;
 * **Float** in its own window.
 
-**View ▸ Arrange Panes** lays out every docked pane at once: as tabs, side by side, stacked or
-in a grid.
+The **Layout** menu (at the right of the menu bar; Window ▸ Layout on macOS) lays out every
+docked pane at once: as tabs, side by side, stacked or in a grid; right of, left of or below
+the table; and with the table or the panes given more of the window (:class:`Arrangement`).
+The last choice is kept with the document.
 
 Qt cannot split a pane that shares its space with tabs (``splitDockWidget`` tabs the new pane
 instead), so splitting first takes the target's tab companions out and tabs them back onto the
@@ -46,10 +48,12 @@ from __future__ import annotations
 
 import base64
 import math
+from dataclasses import asdict, dataclass, replace
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QByteArray, Qt, QTimer
-from PySide6.QtWidgets import QDockWidget, QMenu
+from PySide6.QtCore import QByteArray, QLineF, QRectF, Qt, QTimer
+from PySide6.QtGui import QIcon, QPainter, QPalette, QPen, QPixmap
+from PySide6.QtWidgets import QDockWidget, QMenu, QWidget
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -72,6 +76,45 @@ AREAS = (
     (Qt.DockWidgetArea.RightDockWidgetArea, "Right of the Table"),
     (Qt.DockWidgetArea.BottomDockWidgetArea, "Below the Table"),
 )
+LEFT, RIGHT, BELOW = "left", "right", "below"
+SIDES = (
+    (RIGHT, "Right of the Table"),
+    (LEFT, "Left of the Table"),
+    (BELOW, "Below the Table"),
+)
+SIDE_AREAS = {
+    LEFT: Qt.DockWidgetArea.LeftDockWidgetArea,
+    RIGHT: Qt.DockWidgetArea.RightDockWidgetArea,
+    BELOW: Qt.DockWidgetArea.BottomDockWidgetArea,
+}
+#: the panes' share of the window
+SHARES = (
+    (1 / 3, "Table Focus"),
+    (1 / 2, "Balanced"),
+    (2 / 3, "Pane Focus"),
+)
+
+
+@dataclass(frozen=True)
+class Arrangement:
+    """How the Layout menu lays out the panes."""
+
+    how: str = TABS
+    side: str = RIGHT
+    share: float = 1 / 2
+
+    @classmethod
+    def from_saved(cls, saved: object) -> Arrangement:
+        if not isinstance(saved, dict):
+            return cls()
+        how, side, share = saved.get("how"), saved.get("side"), saved.get("share")
+        default = cls()
+        ok_share = isinstance(share, int | float) and 0.1 <= share <= 0.9
+        return cls(
+            how if how in dict(ARRANGEMENTS) else default.how,
+            side if side in SIDE_AREAS else default.side,
+            float(share) if ok_share else default.share,
+        )
 
 
 def is_open(dock: QDockWidget) -> bool:
@@ -235,18 +278,36 @@ def move_to_area(window: MainWindow, dock: QDockWidget, area: Qt.DockWidgetArea)
     pin_filters(window)
 
 
-def arrange(window: MainWindow, how: str, docks: list[QDockWidget] | None = None) -> int:
-    """Lay out every docked pane (or *docks*) right of the table; returns how many moved."""
+def floating_panels(window: MainWindow) -> list[QDockWidget]:
+    """Open panels in their own windows (Advanced Search is always one, so it is not)."""
+    return [
+        d
+        for d in window.tool_panels.docks
+        if is_open(d) and d.isFloating() and d.widget() is not None
+    ]
+
+
+def arrange(
+    window: MainWindow,
+    how: str,
+    docks: list[QDockWidget] | None = None,
+    side: str = RIGHT,
+    share: float = 1 / 2,
+) -> int:
+    """Lay out every docked pane (or *docks*) on *side* of the table, the panes taking
+    *share* of the window; returns how many moved."""
     docks = list(docks if docks is not None else arrangeable(window))
     if not docks:
         return 0
-    area = Qt.DockWidgetArea.RightDockWidgetArea
+    area = SIDE_AREAS[side]
     for d in docks:
+        d.setFloating(False)
         _take(window, d)
     first = docks[0]
     window.addDockWidget(area, first, Qt.Orientation.Horizontal)
     _put(first)
     rest = docks[1:]
+    across, down = [first], [first]  # the panes along each direction, for sizing
     if how == TABS:
         for d in rest:
             window.tabifyDockWidget(first, d)
@@ -259,7 +320,10 @@ def arrange(window: MainWindow, how: str, docks: list[QDockWidget] | None = None
             window.splitDockWidget(previous, d, orientation)
             _put(d)
             previous = d
-        _even(window, docks, orientation)
+        if how == SIDE:
+            across = docks
+        else:
+            down = docks
     elif how == GRID:
         columns = math.ceil(math.sqrt(len(docks)))
         heads = docks[:columns]
@@ -270,15 +334,34 @@ def arrange(window: MainWindow, how: str, docks: list[QDockWidget] | None = None
             above = docks[k]  # the pane above in the same column
             window.splitDockWidget(above, d, Qt.Orientation.Vertical)
             _put(d)
-        _even(window, heads, Qt.Orientation.Horizontal)
+        across, down = heads, docks[::columns]
     else:
         raise ValueError(f"unknown arrangement {how!r}")
-    total = window.width() // 2 if how != TABS else max(360, window.width() // 2)
-    window.resizeDocks([first], [max(360, total)], Qt.Orientation.Horizontal)
-    if how == SIDE:
-        _even(window, docks, Qt.Orientation.Horizontal)
     pin_filters(window)
+
+    def size() -> None:  # now, and again once Qt has settled the new layout
+        if side == BELOW:
+            total = max(200, round(window.centralWidget().height() * share))
+            window.resizeDocks(down, [total // len(down)] * len(down), Qt.Orientation.Vertical)
+            _even(window, across, Qt.Orientation.Horizontal)
+        else:
+            room = window.width() - (FILTER_WIDTH if is_open(window.filter_dock) else 0)
+            total = max(320, round(room * share))
+            horizontal = Qt.Orientation.Horizontal
+            window.resizeDocks(across, [total // len(across)] * len(across), horizontal)
+            _even(window, down, Qt.Orientation.Vertical)
+
+    size()
+    QTimer.singleShot(0, size)
     return len(docks)
+
+
+def apply_arrangement(window: MainWindow, choice: Arrangement, *, gather: bool = False) -> int:
+    """Remember *choice* as the window's arrangement and lay the panes out by it; *gather*
+    docks the floating panels too."""
+    window.arrangement = choice
+    docks = arrangeable(window) + (floating_panels(window) if gather else [])
+    return arrange(window, choice.how, docks, choice.side, choice.share)
 
 
 def _even(window: MainWindow, docks: list[QDockWidget], orientation: Qt.Orientation) -> None:
@@ -329,12 +412,83 @@ def fill_arrange_menu(menu: QMenu, window: MainWindow, dock: QDockWidget) -> Non
     floating.setChecked(dock.isFloating())
 
 
-def fill_arrange_all_menu(menu: QMenu, window: MainWindow) -> None:
+def fill_layout_menu(menu: QMenu, window: MainWindow) -> None:
+    """The Layout menu (rebuilt each time it opens): how, where and how large the panes are.
+    Each choice keeps the other two and lays the panes out at once."""
     menu.clear()
-    count = len(arrangeable(window))
-    for how, title in ARRANGEMENTS:
-        action = menu.addAction(title, lambda h=how: arrange(window, h))
-        action.setEnabled(count > 1 or (count == 1 and how == TABS))
+    menu.setToolTipsVisible(True)
+    current = window.arrangement
+    has_panes = bool(arrangeable(window) or floating_panels(window))
+    groups = (
+        [(replace(current, how=how), title) for how, title in ARRANGEMENTS],
+        [(replace(current, side=side), title) for side, title in SIDES],
+        [(replace(current, share=share), title) for share, title in SHARES],
+    )
+    for k, group in enumerate(groups):
+        if k:
+            menu.addSeparator()
+        for choice, title in group:
+            action = menu.addAction(layout_icon(menu, choice), title)
+            action.setCheckable(True)
+            action.setChecked(choice == current)
+            action.setEnabled(has_panes)
+            action.triggered.connect(lambda _on=False, c=choice: apply_arrangement(window, c))
+    menu.addSeparator()
+    dock_all = menu.addAction(
+        "Dock Floating Panes", lambda: apply_arrangement(window, current, gather=True)
+    )
+    dock_all.setEnabled(bool(floating_panels(window)))
+    reset = menu.addAction(
+        "Reset Layout", lambda: apply_arrangement(window, Arrangement(), gather=True)
+    )
+    reset.setToolTip("Every pane docked as tabs right of the table, half the window wide")
+    reset.setEnabled(has_panes)
+
+
+def layout_icon(widget: QWidget, choice: Arrangement) -> QIcon:
+    """A small picture of *choice*: the window outlined, the panes filled."""
+    width, height, ratio = 22, 16, widget.devicePixelRatioF()
+    pixmap = QPixmap(round(width * ratio), round(height * ratio))
+    pixmap.setDevicePixelRatio(ratio)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    palette = widget.palette()
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    frame = QRectF(1.5, 1.5, width - 3, height - 3)
+    if choice.side == BELOW:
+        cut = frame.height() * choice.share
+        panes = QRectF(frame.left(), frame.bottom() - cut, frame.width(), cut)
+    else:
+        cut = frame.width() * choice.share
+        left = frame.left() if choice.side == LEFT else frame.right() - cut
+        panes = QRectF(left, frame.top(), cut, frame.height())
+    painter.fillRect(panes, palette.color(QPalette.ColorRole.Highlight))
+    painter.setPen(QPen(palette.color(QPalette.ColorRole.HighlightedText), 1))
+    for line in _pane_lines(panes, choice.how):
+        painter.drawLine(line)
+    painter.setPen(QPen(palette.color(QPalette.ColorRole.WindowText), 1))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawRoundedRect(frame, 1.5, 1.5)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def _pane_lines(r: QRectF, how: str) -> list[QLineF]:
+    """The lines between the panes drawn inside *r* for each arrangement."""
+    mid_x, mid_y = r.center().x(), r.center().y()
+    vertical = QLineF(mid_x, r.top(), mid_x, r.bottom())
+    horizontal = QLineF(r.left(), mid_y, r.right(), mid_y)
+    if how == SIDE:
+        return [vertical]
+    if how == STACKED:
+        return [horizontal]
+    if how == GRID:
+        return [vertical, horizontal]
+    tab = min(4.0, r.height() / 3)  # As Tabs: a tab strip along the top
+    return [
+        QLineF(r.left(), r.top() + tab, r.right(), r.top() + tab),
+        QLineF(mid_x, r.top(), mid_x, r.top() + tab),
+    ]
 
 
 # -- saving ------------------------------------------------------------------------------------
@@ -352,6 +506,8 @@ def capture(window: MainWindow) -> dict[str, Any]:
     """The window's arrangement, column widths and search bar, as JSON-friendly data."""
     state = bytes(window.saveState(LAYOUT_VERSION).data())
     out: dict[str, Any] = {"docks": base64.b64encode(state).decode("ascii")}
+    if window.arrangement != Arrangement():
+        out["arrangement"] = asdict(window.arrangement)
     widths = window.view.column_widths()
     if widths:
         out["widths"] = widths
@@ -380,6 +536,7 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
     """Apply what :func:`capture` saved; damaged parts are skipped."""
     if not isinstance(saved, dict):
         return
+    window.arrangement = Arrangement.from_saved(saved.get("arrangement"))
     widths = saved.get("widths")
     if isinstance(widths, dict):
         window.view.set_column_widths(

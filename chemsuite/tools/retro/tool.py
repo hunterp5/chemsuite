@@ -44,7 +44,7 @@ TOOLS = (
     Tool(
         id="retrosynthesis",
         title="Retrosynthesis…",
-        menu=("Chemistry",),
+        menu=("Chemistry", "Reaction"),
         open=_search,
         requires=("rdkit",),
         needs_structures=True,

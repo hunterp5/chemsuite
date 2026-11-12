@@ -53,7 +53,7 @@ TOOLS = (
     Tool(
         id="split-reaction",
         title="Split Reactions…",
-        menu=("Chemistry",),
+        menu=("Chemistry", "Reaction"),
         open=_split,
         requires=("rdkit",),
         needs_reactions=True,
@@ -62,7 +62,7 @@ TOOLS = (
     Tool(
         id="enumerate-products",
         title="Enumerate Products…",
-        menu=("Chemistry",),
+        menu=("Chemistry", "Reaction"),
         open=_enumerate,
         requires=("rdkit",),
         needs_structures=True,

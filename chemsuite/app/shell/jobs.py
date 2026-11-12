@@ -58,7 +58,7 @@ QUEUED, RUNNING, FINISHED, FAILED, CANCELLED = (
     "cancelled",
 )
 ENDED = (FINISHED, FAILED, CANCELLED)
-HISTORY_LIMIT = 200  # ended jobs kept for the Jobs window
+HISTORY_LIMIT = 200  # ended jobs kept for the Log window's Jobs tab
 
 _ids = itertools.count(1)
 
@@ -367,7 +367,7 @@ class JobRunner(QObject):
         return True
 
     def remove(self, job: Job) -> None:
-        """Forget an ended job (the Jobs window's list)."""
+        """Forget an ended job (the Log window's Jobs tab)."""
         if not job.running and job in self._jobs:
             self._jobs.remove(job)
             self.changed.emit()

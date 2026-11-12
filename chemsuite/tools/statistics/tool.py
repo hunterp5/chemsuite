@@ -38,5 +38,4 @@ TOOL = Tool(
     restore=_open,
     requires=("scipy",),
     tip="Summaries, correlations, outliers, curve fits and hypothesis tests for number columns.",
-    separator_after=True,
 )

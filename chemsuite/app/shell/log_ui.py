@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The Log window (View ▸ Log): the session's log records, filtered by level and text."""
+"""The Log window's Messages tab: the session's log records, filtered by level, text and job."""
 
 from __future__ import annotations
 
@@ -36,7 +36,9 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSplitter,
+    QStyle,
     QTableView,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -81,6 +83,7 @@ class LogModel(QAbstractTableModel):
         self.book = book
         self.min_level = logging.INFO
         self.needle = ""
+        self.job: int | None = None  # only this job's entries
         self.rows: list[Entry] = []
         self._last = 0  # newest seq looked at
         self._cleared = book.cleared_through
@@ -88,6 +91,8 @@ class LogModel(QAbstractTableModel):
     # -- filtering ---------------------------------------------------------------------------------
     def passes(self, entry: Entry) -> bool:
         if entry.level < self.min_level:
+            return False
+        if self.job is not None and entry.job != self.job:
             return False
         if not self.needle:
             return True
@@ -162,8 +167,9 @@ class LogModel(QAbstractTableModel):
         return self.rows[row]
 
 
-class LogWindow(QWidget):
-    """The log, live. *show_job(job_id)* opens a job's entry in the Jobs window."""
+class LogPanel(QWidget):
+    """The log, live (the Log window's Messages tab). *show_job(job_id)* shows a job's row
+    in the Jobs tab."""
 
     def __init__(
         self,
@@ -171,8 +177,7 @@ class LogWindow(QWidget):
         show_job: Callable[[int], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent, Qt.WindowType.Window)
-        self.setWindowTitle("Log")
+        super().__init__(parent)
         self.book = book or logbook()
         self._show_job = show_job
         self.model = LogModel(self.book)
@@ -185,14 +190,24 @@ class LogWindow(QWidget):
         self.search.setClearButtonEnabled(True)
         self.follow = QCheckBox("Follow")
         self.follow.setChecked(True)
-        self.follow.setToolTip("Keep the newest entry in view.")
+        self.follow.setToolTip("Keep the newest entry in view")
+        self.job_filter = QToolButton()
+        self.job_filter.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.job_filter.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton)
+        )
+        self.job_filter.setToolTip("Show every job's messages")
+        self.job_filter.clicked.connect(lambda: self.show_job_entries(None))
+        self.job_filter.hide()
         self.view = QTableView()
         self.view.setModel(self.model)
         self.view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.view.verticalHeader().hide()
-        self.view.verticalHeader().setDefaultSectionSize(self.fontMetrics().height() + 6)
+        self.view.verticalHeader().setDefaultSectionSize(self.fontMetrics().height() + 8)
         self.view.setWordWrap(False)
+        self.view.setAlternatingRowColors(True)
+        self.view.setShowGrid(False)
         header = self.view.horizontalHeader()
         for column in range(3):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
@@ -205,7 +220,7 @@ class LogWindow(QWidget):
         splitter.addWidget(self.details)
         splitter.setSizes([400, 140])
         copy = QPushButton("Copy")
-        copy.setToolTip("Copy the selected entries (all shown entries if none are selected).")
+        copy.setToolTip("Copy the selected entries (all shown entries if none are selected)")
         copy.clicked.connect(self.copy)
         save = QPushButton("Save As…")
         save.clicked.connect(self.save_as)
@@ -216,13 +231,18 @@ class LogWindow(QWidget):
         self.count = QLabel()
         top = QHBoxLayout()
         top.addWidget(self.level)
+        top.addWidget(self.job_filter)
         top.addWidget(self.search, 1)
         top.addWidget(self.follow)
         bottom = QHBoxLayout()
         bottom.addWidget(self.count, 1)
-        for button in (copy, save, clear, folder):
+        for button in (copy, save, clear):
             bottom.addWidget(button)
+        bottom.addSpacing(12)
+        bottom.addWidget(folder)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
         layout.addLayout(top)
         layout.addWidget(splitter, 1)
         layout.addLayout(bottom)
@@ -233,12 +253,20 @@ class LogWindow(QWidget):
         self._timer = QTimer(self)
         self._timer.setInterval(POLL_MS)
         self._timer.timeout.connect(self.poll)
-        self.resize(900, 560)
         self.refilter()
 
     def refilter(self, *_args) -> None:
         self.model.set_filter(self.level.currentData(), self.search.text())
         self._after_change()
+
+    def show_job_entries(self, job: int | None, title: str = "") -> None:
+        """Show only *job*'s entries (None: every entry's)."""
+        self.model.job = job
+        self.job_filter.setText(title or f"Job {job}")
+        self.job_filter.setVisible(job is not None)
+        if job is not None and self.level.currentData() > logging.DEBUG:
+            self.level.setCurrentIndex(0)  # a job's story includes its debug lines
+        self.refilter()
 
     def poll(self) -> None:
         if self.model.poll():

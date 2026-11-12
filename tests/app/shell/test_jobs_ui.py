@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import threading
 
+import pytest
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMessageBox
 
@@ -100,14 +101,16 @@ def test_failed_job_reports_without_blocking(window, qtbot) -> None:
     assert box.isVisible() and "bad input" in box.informativeText()
     assert "RuntimeError" in box.detailedText()
     assert "1 failed" in window.jobs_indicator.button.text()
-    jobs = window.show_jobs()
+    log = window.show_jobs()
+    jobs = log.jobs
+    assert log.tabs.currentWidget() is jobs
     assert window.jobs_indicator.isHidden()  # seen
     jobs.select(job)
     text = jobs.copy_details(job)
     assert "Clustering" in text and "RuntimeError: bad input" in text
     assert QGuiApplication.clipboard().text() == text
     box.close()
-    jobs.close()
+    log.close()
 
 
 def test_jobs_window_controls(window, qtbot) -> None:
@@ -117,7 +120,7 @@ def test_jobs_window_controls(window, qtbot) -> None:
     second = ctx.run("Second…", lambda job: None, lambda r: None)
     third = ctx.run("Third…", lambda job: None, lambda r: None)
     qtbot.waitUntil(lambda: first.state == RUNNING, timeout=5000)
-    jobs = window.show_jobs()
+    jobs = window.show_jobs().jobs
     titles = [jobs.table.item(r, 0).text() for r in range(jobs.table.rowCount())]
     assert titles[:3] == ["First…", "Second…", "Third…"]
     jobs.select(third)
@@ -232,7 +235,7 @@ def test_jobs_window_removes_ended_jobs_one_by_one(window, qtbot) -> None:
     running = ctx.run("Running…", work, lambda r: None)
     try:
         qtbot.waitUntil(lambda: running.state == RUNNING, timeout=5000)
-        jobs = window.show_jobs()
+        jobs = window.show_jobs().jobs
         jobs.select(first)
         assert jobs.remove_button.isEnabled()
         jobs.remove_button.click()
@@ -246,7 +249,7 @@ def test_jobs_window_removes_ended_jobs_one_by_one(window, qtbot) -> None:
     finally:
         release.set()
     qtbot.waitUntil(lambda: not running.running, timeout=5000)
-    jobs.close()
+    jobs.window().close()
 
 
 def test_notification_commands_pass_text_as_arguments(monkeypatch) -> None:
@@ -292,3 +295,73 @@ def test_a_long_job_ending_unseen_notifies_unless_turned_off(window, monkeypatch
     settings_hub().update(lambda s: setattr(s.jobs, "notify", True))
     window.jobs.notify_unseen(job, "seen")
     assert len(posted) == 1  # the window is in front: nothing to tell
+
+
+@pytest.fixture
+def logged():
+    """The jobs' log records reach the logbook, as in the app."""
+    import logging
+
+    from chemsuite.core.logbook import LogbookHandler, logbook
+
+    handler = LogbookHandler(logbook())
+    source = logging.getLogger("chemsuite.app.shell.jobs")
+    level = source.level
+    logging.getLogger().addHandler(handler)
+    source.setLevel(logging.INFO)
+    yield
+    source.setLevel(level)
+    logging.getLogger().removeHandler(handler)
+
+
+def test_log_window_links_jobs_and_their_messages(window, qtbot, logged) -> None:
+    from chemsuite.app.shell.log_window import JOBS, MESSAGES
+
+    ctx = ToolContext(window)
+    first = ctx.run("First…", lambda job: None, lambda r: None)
+    second = ctx.run("Second…", lambda job: None, lambda r: None)
+    qtbot.waitUntil(lambda: not first.running and not second.running, timeout=5000)
+    log = window.show_log(JOBS)
+    assert window.show_log() is log  # one per application, its tab kept
+    assert log.tabs.currentIndex() == JOBS
+    log.jobs.select(first)
+    assert log.jobs.messages_button.isEnabled()
+    log.jobs.messages_button.click()  # the job's messages only
+    messages = log.messages
+    assert log.tabs.currentIndex() == MESSAGES
+    assert messages.model.rows and {e.job for e in messages.model.rows} == {first.id}
+    assert messages.job_filter.isVisibleTo(log) and messages.job_filter.text() == "First…"
+    messages.job_filter.click()  # every job's again
+    assert {first.id, second.id} <= {e.job for e in messages.model.rows}
+    assert not messages.job_filter.isVisibleTo(log)
+    row = next(i for i, e in enumerate(messages.model.rows) if e.job == second.id)
+    messages.view.doubleClicked.emit(messages.model.index(row, 0))  # back to the job's row
+    assert log.tabs.currentIndex() == JOBS and log.jobs.current() is second
+    log.close()
+
+
+def test_log_button_shows_running_and_failed_jobs(window, qtbot) -> None:
+    if window.menuBar().isNativeMenuBar():
+        return  # macOS: Window ▸ Log, no button
+    button = window.log_button
+    assert button.state() == "" and button.icon().isNull()
+    ctx = ToolContext(window)
+    work, release = _gate()
+    job = ctx.run("Slow…", work, lambda r: None)
+    qtbot.waitUntil(lambda: button.state() == "busy", timeout=5000)
+    assert not button.icon().isNull()
+    release.set()
+    qtbot.waitUntil(lambda: not job.running, timeout=5000)
+    assert button.state() == ""
+
+    def broken(job):
+        raise RuntimeError("bad input")
+
+    failed = ctx.run("Broken…", broken, lambda r: None)
+    qtbot.waitUntil(lambda: failed.state == FAILED, timeout=5000)
+    assert button.state() == "failed"
+    window.jobs.failure_box.close()
+    button.click()  # opens the Log window at its Jobs tab; the failure is seen
+    assert button.state() == ""
+    assert window.show_log().tabs.currentWidget() is window.show_log().jobs
+    window.show_log().close()

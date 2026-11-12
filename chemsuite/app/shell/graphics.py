@@ -42,7 +42,7 @@ from chemsuite.core.settings import GRAPHICS_OFF, GRAPHICS_SOFTWARE
 log = logging.getLogger(__name__)
 
 NO_GPU = "3D drawing is not available on this computer's graphics."
-TURNED_OFF = "3D drawing is turned off in Settings."
+TURNED_OFF = "3D drawing is turned off in Preferences."
 #: environment that asks for software drawing: Qt's widgets on Direct3D, Mesa's OpenGL
 SOFTWARE_ENV = {"QSG_RHI_PREFER_SOFTWARE_RENDERER": "1", "LIBGL_ALWAYS_SOFTWARE": "1"}
 

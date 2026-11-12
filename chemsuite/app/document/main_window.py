@@ -68,8 +68,8 @@ from ..shell.commands import apply_shortcuts, register
 from ..shell.error_report import show_log_folder
 from ..shell.job_host import JobHost
 from ..shell.jobs import Job, JobRunner
-from ..shell.jobs_ui import JobsIndicator, JobsWindow
-from ..shell.log_ui import LogWindow
+from ..shell.jobs_ui import JobsIndicator
+from ..shell.log_window import JOBS, MESSAGES, LogWindow
 from ..shell.settings_hub import settings_hub
 from ..table.advanced_search import AdvancedSearchPanel
 from ..table.column_actions import ColumnActions
@@ -85,7 +85,7 @@ from ..table.structure_copy import REACTION_FORMATS, copy_reactions, copy_struct
 from ..table.structure_search import StructureSearchDialog, StructureSearcher
 from ..table.table_view import StructureImages, TableView
 from ..widgets.panel import ToolPanel
-from . import dock_layout, session
+from . import dock_layout, menu_corner, session
 from .dock_layout import LAYOUT_KEY
 from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader
 from .panels import DocumentPanels
@@ -96,49 +96,29 @@ from .workspace import Workspace
 log = logging.getLogger(__name__)
 
 OPEN_FILTER = (
-    "All supported (*.csd *.sdf *.sd *.mol *.csv *.tsv *.txt *.smi *.smiles *.xlsx *.rdf *.rd"
-    " *.rxn *.gz);;"
+    "All supported (*.csd *.sdf *.sd *.mol *.mol2 *.csv *.tsv *.txt *.smi *.smiles *.xlsx"
+    " *.rdf *.rd *.rxn *.gz);;"
     "chemsuite documents (*.csd);;SD files (*.sdf *.sd *.mol *.sdf.gz);;"
+    "Mol2 files (*.mol2 *.mol2.gz);;"
     "CSV/TSV (*.csv *.tsv *.txt *.csv.gz *.tsv.gz);;SMILES (*.smi *.smiles);;Excel (*.xlsx);;"
     "Reactions: RD and RXN files (*.rdf *.rd *.rxn *.rdf.gz)"
 )
 EXPORT_FILTER = (
-    "SD file (*.sdf);;CSV (*.csv);;TSV (*.tsv);;SMILES (*.smi);;Excel (*.xlsx);;"
+    "SD file (*.sdf);;Mol2 file (*.mol2);;CSV (*.csv);;TSV (*.tsv);;SMILES (*.smi);;"
+    "Excel (*.xlsx);;"
     "RD file, reactions (*.rdf);;RXN file, one reaction (*.rxn)"
 )
 
 _windows: list[MainWindow] = []
-_jobs_windows: dict[int, JobsWindow] = {}
-
-
 _log_windows: dict[int, LogWindow] = {}
 
 
 def _log_window(runner: JobRunner) -> LogWindow:
-    """One Log window per application; a job's entry opens it in the Jobs window."""
+    """One Log window (jobs and messages) per runner, the application's."""
     window = _log_windows.get(id(runner))
-    if window is None or getattr(window, "runner", None) is not runner:  # ids get reused
-
-        def show_job(job_id: int) -> None:
-            jobs = _jobs_window(runner)
-            jobs.show()
-            jobs.raise_()
-            job = next((j for j in runner.jobs if j.id == job_id), None)
-            if job is not None:
-                jobs.select(job)
-
-        window = _log_windows[id(runner)] = LogWindow(show_job=show_job)
-        window.runner = runner
+    if window is None or window.runner is not runner:  # ids get reused
+        window = _log_windows[id(runner)] = LogWindow(runner)
         runner.destroyed.connect(lambda *_: _log_windows.pop(id(runner), None))
-    return window
-
-
-def _jobs_window(runner: JobRunner) -> JobsWindow:
-    """One Jobs window per runner (the application's), created on first use."""
-    window = _jobs_windows.get(id(runner))
-    if window is None or window.runner is not runner:
-        window = _jobs_windows[id(runner)] = JobsWindow(runner)
-        runner.destroyed.connect(lambda *_: _jobs_windows.pop(id(runner), None))
     return window
 
 
@@ -161,6 +141,12 @@ SEPARATOR_STYLE = (
 
 #: a new panel takes half the window, but never less than this
 PANEL_MIN_WIDTH = 360
+#: tools that share a submenu but come from different modules, in the order shown
+MENU_ORDER: dict[tuple[str, ...], tuple[str, ...]] = {
+    ("Data",): ("space_map", "som", "statistics"),
+    ("Data", "Similarity"): ("cluster", "binning", "similarity", "diverse_subset"),
+    ("Chemistry", "Reaction"): ("split-reaction", "retrosynthesis", "enumerate-products"),
+}
 
 
 class MainWindow(QMainWindow):
@@ -221,6 +207,7 @@ class MainWindow(QMainWindow):
         for dock in (self.filter_dock, self.search_dock):
             dock.setTitleBarWidget(PanelHeader(dock, self.tool_panels))  # one style for all
         self._unsubscribe: Callable[[], None] | None = None
+        self.arrangement = dock_layout.Arrangement()  # the Layout menu's last choice
         self.jobs_indicator = JobsIndicator(runner)
         self.jobs_indicator.clicked.connect(self.show_jobs)
         self.setStatusBar(StatusBar(self.jobs_indicator))
@@ -269,8 +256,7 @@ class MainWindow(QMainWindow):
         )
         # hidden until Search Rows opens it
         self._search = SearchBar(workspace.table, searcher=self._searcher)
-        self._search.openChanged.connect(self._sync_search_action)
-        self._sync_search_action(False)
+        self._search.openChanged.connect(self._search_opened)
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -413,10 +399,7 @@ class MainWindow(QMainWindow):
                 return True
         return False
 
-    def _sync_search_action(self, is_open: bool) -> None:
-        self._search_action.blockSignals(True)
-        self._search_action.setChecked(is_open)
-        self._search_action.blockSignals(False)
+    def _search_opened(self, is_open: bool) -> None:
         if not is_open and self._view is not None:
             self.view.setFocus()  # back to the table after Esc or ✕
 
@@ -642,9 +625,15 @@ class MainWindow(QMainWindow):
             A("edit.delete_rows", "&Delete Selection", self.delete_rows, "Ctrl+Backspace")
         )
         edit.addSeparator()
+        status = QAction("Status &Bar", self, checkable=True)
+        status.toggled.connect(self._set_status_bar)
+        register("view.status_bar", "Status Bar", "Edit")
+        self._commands["view.status_bar"] = status
+        self._status_bar_action = status
+        edit.addAction(status)
         settings_action = A(
             "app.settings",
-            "Settings…",
+            "Preferences…",
             self.open_settings,
             [QKeySequence.StandardKey.Preferences, "Ctrl+,"],
         )
@@ -683,42 +672,29 @@ class MainWindow(QMainWindow):
         search.addSeparator()
         search.addAction(A("data.show_all_rows", "Show &All Rows", self.show_all_rows))
 
-        self._building = "View"
-        view = bar.addMenu("&View")
-        self._search_action = QAction("&Search Bar", self, checkable=True)
-        self._search_action.toggled.connect(
-            lambda on: self.search.focus() if on else self.search.dismiss()
-        )
-        register("view.search_bar", "Search Bar", "View")
-        self._commands["view.search_bar"] = self._search_action
-        view.addAction(self._search_action)
-        view.addSeparator()
-        arrange = view.addMenu("&Arrange Panes")
-        arrange.aboutToShow.connect(lambda: dock_layout.fill_arrange_all_menu(arrange, self))
-        dock_layout.fill_arrange_all_menu(arrange, self)
-        view.addSeparator()
-        view.addAction(A("view.jobs", "&Jobs", self.show_jobs))
-        view.addAction(A("view.log", "&Log", self.show_log))
-        status = QAction("Status &Bar", self, checkable=True)
-        status.toggled.connect(self._set_status_bar)
-        register("view.status_bar", "Status Bar", "View")
-        self._commands["view.status_bar"] = status
-        self._status_bar_action = status
-        view.addAction(status)
-
         self._building = "Tools"
-        tools_menu = bar.addMenu("&Tools")
+        tools_menu = bar.addMenu("&Tools")  # Utilities first, then the tools (the Sketcher)
         tools_menu.setToolTipsVisible(True)
-        tools_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
-        tools_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
-        tools_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
-        tools_menu.addSeparator()
-        tools_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
-        tools_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
-        tools_menu.addSeparator()
-        tools_slot = tools_menu.addSeparator()  # the Sketcher, Calculator and Random… go here
-        self._building = "Tools ▸ Lists"
-        self._lists_menu = tools_menu.addMenu("&Lists")
+        utilities = tools_menu.addMenu("&Utilities")  # Calculator and Random ▸ fill it
+        utilities.setToolTipsVisible(True)
+
+        # the tool menus, in order (tools fill them; see chemsuite.tools.TOOL_MODULES)
+        self._tool_actions: dict[str, QAction] = {}
+        chemistry = bar.addMenu("&Chemistry")
+        chemistry.setToolTipsVisible(True)
+        data = bar.addMenu("&Data")
+        data.setToolTipsVisible(True)
+        self._building = "Data ▸ Table"
+        table_menu = data.addMenu("&Table")
+        table_menu.setToolTipsVisible(True)
+        table_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
+        table_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
+        table_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
+        table_menu.addSeparator()
+        table_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
+        table_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
+        self._building = "Data ▸ Lists"
+        self._lists_menu = data.addMenu("&Lists")
         self._add_to_list = A(
             "lists.add_selected",
             "&Add Selected to List…",
@@ -737,39 +713,48 @@ class MainWindow(QMainWindow):
         )
         self._lists_menu.addAction(self._add_to_list)  # so the shortcut works before first show
         self.addAction(self._add_to_list)
-
-        # the tool menus, in order (tools fill them; see chemsuite.tools.TOOL_MODULES)
-        self._tool_actions: dict[str, QAction] = {}
-        chemistry = bar.addMenu("&Chemistry")
-        chemistry.setToolTipsVisible(True)
         self._building = "Data"
-        data = bar.addMenu("&Data")  # Search, Plot and the panes first, then the analysis tools
-        data.setToolTipsVisible(True)
-        data.addMenu(search)
+        data.addSeparator()
+        scoring = data.addMenu("S&coring")  # tools fill these two
+        scoring.setToolTipsVisible(True)
+        similarity = data.addMenu("Si&milarity")
+        similarity.setToolTipsVisible(True)
+        data.addSeparator()  # Dimensionality Reduction, Self-Organizing Map | Statistics go here
+        sar = data.addMenu("S&AR")  # tools fill it
+        sar.setToolTipsVisible(True)
         plot = data.addMenu("&Plot")
         plot.setToolTipsVisible(True)
+        data.addAction(A("view.browser", "&Browser", self.show_browser, "Ctrl+Shift+B"))
+        data.addSeparator()
         toggle = self.filter_dock.toggleViewAction()
         toggle.setText("&Filters")
         register("view.filters", "Filters", "Data", ["Ctrl+Shift+F"])
         self._commands["view.filters"] = toggle
         data.addAction(toggle)
-        data.addAction(A("view.browser", "&Browser", self.show_browser, "Ctrl+Shift+B"))
-        data.addSeparator()
+        data.addMenu(search)
         menus: dict[tuple[str, ...], Any] = {
             ("File",): file_menu,
             ("File", "Export"): export_menu,
             ("Edit",): edit,
-            ("View",): view,
             ("Tools",): tools_menu,
+            ("Tools", "Utilities"): utilities,
             ("Chemistry",): chemistry,
             ("Data",): data,
             ("Data", "Search"): search,
             ("Data", "Plot"): plot,
+            ("Data", "Table"): table_menu,
+            ("Data", "Scoring"): scoring,
+            ("Data", "Similarity"): similarity,
+            ("Data", "SAR"): sar,
         }
         #: tools in these menus go before this action instead of at the end
-        self._tool_slots = {("Data", "Search"): search_tools, ("Tools",): tools_slot}
+        self._tool_slots = {("Data", "Search"): search_tools, ("Data",): sar.menuAction()}
         for tool in registered_tools():
             self._add_tool(tool, menus)
+
+        self._building = "Window"
+        log = A("view.log", "&Log", self.show_log)
+        menu_corner.install(self, menu_corner.layout_menu(self), log)
 
         self._building = "Help"
         help_menu = bar.addMenu("&Help")
@@ -823,7 +808,11 @@ class MainWindow(QMainWindow):
         action.triggered.connect(lambda _checked=False, t=tool: self.open_tool(t))
         menu = menus[tool.menu]
         slot = self._tool_slots.get(tool.menu)
-        if slot is not None:  # among the menu's own commands
+        order = MENU_ORDER.get(tool.menu, ())
+        if tool.id in order:  # before the first tool listed after it that is already in
+            later = order[order.index(tool.id) + 1 :]
+            slot = next((self._tool_actions[t] for t in later if t in self._tool_actions), slot)
+        if slot is not None:  # among the menu's own commands or other tools
             menu.insertAction(slot, action)
             if tool.separator_after:
                 menu.insertSeparator(slot)
@@ -1453,20 +1442,23 @@ class MainWindow(QMainWindow):
         self.jobs.run(f"Exporting {Path(path).name}…", work, done)
 
     # -- background work ---------------------------------------------------------------------
-    def show_jobs(self) -> JobsWindow:
-        window = _jobs_window(self._runner)
+    def show_jobs(self) -> LogWindow:
+        """The Log window at its Jobs tab (the jobs indicator)."""
+        return self.show_log(JOBS)
+
+    def show_log(self, tab: int | None = None) -> LogWindow:
+        """The Log window; it opens at the Jobs tab while jobs run or a failure is unseen."""
+        window = _log_window(self._runner)
+        if tab is None and not window.isVisible():
+            busy = self.jobs_indicator.isVisible() or self.jobs_indicator.unseen_failures()
+            tab = JOBS if busy else MESSAGES
+        if tab is not None:
+            window.show_tab(tab)
         window.show()
         window.raise_()
         window.activateWindow()
         for w in _windows:
             w.jobs_indicator.acknowledge()
-        return window
-
-    def show_log(self) -> LogWindow:
-        window = _log_window(self._runner)
-        window.show()
-        window.raise_()
-        window.activateWindow()
         return window
 
     def _start_parsing(self) -> None:

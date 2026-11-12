@@ -230,6 +230,16 @@ class ColumnActions:
             action.setEnabled(enabled)
             return action
 
+        drawn = table.kind(name) in (STRUCTURE, REACTION)
+        if self._selection is not None:
+            chooser = menu.addMenu("Select")
+            chooser.setToolTipsVisible(True)
+            for item in SELECT_PICKS:
+                if item is None:
+                    chooser.addSeparator()
+                    continue
+                title, pick, tip = item
+                add(title, lambda p=pick: self.select_rows(name, p), True, chooser).setToolTip(tip)
         sort = menu.addMenu("Sort")
         sort.setToolTipsVisible(True)
         add("Ascending", lambda: self.sort(name, True), sortable, sort)
@@ -241,6 +251,23 @@ class ColumnActions:
             then.setToolTip("Sort by this column within the current sort")
         sort.addSeparator()
         add("Clear", self.clear_sort, bool(table.sort_keys), sort)
+        colour = add("Colour Column…", lambda: self.colour(name), not drawn)
+        colour.setToolTip(
+            "Colour the cells by value (gradient) or by category."
+            if not drawn
+            else f"{KIND_TITLES[table.kind(name)]} columns cannot be coloured."
+        )
+        menu.addSeparator()
+
+        add("Rename…", lambda: self.rename(name))
+        add("Duplicate Column", lambda: self.duplicate(name))
+        targets = list(selected) if name in selected else [name]
+        add(
+            "Delete Column" if len(targets) == 1 else f"Delete {len(targets)} Columns",
+            lambda: self.delete(targets),
+        )
+        menu.addSeparator()
+
         if self._add_filter is not None:
             add_filter = self._add_filter
             add("Filter", lambda: add_filter(name))
@@ -249,15 +276,6 @@ class ColumnActions:
             add("Search", lambda: search(name)).setToolTip(
                 "Open the search bar to search this column"
             )
-        if self._selection is not None:
-            chooser = menu.addMenu("Select")
-            chooser.setToolTipsVisible(True)
-            for item in SELECT_PICKS:
-                if item is None:
-                    chooser.addSeparator()
-                    continue
-                title, pick, tip = item
-                add(title, lambda p=pick: self.select_rows(name, p), True, chooser).setToolTip(tip)
         if self._freeze is not None:
             freeze = self._freeze
             frozen = self._frozen()
@@ -269,15 +287,24 @@ class ColumnActions:
             through.setEnabled(frozen != position + 1)
             if frozen:
                 add("Unfreeze Columns", lambda: freeze(0))
-        menu.addSeparator()
-
-        add("Rename…", lambda: self.rename(name))
-        add("Duplicate Column", lambda: self.duplicate(name))
-        targets = list(selected) if name in selected else [name]
-        add(
-            "Delete Column" if len(targets) == 1 else f"Delete {len(targets)} Columns",
-            lambda: self.delete(targets),
-        )
+        if table.kind(name) == STRUCTURE and self._align is not None:
+            align = self._align
+            aligning = add("Align Drawings…", lambda: align(name))
+            aligning.setToolTip(
+                "Draw every structure that contains a core with the core in the same place "
+                "and orientation; the structures themselves are not changed."
+            )
+            if self._aligned(name) and self._unalign is not None:
+                unalign = self._unalign
+                add("Stop Aligning Drawings", lambda: unalign(name))
+        kinds = menu.addMenu("Column Type")
+        group = QActionGroup(kinds)
+        for kind, title in KIND_TITLES.items():
+            action = kinds.addAction(title)
+            action.setCheckable(True)
+            action.setChecked(table.kind(name) == kind)
+            group.addAction(action)
+            action.triggered.connect(lambda _checked=False, k=kind: self.convert(name, k))
         menu.addSeparator()
 
         number = table.kind(name) == NUMBER
@@ -295,31 +322,4 @@ class ColumnActions:
             if number
             else "Only Number columns have a number format."
         )
-        drawn = table.kind(name) in (STRUCTURE, REACTION)
-        if table.kind(name) == STRUCTURE and self._align is not None:
-            align = self._align
-            aligning = add("Align Drawings…", lambda: align(name))
-            aligning.setToolTip(
-                "Draw every structure that contains a core with the core in the same place "
-                "and orientation; the structures themselves are not changed."
-            )
-            if self._aligned(name) and self._unalign is not None:
-                unalign = self._unalign
-                add("Stop Aligning Drawings", lambda: unalign(name))
-        colour = add("Colour Column…", lambda: self.colour(name), not drawn)
-        colour.setToolTip(
-            "Colour the cells by value (gradient) or by category."
-            if not drawn
-            else f"{KIND_TITLES[table.kind(name)]} columns cannot be coloured."
-        )
-        menu.addSeparator()
-
-        kinds = menu.addMenu("Column Type")
-        group = QActionGroup(kinds)
-        for kind, title in KIND_TITLES.items():
-            action = kinds.addAction(title)
-            action.setCheckable(True)
-            action.setChecked(table.kind(name) == kind)
-            group.addAction(action)
-            action.triggered.connect(lambda _checked=False, k=kind: self.convert(name, k))
         return menu

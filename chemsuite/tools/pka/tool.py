@@ -29,8 +29,8 @@ def _open(ctx: ToolContext):
 
 TOOL = Tool(
     id="predict_pka",
-    title="Predict pKa…",
-    menu=("Chemistry",),
+    title="pKa…",
+    menu=("Chemistry", "Calculate"),
     open=_open,
     requires=("rdkit",),
     needs_structures=True,

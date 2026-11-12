@@ -225,6 +225,7 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
     import threading
 
     from chemsuite.app.document.tools import ToolContext
+    from chemsuite.app.shell.log_window import MESSAGES
     from chemsuite.core.jobs import check
 
     release = threading.Event()
@@ -253,18 +254,18 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
     for _ in range(10):
         settle()
     window.grab().save(str(out / "jobs-status.png"))
-    jobs = window.show_jobs()
+    log_window = window.show_jobs()
     settle()
-    jobs.grab().save(str(out / "jobs.png"))
-    jobs.close()
+    log_window.grab().save(str(out / "jobs.png"))
     release.set()
     while running.running or window._runner.queued_jobs:
         settle()
-    log_window = window.show_log()
-    log_window.level.setCurrentIndex(0)
-    log_window.view.selectRow(
-        next(i for i, e in enumerate(log_window.model.rows) if e.details) if any(
-            e.details for e in log_window.model.rows) else 0
+    log_window.show_tab(MESSAGES)
+    messages = log_window.messages
+    messages.level.setCurrentIndex(0)
+    messages.view.selectRow(
+        next(i for i, e in enumerate(messages.model.rows) if e.details) if any(
+            e.details for e in messages.model.rows) else 0
     )  # fmt: skip
     settle()
     log_window.grab().save(str(out / "log.png"))

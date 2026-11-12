@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tools ▸ Lists: save selections under a name, bring them back, and manage the names."""
+"""Data ▸ Lists: save selections under a name, bring them back, and manage the names."""
 
 from __future__ import annotations
 

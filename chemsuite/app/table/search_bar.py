@@ -20,7 +20,7 @@ column) or one column. Choosing a structure column turns the box into a substruc
 (SMILES or SMARTS), run in the background like the structure filter card; matching atoms are
 highlighted in the drawings.
 
-The bar starts hidden. Edit ▸ Search Rows (or View ▸ Search Bar) opens it. Escape clears the
+The bar starts hidden. Data ▸ Search ▸ Search Rows (Ctrl+F) opens it. Escape clears the
 search, and a second Escape (or the close button) hides the bar. Hiding the bar always clears its
 search, so it never leaves rows hidden by a search you cannot see.
 
