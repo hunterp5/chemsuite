@@ -26,6 +26,7 @@ are interpreted by RDKit's molfile reader, not by code of our own.
 from __future__ import annotations
 
 import math
+import random
 import re
 from statistics import median
 
@@ -342,7 +343,7 @@ def from_mol(mol: Chem.Mol) -> Sketch:
     # none; the layout must not pick one. Such bonds are drawn "either" (CTfile stereo 3), as
     # RDKit's molfile writer marks them.
     unknown = _undefined_double_bonds(mol)
-    first = None
+    first = best = None
     for lay_out in _LAYOUTS:
         laid = Chem.Mol(mol)
         laid.RemoveAllConformers()
@@ -351,9 +352,17 @@ def from_mol(mol: Chem.Mol) -> Sketch:
         sketch = _sketch_of(laid, unknown)
         first = first or sketch
         # RDKit places wedges for the layout it is given; on a few bridged layouts they read
-        # back as contradictory and the centre is lost. Then the other layout is tried.
-        if _same_stereo(mol, sketch):
+        # back as contradictory and the centre is lost, or are lost as soon as an atom is
+        # nudged. Then the other layout is tried, and the sturdier drawing kept.
+        if not _same_stereo(mol, sketch):
+            continue
+        misread = _misread_when_nudged(mol, sketch)
+        if misread == 0:
             return sketch
+        if best is None or misread < best[0]:
+            best = (misread, sketch)
+    if best is not None:
+        return best[1]
     return first if first is not None else _sketch_of(mol, unknown)
 
 
@@ -386,6 +395,40 @@ def _same_stereo(mol: Chem.Mol, sketch: Sketch) -> bool:
             return Chem.MolToSmiles(to_mol(sketch)) == want
         except (ValueError, RuntimeError, SketchError):
             return True
+
+
+#: How far, in bond lengths, and how many times the robustness check nudges every atom.
+_NUDGE, _NUDGES = 0.3, 8
+
+
+def _misread_when_nudged(mol: Chem.Mol, sketch: Sketch) -> int:
+    """How many of a few small random nudges of every atom change the stereo the drawing reads
+    as (0 for a molecule without stereo). The nudges are seeded, so the count is repeatable."""
+    if not _has_stereo(mol):
+        return 0
+    with rdBase.BlockLogs():
+        try:
+            want = Chem.MolToSmiles(Chem.RemoveHs(mol))
+        except (ValueError, RuntimeError):
+            return 0
+        misread = 0
+        for seed in range(_NUDGES):
+            rng = random.Random(seed)
+            nudged = sketch.copy()
+            for aid, atom in sketch.atoms.items():
+                nudged.atoms[aid] = atom.moved(atom.x + rng.uniform(-_NUDGE, _NUDGE),
+                                               atom.y + rng.uniform(-_NUDGE, _NUDGE))  # fmt: skip
+            try:
+                misread += Chem.MolToSmiles(to_mol(nudged)) != want
+            except (ValueError, RuntimeError, SketchError):
+                misread += 1
+    return misread
+
+
+def _has_stereo(mol: Chem.Mol) -> bool:
+    return any(a.GetChiralTag() != Chem.ChiralType.CHI_UNSPECIFIED for a in mol.GetAtoms()) or any(
+        b.GetStereo() != Chem.BondStereo.STEREONONE for b in mol.GetBonds()
+    )
 
 
 def _sketch_of(mol: Chem.Mol, unknown: set[int]) -> Sketch:

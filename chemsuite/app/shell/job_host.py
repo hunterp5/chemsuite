@@ -28,6 +28,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+import shiboken6
 from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication, QProgressDialog, QWidget
 
@@ -91,6 +92,10 @@ class JobHost:
         job = self.runner.submit(label, work, lane=lane, owner=self.window, document=self._name())
 
         def finished(result: Any) -> None:
+            if not self.alive():
+                log.info("dropping the result of %r: its window is closed", label)
+                job.set_summary("Not applied: the window was closed")
+                return
             if guard and self._current() is not current:
                 log.info("dropping the result of %r: its document is gone", label)
                 job.set_summary("Not applied: the document was closed")
@@ -102,11 +107,13 @@ class JobHost:
 
         job.finished.connect(finished)
         if lane == QUEUE:
-            job.failed.connect(lambda err: self.report_failure(job, err))
+            job.failed.connect(lambda err: self.alive() and self.report_failure(job, err))
         else:
-            job.failed.connect(lambda err: self.show_error(label, err))
+            job.failed.connect(lambda err: self.alive() and self.show_error(label, err))
 
         def cancelled() -> None:
+            if not self.alive():  # cancelled because its window closed
+                return
             name = label.rstrip("…")
             if keep_partial and job.partial_result is not None:
                 if guard and self._current() is not current:
@@ -123,6 +130,11 @@ class JobHost:
         if wait:
             self.wait_for(job)
         return job
+
+    def alive(self) -> bool:
+        """Whether the window is still there: a job's outcome can arrive after it closed (the
+        close cancels the window's jobs, and the cancel is delivered later)."""
+        return shiboken6.isValid(self.window)
 
     def wait_for(self, job: Job) -> None:
         """Block, with a progress dialog that can cancel, until *job* ends."""

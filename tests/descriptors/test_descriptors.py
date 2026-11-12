@@ -49,13 +49,27 @@ def test_every_descriptor_runs_on_a_drug() -> None:
 
     three_d = generate(mol_from_blob(parse_structure(ASPIRIN)[0])).mol  # for the 3D shapes
     out = compute_chunk((tuple(CATALOG), [mol_to_blob(three_d)]))
+    blank = []
     for key, (value,) in out.items():
-        spec = CATALOG[key]
-        if spec.is_text:
-            assert isinstance(value, str) and value, key
+        if CATALOG[key].is_text:
+            ok = isinstance(value, str) and bool(value)
         else:
-            no_base = key == "PKA_BASIC"  # aspirin has no basic site: blank is right
-            assert math.isfinite(value) or no_base, key
+            ok = math.isfinite(value) or key == "PKA_BASIC"  # aspirin has no basic site
+        if not ok:
+            blank.append(f"{key}: {value!r} ({_why(key, three_d)})")
+    assert not blank, "\n".join(blank)
+
+
+def _why(key: str, three_d: Chem.Mol) -> str:
+    """What computing *key* on its own gives or raises, to say why a descriptor came out
+    blank."""
+    from chemsuite.descriptors.compute import SHAPE_GROUP, _as_drawn
+
+    spec = CATALOG[key]
+    try:
+        return repr(spec.fn(three_d if spec.group == SHAPE_GROUP else _as_drawn(three_d)))
+    except Exception as error:  # noqa: BLE001 (any error is the answer here)
+        return f"{type(error).__name__}: {error}"
 
 
 def test_known_values() -> None:

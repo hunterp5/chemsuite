@@ -73,6 +73,7 @@ class ProteinTree(QTreeWidget):
         self.setUniformRowHeights(True)
         self.setExpandsOnDoubleClick(False)
         self._filling = False
+        self._ticking = False  # applying a protein's check box: the tree already shows it
         self.itemChanged.connect(self._item_changed)
         self.itemClicked.connect(self._item_clicked)
         self.itemDoubleClicked.connect(self._item_double_clicked)
@@ -84,6 +85,9 @@ class ProteinTree(QTreeWidget):
         self.reload()
 
     def reload(self) -> None:
+        if self._ticking:
+            # Qt is still inside the ticked item's setData: clearing would delete it under Qt
+            return
         expanded = {
             self.topLevelItem(i).data(0, _PROTEIN)
             for i in range(self.topLevelItemCount())
@@ -179,7 +183,11 @@ class ProteinTree(QTreeWidget):
         if self._filling or item.parent() is not None:
             return
         visible = item.checkState(0) == Qt.CheckState.Checked
-        self.session.set_visible(item.data(0, _PROTEIN), visible)
+        self._ticking = True
+        try:
+            self.session.set_visible(item.data(0, _PROTEIN), visible)
+        finally:
+            self._ticking = False
 
     def _item_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         modifiers = QApplication.keyboardModifiers()

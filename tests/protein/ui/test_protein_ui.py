@@ -113,6 +113,8 @@ def test_hiding_a_protein_takes_it_out_of_the_scene(panel, table) -> None:
     both = session.scene.atom_offsets[-1]
     item = panel.tree.topLevelItem(1)
     item.setCheckState(0, Qt.CheckState.Unchecked)
+    # the tree is not rebuilt under Qt's feet: the ticked item lives on (a crash on Linux)
+    assert panel.tree.topLevelItem(1) is item
     assert not session.display("3HTB").visible
     assert session.scene.atom_offsets[-1] == both - structure("3htb.cif.gz").n_atoms
     assert len(panel.sequence.strip.rows) == 2  # 1ATP's chains E and I only
