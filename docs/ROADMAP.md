@@ -342,6 +342,23 @@ the same polish as the table and the dockable plots and tools.
   window grows as the phases land (align, dock, prepare, simulate), each opening or driving the
   viewer.
 
+### 7.0e Medium priority: Uni-pKa as the more accurate ligand pKa model (added 2026-11-12)
+
+Uni-pKa gives the free energy of each protonation microstate, so linked sites and tautomers
+are handled together. MolGpKa treats each site on its own. Uni-pKa would serve two places:
+- Predict pKa;
+- the ligand states in protein preparation (`docs/PREPARE_PLAN.md`), where the ligand step
+  takes solution free energies from a pluggable model, so Uni-pKa drops in without a redesign.
+
+- **Blocked on the weights licence** (`docs/PKA_PLAN.md` §3.1). The original checkpoint is
+  reported as CC BY-NC-SA 4.0, and the Apache-2.0 re-host is probably the same weights.
+  Internal company use counts as commercial, so this needs a yes from legal or written terms
+  from DP Technology.
+- It needs torch, so it runs in an interpreter of its own (an external worker, like OpenMM),
+  never in the app's.
+- Measure before adopting it: the preparation benchmark's neutron ligand set compares MolGpKa
+  with Uni-pKa on ligand states in real pockets, alongside PKA_PLAN's P0 spike.
+
 ### 7a. Proteins: from viewer to medicinal-chemistry workspace (revised 2026-11-11)
 
 Proteins are stored in the document; ligands, poses and scores are table rows linked to their
@@ -381,8 +398,21 @@ pip extra.
      depends on the other's. It is solved exactly per cluster, with populations; near-ties are
      marked ⚠ and become receptor ensembles for docking or separate runs for MD.
    - **Measured first:** benchmarked against neutron structures, PKAD-2, Reduce, PROPKA3,
-     Protoss (public PDB IDs through ProteinsPlus) and MOE Protonate3D before it becomes the
-     default. propka stays as a cross-check.
+     Protoss (public PDB IDs through ProteinsPlus) and, optionally, MOE Protonate3D before it
+     becomes the default. propka stays as a cross-check.
+   - **Relax after preparation (optional, off by default; its own plan, after P1).** Minimise the
+     prepared protein–ligand complex so new hydrogens, rebuilt side chains and the ligand settle
+     into the pocket, with heavy atoms held by harmonic restraints (≤ 0.3 Å RMSD). One undo step,
+     reporting RMSD and energy change. Two tiers:
+     - **Quick, in the app:** the pocket (residues within ~8 Å of the ligand), the ligand and every
+       hydrogen minimised with RDKit MMFF94, the rest of the protein fixed.
+     - **Full, in OpenMM's own interpreter** (phase 5's worker): the whole complex with amber14
+       and OpenFF or GAFF2 for the ligand, in implicit solvent, with the same restraints.
+
+     A checkbox under More Options in the Prepare dialog, and a separate command for a structure
+     already prepared. Open for its plan: whether MMFF on a capped pocket is good enough or the
+     quick tier waits for OpenMM, and the benchmark (heavy-atom RMSD to the deposit and clash
+     score on the neutron set).
 4. **Editing** (every edit one undoable step). *Done 2026-11-12, ahead of the rest: delete,
    element and charge, rename and renumber, with the Sequence window's kind rows to pick out
    waters and ions.* Still to do: waters beyond X Å;

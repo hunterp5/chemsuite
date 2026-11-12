@@ -77,13 +77,51 @@ other machine can pick it up. Update it at the end of a session that leaves work
     entry reopened offline falls back to a geometry guess. Document saves keep them.
 
 - **Protein preparation** (plan approved 2026-11-11, `docs/PREPARE_PLAN.md`): a coupled
-  protein–ligand protonation and hydrogen model in `chemsuite/protein/prepare/`. No code yet.
-  P0 comes first: the benchmark harness, with dataset and tool licences checked. The datasets
-  are neutron structures and PKAD-2; the comparisons are Reduce, PROPKA3, Protoss and MOE.
-  Protoss runs through ProteinsPlus on public PDB IDs only. The user runs MOE Protonate3D by
-  hand from a script and file list we supply.
+  protein–ligand protonation and hydrogen model in `chemsuite/protein/prepare/`.
+  - **P0 done 2026-11-12**: [`docs/prepare/p0-review.md`](docs/prepare/p0-review.md)
+    has the licences, the 262-entry neutron set, the scores and the acceptance thresholds for
+    P1–P3. The harness is `scripts/review/prepare_truth.py` and `prepare_review.py`, with the
+    bench test `tests/protein/test_bench_prepare.py`.
+  - The data live under `samples/prepare` (not committed) and are rebuilt by
+    `prepare_review.py`'s steps: inputs, reduce (in WSL), propka and gemmi (in a bench venv),
+    protoss and score.
+  - **MOE** is optional (2026-11-12: its outputs are hard to get, so P1 goes ahead without
+    them). If they ever come: Protonate3D on `samples/prepare/inputs/<ID>.pdb` at the pH in
+    `samples/prepare/moe/entries.csv`, saved as `samples/prepare/out/moe/<ID>.pdb`, then
+    re-run `score` and add the column to the review.
+  - **P1 in progress** (plan approved 2026-11-12; Claude's plan file on the Windows PC,
+    summarised here). Done: `structure/edit.add_atoms` (new atoms into residues, uids kept);
+    `CcdCache.block`; `protein/prepare/templates.py` (CCD ideal geometry, internal
+    coordinates and rotors for every hydrogen; 51 residues bundled in `prepare/data`, rebuilt
+    by `scripts/build_prepare_templates.py`). Facts found: the CCD draws Lys, Arg and His
+    charged and the termini neutral; NME's hydrogen is placed from the residue before it.
+  - **`hydrogens.py` done 2026-11-12** (`add_hydrogens` → `Protonated`: structure, `states`
+    such as HID/HIE/CYM, `Rotor`s by uid, `Note`s). Templates where every reference atom is
+    present; otherwise VSEPR from the real neighbours, other residues included (the amide H
+    in the peptide plane). His is HIE unless NE2 binds a metal or another residue; a soft
+    metal (Zn, Fe, Cu…) within 2.9 Å takes a proton's place. Ligands: `to_mol` +
+    `AddHs(addCoords=True)`, CCD hydrogen names where known. On ubiquitin's NMR hydrogens
+    the fixed ones land 0.03 Å from the deposit. `prepare_review.py chemsuite` (~1.5 min)
+    gives the no-flip baseline: orientation 50/48/51%, His tautomer 48%, Asp/Glu/Lys/Tyr/Cys
+    the textbook numbers, ligand H count 96%. Fixed on the way: `Template.with_hydrogen`
+    dropped `charges`; the harness read every 1.34 Å S–H as absent (Cys rows of
+    p0-review.md re-scored, 356 Cys now).
+  - Next in P1, in order:
+    2. `sites.py` / `energy.py` / `solve.py`: Asn/Gln flips, His HID/HIE/HIP × flip,
+       OH/SH/NH₃ rotors; a Reduce-style contact score (Word et al. 1999); clusters, DEE,
+       branch-and-bound; weights fitted on half the neutron set (split by ID hash).
+    3. `inspect.py`, `repair.py` (altlocs, missing side chains, OXT; no loop building),
+       `pipeline.prepare`, tests, `docs/prepare/p1-review.md`.
+    Pass marks: Asn/Gln/His orientation 85/79/88%, His tautomer 62%, textbook states kept,
+    ligand H 96%, all 262 entries answered.
+  - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
+    own plan after P1.
 
 ## Next
+
+- **Saved for later: SQL import** (File ▸ Import from Database, read-only queries; SQLite
+  built in, PostgreSQL/MySQL/Oracle/SQL Server through optional extras). The plan was approved
+  2026-11-12 and is in [`docs/DATABASE_PLAN.md`](docs/DATABASE_PLAN.md). No code yet.
 
 1. TMAP and Chemical Space Networks (ROADMAP §7.0d, high priority): plan them together in plan
    mode.
