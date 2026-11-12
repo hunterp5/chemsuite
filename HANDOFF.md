@@ -115,10 +115,14 @@ other machine can pick it up. Update it at the end of a session that leaves work
     [`docs/prepare/p1-review.md`](docs/prepare/p1-review.md); the bench test holds the
     marks. Iterating: build the tables once and pickle them (the fit takes ~3 min
     otherwise); re-run `chemsuite --redo` before `score`.
-  - Next in P1:
-    3. `inspect.py`, `repair.py` (altlocs, missing side chains, OXT; no loop building),
-       `pipeline.prepare` (repair → hydrogens → optimise, one undoable edit), tests, and
-       the rest of `docs/prepare/p1-review.md`. The P1 pass marks are already met.
+  - **P1 done 2026-11-12**: `inspect.py` (report rows), `repair.py` (one location; missing
+    side chains and OXT from templates), `pipeline.prepare` (repair → waters → hydrogens →
+    optimise; report with ⚠ for near-ties). The benchmark runs the pipeline: Asn 86.2, Gln
+    80.4, His orientation 89.6, His tautomer 63.6%, ligand H 96.0%, all 262 entries.
+  - **Next: P2** (titration: Asp/Glu/Lys/Tyr/Cys/His states at a pH, desolvation and the full
+    Coulomb network, PKAD-2, PROPKA parity), then P3 (ligand states, waters, metals), then P4
+    (the Prepare dialog and report panel, applied as one undoable edit). Each starts in plan
+    mode.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 

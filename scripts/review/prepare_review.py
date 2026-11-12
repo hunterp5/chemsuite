@@ -188,8 +188,7 @@ def run_gemmi() -> None:
 
 def run_chemsuite() -> None:
     """chemsuite's own hydrogens (``protein/prepare``), with the CCD entries in ``ccd/``."""
-    from chemsuite.protein.prepare.hydrogens import add_hydrogens
-    from chemsuite.protein.prepare.solve import optimise
+    from chemsuite.protein.prepare.pipeline import Options, prepare
     from chemsuite.protein.structure import io
     from chemsuite.protein.structure.components import CcdCache
 
@@ -202,8 +201,8 @@ def run_chemsuite() -> None:
         if target.exists() and not redo:
             continue
         try:
-            built = add_hydrogens(io.read(DATA / "inputs" / f"{pdb_id}.pdb"), ccd=ccd)
-            done, _choices = optimise(built, ph=crystal_ph(pdb_id), weights=FITTED)
+            options = Options(ph=crystal_ph(pdb_id), weights=FITTED)
+            done = prepare(io.read(DATA / "inputs" / f"{pdb_id}.pdb"), options, ccd)
         except (ValueError, RuntimeError, KeyError) as error:
             print(pdb_id, "failed:", error, flush=True)
             continue

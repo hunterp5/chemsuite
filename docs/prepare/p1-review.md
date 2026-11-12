@@ -2,10 +2,26 @@
 
 Plan: [`docs/PREPARE_PLAN.md`](../PREPARE_PLAN.md); baselines and pass marks:
 [`p0-review.md`](p0-review.md). Code: `chemsuite/protein/prepare/` (`templates`, `hydrogens`,
-`sites`, `energy`, `solve`). Inspect and repair (P1 step 3) are still to come.
+`sites`, `energy`, `solve`, `inspect`, `repair`, `pipeline`). P1 is done.
 
 ## 1. What runs
 
+`pipeline.prepare(structure, Options(ph, waters, repair, optimise))` runs the steps below in
+order and returns the structure, the His and Cys states, the site choices and a report
+(`inspect.Finding` rows, ⚠ where the user should look). Old atoms keep their uids, so the
+workbench can apply the result as one undoable edit (P4).
+
+0. **Inspect and repair** (`inspect.inspect`, `repair`). The report lists:
+   - alternate locations;
+   - chain breaks, and residues missing from the deposited sequence (⚠; no loops are built,
+     the ends stay charged termini);
+   - missing atoms, and residues with no template;
+   - covalent links, disulfides and metal sites.
+
+   Repair keeps the location shown and drops the others. It builds missing side-chain atoms and
+   a chain's last OXT atom by atom from the template's internal coordinates. A rebuilt side chain
+   takes the CCD's ideal conformation, which is not checked for clashes. Waters are kept, kept
+   within 5 Å of a ligand, or removed.
 1. **Hydrogens** (`hydrogens.add_hydrogens`). Polymer residues are built from CCD templates in
    their textbook states (Asp/Glu/Lys/Arg charged, His HIE, NH₃⁺ and carboxylate termini).
    - An atom bonded to another residue keeps one hydrogen fewer per bond. Its hydrogens are
@@ -55,15 +71,16 @@ half.
 
 ## 3. Scores on all 262 entries
 
-`prepare_review.py chemsuite --redo`, then `score` (outputs written as PDB and scored like the
-other methods; about 2.5 min for the set):
+`prepare_review.py chemsuite --redo`, then `score`. The step runs `pipeline.prepare` with
+repair on, writes PDB files and scores them like the other methods (about 3 min for the
+set):
 
 | Question | Pass mark | chemsuite | Reduce | Protoss |
 |---|---|---|---|---|
 | Asn orientation | 85% | **86.2%** | 85% | – |
 | Gln orientation | 79% | **80.4%** | 79% | – |
 | His orientation | 88% | **89.6%** | 88% | – |
-| His tautomer | 62% | **63.9%** | 62% | 59% |
+| His tautomer | 62% | **63.6%** | 62% | 59% |
 | His charge | 74% (a P2 mark) | 74% | 74% | 73% |
 | Asp / Glu state | textbook | 99.0 / 98.1% | 99 / 98% | 98 / 98% |
 | Ligand polar-atom H count | 96% | 96.0% | 91% | 94% |
@@ -89,4 +106,9 @@ matches or beats Reduce there too. `tests/protein/test_bench_prepare.py` holds t
   network, PKAD-2) is where that improves.
 - HID is still read as HIE in 70 of 185 training cases.
 - Seven Tyr on metals are deprotonated by the metal rule but are protonated in the neutron data.
-- Waters carry no hydrogens yet, so a water counts as donor and acceptor at once.
+- Waters carry no hydrogens yet, so a water counts as donor and acceptor at once. MD needs
+  them (P5).
+- Repair puts a rebuilt side chain in its ideal conformation, with no rotamer search, and
+  caps no gaps (ACE/NME). Both are left for later.
+- Each `Finding.residue` indexes the structure it was found on. Inspection runs on the input,
+  so the UI should go by the label.

@@ -160,7 +160,8 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
 
 - **P0**: benchmark harness, datasets and licences, and baseline numbers for Reduce, PROPKA3
   and gemmi H placement.
-- **P1**: inspect, repair and hydrogens. Protein-only flips and rotors (Reduce parity).
+- **P1**: inspect, repair and hydrogens. Protein-only flips and rotors (Reduce parity). Done
+  2026-11-12 ([`prepare/p1-review.md`](prepare/p1-review.md)).
 - **P2**: the coupled site graph with protein titration (PROPKA parity on PKAD).
 - **P3**: ligand sites, waters and metals in the graph. The named cases pass. Populations and ⚠.
 - **P4**: UI, report and docking export (ensemble for ambiguous sites, Meeko PDBQT).

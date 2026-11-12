@@ -365,9 +365,9 @@ Proteins are stored in the document; ligands, poses and scores are table rows li
 protein by a `Protein` column, so plots, filters and SAR work on them. Each phase is usable on
 its own and starts in plan mode.
 
-**Dependencies, decided:** preparation is our own Qt-free code in the base install (gemmi's
-`prepare_topology` for hydrogens, benchmarked before anything is written; PDBFixer and pdb2pqr
-are dropped). `propka` and `meeko` stay light pip dependencies (licences checked first).
+**Dependencies, decided:** preparation is our own Qt-free code in the base install (hydrogens
+from CCD templates: the benchmark found gemmi's `prepare_topology` misses entries without CCP4
+monomers; PDBFixer and pdb2pqr are dropped). `propka` and `meeko` stay light pip dependencies (licences checked first).
 OpenMM and openfe run in an interpreter of their own, set in Settings ▸ External Tools and
 driven as a JSON-lines worker (the `retro/runner.py` pattern); there is no `chemsuite[protein]`
 pip extra.
@@ -385,10 +385,13 @@ pip extra.
    process per ligand with progress, cancel and finished rows kept; poses as table rows (pose
    rank, Vina score, CNN score, parent) shown in the pocket by the pose display; covalent and
    flexible-side-chain docking; ensemble and consensus scoring; pocket detection and
-   druggability; interaction fingerprints across poses, building on Interactions to Table. Until
-   phase 3 lands, docking prepares the receptor minimally (hydrogens from gemmi).
+   druggability; interaction fingerprints across poses, building on Interactions to Table. The
+   receptor is prepared by `protein/prepare` (phase 3's P1 is enough for docking).
 3. **Native preparation** (base install, high priority; plan approved 2026-11-11 in
    `docs/PREPARE_PLAN.md`).
+   - **Progress:** P0 (benchmark) and P1 (repair, hydrogens, flips, His states, rotors;
+     `pipeline.prepare`) done 2026-11-12, at Reduce's accuracy or better
+     (`docs/prepare/p1-review.md`). No UI yet (P4). Next: P2, titration with PKAD-2.
    - **Repair:** missing heavy atoms and caps from the CCD templates; short loops closed, longer
      gaps capped and marked ⚠.
    - **Hydrogens and states, protein and ligand together:** one coupled site graph covers His
