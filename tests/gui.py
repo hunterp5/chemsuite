@@ -148,6 +148,10 @@ def window(qtbot):
     w = MainWindow(runner, StructureImages(), Workspace(table))
     # Not qtbot.addWidget: pytest-qt would close it before this fixture can mark it clean.
     yield w
+    # a job still running (reading structures after an open, on a slow machine) would make
+    # the close ask whether to cancel it
+    runner.cancel_all(owner=w)
+    qtbot.waitUntil(lambda: not runner.jobs_of(w), timeout=10_000)
     w.workspace.mark_saved(w.workspace.table.history.checkpoint(), w.workspace.lists.revision)
     w.close()
     runner.shutdown()
