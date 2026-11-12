@@ -134,13 +134,13 @@ class Scene3D:
             f" · {missing:,} rows without all three values" if missing else ""
         )
         if spec.kind == "landscape":
-            self.colors = self._height_colours(self.pos[:, 2])
+            self.colors = self._height_colours(self.pos[:, 2], spec)
             self.sizes = POINT_SIZE - 2
-            cells = self._draw_surface(values, ok, spec.bins)
+            cells = self._draw_surface(values, ok, spec)
             status += f" · surface on a {cells}×{cells} grid" if cells else ""
         else:
-            self.colors = self._colours(table, spec.color)
-            self.sizes = self._sizes(table, spec.size)
+            self.colors = self._colours(table, spec)
+            self.sizes = self._sizes(table, spec)
         self._draw()
         return status
 
@@ -151,13 +151,15 @@ class Scene3D:
         self.ranges = []
         self._draw()
 
-    def _colours(self, table: Table, column: str | None) -> np.ndarray:
+    def _colours(self, table: Table, spec) -> np.ndarray:
+        column = spec.color
         n = len(self.oids)
         rgb = np.tile(np.array(DEFAULT_COLOR, dtype=float), (n, 1))
         if column and column in table and n:
             if table.kind(column) == NUMBER:
-                bins, _lo, _hi = scale_bins(numbers(table, column, self.oids), SCALE_STEPS)
-                steps = np.array(scale_colors(SCALE_STEPS), dtype=float)
+                values = numbers(table, column, self.oids)
+                bins, _lo, _hi = scale_bins(values, SCALE_STEPS, *spec.color_range)
+                steps = np.array(scale_colors(SCALE_STEPS, spec.cmap, spec.reverse), dtype=float)
                 rgb = np.where((bins >= 0)[:, None], steps[np.clip(bins, 0, None)], GREY)
             else:
                 cats = categories(table, column, self.oids)
@@ -171,21 +173,23 @@ class Scene3D:
                 rgb = palette[cats.codes]
         return np.column_stack([rgb / 255.0, np.full(n, 0.85)])
 
-    def _height_colours(self, heights: np.ndarray) -> np.ndarray:
+    def _height_colours(self, heights: np.ndarray, spec) -> np.ndarray:
         bins, _lo, _hi = scale_bins(heights, SCALE_STEPS, -1.0, 1.0)
-        steps = np.array(scale_colors(SCALE_STEPS), dtype=float) / 255.0
+        steps = np.array(scale_colors(SCALE_STEPS, spec.cmap, spec.reverse), dtype=float) / 255.0
         rgb = np.where((bins >= 0)[:, None], steps[np.clip(bins, 0, None)], np.array(GREY) / 255)
         return np.column_stack([rgb * 0.75, np.full(len(heights), 0.95)])  # darker than the sheet
 
-    def _sizes(self, table: Table, column: str | None) -> np.ndarray | float:
+    def _sizes(self, table: Table, spec) -> np.ndarray | float:
+        column = spec.size
         if column and column in table and table.kind(column) == NUMBER and len(self.oids):
-            return marker_sizes(numbers(table, column, self.oids), 4.0, 16.0)
+            values = numbers(table, column, self.oids)
+            return marker_sizes(values, *spec.point_sizes, *spec.size_range)
         return POINT_SIZE
 
-    def _draw_surface(self, values, ok, bins: int | None) -> int:
+    def _draw_surface(self, values, ok, spec) -> int:
         """The activity landscape mesh, in the points' cube coordinates; returns its grid size."""
         x, y, z = (v[ok] for v in values)
-        surface = landscape(x, y, z, bins)
+        surface = landscape(x, y, z, spec.bins)
         if surface is None:
             return 0
         (xlo, xhi), (ylo, yhi), (zlo, zhi) = self.ranges
@@ -203,7 +207,7 @@ class Scene3D:
         quad = whole[a] & whole[b] & whole[c] & whole[d]
         faces = np.concatenate([np.column_stack([a, b, c])[quad], np.column_stack([a, c, d])[quad]])
         bins_, _lo, _hi = scale_bins(vertices[:, 2], SCALE_STEPS, -1.0, 1.0)
-        steps = np.array(scale_colors(SCALE_STEPS), dtype=float) / 255.0
+        steps = np.array(scale_colors(SCALE_STEPS, spec.cmap, spec.reverse), dtype=float) / 255.0
         colours = np.column_stack([steps[np.clip(bins_, 0, None)], np.ones(len(vertices))])
         self.view.set_surface(vertices, colours, faces)
         self.has_surface = len(faces) > 0

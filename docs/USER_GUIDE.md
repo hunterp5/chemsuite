@@ -923,6 +923,19 @@ A **bar chart** has **Group by** (a text column), **Values** (a number column, o
 count rows), **Summary** (Mean, Median, Sum, Minimum, Maximum or Count) and **Error bars**.
 A **radar plot** has **Axes**: tick the number columns to draw as spokes.
 
+**Colours and sizes.** These rows appear only where they apply:
+
+| Setting | Shown | What it does |
+|---|---|---|
+| Colors | Color is a number column; always on Density and 3D Landscape | The colour map the values run through: Viridis (the default), Plasma, Inferno, Magma, Cividis, Turbo, Rainbow, Jet, Red–Yellow, Blue–Red or Greys. **Reverse** runs it from high to low. |
+| Color range | Color is a number column | The values at the two ends of the colour map. Values beyond an end take that end's colour. A box left empty (**Auto**) follows the data. |
+| Size range | Size is a number column | The values given the smallest and the largest point. Values beyond an end take that end's size. A box left empty (**Auto**) follows the data. |
+| Point size | Size is a number column | The smallest and largest point, in pixels (1–60; 4 and 18 to start). |
+
+Each setting applies to Scatter, Line and 3D Scatter points. The colour map also applies to the
+Density counts and the 3D Landscape heights. A range end that is not a number goes back to
+Auto. These settings are saved with the plot.
+
 Hover over **Fit line** (or **Curve**) to see what was drawn: how many points there are, how
 many rows were left out for missing values, and the fit's equation and R² (or μ and σ for a
 fitted curve).

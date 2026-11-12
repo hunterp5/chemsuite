@@ -25,7 +25,14 @@ from chemsuite.core.table import Table
 from chemsuite.plotting.data import BLANK_LABEL, OTHER_LABEL, categories, numbers, xy
 from chemsuite.plotting.geometry import box_mask, lasso_mask, nearest
 from chemsuite.plotting.stats import bin_of, histogram_edges, linear_fit
-from chemsuite.plotting.style import marker_sizes, scale_bins, scale_colors
+from chemsuite.plotting.style import (
+    COLOR_MAPS,
+    DEFAULT_MAP,
+    marker_sizes,
+    parse_range,
+    scale_bins,
+    scale_colors,
+)
 
 
 @pytest.fixture
@@ -112,6 +119,31 @@ def test_scales_and_sizes() -> None:
     assert bins.tolist() == [0, 2, 3, -1] and (lo, hi) == (0.0, 10.0)
     sizes = marker_sizes(np.array([1.0, 3.0, np.nan]), 4, 16)
     assert sizes.tolist() == [4, 16, 4]
+
+
+def test_colour_maps_run_their_anchors_either_way() -> None:
+    for key, (title, anchors) in COLOR_MAPS.items():
+        assert title and len(anchors) >= 2, key
+        assert all(len(c) == 3 and all(0 <= v <= 255 for v in c) for c in anchors), key
+        forward, backward = scale_colors(7, key), scale_colors(7, key, reverse=True)
+        assert forward[0] == tuple(anchors[0]) and forward[-1] == tuple(anchors[-1])
+        assert backward == forward[::-1]
+    assert scale_colors(3, "no such map") == scale_colors(3, DEFAULT_MAP)
+
+
+def test_a_custom_range_clamps_colours_and_sizes() -> None:
+    values = np.array([0.0, 5.0, 10.0, 20.0, np.nan])
+    bins, lo, hi = scale_bins(values, 4, 5.0, 10.0)
+    assert bins.tolist() == [0, 0, 3, 3, -1] and (lo, hi) == (5.0, 10.0)
+    bins, lo, hi = scale_bins(values, 4, None, 40.0)  # one end set, the other the data's
+    assert lo == 0.0 and hi == 40.0 and bins.tolist() == [0, 0, 1, 2, -1]
+    sizes = marker_sizes(values, 2, 12, lo=5.0, hi=10.0)
+    assert sizes.tolist() == [2, 2, 12, 12, 2]
+
+
+def test_range_ends_typed_by_hand() -> None:
+    assert parse_range(" 1.5e3 ") == 1500.0 and parse_range("-2,5") == -2.5
+    assert parse_range("") is None and parse_range("abc") is None and parse_range("inf") is None
 
 
 def test_box_stats_and_jitter() -> None:

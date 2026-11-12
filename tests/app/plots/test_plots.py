@@ -130,6 +130,61 @@ def test_color_by_category_and_number(data) -> None:
     assert "R² = 1.000" in panel.summary.text()
 
 
+def test_colour_maps_ranges_and_point_sizes(data) -> None:
+    from chemsuite.plotting.style import scale_colors
+
+    panel = data.open_tool("scatter")
+    form, controls = panel.options.form, panel.controls
+    panel.set_spec(color="Series")
+    assert not form.isRowVisible(controls.colors) and not form.isRowVisible(controls.size_range)
+    panel.set_spec(
+        color="pIC50",
+        cmap="turbo",
+        reverse=True,
+        color_range=[6, 8],
+        size="pIC50",
+        size_range=[None, 7],
+        point_sizes=[2, 30],
+    )
+    assert form.isRowVisible(controls.colors) and form.isRowVisible(controls.color_range)
+    assert form.isRowVisible(controls.size_range) and form.isRowVisible(controls.point_sizes)
+    spec = panel.spec()
+    assert (spec.cmap, spec.reverse, spec.color_range) == ("turbo", True, (6.0, 8.0))
+    assert spec.size_range == (None, 7.0) and spec.point_sizes == (2.0, 30.0)
+    # A (pIC50 5) lies below the range: with B (6) it takes the first colour of reversed Turbo
+    first = scale_colors(24, "turbo", reverse=True)[0]
+    layer = next(layer for layer in panel.renderer._layers if len(layer.data) == 2)
+    assert layer.opts["brush"].color().getRgb()[:3] == first
+    assert sorted(panel.renderer.sizes) == [2.0, 16.0, 30.0, 30.0]
+    assert controls.labels[controls.color_range].isVisibleTo(panel.options)
+
+    again = data.open_tool("scatter")
+    again.set_state(panel.state())
+    assert again.spec() == panel.spec()
+    again.set_state({"kind": "scatter"})  # an older document: what it lacks stays
+    assert again.spec().cmap == "turbo"
+
+
+def test_typed_ranges_that_are_not_numbers_go_back_to_auto(data, qtbot) -> None:
+    panel = data.open_tool("scatter")
+    panel.set_spec(color="pIC50")
+    edit = panel.controls.color_range
+    with qtbot.waitSignal(panel.controls.changed):
+        edit.low.setText("6")
+        edit.low.editingFinished.emit()
+    assert panel.spec().color_range == (6.0, None)
+    edit.high.setText("lots")
+    edit.high.editingFinished.emit()
+    assert edit.high.text() == "" and panel.spec().color_range == (6.0, None)
+
+
+def test_density_and_landscape_take_a_colour_map(data) -> None:
+    panel = data.open_tool("scatter")
+    panel.set_spec(kind="density", cmap="greys")
+    assert panel.options.form.isRowVisible(panel.controls.colors)
+    assert not panel.options.form.isRowVisible(panel.controls.color_range)
+
+
 def test_histogram_numbers_and_text(data) -> None:
     panel = data.open_tool("histogram")
     panel.set_spec(x="pIC50", bins=5)
@@ -204,7 +259,7 @@ def test_box_plot_groups_and_selection(data) -> None:
     assert [b.n for b in renderer.stats] == [3, 1, 1]
     assert renderer.stats[0].median == 7.0
     assert panel.title() == "pIC50 by Series"
-    assert panel._labels[panel.x].text() == "Group by:"
+    assert panel.controls.labels[panel.x].text() == "Group by:"
     # A box drawn around group "x" selects its three rows.
     panel.view_box.boxSelected.emit(-0.5, 0, 0.5, 10, NONE)
     assert ids(data, data.workspace.selection.oids) == ["A", "C", "E"]
@@ -251,6 +306,11 @@ def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -
         "columns": ["MW", "pIC50"],
         "z": None,
         "drop": False,
+        "cmap": "viridis",
+        "reverse": False,
+        "color_range": [None, None],
+        "size_range": [None, None],
+        "point_sizes": [4, 18],
         "camera": None,
         "title": None,
         "cards": cards.state(),

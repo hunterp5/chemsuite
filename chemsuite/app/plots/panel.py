@@ -36,30 +36,23 @@ import pyqtgraph as pg
 from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QColor, QCursor
 from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
     QFileDialog,
     QFrame,
     QLabel,
-    QMenu,
-    QPushButton,
-    QSpinBox,
     QStackedWidget,
     QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
-from chemsuite.analysis.medchem_space import GUIDES
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Changed, Table
-from chemsuite.core.table.columns import NUMBER, STRUCTURE, TEXT
-from chemsuite.plotting.data import colorable_columns, number_columns, shown_oids
-from chemsuite.plotting.stats import AGGREGATES, CURVES
+from chemsuite.core.table.columns import STRUCTURE, TEXT
+from chemsuite.plotting.data import shown_oids
+from chemsuite.plotting.stats import AGGREGATES
 
 from ..shell import graphics
 from ..shell.glyphs import glyph
-from ..widgets.flow_layout import compact
 from ..widgets.panel import OptionsPopup, ToolPanel
 from .cards import (
     SIZES,
@@ -71,25 +64,10 @@ from .cards import (
     PinnedCards,
     pinned_size,
 )
+from .controls import KINDS, KINDS_3D, STATE_KEYS, PlotControls
 from .renderers import RENDERERS, Hover, PlotSpec
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
 
-NONE = "(none)"
-KINDS = {
-    "scatter": "Scatter",
-    "line": "Line",
-    "histogram": "Histogram",
-    "bar": "Bar Chart",
-    "box": "Box Plot",
-    "density": "Density",
-    "radar": "Radar",
-    "scatter3d": "3D Scatter",
-    "landscape": "3D Landscape",
-}
-#: kinds plotting one number column against another
-#: drawn by ``scene3d`` on the GPU, imported only when one is first shown
-KINDS_3D = ("scatter3d", "landscape")
-XY_KINDS = ("scatter", "line", "density", *KINDS_3D)
 #: what the first mode button does and looks like, in 2D and in 3D
 MOVE_MODE = {
     False: (
@@ -125,94 +103,21 @@ class PlotPanel(ToolPanel):
         self._origin = f"plot:{id(self)}"
         self._last_axes: tuple | None = None
 
-        self.kind = QComboBox()
-        for key, title in KINDS.items():
-            if key == KINDS_3D[0]:
-                self.kind.insertSeparator(self.kind.count())
-            self.kind.addItem(title, key)
-        if reason := graphics.problem():
-            self._disable_3d(reason)
-        self.kind.setCurrentIndex(max(0, self.kind.findData(kind)))  # unknown kind: scatter
-        self.x = QComboBox()
-        self.y = QComboBox()
-        self.z = QComboBox()
-        self.color = QComboBox()
-        self.size = QComboBox()
-        self.bins = QSpinBox()
-        self.bins.setRange(0, 200)
-        self.bins.setSpecialValueText("Auto")
-        self.bins.setToolTip("Number of bins (Auto picks a width from the data)")
-        self.fit = QCheckBox("Fit line")
-        self.fit.setToolTip("Least-squares line; one per category when coloured by text")
-        self.curve = QComboBox()
-        self.curve.addItem("None", None)
-        for key, title in CURVES.items():
-            self.curve.addItem(title, key)
-        self.guide = QComboBox()
-        self.guide.addItem("None", None)
-        for key, guide in GUIDES.items():
-            self.guide.addItem(guide.title, key)
-            self.guide.setItemData(
-                self.guide.count() - 1,
-                f"Expects X: {guide.x_hint}, Y: {guide.y_hint}",
-                Qt.ItemDataRole.ToolTipRole,
-            )
-        self.guide.setToolTip("Reference regions or lines drawn behind the points")
-        self.aggregate = QComboBox()
-        for key, title in AGGREGATES.items():
-            self.aggregate.addItem(title, key)
-        self.aggregate.setToolTip("How each bar sums up its rows' values")
-        self.errors = QCheckBox("Error bars")
-        self.errors.setToolTip("± one standard deviation (with Mean)")
-        self.drop = QCheckBox("Drop lines")
-        self.drop.setToolTip("A line from each point down to the floor, so heights read easily")
-        self.axes: list[str] = []  # radar spokes
-        self.axes_button = QPushButton("None")
-        self.axes_button.setToolTip("The number columns drawn as spokes (at least three)")
-        self.axes_menu = QMenu(self.axes_button)
-        self.axes_menu.aboutToShow.connect(self._fill_axes_menu)
-        self.axes_button.setMenu(self.axes_menu)
-        self.axes_button.setStyleSheet("text-align: left; padding: 3px 8px;")
-        compact(
-            self.x,
-            self.y,
-            self.z,
-            self.color,
-            self.size,
-            self.curve,
-            self.guide,
-            self.aggregate,
-            chars=16,
-        )
         #: Settings button on the dock title bar opens this (``PanelDock`` looks for ``options``)
         self.options = PlotOptions(self)
-        form = self.options.form
-        form.addRow("Plot:", self.kind)
-        self._labels: dict[QWidget, QLabel] = {}
-        for title, widget in (
-            ("X", self.x),
-            ("Y", self.y),
-            ("Z", self.z),
-            ("Color", self.color),
-            ("Size", self.size),
-            ("Bins", self.bins),
-            ("Curve", self.curve),
-            ("Guide", self.guide),
-            ("Summary", self.aggregate),
-            ("Axes", self.axes_button),
-        ):
-            label = QLabel(title + ":")
-            self._labels[widget] = label
-            form.addRow(label, widget)
-        form.addRow("", self.fit)
-        form.addRow("", self.errors)
-        form.addRow("", self.drop)
+        self.controls = PlotControls(table, self.options.form, kind, self)
+        controls = self.controls
+        self.kind, self.x, self.y, self.z = controls.kind, controls.x, controls.y, controls.z
+        self.color, self.size, self.bins = controls.color, controls.size, controls.bins
+        self.fit, self.curve = controls.fit, controls.curve
+        if reason := graphics.problem():
+            self._disable_3d(reason)
         #: what was drawn: point counts, rows left out, fitted curves and their parameters.
         #: Not shown in the options (no explanatory text there); the fit and curve controls
         #: carry it as their tooltip.
         self.summary = QLabel(" ")
         self.card_options = CardOptions()
-        self.card_controls = CardControls(form, lambda: self.table.column_names, self)
+        self.card_controls = CardControls(self.options.form, lambda: self.table.column_names, self)
         self.card_controls.changed.connect(self.set_card_options)
 
         # A slim toolbar joined to the top of the plot: icon buttons, the mode ones exclusive.
@@ -286,16 +191,7 @@ class PlotPanel(ToolPanel):
         self._rebuild_timer.setSingleShot(True)
         self._rebuild_timer.setInterval(REBUILD_DELAY_MS)
         self._rebuild_timer.timeout.connect(self.rebuild)
-        self._fill_columns(initial=True)
-        for combo in (self.kind, self.x, self.y, self.z, self.color, self.size):
-            combo.currentIndexChanged.connect(self._controls_changed)
-        self.bins.valueChanged.connect(self._controls_changed)
-        self.curve.currentIndexChanged.connect(self._controls_changed)
-        self.guide.currentIndexChanged.connect(self._controls_changed)
-        self.aggregate.currentIndexChanged.connect(self._controls_changed)
-        self.fit.toggled.connect(self._controls_changed)
-        self.errors.toggled.connect(self._controls_changed)
-        self.drop.toggled.connect(self._controls_changed)
+        controls.changed.connect(self.rebuild)
         self.view_box.clicked.connect(self._on_click)
         self.view_box.boxSelected.connect(
             lambda x0, y0, x1, y1, mods: self._select(self.renderer.hit_box(x0, y0, x1, y1), mods)
@@ -313,104 +209,23 @@ class PlotPanel(ToolPanel):
 
     # -- controls -------------------------------------------------------------------------------
     def spec(self) -> PlotSpec:
-        def name(combo: QComboBox) -> str | None:
-            text = combo.currentText()
-            return text if text and text != NONE else None
-
-        kind = self.kind.currentData()
-        return PlotSpec(
-            kind=kind,
-            x=name(self.x) if kind != "radar" else None,
-            y=name(self.y) if kind in (*XY_KINDS, "box", "bar") else None,
-            color=name(self.color) if kind in ("scatter", "line", "scatter3d") else None,
-            size=name(self.size) if kind in ("scatter", "scatter3d") else None,
-            bins=self.bins.value() or None
-            if kind in ("histogram", "density", "landscape")
-            else None,
-            fit=self.fit.isChecked() and kind == "scatter",
-            curve=self.curve.currentData() if kind == "histogram" else None,
-            guide=self.guide.currentData() if kind == "scatter" else None,
-            aggregate=self.aggregate.currentData() if kind == "bar" else "mean",
-            errors=self.errors.isChecked() and kind == "bar",
-            columns=tuple(self.axes) if kind == "radar" else (),
-            z=name(self.z) if kind in KINDS_3D else None,
-            drop=self.drop.isChecked() and kind == "scatter3d",
-        )
+        return self.controls.spec()
 
     def is_3d(self) -> bool:
         return self.kind.currentData() in KINDS_3D
 
-    def set_spec(self, **values) -> None:  # noqa: C901 - one branch per plot setting
-        """Set controls by name (x, y, z, color, size, kind, bins, fit, curve, guide, aggregate,
-        errors, drop, columns, camera); redraw now."""
-        widgets = {"x": self.x, "y": self.y, "z": self.z, "color": self.color, "size": self.size}
-        controls = (
-            self.kind,
-            self.x,
-            self.y,
-            self.z,
-            self.color,
-            self.size,
-            self.bins,
-            self.fit,
-            self.curve,
-            self.guide,
-            self.aggregate,
-            self.errors,
-            self.drop,
-        )
-        for control in controls:  # one redraw at the end, not one per control
-            control.blockSignals(True)
-        try:
-            if "kind" in values:
-                self.kind.setCurrentIndex(self.kind.findData(values.pop("kind")))
-                self._fill_columns()
-            camera = values.pop("camera", None)
-            for key, value in values.items():
-                if key in widgets:
-                    if value is None or widgets[key].findText(value) >= 0:
-                        widgets[key].setCurrentText(value or NONE)
-                elif key == "bins":
-                    self.bins.setValue(value or 0)
-                elif key == "fit":
-                    self.fit.setChecked(bool(value))
-                elif key == "curve":
-                    self.curve.setCurrentIndex(max(0, self.curve.findData(value)))
-                elif key == "guide":
-                    self.guide.setCurrentIndex(max(0, self.guide.findData(value)))
-                elif key == "aggregate":
-                    self.aggregate.setCurrentIndex(max(0, self.aggregate.findData(value)))
-                elif key == "errors":
-                    self.errors.setChecked(bool(value))
-                elif key == "drop":
-                    self.drop.setChecked(bool(value))
-                elif key == "columns":
-                    self._set_axes(value)
-        finally:
-            for control in controls:
-                control.blockSignals(False)
+    def set_spec(self, **values) -> None:
+        """Set controls by name (:data:`STATE_KEYS`, and ``camera``); redraw now."""
+        camera = values.pop("camera", None)
+        self.controls.set_values(values)
         self.rebuild()
         if isinstance(camera, dict):
             self.set_camera(camera)
 
     def state(self) -> dict:
         """The plot's settings, for saving with the document (JSON-friendly)."""
-        spec = self.spec()
         return {
-            "kind": spec.kind,
-            "x": spec.x,
-            "y": spec.y,
-            "color": spec.color,
-            "size": spec.size,
-            "bins": spec.bins,
-            "fit": spec.fit,
-            "curve": spec.curve,
-            "guide": spec.guide,
-            "aggregate": self.aggregate.currentData(),
-            "errors": self.errors.isChecked(),
-            "columns": list(self.axes),
-            "z": spec.z,
-            "drop": self.drop.isChecked(),
+            **self.controls.state(),
             "camera": self.camera(),
             "title": self.custom_title,
             "cards": self.card_options.state(),
@@ -422,141 +237,10 @@ class PlotPanel(ToolPanel):
         self.custom_title = title.strip() or None if isinstance(title, str) else None
         if "cards" in state:
             self.set_card_options(CardOptions.from_state(state["cards"]))
-        known = (
-            "kind",
-            "x",
-            "y",
-            "color",
-            "size",
-            "bins",
-            "fit",
-            "curve",
-            "guide",
-            "aggregate",
-            "errors",
-            "columns",
-            "z",
-            "drop",
-            "camera",
-        )
-        values = {key: state[key] for key in known if key in state}
+        values = {key: state[key] for key in (*STATE_KEYS, "camera") if key in state}
         if values.get("kind") not in KINDS:
             values.pop("kind", None)
         self.set_spec(**values)
-
-    def _fill_columns(self, *, initial: bool = False) -> None:
-        table = self.table
-        numbers = number_columns(table)
-        kind = self.kind.currentData()
-        texts = [n for n in table.column_names if table.kind(n) == TEXT]
-        groupable = [n for n in table.column_names if table.kind(n) in (NUMBER, TEXT)]
-        x_choices = {
-            "scatter": numbers,
-            "line": numbers,
-            "density": numbers,
-            "histogram": groupable,
-            "bar": texts or groupable,  # the grouping column
-            "box": [NONE, *texts],  # the grouping column (optional)
-            "radar": [],
-            "scatter3d": numbers,
-            "landscape": numbers,
-        }[kind]
-        lists = {
-            self.x: x_choices,
-            self.y: [NONE, *numbers] if kind == "bar" else numbers,
-            self.z: numbers,
-            self.color: [NONE, *colorable_columns(table)],
-            self.size: [NONE, *numbers],
-        }
-        for combo, names in lists.items():
-            current = combo.currentText()
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItems(names)
-            if current in names:
-                combo.setCurrentText(current)
-            elif initial and combo is self.y and len(names) > 1:
-                combo.setCurrentIndex(1)
-            elif combo is self.z:  # a column not already on X or Y
-                taken = {self.x.currentText(), self.y.currentText()}
-                spare = [n for n in names if n not in taken]
-                if spare:
-                    combo.setCurrentText(spare[0])
-            elif combo is self.y and kind == "bar" and current not in names:
-                combo.setCurrentIndex(min(1, len(names) - 1))  # a number column, not a count
-            combo.blockSignals(False)
-        self.axes = [a for a in self.axes if a in numbers]
-        if initial or (kind == "radar" and len(self.axes) < 3):
-            self.axes = self.axes if len(self.axes) >= 3 else numbers[:6]
-        self._show_axes()
-        shown = {
-            "scatter": (self.x, self.y, self.color, self.size, self.fit, self.guide),
-            "line": (self.x, self.y, self.color),
-            "density": (self.x, self.y, self.bins),
-            "histogram": (self.x, self.bins, self.curve),
-            "bar": (self.x, self.y, self.aggregate, self.errors),
-            "box": (self.x, self.y),
-            "radar": (self.axes_button,),
-            "scatter3d": (self.x, self.y, self.z, self.color, self.size, self.drop),
-            "landscape": (self.x, self.y, self.z, self.bins),
-        }[kind]
-        optional = (
-            self.x,
-            self.y,
-            self.color,
-            self.size,
-            self.fit,
-            self.bins,
-            self.curve,
-            self.guide,
-            self.aggregate,
-            self.errors,
-            self.axes_button,
-            self.z,
-            self.drop,
-        )
-        for widget in optional:
-            self.options.form.setRowVisible(widget, widget in shown)
-        self._labels[self.x].setText("Group by:" if kind in ("box", "bar") else "X:")
-        self._labels[self.y].setText("Values:" if kind in ("box", "bar") else "Y:")
-        self._labels[self.z].setText("Height:" if kind == "landscape" else "Z:")
-        self._labels[self.bins].setText("Grid:" if kind == "landscape" else "Bins:")
-        self.bins.setToolTip(
-            "Grid cells along each side (Auto picks from the number of points)"
-            if kind == "landscape"
-            else "Number of bins (Auto picks a width from the data)"
-        )
-
-    def _fill_axes_menu(self) -> None:
-        menu = self.axes_menu
-        menu.clear()
-        for name in number_columns(self.table):
-            action = menu.addAction(name)
-            action.setCheckable(True)
-            action.setChecked(name in self.axes)
-            action.toggled.connect(lambda on, n=name: self._toggle_axis(n, on))
-
-    def _toggle_axis(self, name: str, on: bool) -> None:
-        axes = [a for a in self.axes if a != name]
-        if on:
-            axes.append(name)
-        self._set_axes(axes)
-        self.rebuild()
-
-    def _set_axes(self, names) -> None:
-        numbers = set(number_columns(self.table))
-        self.axes = [n for n in names or () if isinstance(n, str) and n in numbers]
-        self._show_axes()
-
-    def _show_axes(self) -> None:
-        text = ", ".join(self.axes) if self.axes else "None"
-        metrics = self.axes_button.fontMetrics()
-        self.axes_button.setText(metrics.elidedText(text, Qt.TextElideMode.ElideRight, 180))
-
-    def _controls_changed(self, *_args) -> None:
-        if self.sender() is self.kind:
-            self._fill_columns()
-        self.rebuild()
 
     def set_mode(self, mode: str) -> None:
         self.view_box.set_mode(mode)
@@ -767,7 +451,7 @@ class PlotPanel(ToolPanel):
         if not isinstance(event, Changed):
             return
         if event.structural:
-            self._fill_columns()
+            self.controls.fill_columns()
         self._rebuild_timer.start()
 
     def _on_selection(self, oids: frozenset[int], origin: str) -> None:

@@ -50,7 +50,9 @@ from chemsuite.plotting.stats import (
     unit_scale,
 )
 from chemsuite.plotting.style import (
+    COLOR_MAPS,
     DEFAULT_COLOR,
+    DEFAULT_MAP,
     GREY,
     category_color,
     marker_sizes,
@@ -66,6 +68,9 @@ HIGHLIGHT = (230, 70, 20)
 DIMMED = 0.3  # opacity of unselected points while something is selected
 HOVER_RADIUS = 10.0
 SPECIAL = (OTHER_LABEL, BLANK_LABEL)  # categories drawn grey
+
+
+Range = tuple[float | None, float | None]
 
 
 @dataclass(frozen=True)
@@ -84,6 +89,11 @@ class PlotSpec:
     columns: tuple[str, ...] = ()  # radar: the axes
     z: str | None = None  # 3D: the third axis (the landscape's height)
     drop: bool = False  # 3D scatter: lines from each point down to the floor
+    cmap: str = DEFAULT_MAP  # number colours: a key of COLOR_MAPS
+    reverse: bool = False  # the colour map runs high to low
+    color_range: Range = (None, None)  # number colours span this (None: the data's own end)
+    size_range: Range = (None, None)  # sizes span these values (None: the data's own end)
+    point_sizes: tuple[float, float] = (4.0, 18.0)  # smallest and largest marker, in pixels
 
 
 @dataclass(frozen=True)
@@ -93,6 +103,13 @@ class Hover:
     oid: int | None
     title: str
     lines: tuple[str, ...]
+
+
+def color_map(key: str, reverse: bool = False) -> pg.ColorMap:
+    """A colour map of :data:`COLOR_MAPS` for pyqtgraph images."""
+    anchors = COLOR_MAPS.get(key, COLOR_MAPS[DEFAULT_MAP])[1]
+    colors = anchors[::-1] if reverse else anchors
+    return pg.ColorMap(np.linspace(0.0, 1.0, len(colors)), [(*c, 255) for c in colors])
 
 
 def _brush(rgb: tuple[int, int, int], alpha: int = 200):
@@ -149,7 +166,7 @@ class ScatterRenderer:
         self.oids, self.x, self.y = data.oids, data.x, data.y
         n = len(self.oids)
         self.sizes = (
-            marker_sizes(numbers(table, spec.size, self.oids), 4.0, 18.0)
+            marker_sizes(numbers(table, spec.size, self.oids), *spec.point_sizes, *spec.size_range)
             if spec.size
             else np.full(n, POINT_SIZE)
         )
@@ -249,8 +266,8 @@ class ScatterRenderer:
         if table.kind(spec.color) == NUMBER:
             values = numbers(table, spec.color, self.oids)
             self._color_values = values
-            bins, lo, hi = scale_bins(values, SCALE_STEPS)
-            colors = scale_colors(SCALE_STEPS)
+            bins, lo, hi = scale_bins(values, SCALE_STEPS, *spec.color_range)
+            colors = scale_colors(SCALE_STEPS, spec.cmap, spec.reverse)
             groups = [(bins == -1, GREY, BLANK_LABEL)]
             for step in range(SCALE_STEPS):
                 at = lo + (hi - lo) * (step + 0.5) / SCALE_STEPS
@@ -744,7 +761,7 @@ class DensityRenderer:
         grid = self.grid
         shade = np.where(grid.counts > 0, np.log1p(grid.counts), np.nan)
         self._image = pg.ImageItem(shade)
-        self._image.setColorMap(pg.colormap.get("viridis"))
+        self._image.setColorMap(color_map(spec.cmap, spec.reverse))
         x0, x1 = grid.x_edges[0], grid.x_edges[-1]
         y0, y1 = grid.y_edges[0], grid.y_edges[-1]
         self._image.setRect(pg.QtCore.QRectF(x0, y0, x1 - x0, y1 - y0))
