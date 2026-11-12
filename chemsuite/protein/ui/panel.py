@@ -59,8 +59,9 @@ from chemsuite.protein.structure import io as protein_io
 
 from . import menubar, menus
 from .builds import Run
+from .host import LinkedRow
 from .models_bar import ModelsBar
-from .pocket import PocketCamera, follow_row, missing_protein
+from .pocket import PocketCamera
 from .selection_bar import SelectionBar
 from .sequence_view import SequenceView
 from .session import ADD, SET, TOGGLE, ProteinSession
@@ -87,10 +88,13 @@ class ProteinPanel(ToolPanel):
         watch_current: Callable[[Callable[[int | None], None]], Callable[[], None]] | None = None,
         commands: menubar.Commands | None = None,
         run: Run | None = None,
+        linked: LinkedRow | None = None,
     ) -> None:
         super().__init__(parent)
         self.tool_id = TOOL_ID
-        self.session = ProteinSession(table, self, run=run)
+        self.linked = linked
+        columns = linked.columns if linked is not None else ()
+        self.session = ProteinSession(table, self, run=run, row_columns=columns)
         self.view = None
         self.overlay = None
         self._view_page: QWidget | None = None
@@ -387,9 +391,11 @@ class ProteinPanel(ToolPanel):
     # the table's current row: its ligand, in its pocket
     def follow_row(self, oid: int | None) -> bool:
         """Focus the pose or ligand that row *oid* names, if its protein is shown here."""
-        if follow_row(self.session, oid):
+        if self.linked is None:
+            return False
+        if self.linked.follow(self.session, oid):
             return True
-        missing = missing_protein(self.session, oid)
+        missing = self.linked.missing(self.session, oid)
         if missing:
             self.status.setText(f"Protein {missing} is not in this document")
         return False

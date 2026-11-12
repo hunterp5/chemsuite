@@ -27,9 +27,10 @@ from .test_poses import moved
 
 
 def row_of(structure, smiles: str = "") -> profile.Row:
-    rows = ligands.ligand_rows(structure, "P")
-    mol = Chem.MolFromMolBlock(rows[ligands.LIGAND_COLUMN][0])
-    return profile.Row(structure, rows[ligands.LIGAND_ID_COLUMN][0], mol, smiles)
+    """A ligand row as Ligands to Table writes it: the ligand read back from its molfile."""
+    residue = ligands.row_residues(structure)[0]
+    mol = Chem.MolFromMolBlock(Chem.MolToMolBlock(ligands.to_mol(structure, residue).mol))
+    return profile.Row(structure, structure.residue_label(residue), mol, smiles)
 
 
 def count(found: profile.Profile, kind: int) -> int:

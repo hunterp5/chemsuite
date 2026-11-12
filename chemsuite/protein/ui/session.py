@@ -28,8 +28,9 @@ bar and the 3D view all read and change the session, never each other, and redra
 - ``focusChanged``: a ligand was focused or the focus cleared (the panel moves the camera);
 - ``measurementsChanged``: a measurement was added or removed, or atoms picked for one;
 - ``labelsChanged``: labels were added or cleared;
-- ``rowsEdited``: table rows had their protein, ligand ID or ligand changed (the panel follows
-  the current row again: a ligand moved in the sketcher shows as a pose).
+- ``rowsEdited``: table rows had a cell of ``row_columns`` changed (the host's
+  :class:`~.host.LinkedRow` columns: the panel follows the current row again, so a ligand
+  moved in the sketcher shows as a pose).
 
 With a way to run work in the background (``run``, as a tool's ``ctx.run`` in the quick
 lane), slow parts (surfaces, interactions, large cartoons) are built off the GUI thread by a
@@ -47,7 +48,7 @@ table's current row brings it back.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 
 import numpy as np
 from PySide6.QtCore import QObject, Signal
@@ -56,7 +57,6 @@ from chemsuite.core.table import AssetsChanged, Table
 from chemsuite.core.table.events import CellsChanged, Changed
 from chemsuite.molview.measure import describe
 from chemsuite.protein.chem import poses
-from chemsuite.protein.chem.ligands import LIGAND_COLUMN, LIGAND_ID_COLUMN, PROTEIN_COLUMN
 from chemsuite.protein.look import display as displays
 from chemsuite.protein.look import scene as scenes
 from chemsuite.protein.structure import store
@@ -81,8 +81,6 @@ ATOM_LABEL = "atom"
 RESIDUE_LABEL = "residue"
 #: a pose's display id: this, then its protein's
 POSE = "pose:"
-#: the table columns that say what a row shows here
-ROW_COLUMNS = (PROTEIN_COLUMN, LIGAND_ID_COLUMN, LIGAND_COLUMN)
 
 
 structure_of = store.as_structure  # an asset's structure, decoding stored bytes
@@ -97,11 +95,18 @@ class ProteinSession(QObject):
     focusChanged = Signal()
     measurementsChanged = Signal()
     labelsChanged = Signal()
-    rowsEdited = Signal(object)  # oids whose protein, ligand ID or ligand changed
+    rowsEdited = Signal(object)  # oids whose cells in row_columns changed
 
-    def __init__(self, table: Table, parent: QObject | None = None, run: Run | None = None) -> None:
+    def __init__(
+        self,
+        table: Table,
+        parent: QObject | None = None,
+        run: Run | None = None,
+        row_columns: Collection[str] = (),
+    ) -> None:
         super().__init__(parent)
         self.table = table
+        self.row_columns = frozenset(row_columns)
         self.builder = Builder(self, run) if run is not None else None
         self.displays: list[displays.Display] = []
         self.named: dict[str, dict[str, list[int]]] = {}
@@ -171,7 +176,7 @@ class ProteinSession(QObject):
         if any(isinstance(c, AssetsChanged) for c in event.changes):
             self.reload()
         edited = [c for c in event.changes
-                  if isinstance(c, CellsChanged) and c.column in ROW_COLUMNS]  # fmt: skip
+                  if isinstance(c, CellsChanged) and c.column in self.row_columns]  # fmt: skip
         if edited:
             self.rowsEdited.emit(np.unique(np.concatenate([c.oids for c in edited])))
 

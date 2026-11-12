@@ -20,15 +20,17 @@ the first of these that fits the atoms:
 
 1. a SMILES the caller has: one the user gave, or the SMILES of the ligand's table row;
 2. the file's own definition of the component (its ``_chem_comp_bond`` table);
-3. the Chemical Component Dictionary online (:class:`.components.CcdCache`), when the caller
-   allows a download;
+3. the Chemical Component Dictionary online
+   (:class:`~chemsuite.protein.structure.components.CcdCache`), when the caller allows a
+   download;
 4. the templates bundled with chemsuite (common cofactors and additives);
-5. the geometry (:mod:`.bond_orders`), marked as guessed.
+5. the geometry (:mod:`chemsuite.protein.structure.bond_orders`), marked as guessed.
 
 A component fits by atom name when the residue has exactly its heavy atoms, which also takes the
 bonds from the dictionary; otherwise by matching the graph (``AssignBondOrdersFromTemplate``).
 
-Heavy atoms only: hydrogens are placed when a tool needs them.
+Heavy atoms only: hydrogens are placed when a tool needs them. Ligands become table rows
+through the bridge (:mod:`chemsuite.tools.protein.rows`).
 """
 
 from __future__ import annotations
@@ -203,45 +205,10 @@ def _finish(fitted: Chem.RWMol) -> Chem.Mol | None:
     return out
 
 
-# -- ligands as table rows ----------------------------------------------------------------------
+# -- which ligands ---------------------------------------------------------------------------------
 
-#: the columns a protein's ligands fill: which protein, which residue, the ligand in its pose
-PROTEIN_COLUMN = "Protein"
-LIGAND_ID_COLUMN = "Ligand ID"
-LIGAND_COLUMN = "Ligand"
-BOND_ORDERS_COLUMN = "Bond Orders"
 #: a protein asset's meta: the ligand IDs whose bond orders are a guess, one per line
 GUESSED = "guessed"
-SOURCE_TITLES = {SMILES: "SMILES", FILE: "File", CCD: "CCD (downloaded)", TEMPLATE: "CCD template",
-                 GEOMETRY: "Guessed from geometry"}  # fmt: skip
-
-
-def ligand_rows(
-    structure: Structure,
-    protein: str,
-    residues: list[int] | None = None,
-    ccd: CcdCache | None = None,
-    cancel: CancelToken | None = None,
-) -> dict[str, list[str]]:
-    """One row per ligand (or per residue of ``residues``): the protein's asset id, the residue
-    (as :meth:`Structure.residue_label` writes it), a molfile in the ligand's pose and where its
-    bond orders came from. A ligand RDKit cannot read is left out, and so are cofactors when the
-    protein has another ligand."""
-    rows: dict[str, list[str]] = {PROTEIN_COLUMN: [], LIGAND_ID_COLUMN: [], LIGAND_COLUMN: [],
-                                  BOND_ORDERS_COLUMN: []}  # fmt: skip
-    if residues is None:
-        residues = row_residues(structure)
-    for residue in residues:
-        try:
-            ligand = to_mol(structure, residue, ccd=ccd, cancel=cancel)
-            block = Chem.MolToMolBlock(ligand.mol)
-        except (ValueError, RuntimeError):
-            continue
-        rows[PROTEIN_COLUMN].append(protein)
-        rows[LIGAND_ID_COLUMN].append(structure.residue_label(residue))
-        rows[LIGAND_COLUMN].append(block)
-        rows[BOND_ORDERS_COLUMN].append(SOURCE_TITLES[ligand.source])
-    return rows
 
 
 def row_residues(structure: Structure) -> list[int]:
@@ -249,12 +216,6 @@ def row_residues(structure: Structure) -> list[int]:
     found = ligand_residues(structure).tolist()
     others = [r for r in found if str(structure.res_name[r]) not in COFACTORS]
     return others or found
-
-
-def guessed(rows: dict[str, list[str]]) -> list[str]:
-    """The ligand IDs of ``rows`` whose bond orders are a guess."""
-    pairs = zip(rows[LIGAND_ID_COLUMN], rows[BOND_ORDERS_COLUMN], strict=True)
-    return [label for label, source in pairs if source == SOURCE_TITLES[GEOMETRY]]
 
 
 def residue_named(structure: Structure, label: str) -> int:

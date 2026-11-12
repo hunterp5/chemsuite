@@ -26,7 +26,7 @@ from PySide6.QtWidgets import QPushButton
 
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.core.settings import POLICY_ENV
-from chemsuite.tools.protein import tool
+from chemsuite.tools.protein import to_table, tool
 
 from .conftest import gui
 
@@ -76,7 +76,7 @@ def wait(qtbot, job) -> None:
 @pytest.fixture
 def with_rows(opened, qtbot):
     """1ATP opened, and its ligand added to the table (Ligand ▸ Ligands to Table)."""
-    wait(qtbot, tool.extract_ligands(ToolContext(opened)))
+    wait(qtbot, to_table.extract_ligands(ToolContext(opened)))
     return opened
 
 
@@ -172,7 +172,7 @@ def test_a_ligand_the_file_does_not_define_comes_from_the_ccd_once(window, qtbot
     for _ in range(2):
         job = tool.open_protein(ctx, [str(DATA / "1ppb.cif.gz")])
         qtbot.waitUntil(lambda job=job: not job.running, timeout=30_000)
-    wait(qtbot, tool.extract_ligands(ctx))
+    wait(qtbot, to_table.extract_ligands(ctx))
     table = window.workspace.table
     oid = int(table.oids[-1])
     assert table.cell("Ligand ID", oid) == "H/0G6 1"
@@ -227,12 +227,12 @@ def test_the_current_row_focuses_its_ligand(with_rows) -> None:
 
 def test_extract_ligands_fills_in_proteins_without_rows(with_rows, qtbot) -> None:
     ctx = ToolContext(with_rows)
-    assert tool.extract_ligands(ctx) is None  # 1ATP has its row already
+    assert to_table.extract_ligands(ctx) is None  # 1ATP has its row already
     assert with_rows.statusBar().currentMessage() == "No new ligands to add"
     table = with_rows.workspace.table
     rows = len(table.oids)
     table.remove_rows([int(table.oids[-1])])
-    wait(qtbot, tool.extract_ligands(ctx))
+    wait(qtbot, to_table.extract_ligands(ctx))
     assert len(table.oids) == rows
 
 
@@ -243,14 +243,14 @@ def test_a_ligand_can_be_added_once_from_the_viewer(with_rows) -> None:
     panel = ctx.find_panel("protein")
     shown = panel.session.display("1ATP")
     atp = int(shown.structure.res_seq.tolist().index(355))
-    assert tool.add_ligand(ctx, "1ATP", atp) == 0  # it has its row already
+    assert to_table.add_ligand(ctx, "1ATP", atp) == 0  # it has its row already
     assert "in the table already" in opened.statusBar().currentMessage()
     table.remove_rows([int(table.oids[-1])])
     rows = len(table.oids)
     panel.commands["ligand"]("1ATP", atp)
     assert len(table.oids) == rows + 1
     assert table.cell("Ligand ID", int(table.oids[-1])) == "E/ATP 355"
-    assert tool.add_ligand(ctx, "NONE", 0) == 0
+    assert to_table.add_ligand(ctx, "NONE", 0) == 0
 
 
 def test_fetch_downloads_by_id(window, qtbot, monkeypatch) -> None:
@@ -322,7 +322,7 @@ def test_a_second_protein_adds_to_the_ligand_column(with_rows, qtbot) -> None:
     opened = with_rows
     job = tool.open_protein(ToolContext(opened), [str(DATA / "3htb.cif.gz")])
     qtbot.waitUntil(lambda: not job.running, timeout=30_000)
-    wait(qtbot, tool.extract_ligands(ToolContext(opened)))
+    wait(qtbot, to_table.extract_ligands(ToolContext(opened)))
     table = opened.workspace.table
     oid = int(table.oids[-1])
     assert table.cell("Protein", oid) == "3HTB" and table.cell("Ligand", oid).count("\n") == 0

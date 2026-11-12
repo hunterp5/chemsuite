@@ -70,7 +70,7 @@ def test_a_merged_pose_is_the_last_chain_in_every_model(nmr, kinase) -> None:
 
 def test_a_row_read_from_the_protein_is_the_same_pose(kinase) -> None:
     residue = only_ligand(kinase)
-    mol = Chem.MolFromMolBlock(ligands.ligand_rows(kinase, "1ATP")[ligands.LIGAND_COLUMN][0])
+    mol = Chem.MolFromMolBlock(Chem.MolToMolBlock(ligands.to_mol(kinase, residue).mol))
     assert poses.same_pose(kinase, residue, mol)
     assert not poses.same_pose(kinase, residue, moved(mol, 0.5))
     assert not poses.same_pose(kinase, residue - 1, mol)  # another residue
