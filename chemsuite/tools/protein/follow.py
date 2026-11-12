@@ -22,18 +22,20 @@ moved in the sketcher, or docked); otherwise the residue its ``Ligand ID`` names
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from chemsuite.app.document.tools import ToolContext
+from chemsuite.core.table import Changed
+from chemsuite.core.table.events import CellsChanged
 from chemsuite.protein.chem import ligands, poses
 
 from .rows import LIGAND_COLUMN, LIGAND_ID_COLUMN, PROTEIN_COLUMN, ROW_COLUMNS, mol_of
 
 if TYPE_CHECKING:
-    from chemsuite.protein.ui.session import ProteinSession
+    from chemsuite.protein.workspace.session import WorkbenchSession
 
 
 class TableRow:
@@ -45,7 +47,20 @@ class TableRow:
     def __init__(self, ctx: ToolContext) -> None:
         self._ctx = ctx
 
-    def follow(self, session: ProteinSession, oid: int | None) -> bool:
+    def watch(self, callback: Callable[[np.ndarray], None]) -> Callable[[], None]:
+        """Call *callback* with the rows whose :attr:`columns` cells changed."""
+        columns = frozenset(self.columns)
+
+        def on_event(event: object) -> None:
+            if isinstance(event, Changed):
+                edited = [c.oids for c in event.changes
+                          if isinstance(c, CellsChanged) and c.column in columns]  # fmt: skip
+                if edited:
+                    callback(np.unique(np.concatenate(edited)))
+
+        return self._ctx.table.subscribe(on_event)
+
+    def follow(self, session: WorkbenchSession, oid: int | None) -> bool:
         table = self._ctx.table
         if oid is None or PROTEIN_COLUMN not in table or oid not in table.oids:
             return False
@@ -69,7 +84,7 @@ class TableRow:
             session.focus(protein, residue)
         return True
 
-    def missing(self, session: ProteinSession, oid: int | None) -> str:
+    def missing(self, session: WorkbenchSession, oid: int | None) -> str:
         table = self._ctx.table
         if oid is None or PROTEIN_COLUMN not in table or oid not in table.oids:
             return ""
@@ -104,7 +119,7 @@ class TableRow:
         return poses.pose_of(mol_of(given))
 
 
-def _leave_pose(session: ProteinSession) -> None:
+def _leave_pose(session: WorkbenchSession) -> None:
     """A row that shows nothing here takes away another row's pose."""
     if session.pose is not None:
         session.clear_focus()

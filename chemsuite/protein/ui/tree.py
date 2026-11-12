@@ -46,8 +46,9 @@ from chemsuite.protein.structure.model import (
     Structure,
 )
 from chemsuite.protein.structure.select import select
+from chemsuite.protein.workspace.session import ADD, SET, TOGGLE
 
-from .session import ADD, SET, TOGGLE, ProteinSession
+from .session import SessionSignals
 
 _PROTEIN = Qt.ItemDataRole.UserRole
 _SELECTS = Qt.ItemDataRole.UserRole + 1
@@ -65,9 +66,9 @@ class ProteinTree(QTreeWidget):
     focusRequested = Signal()
     removeRequested = Signal(str)  # a protein's id: Remove Protein from its menu or Delete
 
-    def __init__(self, session: ProteinSession, parent: QWidget | None = None) -> None:
+    def __init__(self, signals: SessionSignals, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.session = session
+        self.session = signals.session
         self.setHeaderHidden(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.setUniformRowHeights(True)
@@ -80,8 +81,8 @@ class ProteinTree(QTreeWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context_menu)
         self._masks: dict[int, np.ndarray] = {}  # id(item) -> the atoms it selects, when asked
-        session.proteinsChanged.connect(self.reload)
-        session.selectionChanged.connect(self.show_selection)
+        signals.proteinsChanged.connect(self.reload)
+        signals.selectionChanged.connect(self.show_selection)
         self.reload()
 
     def reload(self) -> None:
@@ -156,7 +157,7 @@ class ProteinTree(QTreeWidget):
                 name = structure.chain_name[c]
                 self._child(top, protein, f"Chain {name} ({polymer})",
                             f"chain {name} and polymer")  # fmt: skip
-        asset = self.session.table.assets.get(protein)
+        asset = self.session.store.assets.get(protein)
         guessed = set(asset.meta.get(GUESSED, "").splitlines()) if asset is not None else set()
         for residue in np.flatnonzero(kinds == LIGAND):
             chain = structure.chain_name[structure.chain_of[residue]]

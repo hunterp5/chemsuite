@@ -105,12 +105,19 @@ class AssetHost(Protocol):
     """What reads and edits a document's assets (the protein workbench) asks of it: a
     :class:`~chemsuite.core.table.Table` in a table document, an :class:`AssetStore` alone."""
 
+    #: the undo stack the edits go on (the whole document's, in a table document)
+    history: History
+
     @property
     def assets(self) -> Mapping[str, Asset]: ...
 
     def unique_asset_id(self, wanted: str) -> str: ...
 
     def edit(self, label: str, ops: Sequence[Op]) -> None: ...
+
+    def undo(self) -> str | None: ...
+
+    def redo(self) -> str | None: ...
 
     def subscribe_assets(self, listener: AssetListener) -> Callable[[], None]: ...
 

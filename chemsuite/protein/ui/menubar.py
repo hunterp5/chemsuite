@@ -135,7 +135,7 @@ def _file(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
 
 def _edit(menu: QMenu, panel: ProteinPanel) -> None:
     selected = panel.session.selected_count() > 0
-    history = panel.session.table.history
+    history = panel.session.store.history
     undo = menu.addAction(_step("Undo", history.undo_label), panel.undo)
     undo.setShortcut(QKeySequence.StandardKey.Undo)
     undo.setEnabled(history.can_undo)

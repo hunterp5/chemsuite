@@ -152,24 +152,18 @@ def test_importing_core_does_not_load_qt() -> None:
 #: The workbench's Qt layer uses the app's shell, widgets and 3D base, never the table window
 #: or a tool.
 WORKBENCH_UI_FORBIDDEN = ("chemsuite.app.document", "chemsuite.app.table", "chemsuite.tools")
-#: Workbench UI files that still read the document's Table, until the workspace engine takes
-#: their place (refactor Phase C). A ratchet: this set only shrinks.
-WORKBENCH_UI_READS_TABLE = {"panel.py", "session.py"}
 
 
-def test_the_workbench_ui_reaches_the_table_only_through_the_bridge() -> None:
+def test_the_workbench_reaches_the_table_only_through_the_bridge() -> None:
+    """The workbench UI and its engine never import the table (they read proteins through an
+    AssetHost, rows through a LinkedRow), nor the UI the table window or a tool."""
     paths = sorted(WORKBENCH_UI.rglob("*.py"))
-    offenders = _offenders(paths, WORKBENCH_UI_FORBIDDEN)
-    for path in paths:
-        if path.name not in WORKBENCH_UI_READS_TABLE:
-            offenders += _offenders([path], ["chemsuite.core.table"])
-    assert not offenders, "the workbench UI reaches past its bridge:\n" + "\n".join(offenders)
-    stale = sorted(
-        name
-        for name in WORKBENCH_UI_READS_TABLE
-        if not _offenders([WORKBENCH_UI / name], ["chemsuite.core.table"])
+    offenders = _offenders(paths, (*WORKBENCH_UI_FORBIDDEN, "chemsuite.core.table"))
+    engine = sorted(
+        p for p in (PACKAGE / "protein").rglob("*.py") if not p.is_relative_to(WORKBENCH_UI)
     )
-    assert not stale, f"no longer read the Table: drop {stale} from WORKBENCH_UI_READS_TABLE"
+    offenders += _offenders(engine, ["chemsuite.core.table"])
+    assert not offenders, "the workbench reaches past its bridge:\n" + "\n".join(offenders)
 
 
 def test_only_the_bridge_imports_the_workbench_ui() -> None:

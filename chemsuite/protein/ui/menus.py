@@ -36,8 +36,14 @@ from chemsuite.protein.look.display import TRANSPARENCIES
 from chemsuite.protein.structure.io import MMCIF, PDB
 from chemsuite.protein.structure.model import LIGAND
 from chemsuite.protein.structure.select import SelectionError
+from chemsuite.protein.workspace.session import (
+    ADD,
+    ATOM_LABEL,
+    RESIDUE_LABEL,
+    SET,
+    WorkbenchSession,
+)
 
-from .session import ADD, ATOM_LABEL, RESIDUE_LABEL, SET, ProteinSession
 from .tree import residue_expression
 
 if TYPE_CHECKING:
@@ -55,7 +61,7 @@ SHOW_STYLES = (
 )
 
 
-def fill_show(menu: QMenu, session: ProteinSession) -> None:
+def fill_show(menu: QMenu, session: WorkbenchSession) -> None:
     menu.clear()
     for title, style in SHOW_STYLES:
         menu.addAction(title, lambda s=style: session.show_as(s))
@@ -65,7 +71,7 @@ def fill_show(menu: QMenu, session: ProteinSession) -> None:
     _need_selection(menu, session)
 
 
-def fill_hide(menu: QMenu, session: ProteinSession) -> None:
+def fill_hide(menu: QMenu, session: WorkbenchSession) -> None:
     menu.clear()
     menu.addAction("Atoms", lambda: session.show_as(scene.HIDDEN))
     menu.addAction("Cartoon", lambda: session.show_cartoon(False))
@@ -73,7 +79,7 @@ def fill_hide(menu: QMenu, session: ProteinSession) -> None:
     _need_selection(menu, session)
 
 
-def fill_colour(menu: QMenu, session: ProteinSession, parent: QWidget) -> None:
+def fill_colour(menu: QMenu, session: WorkbenchSession, parent: QWidget) -> None:
     menu.clear()
     selected = session.selected_count() > 0
     for key, title in colours.SCHEMES.items():
@@ -83,7 +89,7 @@ def fill_colour(menu: QMenu, session: ProteinSession, parent: QWidget) -> None:
     pick.setEnabled(selected)
 
 
-def fill_label(menu: QMenu, session: ProteinSession) -> None:
+def fill_label(menu: QMenu, session: WorkbenchSession) -> None:
     menu.clear()
     selected = session.selected_count() > 0
     menu.addAction("Residues", lambda: session.label(RESIDUE_LABEL)).setEnabled(selected)
@@ -92,7 +98,7 @@ def fill_label(menu: QMenu, session: ProteinSession) -> None:
     menu.addAction("Clear Labels", session.clear_labels).setEnabled(bool(session.labels))
 
 
-def fill_hydrogens(menu: QMenu, session: ProteinSession) -> None:
+def fill_hydrogens(menu: QMenu, session: WorkbenchSession) -> None:
     menu.clear()
     group = QActionGroup(menu)
     for key, title in HYDROGENS.items():
@@ -102,7 +108,7 @@ def fill_hydrogens(menu: QMenu, session: ProteinSession) -> None:
         group.addAction(action)
 
 
-def fill_transparency(menu: QMenu, session: ProteinSession) -> None:
+def fill_transparency(menu: QMenu, session: WorkbenchSession) -> None:
     menu.clear()
     group = QActionGroup(menu)
     for value in TRANSPARENCIES:
@@ -113,7 +119,7 @@ def fill_transparency(menu: QMenu, session: ProteinSession) -> None:
         group.addAction(action)
 
 
-def fill_focus(menu: QMenu, session: ProteinSession) -> None:
+def fill_focus(menu: QMenu, session: WorkbenchSession) -> None:
     """One entry per ligand of the visible proteins: focus it in its pocket."""
     several = len([d for d in session.displays if d.visible]) > 1
     for protein, residue in session.ligands():
@@ -127,7 +133,7 @@ def fill_focus(menu: QMenu, session: ProteinSession) -> None:
         menu.addAction("No Ligands").setEnabled(False)
 
 
-def fill_measure(menu: QMenu, session: ProteinSession) -> None:
+def fill_measure(menu: QMenu, session: WorkbenchSession) -> None:
     group = QActionGroup(menu)
     for title, atoms in MEASURES:
         action = menu.addAction(title, lambda n=atoms: session.measure(n))
@@ -141,33 +147,33 @@ def fill_measure(menu: QMenu, session: ProteinSession) -> None:
     clear.setEnabled(bool(session.measurements))
 
 
-def _label_here(menu: QMenu, session: ProteinSession, protein: str, structure, atom: int) -> None:
+def _label_here(menu: QMenu, session: WorkbenchSession, protein: str, structure, atom: int) -> None:
     mask = np.zeros(structure.n_atoms, bool)
     mask[atom] = True
     for title, kind in (("Residue", RESIDUE_LABEL), ("Atom", ATOM_LABEL)):
         menu.addAction(title, lambda k=kind: session.label(k, {protein: mask}))
 
 
-def _measure_from(session: ProteinSession, atoms: int, atom: int) -> None:
+def _measure_from(session: WorkbenchSession, atoms: int, atom: int) -> None:
     """Start a measurement of ``atoms`` atoms with this one picked."""
     session.measure(atoms)
     session.pick(atom)
 
 
-def _pick_colour(session: ProteinSession, parent: QWidget) -> None:
+def _pick_colour(session: WorkbenchSession, parent: QWidget) -> None:
     colour = QColorDialog.getColor(QColor(46, 200, 74), parent, "Colour")
     if colour.isValid():
         session.colour((colour.redF(), colour.greenF(), colour.blueF()))
 
 
-def _need_selection(menu: QMenu, session: ProteinSession) -> None:
+def _need_selection(menu: QMenu, session: WorkbenchSession) -> None:
     enabled = session.selected_count() > 0
     for action in menu.actions():
         action.setEnabled(enabled)
 
 
 def context_menu(
-    session: ProteinSession,
+    session: WorkbenchSession,
     atom: int,
     parent: QWidget,
     *,

@@ -25,23 +25,23 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
 from . import labels as labelling
-from .session import ProteinSession
+from .session import SessionSignals
 
 MEASURE = QColor(230, 70, 20)
 PICK_RADIUS = 9.0  # pixels
 
 
 class ProteinOverlay(QWidget):
-    def __init__(self, view, session: ProteinSession) -> None:
+    def __init__(self, view, signals: SessionSignals) -> None:
         super().__init__()
         self.view = view
-        self.session = session
+        self.session = signals.session
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         view.cameraMoved.connect(self.update)
-        session.measurementsChanged.connect(self.update)
-        session.sceneChanged.connect(self._labels_moved)
-        session.labelsChanged.connect(self._labels_moved)
+        signals.measurementsChanged.connect(self.update)
+        signals.sceneChanged.connect(self._labels_moved)
+        signals.labelsChanged.connect(self._labels_moved)
         self._labelled: tuple[np.ndarray, list[str]] | None = None
 
     def _labels_moved(self) -> None:

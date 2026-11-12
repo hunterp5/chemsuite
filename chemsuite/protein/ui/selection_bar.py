@@ -36,8 +36,9 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.protein.structure.select import SelectionError
+from chemsuite.protein.workspace.session import SET
 
-from .session import SET, ProteinSession
+from .session import SessionSignals
 
 #: the Select menu's quick picks: title, expression
 PICKS = (
@@ -69,9 +70,9 @@ _SYNTAX = (
 class SelectionBar(QWidget):
     selected = Signal()  # a selection was made from here
 
-    def __init__(self, session: ProteinSession, parent: QWidget | None = None) -> None:
+    def __init__(self, signals: SessionSignals, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.session = session
+        self.session = signals.session
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
@@ -85,8 +86,8 @@ class SelectionBar(QWidget):
         self.count.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         layout.addWidget(self.field, 1)
         layout.addWidget(self.count)
-        session.selectionChanged.connect(self._update_count)
-        session.proteinsChanged.connect(self._update_count)
+        signals.selectionChanged.connect(self._update_count)
+        signals.proteinsChanged.connect(self._update_count)
         self._update_count()
 
     def apply(self) -> bool:

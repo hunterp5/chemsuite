@@ -22,11 +22,13 @@ workbench runs on its own, with no table and so no :class:`LinkedRow`.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
+import numpy as np
+
 if TYPE_CHECKING:
-    from .session import ProteinSession
+    from chemsuite.protein.workspace.session import WorkbenchSession
 
 
 class LinkedRow(Protocol):
@@ -36,13 +38,18 @@ class LinkedRow(Protocol):
     #: the columns whose cells say what a row shows: an edit to one follows the row again
     columns: Collection[str]
 
-    def follow(self, session: ProteinSession, oid: int | None) -> bool:
+    def follow(self, session: WorkbenchSession, oid: int | None) -> bool:
         """Focus what row *oid* names in a protein *session* shows (its pose, or its ligand).
         False when it names nothing shown there."""
         ...
 
-    def missing(self, session: ProteinSession, oid: int | None) -> str:
+    def missing(self, session: WorkbenchSession, oid: int | None) -> str:
         """The protein row *oid* names when the document has no such protein, else ""."""
+        ...
+
+    def watch(self, callback: Callable[[np.ndarray], None]) -> Callable[[], None]:
+        """Call *callback* with the rows whose :attr:`columns` cells changed (a ligand moved
+        in the sketcher: the viewer follows its row again); returns a function that stops."""
         ...
 
     def relabel(self, protein: str, labels: Mapping[str, str]) -> Sequence[object]:

@@ -32,16 +32,16 @@ from PySide6.QtWidgets import QComboBox, QLabel, QSizePolicy, QSlider, QSpinBox,
 from chemsuite.app.shell.glyphs import glyph
 from chemsuite.protein.look.display import Display
 
-from .session import ProteinSession
+from .session import SessionSignals
 
 #: models shown per second while playing
 FPS = 10
 
 
 class ModelsBar(QToolBar):
-    def __init__(self, session: ProteinSession, parent=None) -> None:
+    def __init__(self, signals: SessionSignals, parent=None) -> None:
         super().__init__(parent)
-        self.session = session
+        self.session = signals.session
         self.setIconSize(QSize(15, 15))
         self.setMovable(False)
         self._glyphs: dict[QAction, str] = {}
@@ -76,8 +76,8 @@ class ModelsBar(QToolBar):
         self._timer = QTimer(self)
         self._timer.setInterval(1000 // FPS)
         self._timer.timeout.connect(self._tick)
-        session.proteinsChanged.connect(self.refresh)
-        session.sceneChanged.connect(self.refresh)
+        signals.proteinsChanged.connect(self.refresh)
+        signals.sceneChanged.connect(self.refresh)
         self._restyle()
         self.refresh()
 

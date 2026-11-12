@@ -154,7 +154,7 @@ def test_saved_selections_survive_by_uid(panel) -> None:
 def test_a_selection_only_changes_the_look(panel, qtbot) -> None:
     session = panel.session
     before = session.scene
-    with qtbot.waitSignal(session.lookChanged), qtbot.assertNotEmitted(session.sceneChanged):
+    with qtbot.waitSignal(panel.signals.lookChanged), qtbot.assertNotEmitted(panel.signals.sceneChanged):
         session.select_text("chain I")
     after = session.scene
     assert after.geometry is before.geometry and after.cartoon is before.cartoon
@@ -227,7 +227,7 @@ def test_clicks_in_the_view_select_atoms_residues_and_chains(panel) -> None:
 def test_show_hide_and_colour_act_on_the_selection(panel, qtbot) -> None:
     session = panel.session
     session.select_text("chain I")
-    with qtbot.waitSignal(session.sceneChanged):
+    with qtbot.waitSignal(panel.signals.sceneChanged):
         session.show_as(scene.SPACEFILL)
     shown = session.display("1ATP")
     chain_i = shown.structure.atom_chain == 1
@@ -286,7 +286,7 @@ def test_surface_transparency_changes_only_the_look(panel, qtbot) -> None:
     session.select_text("chain I")
     session.show_surface(True)
     assert session.scene.surface_look[:, 3] == pytest.approx(0.6)
-    with qtbot.assertNotEmitted(session.sceneChanged):
+    with qtbot.assertNotEmitted(panel.signals.sceneChanged):
         session.set_transparency(0.8)
     assert session.scene.surface_look[:, 3] == pytest.approx(0.2)
     menu = QMenu()
@@ -310,12 +310,12 @@ def test_label_layout_goes_front_to_back_and_skips_overlaps() -> None:
 
 
 def test_residues_and_atoms_are_labelled_and_kept_by_uid(panel, table, qtbot) -> None:
-    from chemsuite.protein.ui.session import ATOM_LABEL, RESIDUE_LABEL
+    from chemsuite.protein.workspace.session import ATOM_LABEL, RESIDUE_LABEL
 
     session = panel.session
     s = structure("1atp.cif.gz")
     session.select_text("chain E and resi 72")
-    with qtbot.waitSignal(session.labelsChanged):
+    with qtbot.waitSignal(panel.signals.labelsChanged):
         session.label(RESIDUE_LABEL)
     positions, texts = session.labelled()
     ca = np.flatnonzero(select(s, "chain E and resi 72 and name CA"))[0]
@@ -345,7 +345,7 @@ def test_residues_and_atoms_are_labelled_and_kept_by_uid(panel, table, qtbot) ->
 
 
 def test_the_overlay_draws_labels_without_overlaps(panel) -> None:
-    from chemsuite.protein.ui.session import ATOM_LABEL
+    from chemsuite.protein.workspace.session import ATOM_LABEL
 
     panel.view.resize(800, 600)
     panel.overlay.resize(800, 600)
@@ -592,7 +592,7 @@ def test_a_surface_is_built_in_the_background_and_a_stale_one_dropped(deferring)
     assert len(newest.triangles)
     runner.finish(0)  # the stale one arrives last: dropped
     assert session.scene.surface is newest  # nothing was redrawn
-    assert not panel.session.builder.busy()
+    assert not panel.builder.busy()
 
 
 def test_interactions_are_found_in_the_background(deferring) -> None:
@@ -611,7 +611,7 @@ def test_work_for_a_protein_that_went_is_ignored(deferring, table) -> None:
     assert len(runner.jobs) == 1
     table.undo()  # the protein is gone before its surface arrives
     runner.finish(0)
-    assert panel.session.displays == [] and not panel.session.builder.busy()
+    assert panel.session.displays == [] and not panel.builder.busy()
 
 
 def test_closing_the_viewer_cancels_its_work(deferring) -> None:
@@ -718,7 +718,7 @@ def test_focus_shows_the_pocket_and_fades_the_rest(panel, qtbot) -> None:
     session = panel.session
     s = structure("1atp.cif.gz")
     atp = int(s.residue_of[_atp_atom("N6")])
-    with qtbot.waitSignal(session.focusChanged):
+    with qtbot.waitSignal(panel.signals.focusChanged):
         session.focus("1ATP", atp)
     shown = session.display("1ATP")
     pocket = ~shown.ghost

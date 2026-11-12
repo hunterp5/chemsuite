@@ -37,7 +37,7 @@ class PocketCamera(QObject):
     def __init__(self, panel: ProteinPanel) -> None:
         super().__init__(panel)
         self.panel = panel
-        panel.session.focusChanged.connect(self.focus_changed)
+        panel.signals.focusChanged.connect(self.focus_changed)
 
     def watch(self, view) -> None:
         view.cameraMoved.connect(self.apply)

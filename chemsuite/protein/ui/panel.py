@@ -20,7 +20,7 @@ menu bar is :mod:`.menubar` (files, copying, selecting, display, ligand work, th
 selection field runs across the top; below, the proteins list beside the 3D view (with the
 models bar under it while a shown protein has several models). The sequence has a window of
 its own (the Sequence menu). Everything reads and changes one
-:class:`~.session.ProteinSession`.
+:class:`~.session.WorkbenchSession`.
 
 In the view a click selects an atom (on a cartoon, where no atom is drawn, its residue), a
 double-click the residue, Alt-click (Option) the chain; Shift adds and Ctrl (Cmd) toggles; a
@@ -56,21 +56,22 @@ from PySide6.QtWidgets import (
 
 from chemsuite.app.shell import graphics
 from chemsuite.app.widgets.panel import ToolPanel
-from chemsuite.core.table import Table
+from chemsuite.core.assets import AssetHost
 from chemsuite.molview.camera import Camera
 from chemsuite.protein.chem import ligands
 from chemsuite.protein.look import scene as scenes
 from chemsuite.protein.structure import io as protein_io
 from chemsuite.protein.structure.edit import EditError
+from chemsuite.protein.workspace.session import ADD, SET, TOGGLE, WorkbenchSession
 
 from . import menubar, menus
-from .builds import Run
+from .builds import Builder, Run
 from .host import LinkedRow
 from .models_bar import ModelsBar
 from .pocket import PocketCamera
 from .selection_bar import SelectionBar
 from .sequence_view import SequenceView, SequenceWindow
-from .session import ADD, SET, TOGGLE, ProteinSession
+from .session import SessionSignals
 from .tree import ProteinTree
 
 TOOL_ID = "protein"
@@ -89,9 +90,10 @@ ATOM, RESIDUE, CHAIN = "atom", "residue", "chain"
 class ProteinPanel(ToolPanel):
     def __init__(
         self,
-        table: Table,
+        host: AssetHost,
         parent: QWidget | None = None,
         *,
+        session: WorkbenchSession | None = None,
         current: Callable[[], int | None] | None = None,
         watch_current: Callable[[Callable[[int | None], None]], Callable[[], None]] | None = None,
         commands: menubar.Commands | None = None,
@@ -101,15 +103,22 @@ class ProteinPanel(ToolPanel):
         super().__init__(parent)
         self.tool_id = TOOL_ID
         self.linked = linked
-        columns = linked.columns if linked is not None else ()
-        self.session = ProteinSession(
-            table,
-            self,
-            run=run,
-            row_columns=columns,
-            relabel=linked.relabel if linked is not None else None,
-            count_named=linked.naming if linked is not None else None,
-        )
+        #: the panel made its session (no document keeps one for it): it closes it too
+        self._owns_session = session is None
+        if session is None:
+            session = WorkbenchSession(
+                host,
+                deferred=run is not None,
+                relabel=linked.relabel if linked is not None else None,
+                count_named=linked.naming if linked is not None else None,
+            )
+        self.session = session
+        #: the session's events as Qt signals, for this window's widgets
+        self.signals = SessionSignals(session, self)
+        #: builds the slow parts in the background while the window is open
+        self.builder = Builder(session, run, self) if run is not None else None
+        if self.builder is not None:
+            session.schedule = self.builder.schedule
         self.view = None
         self.overlay = None
         self._view_page: QWidget | None = None
@@ -121,9 +130,9 @@ class ProteinPanel(ToolPanel):
         self.pocket_camera = PocketCamera(self)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        self.selection_bar = SelectionBar(self.session)
+        self.selection_bar = SelectionBar(self.signals)
 
-        self.tree = ProteinTree(self.session)
+        self.tree = ProteinTree(self.signals)
         self.tree.focusRequested.connect(self.frame_selection)
         if REMOVE in self.commands:
             self.tree.removeRequested.connect(self.commands[REMOVE])
@@ -132,7 +141,7 @@ class ProteinPanel(ToolPanel):
         self.views = QStackedWidget()
         self.empty = self._empty_page(commands)
         self.views.addWidget(self.empty)
-        self.models_bar = ModelsBar(self.session)
+        self.models_bar = ModelsBar(self.signals)
         middle = QWidget()
         stack = QVBoxLayout(middle)
         stack.setContentsMargins(0, 0, 0, 0)
@@ -159,18 +168,20 @@ class ProteinPanel(ToolPanel):
         QShortcut(QKeySequence("]"), self, lambda: self.models_bar.step(1))
         frame = QShortcut(QKeySequence(Qt.Key.Key_F), self, lambda: self.frame_selection())
         frame.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)  # text fields keep "f"
-        self.session.sceneChanged.connect(self._redraw)
-        self.session.lookChanged.connect(self._relook)
-        self.session.proteinsChanged.connect(self._proteins_changed)
-        self.session.hovered.connect(self._hovered)
+        self.signals.sceneChanged.connect(self._redraw)
+        self.signals.lookChanged.connect(self._relook)
+        self.signals.proteinsChanged.connect(self._proteins_changed)
+        self.signals.hovered.connect(self._hovered)
         self._make_view()
         self._redraw()
         self._show_page()
         self._stop_watching = watch_current(self.follow_row) if watch_current else lambda: None
+        self._stop_rows: Callable[[], None] = lambda: None
         if current is not None:
             self.follow_row(current())
-            self.session.rowsEdited.connect(lambda oids: self._row_edited(current(), oids))
-            self.session.edited.connect(lambda: self.follow_row(current()))
+            if linked is not None:
+                self._stop_rows = linked.watch(lambda oids: self._row_edited(current(), oids))
+            self.signals.edited.connect(lambda: self.follow_row(current()))
 
         QWidget.setTabOrder(self.selection_bar.field, self.tree)
         QWidget.setTabOrder(self.tree, self.views)
@@ -274,7 +285,7 @@ class ProteinPanel(ToolPanel):
         self.view.atomDoubleClicked.connect(self._double_clicked)
         self.view.contextRequested.connect(self._context_menu)
         self.pocket_camera.watch(self.view)
-        self.overlay = ProteinOverlay(self.view, self.session)
+        self.overlay = ProteinOverlay(self.view, self.signals)
         page = QWidget()
         grid = QGridLayout(page)
         grid.setContentsMargins(0, 0, 0, 0)
@@ -422,12 +433,12 @@ class ProteinPanel(ToolPanel):
 
     def undo(self) -> str | None:
         """Undo the document's last step (an edit here, or in the table)."""
-        label = self.session.table.undo()
+        label = self.session.store.undo()
         self.status.setText(f"Undid {label}" if label else "")
         return label
 
     def redo(self) -> str | None:
-        label = self.session.table.redo()
+        label = self.session.store.redo()
         self.status.setText(f"Redid {label}" if label else "")
         return label
 
@@ -451,7 +462,7 @@ class ProteinPanel(ToolPanel):
     def sequence_window(self) -> SequenceWindow:
         """The Sequence window, made when first asked for."""
         if self._sequence_window is None:
-            window = SequenceWindow(self.session, self)
+            window = SequenceWindow(self.signals, self)
             window.strip.residueHovered.connect(self._sequence_hovered)
             for key in (QKeySequence.StandardKey.Delete, QKeySequence(Qt.Key.Key_Backspace)):
                 QShortcut(QKeySequence(key), window, self.delete_selection)
@@ -614,14 +625,23 @@ class ProteinPanel(ToolPanel):
             self._fitted = {d.id for d in self.session.displays if d.visible}
 
     def close_panel(self) -> None:
-        """Let go of the document: its window calls this when closed, then deletes the panel,
-        so a session left listening would fail on the next table change."""
+        """Let go of the session and the document: its window calls this when closed, then
+        deletes the panel, so nothing may still call into it. A session the document keeps
+        lives on, for the window to attach to when it opens again."""
         self._stop_watching()
         self._stop_watching = lambda: None
+        self._stop_rows()
+        self._stop_rows = lambda: None
         if self._sequence_window is not None:
             self._sequence_state = self._sequence_window.state()
             self._sequence_window.hide()
-        self.session.close()
+        self.signals.close()
+        if self.builder is not None:
+            self.builder.cancel_all()
+            if self.session.schedule == self.builder.schedule:
+                self.session.schedule = None
+        if self._owns_session:
+            self.session.close()
 
     def closeEvent(self, event) -> None:
         self.close_panel()

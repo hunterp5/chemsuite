@@ -49,8 +49,9 @@ from chemsuite.protein.structure.sequence import (
     chain_sequences,
     kind_rows,
 )
+from chemsuite.protein.workspace.session import ADD, SET, TOGGLE
 
-from .session import ADD, SET, TOGGLE, ProteinSession
+from .session import SessionSignals
 
 _PAD = 4
 _EVERY = 10  # a residue number above every tenth letter
@@ -80,9 +81,9 @@ class SequenceStrip(QWidget):
     residueHovered = Signal(str, int)  # protein, residue (-1: none)
     cursorMoved = Signal(QRect)  # where the keyboard's cursor is now (to scroll to it)
 
-    def __init__(self, session: ProteinSession, parent: QWidget | None = None) -> None:
+    def __init__(self, signals: SessionSignals, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.session = session
+        self.session = signals.session
         self.setMouseTracking(True)
         self.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         self.rows: list[_Row] = []
@@ -93,8 +94,8 @@ class SequenceStrip(QWidget):
         self._cursor: tuple[int, int] | None = None  # the keyboard's row and position
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._press_mode = SET
-        session.proteinsChanged.connect(self.reload)
-        session.selectionChanged.connect(self.update)
+        signals.proteinsChanged.connect(self.reload)
+        signals.selectionChanged.connect(self.update)
         self.reload()
 
     # layout
@@ -349,9 +350,9 @@ def _mode(modifiers) -> str:
 
 
 class SequenceView(QScrollArea):
-    def __init__(self, session: ProteinSession, parent: QWidget | None = None) -> None:
+    def __init__(self, signals: SessionSignals, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.strip = SequenceStrip(session)
+        self.strip = SequenceStrip(signals)
         self.setWidget(self.strip)
         self.setWidgetResizable(False)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -376,10 +377,10 @@ class SequenceWindow(QWidget):
     pointer. A window of the viewer's own (it closes with it); its rows and place are saved
     with the viewer."""
 
-    def __init__(self, session: ProteinSession, parent: QWidget) -> None:
+    def __init__(self, signals: SessionSignals, parent: QWidget) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("Sequence")
-        self.view = SequenceView(session)
+        self.view = SequenceView(signals)
         self.status = QLabel()
         self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout = QVBoxLayout(self)

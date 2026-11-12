@@ -38,8 +38,7 @@ from chemsuite.protein.look.display import Build, Display
 
 if TYPE_CHECKING:
     from chemsuite.app.shell.jobs import Job
-
-    from .session import ProteinSession
+    from chemsuite.protein.workspace.session import WorkbenchSession
 
 #: runs ``work(job)`` in the background and ``on_done(result)`` on the GUI thread
 Run = Callable[[str, Callable[[Any], Any], Callable[[Any], None]], "Job | None"]
@@ -52,8 +51,8 @@ TITLES = {
 
 
 class Builder(QObject):
-    def __init__(self, session: ProteinSession, run: Run) -> None:
-        super().__init__(session)
+    def __init__(self, session: WorkbenchSession, run: Run, parent: QObject) -> None:
+        super().__init__(parent)
         self.session = session
         self._run = run
         self._running: dict[tuple[str, str], tuple[Build, object, Job]] = {}
