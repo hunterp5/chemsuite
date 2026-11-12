@@ -82,9 +82,15 @@ is usually better than an exemption.
 - **3D is checked once at start-up** (`chemsuite/app/shell/graphics.py`): anything that draws 3D
   reads `graphics.problem()` to grey itself out with the reason instead of failing when
   opened, and a view that fails when drawing sets it.
+- **One container for every file** (`core/container.py`): SQLite with a `meta` table and an
+  optional `assets` table, saved atomically, opened only when its version is not newer than
+  the reader's. The `.csd` adds its column chunks (`core/document.py`).
 - **No QtWebEngine**: PySide6-Essentials only, to keep the install small. (PLAN.md §1)
-- **Assets beside the rows.** A document holds immutable assets (`core/table/assets.py`), such
-  as proteins, changed only by `PutAsset` ops so they undo with the table. Rows name an asset in
+- **Assets beside the rows.** A document holds immutable assets (`core/assets.py`), such
+  as proteins, in an `AssetStore`, changed only by `PutAsset` ops. Inside a table document the
+  `Table` holds the store and runs its ops, so they share the table's `History`
+  (`core/history.py`) and one undo stack; alone (the protein workspace without a table) the
+  store keeps its own history. Readers see either through the `AssetHost` protocol. Rows name an asset in
   a link column (`LINK_COLUMNS`: protein → `Protein`); copying rows to a new document takes the
   assets they name. Adding or removing a protein and its ligand rows is one undo step
   (`add_rows`/`remove_rows` with `extra_ops`).

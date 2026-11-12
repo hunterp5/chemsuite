@@ -16,11 +16,12 @@
 
 """The compound table core: typed columns, view (filter + sort), undoable edits, events."""
 
-from .assets import Asset, Packable, PutAsset
+from chemsuite.core.assets import Asset, AssetStore, Packable, PutAsset
+from chemsuite.core.history import History
+
 from .columns import NUMBER, TEXT, Column, NumberColumn, TextColumn
 from .events import AboutToChange, AssetsChanged, Changed
 from .filters import CategoryFilter, Filter, OidFilter, RangeFilter, TextFilter
-from .history import History
 from .style import ColourRule, ColumnStyle
 from .table import SortKey, Table
 
@@ -29,6 +30,7 @@ __all__ = [
     "TEXT",
     "AboutToChange",
     "Asset",
+    "AssetStore",
     "AssetsChanged",
     "CategoryFilter",
     "Changed",

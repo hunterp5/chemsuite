@@ -183,3 +183,56 @@ def test_an_older_chemsuite_refuses_a_document_with_assets(tmp_path, monkeypatch
     monkeypatch.setattr(document, "VERSION", 1)  # as a version from before assets
     with pytest.raises(DocumentError, match="newer chemsuite"):
         load_document(path)
+
+
+# -- an asset store standing alone (a protein workspace with no table) ---------------------------
+
+
+def test_a_store_alone_undoes_its_edits_and_tells_its_listeners() -> None:
+    from chemsuite.core.assets import AssetStore
+
+    store = AssetStore()
+    told: list[tuple[str, ...]] = []
+    stop = store.subscribe_assets(told.append)
+    first = _protein()
+    store.edit("Open Protein", [PutAsset("1ABC", None, first)])
+    assert store.assets["1ABC"] is first and told == [("1ABC",)]
+    assert store.unique_asset_id("1ABC") == "1ABC-2"
+    assert store.undo() == "Open Protein" and "1ABC" not in store.assets
+    assert store.redo() == "Open Protein" and store.assets["1ABC"] is first
+    assert len(told) == 3
+    stop()
+    store.edit("Remove", [PutAsset("1ABC", first, None)])
+    assert len(told) == 3 and not store.assets
+
+
+def test_a_failed_edit_leaves_the_store_as_it_was() -> None:
+    from chemsuite.core.assets import AssetStore
+    from chemsuite.core.history import Op
+
+    class Broken(Op):
+        def apply(self, target) -> None:
+            raise RuntimeError("broken")
+
+        def inverse(self) -> Op:
+            return self
+
+    store = AssetStore()
+    told: list = []
+    store.subscribe_assets(told.append)
+    with pytest.raises(RuntimeError):
+        store.edit("Both", [PutAsset("1ABC", None, _protein()), Broken()])
+    assert not store.assets and not told and not store.history.can_undo
+
+
+def test_a_table_tells_asset_listeners_only_of_asset_changes() -> None:
+    table = _table()
+    told: list[tuple[str, ...]] = []
+    stop = table.subscribe_assets(told.append)
+    table.add_rows({"ID": ["c"]})
+    table.edit("Open Protein", [PutAsset("1ABC", None, _protein())])
+    table.undo()
+    assert told == [("1ABC",), ("1ABC",)]
+    stop()
+    table.redo()
+    assert len(told) == 2

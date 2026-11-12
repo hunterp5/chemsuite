@@ -38,12 +38,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from types import MappingProxyType
 
 import numpy as np
 
+from chemsuite.core.assets import Asset, AssetListener, AssetStore
+from chemsuite.core.history import Command, History, Op
+
 from . import events as ev
-from .assets import Asset
 from .columns import (
     NUMBER,
     REACTION,
@@ -63,13 +64,10 @@ from .columns import (
 )
 from .filters import Filter
 from .history import (
-    Command,
     DeleteRows,
-    History,
     InsertColumn,
     InsertRows,
     MoveColumn,
-    Op,
     PutCells,
     RemoveColumn,
     RenameColumn,
@@ -101,8 +99,9 @@ class Table:
         self._depth = 0
         self._pending: list[ev.Change] = []
         self._pending_structural = False
-        self._assets: dict[str, Asset] = {}
         self.history = history or History()
+        #: the document's assets; their ops run here, so they share the table's history
+        self._asset_store = AssetStore(history=self.history)
 
     @classmethod
     def from_columns(
@@ -145,7 +144,7 @@ class Table:
             next_oid=self._next_oid,
         )
         copy._sort = self._sort
-        copy._assets = dict(self._assets)  # assets are immutable: sharing them is safe
+        copy._asset_store = self._asset_store.copy()  # assets are immutable: shared
         return copy
 
     def rows_copy(self, slots: np.ndarray) -> Table:
@@ -167,7 +166,7 @@ class Table:
             if column in self._columns
             for text in self._columns[column].displays(slots)
         }
-        copy._assets = {i: a for i, a in self._assets.items() if (a.kind, i) in named}
+        copy._asset_store = self._asset_store.copy(lambda a: (a.kind, a.id) in named)
         return copy
 
     @property
@@ -734,19 +733,27 @@ class Table:
     @property
     def assets(self) -> Mapping[str, Asset]:
         """The document's assets by id, in the order they were added (read only)."""
-        return MappingProxyType(self._assets)
+        return self._asset_store.assets
 
     def set_assets(self, assets: Sequence[Asset]) -> None:
         """Install assets read from a file. Not undoable, like :meth:`from_columns`."""
-        self._assets = {asset.id: asset for asset in assets}
+        self._asset_store.set_assets(assets)
 
     def unique_asset_id(self, wanted: str) -> str:
         """*wanted*, or ``wanted-2``, ``wanted-3``… if an asset already has that id."""
-        candidate, n = wanted, 1
-        while candidate in self._assets:
-            n += 1
-            candidate = f"{wanted}-{n}"
-        return candidate
+        return self._asset_store.unique_asset_id(wanted)
+
+    def subscribe_assets(self, listener: AssetListener) -> Callable[[], None]:
+        """Tell *listener* the ids of assets added, replaced or removed (an edit, its undo or
+        redo); returns a function that unregisters it."""
+
+        def on_event(event: ev.TableEvent) -> None:
+            if isinstance(event, ev.Changed):
+                ids = [i for c in event.changes if isinstance(c, ev.AssetsChanged) for i in c.ids]
+                if ids:
+                    listener(tuple(dict.fromkeys(ids)))
+
+        return self.subscribe(on_event)
 
     # -- undo / redo -----------------------------------------------------------------------------
     def undo(self) -> str | None:
@@ -868,10 +875,7 @@ class Table:
         ops.append(PutCells(name, oids, fitted, current.take(slots)))
 
     def _put_asset(self, asset_id: str, asset: Asset | None) -> None:
-        if asset is None:
-            self._assets.pop(asset_id, None)
-        else:
-            self._assets[asset_id] = asset
+        self._asset_store.store(asset_id, asset)
         self._pending.append(ev.AssetsChanged((asset_id,)))
 
     def _insert_rows(self, oids: np.ndarray, cells: Mapping[str, Column]) -> None:

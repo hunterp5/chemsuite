@@ -30,6 +30,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from chemsuite.core.assets import AssetsChanged
+
 
 @dataclass(frozen=True, eq=False)
 class RowsInserted:
@@ -83,13 +85,6 @@ class ColumnStyleChanged:
     """Precision, the log10 marker or colours changed (cells may read differently)."""
 
     name: str
-
-
-@dataclass(frozen=True)
-class AssetsChanged:
-    """Assets were added, replaced or removed (see :mod:`.assets`)."""
-
-    ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)

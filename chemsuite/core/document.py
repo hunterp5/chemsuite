@@ -22,11 +22,12 @@ sort order and each column's style (precision, log10 marker, colours). Columns a
 compressed chunks of 64k rows, so saving and opening stream instead of building one huge blob,
 and a later version can read single columns lazily.
 
-Saving writes a complete new file next to the target and swaps it into place, so a crash or a
-full disk never damages the previous version. ``extras`` is a JSON object for state owned by
-the application (filters, named lists, plots); the core stores it without interpreting it.
+The file is a container (:mod:`chemsuite.core.container`): saving writes a complete new file and
+swaps it into place, and opening refuses only newer versions. ``extras`` is a JSON object for
+state owned by the application (filters, named lists, plots); the core stores it without
+interpreting it.
 
-The table's assets (proteins, see :mod:`chemsuite.core.table.assets`) go in their own table,
+The table's assets (proteins, see :mod:`chemsuite.core.assets`) go in their own table,
 compressed. A document with assets is format 2 and one without is still format 1, so documents
 without proteins keep opening in older versions, and an older version refuses a document with
 proteins (rather than open it and lose them on the next save).
@@ -35,10 +36,7 @@ proteins (rather than open it and lose them on the next save).
 from __future__ import annotations
 
 import json
-import os
-import sqlite3
 import struct
-import tempfile
 import zlib
 from collections.abc import Mapping
 from pathlib import Path
@@ -47,8 +45,10 @@ from typing import Any
 import numpy as np
 
 import chemsuite
+from chemsuite.core import container
+from chemsuite.core.container import ContainerError
 from chemsuite.core.jobs import CancelToken, Progress, check
-from chemsuite.core.table import NUMBER, TEXT, Asset, ColumnStyle, Table
+from chemsuite.core.table import NUMBER, TEXT, ColumnStyle, Table
 from chemsuite.core.table.columns import (
     REACTION,
     STRUCTURE,
@@ -68,23 +68,20 @@ VERSION = 2  # the newest format this version reads
 PLAIN_VERSION = 1  # written when a document has no assets
 SUFFIX = ".csd"
 CHUNK_ROWS = 65_536
-#: Level 1 is ~5x faster than the default and only slightly larger on chemistry data.
-_ZLIB_LEVEL = 1
+_ZLIB_LEVEL = container.ZLIB_LEVEL
+WHAT = "chemsuite document"
 
-_SCHEMA = """
-CREATE TABLE meta (key TEXT PRIMARY KEY, value BLOB NOT NULL);
-CREATE TABLE columns (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+_SCHEMA = (
+    container.META
+    + """CREATE TABLE columns (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
                       kind TEXT NOT NULL);
 CREATE TABLE chunks (position INTEGER NOT NULL, chunk INTEGER NOT NULL, data BLOB NOT NULL,
                      PRIMARY KEY (position, chunk));
 """
-_ASSETS = """
-CREATE TABLE assets (position INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL,
-                     name TEXT NOT NULL, meta TEXT NOT NULL, data BLOB NOT NULL);
-"""
+)
 
 
-class DocumentError(ValueError):
+class DocumentError(ContainerError):
     """The file is not a chemsuite document, is damaged, or needs a newer chemsuite."""
 
 
@@ -99,21 +96,9 @@ def save_document(
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> None:
-    path = Path(path)
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    os.close(fd)
-    tmp = Path(tmp_name)
-    try:
-        connection = sqlite3.connect(tmp)
-        try:
-            _write(connection, table, dict(extras or {}), progress, cancel)
-            connection.commit()
-        finally:
-            connection.close()
-        os.replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
+    container.atomic_save(
+        path, lambda connection: _write(connection, table, dict(extras or {}), progress, cancel)
+    )
 
 
 def load_document(
@@ -123,20 +108,9 @@ def load_document(
     cancel: CancelToken | None = None,
 ) -> tuple[Table, dict[str, Any]]:
     """Return ``(table, extras)``. Raises :class:`DocumentError` for unreadable files."""
-    path = Path(path)
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    connection = sqlite3.connect(path)  # read only by convention; never written here
-    try:
-        return _read(connection, progress, cancel)
-    except sqlite3.DatabaseError as err:
-        raise DocumentError(f"{path.name} is not a chemsuite document ({err})") from err
-    except (KeyError, ValueError, TypeError, zlib.error, struct.error) as err:
-        if isinstance(err, DocumentError):
-            raise
-        raise DocumentError(f"{path.name} is damaged ({err!r})") from err
-    finally:
-        connection.close()
+    return container.read_container(
+        path, lambda connection: _read(connection, progress, cancel), error=DocumentError, what=WHAT
+    )
 
 
 # -- writing ------------------------------------------------------------------------------------
@@ -162,7 +136,7 @@ def _write(connection, table, extras, progress, cancel) -> None:
         ).encode(),
         "extras": json.dumps(extras).encode(),
     }
-    connection.executemany("INSERT INTO meta VALUES (?, ?)", meta.items())
+    container.write_meta(connection, meta)
     names = table.column_names
     for position, name in enumerate(names):
         check(cancel)
@@ -176,21 +150,7 @@ def _write(connection, table, extras, progress, cancel) -> None:
             )
         if progress is not None:
             progress(position + 1, len(names))
-    if assets:
-        connection.executescript(_ASSETS)
-    for position, asset in enumerate(assets):
-        check(cancel)
-        connection.execute(
-            "INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                position,
-                asset.id,
-                asset.kind,
-                asset.name,
-                json.dumps(dict(asset.meta)),
-                zlib.compress(asset.data(), _ZLIB_LEVEL),
-            ),
-        )
+    container.write_assets(connection, assets, cancel=cancel)
 
 
 def _encode(column: Column) -> bytes:
@@ -240,14 +200,8 @@ def _unpack(data: bytes) -> list[bytes]:
 
 
 def _read(connection, progress, cancel) -> tuple[Table, dict[str, Any]]:
-    meta = dict(connection.execute("SELECT key, value FROM meta"))
-    if meta.get("format") != FORMAT.encode():
-        raise DocumentError("not a chemsuite document")
-    version = int(meta["version"])
-    if version > VERSION:
-        raise DocumentError(
-            f"this document was saved by a newer chemsuite (format {version}); please update"
-        )
+    meta = container.read_meta(connection)
+    version = container.check_version(meta, FORMAT, VERSION, error=DocumentError, what=WHAT)
     rows = int(meta["rows"])
     oids = np.frombuffer(zlib.decompress(meta["oids"]), dtype="<i8").astype(np.int64)
     if len(oids) != rows:
@@ -272,25 +226,13 @@ def _read(connection, progress, cancel) -> tuple[Table, dict[str, Any]]:
             columns[name].style = ColumnStyle.from_json(style).for_kind(columns[name].kind)
     table = Table.from_columns(columns, oids=oids, next_oid=int(meta["next_oid"]))
     if version >= 2:
-        table.set_assets(_read_assets(connection))
+        table.set_assets(container.read_assets(connection, error=DocumentError))
     sort = [(name, bool(asc)) for name, asc in json.loads(meta.get("sort", b"[]"))]
     if sort:
         table.set_sort(sort)
     table.history.clear()
     table.history.mark_clean()
     return table, json.loads(meta.get("extras", b"{}"))
-
-
-def _read_assets(connection) -> list[Asset]:
-    rows = connection.execute("SELECT id, kind, name, meta, data FROM assets ORDER BY position")
-    assets = []
-    for asset_id, kind, name, meta, data in rows:
-        facts = json.loads(meta)
-        if not isinstance(facts, dict):
-            raise DocumentError(f"damaged document: asset {asset_id!r}")
-        facts = {str(k): str(v) for k, v in facts.items()}
-        assets.append(Asset(asset_id, kind, name, zlib.decompress(data), facts))
-    return assets
 
 
 def _decode(kind: str, sections: list[bytes]) -> Column:

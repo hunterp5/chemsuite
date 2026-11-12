@@ -44,11 +44,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from chemsuite.core.history import Op
 from chemsuite.core.lists import RowLists
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import REACTION, STRUCTURE, Column, StructureColumn
-from chemsuite.core.table.history import Op
 from chemsuite.plotting.data import scope_oids
 
 from ..shell.jobs import QUEUE, Job
