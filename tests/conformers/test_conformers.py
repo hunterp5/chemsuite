@@ -29,12 +29,12 @@ from chemsuite.conformers.etkdg import (
     generate_conformers,
 )
 from chemsuite.core.depict import depiction_mol
-from chemsuite.core.io.sdf import write_sdf
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.mols import mol_from_blob, mol_to_blob
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import StructureColumn
 from chemsuite.descriptors.compute import compute_chunk
+from chemsuite.io.sdf import write_sdf
 
 FLEXIBLE = "CCCCCCCCO"
 

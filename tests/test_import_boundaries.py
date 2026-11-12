@@ -36,6 +36,7 @@ PACKAGE = Path(__file__).resolve().parents[1] / "chemsuite"
 # Packages that must stay free of Qt and of the GUI shell.
 QT_FREE = (
     "core",
+    "io",
     "descriptors",
     "plotting",
     "conformers",
@@ -97,11 +98,9 @@ def test_qt_free_packages_do_not_import_qt_or_the_app() -> None:
     assert not offenders, "Qt-free package imports Qt or the GUI:\n" + "\n".join(offenders)
 
 
-#: Domain packages sit above core: core never imports them. core.io writes reaction files laid
-#: out by the sketcher's model, so it may import sketch (it moves above both in the planned
-#: chemsuite/io).
+#: Domain packages sit above core: core never imports them (chemsuite.io, which reads and
+#: writes files, sits above core and the sketcher, whose model lays out reactions it writes).
 DOMAIN = tuple(p for p in QT_FREE if p != "core")
-CORE_EXCEPTIONS = {"io": ("chemsuite.sketch",)}
 
 
 def _offenders(paths, forbidden) -> list[str]:
@@ -115,10 +114,8 @@ def _offenders(paths, forbidden) -> list[str]:
 
 def test_core_imports_no_domain_package() -> None:
     offenders = []
+    forbidden = [f"chemsuite.{p}" for p in DOMAIN]
     for path in sorted((PACKAGE / "core").rglob("*.py")):
-        sub = path.relative_to(PACKAGE / "core").parts[0]
-        allowed = CORE_EXCEPTIONS.get(sub, ())
-        forbidden = [f"chemsuite.{p}" for p in DOMAIN if f"chemsuite.{p}" not in allowed]
         offenders += _offenders([path], forbidden)
     assert not offenders, "core imports a package above it:\n" + "\n".join(offenders)
 
@@ -135,12 +132,14 @@ def test_the_app_never_imports_a_tool() -> None:
 
 
 def test_importing_core_does_not_load_qt() -> None:
-    """Catches indirect imports the static scan cannot see (e.g. via a third-party module)."""
+    """Catches indirect imports the static scan cannot see (e.g. via a third-party module).
+    Covers core and the file formats above it."""
     code = (
         "import pkgutil, importlib, sys\n"
-        "import chemsuite.core as core\n"
-        "for m in pkgutil.walk_packages(core.__path__, core.__name__ + '.'):\n"
-        "    importlib.import_module(m.name)\n"
+        "import chemsuite.core, chemsuite.io\n"
+        "for package in (chemsuite.core, chemsuite.io):\n"
+        "    for m in pkgutil.walk_packages(package.__path__, package.__name__ + '.'):\n"
+        "        importlib.import_module(m.name)\n"
         "bad = sorted(n for n in sys.modules if n.split('.')[0] in ('PySide6', 'pyqtgraph'))\n"
         "print(','.join(bad))\n"
     )

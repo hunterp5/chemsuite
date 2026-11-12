@@ -25,19 +25,13 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from chemsuite.core.io import sdf as sdf_io
-from chemsuite.core.io.formats import UnsupportedFormat, detect_encoding, split_suffix
-from chemsuite.core.io.load import (
-    TableBuilder,
-    load_table,
-    parse_pending_structures,
-    save_table,
-)
 from chemsuite.core.jobs.parallel import process_pool
 from chemsuite.core.table import NUMBER, TEXT, Table
 from chemsuite.core.table.columns import STRUCTURE, StructureColumn
-
-from .conftest import DRUGS
+from chemsuite.io import sdf as sdf_io
+from chemsuite.io.formats import UnsupportedFormat, detect_encoding, split_suffix
+from chemsuite.io.load import TableBuilder, load_table, parse_pending_structures, save_table
+from tests.core.conftest import DRUGS
 
 
 def all_cells(table: Table) -> dict[str, list[str]]:
@@ -231,7 +225,7 @@ def test_failed_save_keeps_the_previous_file(tmp_path: Path, monkeypatch) -> Non
     out.write_text("old\n", encoding="utf-8")
     table = Table()
     table.add_rows({"A": ["1"]})
-    from chemsuite.core.io import delimited
+    from chemsuite.io import delimited
 
     def boom(*args, **kwargs):
         raise OSError("disk full")
@@ -280,7 +274,7 @@ def test_parse_pending_structures_serial_and_parallel() -> None:
 
 
 def test_parse_skips_rows_edited_meanwhile(monkeypatch) -> None:
-    from chemsuite.core.io import load
+    from chemsuite.io import load
 
     table = Table()
     table.add_rows({"S": StructureColumn.from_texts(["CCO", "CCN"])}, undoable=False)

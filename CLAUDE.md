@@ -23,10 +23,18 @@ Read `docs/ARCHITECTURE.md` before structural changes. Tools use the app only th
 budget is full: write explicit code. Never raise a budget or widen an allowlist to make a
 change pass without asking the user: add a `ToolContext` helper or split the file instead.
 
-- **Qt-free packages** (`core`, `analysis`, `sketch`, `protein`, `ionisation`, …) never import
-  Qt or the app (`tests/test_import_boundaries.py`).
+- **Qt-free packages** (`core`, `analysis`, `sketch`, `protein` outside `protein/ui`,
+  `ionisation`, …) never import Qt or the app (`tests/test_import_boundaries.py`).
+- **The Protein Workbench is a subproject** (`chemsuite/protein`): Qt-free `structure`, `chem`
+  and `look`, and the Qt `ui`. `protein/ui` never imports `app.document`, `app.table` or a
+  tool; it reaches the current row through the `LinkedRow` it is handed. Only the bridge,
+  `tools/protein`, knows both the table and the workbench.
+- **Move modules with `scripts/move_modules.py`** (a moves file of `old new` lines): it runs
+  `git mv` and rewrites imports, dotted names and paths everywhere. Then `ruff check --fix`,
+  `ruff format`, and the full suite.
 - **3D is QRhi only**: any new 3D view is a `QRhiWidget` (the protein view is on the `RhiView`
-  base), never `QOpenGLWidget`. Shaders are LF-only and hashed; compiled `.qsb` files are
+  base in `app/render3d`), never `QOpenGLWidget`. Shaders are LF-only and hashed, in a
+  `shaders` folder per package (`app/render3d`, `protein/ui`); compiled `.qsb` files are
   checked in and rebuilt only with `scripts/build_shaders.py`.
 - **Per-row tools keep finished rows on cancel**: the core raises `Cancelled(partial)`, the
   dialog passes `keep_partial=True` to `ctx.run`. Not for whole-dataset results (clustering,
@@ -44,8 +52,10 @@ changes.
 - Run only the tests that cover what changed: the test file(s) for the touched module, plus
   any test that exercises the changed behaviour (`grep -rl <name> tests` finds them). Use
   `-k` to narrow further while iterating.
-- Qt-free code (`chemsuite/core`, `analysis`, `sketch`, `protein`): its own `tests/<package>/…`
-  file. App code: the matching `tests/app/test_*_ui.py` / `test_*.py` file.
+- Tests mirror the code: `chemsuite/<package>/<sub>/x.py` → `tests/<package>/<sub>/test_x*.py`
+  (Qt-free code under `tests/core`, `tests/protein/structure`, …; app code under
+  `tests/app/<shell|table|document|…>`; a tool under `tests/tools/<tool>`; the workbench UI
+  under `tests/protein/ui`). GUI test folders share `tests/gui.py` through their conftest.
 - Changed imports between packages → also run `tests/test_import_boundaries.py`.
 - Run the full suite only for broad or risky changes (shared infrastructure such as
   `core/table`, `jobs`, document save/load, the renderer, cross-cutting refactors), or right

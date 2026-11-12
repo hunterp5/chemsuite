@@ -17,7 +17,7 @@
 """CSV/TSV and SMILES-list files: text-first reading and streaming writing.
 
 Structures in a tabular file are loaded as text and parsed afterwards (in parallel, see
-:func:`chemsuite.core.io.load.parse_pending_structures`), so a 200k-row CSV opens as fast as the
+:func:`chemsuite.io.load.parse_pending_structures`), so a 200k-row CSV opens as fast as the
 text can be read.
 """
 

@@ -49,13 +49,6 @@ from PySide6.QtWidgets import (
 from chemsuite.analysis.structure_search import StructureQuery
 from chemsuite.core.document import SUFFIX as DOCUMENT_SUFFIX
 from chemsuite.core.document import load_document, save_document
-from chemsuite.core.io.load import (
-    apply_parsed,
-    load_table,
-    parse_chunks,
-    pending_structure_chunks,
-    save_table,
-)
 from chemsuite.core.lists import EXTRAS_KEY as LISTS_KEY
 from chemsuite.core.lists import RowLists
 from chemsuite.core.logbook import audit
@@ -66,6 +59,13 @@ from chemsuite.core.structure_input import molblock_of, read_structure
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import REACTION, STRUCTURE
+from chemsuite.io.load import (
+    apply_parsed,
+    load_table,
+    parse_chunks,
+    pending_structure_chunks,
+    save_table,
+)
 
 from ..shell.commands import apply_shortcuts, register
 from ..shell.error_report import show_log_folder
@@ -1300,9 +1300,9 @@ class MainWindow(QMainWindow):
         """Open the sketcher on one reaction cell; OK writes it back (one undo step). A cell
         whose text is not a valid reaction opens with that text in an inline editor instead."""
         from chemsuite.app.sketcher import SketcherDialog
-        from chemsuite.core.io.rdf import rxn_blocks
         from chemsuite.core.reactions import parse_reaction
         from chemsuite.core.table.columns import ReactionColumn
+        from chemsuite.io.rdf import rxn_blocks
 
         table = self.workspace.table
         column = table.column(name)

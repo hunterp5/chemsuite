@@ -489,7 +489,7 @@ class ParsedColumn(Column):
 
     @classmethod
     def from_texts(cls, texts: Sequence[str]):
-        """Unparsed cells (parse later, see :mod:`chemsuite.core.io.load`)."""
+        """Unparsed cells (parse later, see :mod:`chemsuite.io.load`)."""
         clean = [text_of(t) for t in texts]
         return cls(np.full(len(clean), None, dtype=object), object_array(clean))
 

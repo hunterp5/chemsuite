@@ -236,7 +236,7 @@ class ExportConformersDialog(ToolDialog):
         QDialog.accept(self)
 
     def export(self, path: Path):
-        from chemsuite.core.io.sdf import write_sdf
+        from chemsuite.io.sdf import write_sdf
 
         ctx = self.ctx
         oids = self.rows.oids()

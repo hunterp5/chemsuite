@@ -28,10 +28,9 @@ from pathlib import Path
 import pytest
 
 from chemsuite.core.document import load_document, save_document
-from chemsuite.core.io.load import load_table, parse_pending_structures, save_table
 from chemsuite.core.jobs.parallel import process_pool
-
-from .conftest import DRUGS, molblock, sdf_record
+from chemsuite.io.load import load_table, parse_pending_structures, save_table
+from tests.core.conftest import DRUGS, molblock, sdf_record
 
 RECORDS = 20_000
 pytestmark = pytest.mark.bench

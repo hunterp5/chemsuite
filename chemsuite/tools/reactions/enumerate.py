@@ -248,7 +248,7 @@ class EnumerateDialog(ToolDialog):
 
 def load_blocks(path: Path) -> list[str]:
     """The distinct structures of the first structure column in *path*, as text."""
-    from chemsuite.core.io.load import load_table
+    from chemsuite.io.load import load_table
 
     table = load_table(path)
     name = next(

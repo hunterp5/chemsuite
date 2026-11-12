@@ -105,8 +105,8 @@ def copy_reactions(reactions: Sequence[object | None], fmt: str) -> str:
     drawing); several reactions copy as an RD file's text. An image copies the first.
     """
     from chemsuite.core.depict import render_reaction_png
-    from chemsuite.core.io.rdf import rxn_blocks
     from chemsuite.core.reactions import reaction_smiles, reaction_to_blob
+    from chemsuite.io.rdf import rxn_blocks
 
     rxns = [r for r in reactions if r is not None]
     title = dict(REACTION_FORMATS)[fmt]
