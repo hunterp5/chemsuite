@@ -29,6 +29,8 @@ elsewhere highlights the matching points here.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from concurrent.futures import Executor
 from pathlib import Path
 
 import numpy as np
@@ -50,6 +52,7 @@ from chemsuite.core.table import Changed, Table
 from chemsuite.core.table.columns import STRUCTURE, TEXT
 from chemsuite.plotting.data import shown_oids
 from chemsuite.plotting.stats import AGGREGATES
+from chemsuite.sar.constellation import SUMMARIES
 
 from ..shell import graphics
 from ..shell.glyphs import glyph
@@ -64,8 +67,10 @@ from .cards import (
     PinnedCards,
     pinned_size,
 )
-from .controls import KINDS, KINDS_3D, STATE_KEYS, PlotControls
-from .renderers import RENDERERS, Hover, PlotSpec
+from .constellation import ConstellationRenderer, CoreFinder, Runner, core_image
+from .controls import CONSTELLATION, KINDS, KINDS_3D, STATE_KEYS, PlotControls
+from .renderers import RENDERERS
+from .spec import Hover, PlotSpec
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
 
 #: what the first mode button does and looks like, in 2D and in 3D
@@ -82,6 +87,8 @@ REBUILD_DELAY_MS = 150
 AXIS_MARGINS = (6, 6, 10, 6)
 
 
+#: what draws each 2D kind
+DRAWN_BY = {**RENDERERS, CONSTELLATION: ConstellationRenderer}
 PlotOptions = OptionsPopup  # the plot's options popup
 
 
@@ -95,6 +102,9 @@ class PlotPanel(ToolPanel):
         images: ImageProvider | None = None,
         kind: str = "scatter",
         parent: QWidget | None = None,
+        *,
+        run: Runner | None = None,
+        workers: Callable[[int], Executor | None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.table = table
@@ -102,6 +112,9 @@ class PlotPanel(ToolPanel):
         self._images = images
         self._origin = f"plot:{id(self)}"
         self._last_axes: tuple | None = None
+        #: finds a constellation's cores (in the background with *run*)
+        self.cores = CoreFinder(table, run, workers, self)
+        self.cores.ready.connect(self.rebuild)
 
         #: Settings button on the dock title bar opens this (``PanelDock`` looks for ``options``)
         self.options = PlotOptions(self)
@@ -261,17 +274,23 @@ class PlotPanel(ToolPanel):
                 self.renderer = None
             self.summary.setText(self.scene3d.build(self.table, spec, shown_oids(self.table)))
         else:
-            renderer_type = RENDERERS.get(spec.kind, RENDERERS["scatter"])
+            renderer_type = DRAWN_BY.get(spec.kind, RENDERERS["scatter"])
             if not isinstance(self.renderer, renderer_type):
                 if self.renderer is not None:
                     self.renderer.clear()
                 self.renderer = renderer_type(self.plot)
-            self.summary.setText(self.renderer.build(self.table, spec, shown_oids(self.table)))
+            oids = shown_oids(self.table)
+            if isinstance(self.renderer, ConstellationRenderer):
+                self.renderer.data = self.cores.result(spec, oids)
+                self.renderer.waiting = self.cores.message
+            self.summary.setText(self.renderer.build(self.table, spec, oids))
         for control in (self.fit, self.curve):
             control.setToolTip(self.summary.text())
         self._active().show_selection(self.selection.oids)
         self.update_pinned()
         axes = (spec.kind, spec.x, spec.y, spec.bins, spec.aggregate, spec.columns)
+        if isinstance(self.renderer, ConstellationRenderer) and spec.kind == CONSTELLATION:
+            axes += (id(self.renderer.data),)  # a new map fits the view to it
         if axes != self._last_axes:
             # a new 2D layout fits the view to it; turning a 3D plot's columns keeps the camera
             moved_in_3d = three and self._last_axes is not None and self._last_axes[0] in KINDS_3D
@@ -392,6 +411,10 @@ class PlotPanel(ToolPanel):
             if spec.y:
                 return f"{AGGREGATES[spec.aggregate]} {spec.y} by {spec.x}"
             return f"Rows by {spec.x}"
+        if spec.kind == CONSTELLATION and spec.structure:
+            if spec.color:
+                return f"Constellation: {SUMMARIES[spec.summary]} {spec.color}"
+            return f"Constellation: {spec.structure}"
         return KINDS[spec.kind]
 
     def reset_view(self) -> None:
@@ -510,6 +533,11 @@ class PlotPanel(ToolPanel):
     def show_hover(self, hover: Hover) -> None:
         if hover.oid is None:  # a group of rows (a histogram bar, a box)
             content = CardContent(hover.title, list(hover.lines))
+            if hover.smiles and self.card_options.structure:
+                size = SIZES[self.card_options.size][1]
+                dark = self.palette().base().color().lightness() < 128
+                ratio = self.devicePixelRatioF()
+                content.image = core_image(hover.smiles, size.width(), size.height(), ratio, dark)
         else:
             content = self.card_content(hover.oid)
         if content.empty():
@@ -614,6 +642,7 @@ class PlotPanel(ToolPanel):
         exporter(self.plot).export(str(path))
 
     def close_panel(self) -> None:
+        self.cores.close()
         self._unsubscribe_table()
         self._unsubscribe_selection()
         self._rebuild_timer.stop()

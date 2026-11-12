@@ -881,6 +881,7 @@ Open a plot from the **Plot** menu. It opens to the right of the table.
 | **Density** | Where crowded points sit: a 2D histogram of X and Y, shaded by count. Box, lasso and click still select the rows beneath. |
 | **Radar** | Three or more number columns as spokes, each scaled to its own range (centre: lowest, rim: highest). Shows the mean of the plotted rows in grey, and each selected row (up to 12) in its own colour. |
 | **3D Scatter** | Three number columns in a cube you can turn, coloured and sized by others (see below). |
+| **Constellation Plot** | The cores that analog series share, placed in chemical space: each circle is a core, sized by its compounds and coloured by their activity (see below). |
 | **3D Landscape** | An activity landscape: a smooth surface of one column (the height, e.g. pIC50) over two others, usually a chemical-space map, with the compounds standing on it (see below). |
 
 **Switching plots.** The cog's **Plot** list holds every kind, 2D and 3D. Changing it redraws
@@ -932,8 +933,9 @@ A **radar plot** has **Axes**: tick the number columns to draw as spokes.
 | Size range | Size is a number column | The values given the smallest and the largest point. Values beyond an end take that end's size. A box left empty (**Auto**) follows the data. |
 | Point size | Size is a number column | The smallest and largest point, in pixels (1–60; 4 and 18 to start). |
 
-Each setting applies to Scatter, Line and 3D Scatter points. The colour map also applies to the
-Density counts and the 3D Landscape heights. A range end that is not a number goes back to
+Each setting applies to Scatter, Line and 3D Scatter points, and to the cores of a
+Constellation Plot (where **Compounds** takes the place of Size range). The colour map also
+applies to the Density counts and the 3D Landscape heights. A range end that is not a number goes back to
 Auto. These settings are saved with the plot.
 
 Hover over **Fit line** (or **Curve**) to see what was drawn: how many points there are, how
@@ -1009,6 +1011,43 @@ The 3D plots use the same toolbar as the 2D ones:
 - Shift adds to the selection; ⌘/Ctrl toggles. Hover over a point to see its card; point
   cards beside selected points follow them as you turn the cube.
 - The plot is saved with the document, with the direction you were looking from.
+
+### Constellation Plot
+
+**Data ▸ Plot ▸ Constellation Plot** shows the analog series in a set and how they relate
+(Naveja and Medina-Franco, *Front. Chem.* 2019, 7, 510).
+
+- **Cores.** Each compound is cut at its retrosynthetic (RECAP) bonds. Every fragment that
+  keeps at least two thirds of the compound's heavy atoms is one of its cores, and so is the
+  compound itself. Attachment points become hydrogens. This is the compound–core relationship
+  (CCR) method of Naveja et al., *ACS Omega* 2019, 4, 1027.
+- **Analog series.** Compounds that share a core, directly or through other compounds, form
+  one analog series. Series are numbered from the largest.
+- **The plot.** Each circle is a core shared by at least **Min compounds** compounds. Of cores
+  that hold exactly the same compounds, only the largest is shown. Circles are placed by the
+  cores' Morgan fingerprints (radius 2) on a t-SNE map, so similar cores sit together. A
+  circle's size is its number of compounds. Grey lines join cores that share a compound.
+- **Color.** Choose a number column and a **Summary** (Mean, Median, Minimum, Maximum or
+  Count) to colour each core by its compounds' values. A core whose compounds have no value
+  is grey. The Mean of a column of 0 and 1 is the share of actives.
+
+| Setting | What it does |
+|---|---|
+| Structure | The structure column whose cores are found. |
+| Map | t-SNE (the default), UMAP or PCA. Under five cores the map is PCA. |
+| Min compounds | Cores shared by fewer compounds are left out (2 to start). |
+| Core size | The share of a compound's heavy atoms a core must keep (67 % to start, as in the paper). |
+| Series labels | Writes each series' number beside its largest core (up to 400 cores). |
+
+- Cores are found in the background for the rows the table shows. The plot says "Finding
+  cores…" until they are ready. Each structure's cores are remembered, so changing a filter
+  or Min compounds only regroups and maps them again.
+- Click a core, or box or lasso several, to select their compounds' rows. A core holding a
+  selected row is ringed.
+- Hover over a core to see its structure, its series, its number of compounds and its
+  summary value.
+- The settings are saved with the plot, and the cores are found again when the document
+  reopens.
 
 ### MedChem plots
 

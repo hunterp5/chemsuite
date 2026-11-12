@@ -33,6 +33,10 @@ other machine can pick it up. Update it at the end of a session that leaves work
     external workers, splitting long files). After that, viewer Phases 3–5 (presets and views,
     look undo, analysis).
   - Several tables in one window was considered and set aside (2026-11-11).
+- **Plots** (2026-11-12): colour maps, colour and size ranges and point sizes in every plot's
+  options (`app/plots/controls.py` holds the controls, `spec.py` the `PlotSpec`); the
+  Constellation Plot (`sar/constellation.py`, the CCR method with a pruned RECAP search;
+  `app/plots/constellation.py`, the renderer and the background `CoreFinder`).
 - **Protein editing and the Sequence window** (2026-11-11/12, before Phase C, at the user's
   request): a click selects an atom (double-click the residue, Alt-click the chain); Edit ▸
   Delete, Element, Charge, Rename Residue/Chain, Renumber, Undo/Redo, each one table step
@@ -74,8 +78,10 @@ other machine can pick it up. Update it at the end of a session that leaves work
 
 ## Next
 
-1. Graceful exit (ROADMAP §7.0).
-2. Bioactive conformers (§7.0b) or protein Phase 1, Alignment (§7a), each starting in plan mode.
+1. TMAP and Chemical Space Networks (ROADMAP §7.0d, high priority): plan them together in plan
+   mode.
+2. Graceful exit (ROADMAP §7.0).
+3. Bioactive conformers (§7.0b) or protein Phase 1, Alignment (§7a), each starting in plan mode.
 
 Still owed by the user: the ChemDraw hotkey list.
 

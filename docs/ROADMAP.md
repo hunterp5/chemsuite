@@ -295,6 +295,25 @@ bioactive conformation**: the pose of a ligand crystallised in its protein.
 **Process:** this work starts in plan mode. Write the plan (benchmark set, licences, metrics,
 candidate methods, acceptance threshold) and get it approved before writing code.
 
+### 7.0d High priority: TMAP and Chemical Space Networks (added 2026-11-11)
+
+Two more chemical-space plots, next to the Constellation Plot. Both are big new features, so
+each starts in plan mode. Their graph layout and drawing code may be shared, so plan them
+together.
+
+- **TMAP** (Probst and Reymond, *J. Cheminf.* 2020, 12, 12). A tree map of large sets: MinHash
+  fingerprints, an LSH Forest k-nearest-neighbour graph, its minimum spanning tree, and a tree
+  layout. Every compound is a point, and the tree's branches show near neighbours. It should
+  reach hundreds of thousands of rows. Check the licences of `tmap` and its layout code before
+  depending on them, or write our own (the MST and layout steps are standard).
+- **Chemical Space Networks** (Maggiora and Bajorath, *J. Comput.-Aided Mol. Des.* 2014, 28,
+  795; Zwierzyna et al., *J. Cheminf.* 2015, 7, 47). Compounds are nodes, and an edge joins
+  each pair above a similarity threshold (Tanimoto) or each matched molecular pair. A force
+  layout places the nodes, colouring them by activity, and edges can be coloured by the
+  activity difference (cliffs). It is meant for hundreds to a few thousand compounds.
+- Both are plot kinds in the Plot panel. They select rows like any plot, use the shared colour
+  maps and ranges, and compute in the background like the Constellation Plot.
+
 ### 7.0c High priority: the Protein Viewer as the other half of chemsuite (added 2026-11-11)
 
 chemsuite has two halves. The **data table** is where a medicinal chemist works up and

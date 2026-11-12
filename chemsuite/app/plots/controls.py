@@ -40,13 +40,14 @@ from PySide6.QtWidgets import (
 
 from chemsuite.analysis.medchem_space import GUIDES
 from chemsuite.core.table import Table
-from chemsuite.core.table.columns import NUMBER, TEXT
+from chemsuite.core.table.columns import NUMBER, STRUCTURE, TEXT
 from chemsuite.plotting.data import colorable_columns, number_columns
 from chemsuite.plotting.stats import AGGREGATES, CURVES
 from chemsuite.plotting.style import COLOR_MAPS, DEFAULT_MAP, parse_range
+from chemsuite.sar.constellation import MAPS, SUMMARIES
 
 from ..widgets.flow_layout import compact
-from .renderers import PlotSpec, Range
+from .spec import PlotSpec, Range
 
 NONE = "(none)"
 KINDS = {
@@ -57,6 +58,7 @@ KINDS = {
     "box": "Box Plot",
     "density": "Density",
     "radar": "Radar",
+    "constellation": "Constellation",
     "scatter3d": "3D Scatter",
     "landscape": "3D Landscape",
 }
@@ -68,6 +70,7 @@ XY_KINDS = ("scatter", "line", "density", *KINDS_3D)
 COLORED = ("scatter", "line", "scatter3d")
 #: kinds sizing their points by a column
 SIZED = ("scatter", "scatter3d")
+CONSTELLATION = "constellation"
 #: kinds always coloured along a colour map (counts, heights)
 MAPPED = ("density", "landscape")
 POINT_SIZES = (4, 18)
@@ -92,6 +95,12 @@ STATE_KEYS = (
     "color_range",
     "size_range",
     "point_sizes",
+    "structure",
+    "summary",
+    "layout",
+    "min_compounds",
+    "core_percent",
+    "labels",
 )
 
 
@@ -206,6 +215,7 @@ class PlotControls(QObject):
         self.axes_button.setMenu(self.axes_menu)
         self.axes_button.setStyleSheet("text-align: left; padding: 3px 8px;")
         self._make_scale_controls()
+        self._make_constellation_controls()
         compact(
             self.x,
             self.y,
@@ -220,6 +230,7 @@ class PlotControls(QObject):
         form.addRow("Plot:", self.kind)
         self.labels: dict[QWidget, QLabel] = {}
         for title, widget in (
+            ("Structure", self.structure),
             ("X", self.x),
             ("Y", self.y),
             ("Z", self.z),
@@ -230,6 +241,10 @@ class PlotControls(QObject):
             ("Guide", self.guide),
             ("Summary", self.aggregate),
             ("Axes", self.axes_button),
+            ("Summary", self.core_summary),
+            ("Map", self.layout),
+            ("Min compounds", self.min_compounds),
+            ("Core size", self.core_percent),
             ("Colors", self.colors),
             ("Color range", self.color_range),
             ("Size range", self.size_range),
@@ -241,15 +256,18 @@ class PlotControls(QObject):
         form.addRow("", self.fit)
         form.addRow("", self.errors)
         form.addRow("", self.drop)
+        form.addRow("", self.series_labels)
         self.fill_columns(initial=True)
         self.kind.currentIndexChanged.connect(self._kind_changed)
         for combo in (self.x, self.y, self.z, self.curve, self.guide, self.aggregate, self.cmap):
             combo.currentIndexChanged.connect(self.changed)
+        for combo in (self.structure, self.core_summary, self.layout):
+            combo.currentIndexChanged.connect(self.changed)
         for combo in (self.color, self.size):
             combo.currentIndexChanged.connect(self._column_changed)
-        for spin in (self.bins, self.small, self.large):
+        for spin in (self.bins, self.small, self.large, self.min_compounds, self.core_percent):
             spin.valueChanged.connect(self.changed)
-        for box in (self.fit, self.errors, self.drop, self.reverse):
+        for box in (self.fit, self.errors, self.drop, self.reverse, self.series_labels):
             box.toggled.connect(self.changed)
         for edit in (self.color_range, self.size_range):
             edit.changed.connect(self.changed)
@@ -275,6 +293,37 @@ class PlotControls(QObject):
         self.large.setValue(POINT_SIZES[1])
         self.point_sizes = _row(self.small, QLabel("to"), self.large)
 
+    def _make_constellation_controls(self) -> None:
+        self.structure = QComboBox()
+        self.structure.setToolTip("The structures whose cores are found")
+        self.core_summary = QComboBox()
+        for key, title in SUMMARIES.items():
+            self.core_summary.addItem(title, key)
+        self.core_summary.setToolTip(
+            "How each core sums up its compounds' Color values (Mean of a 0/1 column: the "
+            "share of actives)"
+        )
+        self.layout = QComboBox()
+        for key, title in MAPS.items():
+            self.layout.addItem(title, key)
+        self.layout.setToolTip(
+            "How the cores are placed, by their Morgan fingerprints (under five cores: PCA)"
+        )
+        self.min_compounds = QSpinBox()
+        self.min_compounds.setRange(2, 10_000)
+        self.min_compounds.setToolTip("Cores shared by fewer compounds are left out")
+        self.core_percent = QSpinBox()
+        self.core_percent.setRange(10, 100)
+        self.core_percent.setValue(67)
+        self.core_percent.setSuffix(" %")
+        self.core_percent.setToolTip(
+            "The share of a compound's heavy atoms a core must keep (two thirds in the paper)"
+        )
+        self.series_labels = QCheckBox("Series labels")
+        self.series_labels.setChecked(True)
+        self.series_labels.setToolTip("Number each analog series beside its largest core")
+        compact(self.structure, self.core_summary, self.layout, chars=16)
+
     @property
     def controls(self) -> tuple[QObject, ...]:
         """Everything that says when it changed (blocked while settings are put back)."""
@@ -298,6 +347,12 @@ class PlotControls(QObject):
             self.size_range,
             self.small,
             self.large,
+            self.structure,
+            self.core_summary,
+            self.layout,
+            self.min_compounds,
+            self.core_percent,
+            self.series_labels,
         )
 
     # -- the spec -------------------------------------------------------------------------------
@@ -309,9 +364,9 @@ class PlotControls(QObject):
         kind = self.kind.currentData()
         return PlotSpec(
             kind=kind,
-            x=name(self.x) if kind != "radar" else None,
+            x=name(self.x) if kind not in ("radar", CONSTELLATION) else None,
             y=name(self.y) if kind in (*XY_KINDS, "box", "bar") else None,
-            color=name(self.color) if kind in COLORED else None,
+            color=name(self.color) if kind in (*COLORED, CONSTELLATION) else None,
             size=name(self.size) if kind in SIZED else None,
             bins=self.bins.value() or None
             if kind in ("histogram", "density", "landscape")
@@ -329,6 +384,12 @@ class PlotControls(QObject):
             color_range=self.color_range.value(),
             size_range=self.size_range.value(),
             point_sizes=self._point_sizes(),
+            structure=name(self.structure),
+            summary=self.core_summary.currentData(),
+            layout=self.layout.currentData(),
+            min_compounds=self.min_compounds.value(),
+            core_percent=self.core_percent.value(),
+            labels=self.series_labels.isChecked(),
         )
 
     def _point_sizes(self) -> tuple[float, float]:
@@ -358,6 +419,12 @@ class PlotControls(QObject):
             "color_range": list(spec.color_range),
             "size_range": list(spec.size_range),
             "point_sizes": [self.small.value(), self.large.value()],
+            "structure": spec.structure,
+            "summary": spec.summary,
+            "layout": spec.layout,
+            "min_compounds": spec.min_compounds,
+            "core_percent": spec.core_percent,
+            "labels": spec.labels,
         }
 
     def set_values(self, values: Mapping[str, object]) -> None:
@@ -369,10 +436,22 @@ class PlotControls(QObject):
                 self.kind.setCurrentIndex(max(0, self.kind.findData(values["kind"])))
                 self.fill_columns()
             combos = {"x": self.x, "y": self.y, "z": self.z, "color": self.color}
-            combos["size"] = self.size
+            combos["size"], combos["structure"] = self.size, self.structure
             pick = {"curve": self.curve, "guide": self.guide, "aggregate": self.aggregate}
+            pick["summary"], pick["layout"] = self.core_summary, self.layout
             checks = {"fit": self.fit, "errors": self.errors, "drop": self.drop}
-            checks["reverse"] = self.reverse
+            checks["reverse"], checks["labels"] = self.reverse, self.series_labels
+            spins = {"min_compounds": self.min_compounds, "core_percent": self.core_percent}
+            setters = {
+                "bins": lambda v: self.bins.setValue(v if isinstance(v, int) else 0),
+                "columns": self.set_axes,
+                "cmap": lambda v: self.cmap.setCurrentIndex(
+                    self.cmap.findData(v if v in COLOR_MAPS else DEFAULT_MAP)
+                ),
+                "color_range": self.color_range.set_value,
+                "size_range": self.size_range.set_value,
+                "point_sizes": self._set_point_sizes,
+            }
             for key, value in values.items():
                 if key in combos:
                     combo = combos[key]
@@ -382,19 +461,11 @@ class PlotControls(QObject):
                     pick[key].setCurrentIndex(max(0, pick[key].findData(value)))
                 elif key in checks:
                     checks[key].setChecked(bool(value))
-                elif key == "bins":
-                    self.bins.setValue(value if isinstance(value, int) else 0)
-                elif key == "columns":
-                    self.set_axes(value)
-                elif key == "cmap":
-                    known = value if value in COLOR_MAPS else DEFAULT_MAP
-                    self.cmap.setCurrentIndex(self.cmap.findData(known))
-                elif key == "color_range":
-                    self.color_range.set_value(value)
-                elif key == "size_range":
-                    self.size_range.set_value(value)
-                elif key == "point_sizes":
-                    self._set_point_sizes(value)
+                elif key in spins:
+                    if isinstance(value, int) and not isinstance(value, bool):
+                        spins[key].setValue(value)
+                elif key in setters:
+                    setters[key](value)
         finally:
             for control in self.controls:
                 control.blockSignals(False)
@@ -423,12 +494,14 @@ class PlotControls(QObject):
             "radar": [],
             "scatter3d": numbers,
             "landscape": numbers,
+            CONSTELLATION: [],
         }[kind]
         lists = {
             self.x: x_choices,
             self.y: [NONE, *numbers] if kind == "bar" else numbers,
             self.z: numbers,
-            self.color: [NONE, *colorable_columns(table)],
+            self.color: [NONE, *(numbers if kind == CONSTELLATION else colorable_columns(table))],
+            self.structure: [n for n in table.column_names if table.kind(n) == STRUCTURE],
             self.size: [NONE, *numbers],
         }
         for combo, names in lists.items():
@@ -466,20 +539,34 @@ class PlotControls(QObject):
             "radar": (self.axes_button,),
             "scatter3d": (self.x, self.y, self.z, self.color, self.size, self.drop),
             "landscape": (self.x, self.y, self.z, self.bins),
+            CONSTELLATION: (
+                self.structure,
+                self.color,
+                self.layout,
+                self.min_compounds,
+                self.core_percent,
+                self.series_labels,
+                self.size_range,
+                self.point_sizes,
+            ),
         }[kind]
-        numbered = self._is_number(self.color) and kind in COLORED
+        numbered = self._is_number(self.color) and kind in (*COLORED, CONSTELLATION)
         sized = self._is_number(self.size) and kind in SIZED
         shown += (self.colors,) if numbered or kind in MAPPED else ()
         shown += (self.color_range,) if numbered else ()
         shown += (self.size_range, self.point_sizes) if sized else ()
+        shown += (self.core_summary,) if numbered and kind == CONSTELLATION else ()
         for widget in self.labels:
             self.form.setRowVisible(widget, widget in shown)
-        for widget in (self.fit, self.errors, self.drop):
+        for widget in (self.fit, self.errors, self.drop, self.series_labels):
             self.form.setRowVisible(widget, widget in shown)
         self.labels[self.x].setText("Group by:" if kind in ("box", "bar") else "X:")
         self.labels[self.y].setText("Values:" if kind in ("box", "bar") else "Y:")
         self.labels[self.z].setText("Height:" if kind == "landscape" else "Z:")
         self.labels[self.bins].setText("Grid:" if kind == "landscape" else "Bins:")
+        self.labels[self.size_range].setText(
+            "Compounds:" if kind == CONSTELLATION else "Size range:"
+        )
         self.bins.setToolTip(
             "Grid cells along each side (Auto picks from the number of points)"
             if kind == "landscape"

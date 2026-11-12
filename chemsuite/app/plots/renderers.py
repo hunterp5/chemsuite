@@ -24,8 +24,6 @@ brush per point: pyqtgraph then draws 200k points quickly, and categories get a 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QPointF
@@ -61,6 +59,7 @@ from chemsuite.plotting.style import (
 )
 
 from .scatter_item import ScatterItem
+from .spec import Hover, PlotSpec
 
 SCALE_STEPS = 24
 POINT_SIZE = 7.0
@@ -68,41 +67,6 @@ HIGHLIGHT = (230, 70, 20)
 DIMMED = 0.3  # opacity of unselected points while something is selected
 HOVER_RADIUS = 10.0
 SPECIAL = (OTHER_LABEL, BLANK_LABEL)  # categories drawn grey
-
-
-Range = tuple[float | None, float | None]
-
-
-@dataclass(frozen=True)
-class PlotSpec:
-    kind: str = "scatter"  # or "histogram"
-    x: str | None = None
-    y: str | None = None
-    color: str | None = None
-    size: str | None = None
-    bins: int | None = None  # None: automatic
-    fit: bool = False  # scatter: least-squares line(s)
-    curve: str | None = None  # histogram: "normal" or "lognormal" density overlay
-    guide: str | None = None  # scatter: a key of GUIDES (BOILED-Egg, Golden Triangle, LipE)
-    aggregate: str = "mean"  # bar: a key of AGGREGATES
-    errors: bool = False  # bar: standard deviation whiskers (with "mean")
-    columns: tuple[str, ...] = ()  # radar: the axes
-    z: str | None = None  # 3D: the third axis (the landscape's height)
-    drop: bool = False  # 3D scatter: lines from each point down to the floor
-    cmap: str = DEFAULT_MAP  # number colours: a key of COLOR_MAPS
-    reverse: bool = False  # the colour map runs high to low
-    color_range: Range = (None, None)  # number colours span this (None: the data's own end)
-    size_range: Range = (None, None)  # sizes span these values (None: the data's own end)
-    point_sizes: tuple[float, float] = (4.0, 18.0)  # smallest and largest marker, in pixels
-
-
-@dataclass(frozen=True)
-class Hover:
-    """What is under the mouse: one row (``oid``) or a group of rows (a histogram bar)."""
-
-    oid: int | None
-    title: str
-    lines: tuple[str, ...]
 
 
 def color_map(key: str, reverse: bool = False) -> pg.ColorMap:
