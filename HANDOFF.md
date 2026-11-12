@@ -76,6 +76,13 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - Save Protein As (mmCIF) drops the file's `_chem_comp_*` tables, so a ligand with no CCD
     entry reopened offline falls back to a geometry guess. Document saves keep them.
 
+- **Protein preparation** (plan approved 2026-11-11, `docs/PREPARE_PLAN.md`): a coupled
+  protein–ligand protonation and hydrogen model in `chemsuite/protein/prepare/`. No code yet.
+  P0 comes first: the benchmark harness, with dataset and tool licences checked. The datasets
+  are neutron structures and PKAD-2; the comparisons are Reduce, PROPKA3, Protoss and MOE.
+  Protoss runs through ProteinsPlus on public PDB IDs only. The user runs MOE Protonate3D by
+  hand from a script and file list we supply.
+
 ## Next
 
 1. TMAP and Chemical Space Networks (ROADMAP §7.0d, high priority): plan them together in plan

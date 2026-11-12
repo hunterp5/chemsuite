@@ -370,11 +370,19 @@ pip extra.
    flexible-side-chain docking; ensemble and consensus scoring; pocket detection and
    druggability; interaction fingerprints across poses, building on Interactions to Table. Until
    phase 3 lands, docking prepares the receptor minimally (hydrogens from gemmi).
-3. **Native preparation** (base install, high priority). Missing heavy atoms and caps from the
-   CCD templates; hydrogens through gemmi; a Reduce-style hydrogen-bond network for His
-   tautomers, Asn/Gln/His flips and OH/SH/NH₃ rotors; short loops closed, longer gaps left and
-   marked ⚠; propka for protonation at a chosen pH. Measured first, as the conformer plan was:
-   benchmarked against PDBFixer, Reduce and propka outputs before it becomes the default.
+3. **Native preparation** (base install, high priority; plan approved 2026-11-11 in
+   `docs/PREPARE_PLAN.md`).
+   - **Repair:** missing heavy atoms and caps from the CCD templates; short loops closed, longer
+     gaps capped and marked ⚠.
+   - **Hydrogens and states, protein and ligand together:** one coupled site graph covers His
+     tautomers, Asn/Gln/His flips, titratable residues, OH/SH/NH₃ rotors, pocket waters, metal
+     sites and the ligand's protomers and tautomers. Ligand states start from MolGpKa.
+     Desolvation, Coulomb and hydrogen-bond terms act across the interface, so each side's state
+     depends on the other's. It is solved exactly per cluster, with populations; near-ties are
+     marked ⚠ and become receptor ensembles for docking or separate runs for MD.
+   - **Measured first:** benchmarked against neutron structures, PKAD-2, Reduce, PROPKA3,
+     Protoss (public PDB IDs through ProteinsPlus) and MOE Protonate3D before it becomes the
+     default. propka stays as a cross-check.
 4. **Editing** (every edit one undoable step). *Done 2026-11-12, ahead of the rest: delete,
    element and charge, rename and renumber, with the Sequence window's kind rows to pick out
    waters and ions.* Still to do: waters beyond X Å;

@@ -109,10 +109,8 @@ def test_typing_in_a_structure_cell_opens_the_sketcher(structures, qtbot) -> Non
 
 def test_cancel_changes_nothing(structures) -> None:
     window = structures
-    assert window.edit_current_structure() is None  # no current cell yet
     model = window.workspace.model
-    window.view.setCurrentIndex(model.index(0, 0))  # the ID column: uses the row's structure
-    window.edit_current_structure()
+    window.draw_structure(model.oid_at(0), "SMILES")
     sketcher = _sketcher(window)
     assert convert.to_smiles(sketcher.canvas.history.sketch) == "CCO"
     sketcher.canvas.set_sketch(convert.from_text("CCN"), "Paste")

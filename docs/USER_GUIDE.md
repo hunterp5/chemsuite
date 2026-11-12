@@ -41,10 +41,10 @@ Each document has its own window. From top to bottom:
   | Menu | Holds |
   |---|---|
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close |
-  | Edit | Undo, Copy and Paste, Edit Structure, selecting rows, Lists, Delete Rows, Settings |
+  | Edit | Undo, Copy and Paste, selecting rows, Delete Selection, Settings |
   | View | Search Bar, Arrange Panes, Jobs, Log, Status Bar |
-  | Tools ▸ Table | Add compounds, rows and columns; Split and Join columns; Calculator; random numbers and rows |
-  | Chemistry | Sketcher, Calculate Descriptors, Standardize, Predict pKa, Structure Viewer, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
+  | Tools | Add compounds, rows and columns; Split and Join columns; Sketcher; Calculator; random numbers and rows; Lists |
+  | Chemistry | Calculate Descriptors, Standardize, Predict pKa, Structure Viewer, Generate Conformers, Split Reactions, Enumerate Products, R-Group Decomposition |
   | Data | Search ▸, Plot ▸, Filters, Browser, then Bin Values, Statistics, Similarity Search, Diverse Subset, Cluster, SAR ▸, Scoring ▸, Chemical Space ▸ |
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
   | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
@@ -287,7 +287,7 @@ Right-click a column header for:
   some values are not numbers; those cells would be cleared. Converting to Structure or
   Reaction reads each cell's text; cells that do not read are kept and marked invalid.
 
-From Tools ▸ Table:
+From Tools:
 
 | Command | What it does |
 |---|---|
@@ -298,7 +298,7 @@ From Tools ▸ Table:
 
 ### Rows
 
-- **Delete Rows (Ctrl+Backspace)** deletes the selected rows. You can undo it.
+- **Edit ▸ Delete Selection (Ctrl+Backspace)** deletes the selected rows. You can undo it.
 - **The row numbers** on the left are kept narrow: past 999 they are shortened (1.2k, 12k,
   1.2M); point at one for the full number. Click a row number to select the row; drag down the
   numbers for several.
@@ -319,8 +319,7 @@ From Tools ▸ Table:
 ## 4. Structures
 
 - Structures are edited in the **sketcher** only. **Double-click** a structure, press **F2**
-  or start typing in the cell, choose **Edit ▸ Edit Structure… (Ctrl+E)**, or right-click and
-  choose **Edit in Sketcher…**. OK writes the drawing back as one step you can undo. The
+  or start typing in the cell, or right-click and choose **Edit in Sketcher…**. OK writes the drawing back as one step you can undo. The
   drawing is stored as a molfile, which keeps your layout and wedges.
 - To bring in SMILES, InChI or a molfile, paste it onto the drawing (Ctrl+V), or paste it
   straight into the cell from the table.
@@ -328,8 +327,8 @@ From Tools ▸ Table:
   cell until you draw a replacement.
 - The right-click menu of a structure or reaction cell has **Copy As** (Molfile, SMILES,
   InChI, InChIKey, Image) rather than a plain Copy, so you choose what is copied.
-- **Edit ▸ Copy Structure As ▸ Molfile / SMILES / InChI / InChIKey / Image** copies the current
-  structure (or the selected structures in its column). A molfile pastes into drawing programs.
+  Copy As works on all the selected structures in the column. A molfile pastes into drawing
+  programs.
 - A structure that cannot be read is shown as **invalid**. Its original text is kept, so you
   can fix it.
 - Rows are taller when the table has a structure column. Change the height under Settings ▸
@@ -410,9 +409,9 @@ as Reaction Search, applied as a filter together with the other cards.
 
 ### The sketcher
 
-Opened by double-clicking a structure cell, Ctrl+E, F2, **Add Compound…**,
+Opened by double-clicking a structure cell, F2, **Add Compound…**,
 **Draw…** in the structure fields of Structure Search and Similarity Search, or
-blank with **Chemistry ▸ Sketcher…**, whose **Add to Table** adds the drawing as a new,
+blank with **Tools ▸ Sketcher…**, whose **Add to Table** adds the drawing as a new,
 selected row.
 
 Drawing tools are along the top, elements down the left and rings along the bottom. OK is
@@ -640,7 +639,7 @@ step. If a Structure Viewer is already open, it is brought forward and switched 
 Lists are saved sets of rows, such as "actives", "to make" or "sent for assay". They are saved
 with the document.
 
-- **Edit ▸ Lists ▸ Add Selected to List… (Ctrl+L)** adds the selected rows to a new or existing
+- **Tools ▸ Lists ▸ Add Selected to List… (Ctrl+L)** adds the selected rows to a new or existing
   list.
 - Each list has its own submenu:
 
@@ -1586,7 +1585,7 @@ Data ▸ Bin Values… groups a number column into bins.
 
 ### Calculator
 
-Tools ▸ Table ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
+Tools ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
 formula is checked as you type, and **Preview** shows the result for the first shown rows.
 **Insert ▸ Column** and **Insert ▸ Function** put a column name or function at the cursor.
 
@@ -1619,7 +1618,7 @@ Formulas cannot run code, open files or reach outside the table.
 
 ### Random Numbers
 
-Tools ▸ Table ▸ Random Numbers… fills a column with random values:
+Tools ▸ Random Numbers… fills a column with random values:
 
 | Distribution | Settings |
 |---|---|
@@ -1634,7 +1633,7 @@ Leave it empty for a new draw each time.
 
 ### Random Rows
 
-Tools ▸ Table ▸ Random Rows… picks a random sample from all, the shown or the
+Tools ▸ Random Rows… picks a random sample from all, the shown or the
 selected rows, either a number of rows or a percentage. It then **selects them**, **adds them
 to the selection**, or saves them as a **new list** (for example a test set). A seed picks the
 same rows again.
@@ -1880,12 +1879,11 @@ You can change any of these in Settings ▸ Keyboard.
 | Close window | Ctrl+F4 |
 | Undo / Redo | Ctrl+Z / Ctrl+Y |
 | Copy / Paste | Ctrl+C / Ctrl+V |
-| Edit Structure | Ctrl+E |
 | Search Rows | Ctrl+F |
 | Find and Replace | Ctrl+H |
 | Structure Search | Ctrl+Shift+M |
 | Select All / Invert / Clear Selection | Ctrl+A / Ctrl+I / Ctrl+Shift+A |
-| Delete Rows | Ctrl+Backspace |
+| Delete Selection | Ctrl+Backspace |
 | Add Selected to List | Ctrl+L |
 | Calculate Descriptors | Ctrl+Shift+D |
 | Scatter plot | Ctrl+Shift+P |

@@ -59,11 +59,22 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
         "Reaction Search…",
         "Clear Highlighting",
     ]
-    assert visible(menus["Tools"]) == ["Table"]
-    table = visible(menus["Tools"].actions()[0].menu())
-    assert table.index("Join Columns…") < table.index("Calculator…")
-    assert "Clear Sort" not in table and "New Document from Shown Rows" not in table
+    tools = [t for t in visible(menus["Tools"]) if t]  # no separators
+    assert tools[:5] == [
+        "Add Compound…",
+        "Add Rows…",
+        "Add Column…",
+        "Split Column…",
+        "Join Columns…",
+    ]
+    assert tools.index("Join Columns…") < tools.index("Sketcher…") < tools.index("Calculator…")
+    assert tools[-1] == "Lists"  # the registered tools go before Lists
+    assert "Clear Sort" not in tools and "New Document from Shown Rows" not in tools
     assert "R-Group Decomposition…" in visible(menus["Chemistry"])
+    assert "Sketcher…" not in visible(menus["Chemistry"])
+    edit = visible(menus["Edit"])
+    assert "Delete Selection" in edit
+    assert not {"Copy Structure As", "Clear Cells", "Edit Structure…", "Lists"} & set(edit)
     assert "View" not in [a.text() for a in menus["Data"].actions()]
 
 

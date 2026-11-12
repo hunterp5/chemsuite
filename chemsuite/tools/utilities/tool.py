@@ -14,13 +14,13 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Table (utilities): everyday helpers in the spirit of MolManager's Tools ▸ Utilities."""
+"""Tools (utilities): everyday helpers in the spirit of MolManager's Tools ▸ Utilities."""
 
 from __future__ import annotations
 
 from chemsuite.app.document.tools import Tool, ToolContext
 
-MENU = ("Tools", "Table")
+MENU = ("Tools",)
 
 
 def _calculator(ctx: ToolContext):

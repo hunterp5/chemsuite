@@ -612,16 +612,6 @@ class MainWindow(QMainWindow):
             )
         )
         edit.addAction(A("edit.paste", "&Paste", self.paste, QKeySequence.StandardKey.Paste))
-        copy_as = edit.addMenu("Copy Structure As")
-        for fmt, title in COPY_FORMATS:
-            command = "edit.copy_molfile" if fmt == "molfile" else f"edit.copy_{fmt}"
-            copy_as.addAction(A(command, title, lambda f=fmt: self.copy_current_structure_as(f)))
-        edit.addAction(
-            A("edit.clear_cells", "Clear Cells", lambda: self.view.clear_selected_cells())
-        )
-        edit.addAction(
-            A("edit.structure", "Edit &Structure…", self.edit_current_structure, "Ctrl+E")
-        )
         edit.addSeparator()
         edit.addAction(
             A(
@@ -647,29 +637,10 @@ class MainWindow(QMainWindow):
                 "Ctrl+Shift+A",
             )
         )
-        self._building = "Edit ▸ Lists"
-        self._lists_menu = edit.addMenu("&Lists")
-        self._add_to_list = A(
-            "lists.add_selected",
-            "&Add Selected to List…",
-            lambda: self.lists.add_selected(),
-            "Ctrl+L",
-        )
-        self._remove_from_list = A(
-            "lists.remove_selected",
-            "&Remove Selected from List…",
-            lambda: self.lists.remove_selected(),
-        )
-        self._lists_menu.aboutToShow.connect(
-            lambda: self.lists.fill_menu(
-                self._lists_menu, self._add_to_list, self._remove_from_list
-            )
-        )
-        self._lists_menu.addAction(self._add_to_list)  # so the shortcut works before first show
-        self.addAction(self._add_to_list)
-        self._building = "Edit"
         edit.addSeparator()
-        edit.addAction(A("edit.delete_rows", "&Delete Rows", self.delete_rows, "Ctrl+Backspace"))
+        edit.addAction(
+            A("edit.delete_rows", "&Delete Selection", self.delete_rows, "Ctrl+Backspace")
+        )
         edit.addSeparator()
         settings_action = A(
             "app.settings",
@@ -735,18 +706,37 @@ class MainWindow(QMainWindow):
         self._status_bar_action = status
         view.addAction(status)
 
-        self._building = "Tools ▸ Table"
+        self._building = "Tools"
         tools_menu = bar.addMenu("&Tools")
         tools_menu.setToolTipsVisible(True)
-        table_menu = tools_menu.addMenu("&Table")
-        table_menu.setToolTipsVisible(True)
-        table_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
-        table_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
-        table_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
-        table_menu.addSeparator()
-        table_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
-        table_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
-        table_menu.addSeparator()  # Calculator, Random… follow
+        tools_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
+        tools_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
+        tools_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
+        tools_menu.addSeparator()
+        tools_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
+        tools_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
+        tools_menu.addSeparator()
+        tools_slot = tools_menu.addSeparator()  # the Sketcher, Calculator and Random… go here
+        self._building = "Tools ▸ Lists"
+        self._lists_menu = tools_menu.addMenu("&Lists")
+        self._add_to_list = A(
+            "lists.add_selected",
+            "&Add Selected to List…",
+            lambda: self.lists.add_selected(),
+            "Ctrl+L",
+        )
+        self._remove_from_list = A(
+            "lists.remove_selected",
+            "&Remove Selected from List…",
+            lambda: self.lists.remove_selected(),
+        )
+        self._lists_menu.aboutToShow.connect(
+            lambda: self.lists.fill_menu(
+                self._lists_menu, self._add_to_list, self._remove_from_list
+            )
+        )
+        self._lists_menu.addAction(self._add_to_list)  # so the shortcut works before first show
+        self.addAction(self._add_to_list)
 
         # the tool menus, in order (tools fill them; see chemsuite.tools.TOOL_MODULES)
         self._tool_actions: dict[str, QAction] = {}
@@ -771,14 +761,13 @@ class MainWindow(QMainWindow):
             ("Edit",): edit,
             ("View",): view,
             ("Tools",): tools_menu,
-            ("Tools", "Table"): table_menu,
             ("Chemistry",): chemistry,
             ("Data",): data,
             ("Data", "Search"): search,
             ("Data", "Plot"): plot,
         }
         #: tools in these menus go before this action instead of at the end
-        self._tool_slots = {("Data", "Search"): search_tools}
+        self._tool_slots = {("Data", "Search"): search_tools, ("Tools",): tools_slot}
         for tool in registered_tools():
             self._add_tool(tool, menus)
 
@@ -1279,14 +1268,6 @@ class MainWindow(QMainWindow):
         dialog.open()
         return dialog
 
-    def edit_current_structure(self):
-        """Edit ▸ Edit Structure (Ctrl+E): the sketcher on the current structure cell."""
-        cell = self._structure_cell()
-        if cell is None:
-            self.statusBar().showMessage("Pick a row in a table with a structure column", 4000)
-            return None
-        return self.draw_structure(*cell)
-
     def add_compound(self):
         """Draw a structure in the sketcher and append it as a new row."""
         from chemsuite.app.sketcher import SketcherDialog
@@ -1319,19 +1300,6 @@ class MainWindow(QMainWindow):
         if row >= 0:
             self.view.scrollTo(self.workspace.model.index(row, 0))
         return int(oids[0])
-
-    def copy_current_structure_as(self, fmt: str) -> None:
-        """Copy As for the current structure cell (or the first structure in its row)."""
-        cell = self._structure_cell()
-        if cell is None:
-            self.statusBar().showMessage("Pick a cell with a valid structure to copy", 4000)
-            return
-        oid, name = cell
-        model = self.workspace.model
-        row = int(model.rows_of_oids([oid])[0])
-        if row < 0:
-            return
-        self.copy_structures_as(model.index(row, model.column_index(name)), fmt)
 
     def copy_structure(self) -> None:
         cell = self._structure_cell()

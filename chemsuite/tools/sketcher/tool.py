@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Chemistry ▸ Sketcher: a blank sketcher; Add to Table appends the drawing as a new row."""
+"""Tools ▸ Sketcher: a blank sketcher; Add to Table appends the drawing as a new row."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def _open(ctx: ToolContext):
 TOOL = Tool(
     id="sketcher",
     title="Sketcher…",
-    menu=("Chemistry",),
+    menu=("Tools",),
     open=_open,
     requires=("rdkit",),
     tip="Draw a structure and add it to the table as a new row.",

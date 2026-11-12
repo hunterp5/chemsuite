@@ -14,4 +14,4 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Chemistry ▸ Sketcher: draw a structure from scratch and add it to the table."""
+"""Tools ▸ Sketcher: draw a structure from scratch and add it to the table."""

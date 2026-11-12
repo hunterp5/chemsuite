@@ -386,7 +386,7 @@ def test_colour_is_not_offered_for_structures(structures) -> None:
     assert not action.isEnabled()
 
 
-# -- Chemistry ▸ Sketcher ---------------------------------------------------------------------
+# -- Tools ▸ Sketcher -------------------------------------------------------------------------
 
 
 def test_chemistry_sketcher_adds_the_drawing_as_a_row(window) -> None:
