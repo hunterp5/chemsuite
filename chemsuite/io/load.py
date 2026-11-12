@@ -39,8 +39,8 @@ from chemsuite.core.table.columns import (
     concat_columns,
 )
 
-from . import delimited, rdf, sdf, xlsx
-from .formats import CSV, RDF, RXN, SDF, SMILES, TSV, XLSX, Batch, split_suffix
+from . import delimited, mol2, rdf, sdf, xlsx
+from .formats import CSV, MOL2, RDF, RXN, SDF, SMILES, TSV, XLSX, Batch, split_suffix
 
 PARSE_CHUNK = 2_000
 
@@ -105,6 +105,8 @@ def read_batches(
         return xlsx.read_xlsx(path, structure_column=structure_column, cancel=cancel)
     if fmt in (RDF, RXN):
         return rdf.read_rdf(path, executor=executor, progress=progress, cancel=cancel)
+    if fmt == MOL2:
+        return mol2.read_mol2(path, executor=executor, progress=progress, cancel=cancel)
     raise AssertionError(fmt)  # split_suffix only returns known formats
 
 
@@ -288,6 +290,10 @@ def save_table(
             executor=executor,
             progress=progress,
             cancel=cancel,
+        )
+    elif fmt == MOL2:
+        mol2.write_mol2(
+            table, path, oids=oids, structure=structure, progress=progress, cancel=cancel
         )
     elif fmt == RXN:
         rows = table.oids if oids is None else np.asarray(oids)

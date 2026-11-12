@@ -140,6 +140,7 @@ Use File ▸ Open (Ctrl+O) or File ▸ Open Recent.
 | Format | Extensions | Notes |
 |---|---|---|
 | SD file | `.sdf`, `.sd`, `.mol` | Data fields become columns. A record whose structure does not parse is **kept**: its other fields still load, and the structure cell is marked invalid. Nothing in your file disappears silently. |
+| Mol2 file | `.mol2` | Tripos mol2, as docking and modelling programs write it: each molecule becomes a row with its 3D coordinates, and its name goes in a **Title** column. As with SD files, a record that does not parse is kept and marked invalid. A mol2 file without hydrogens may read with the wrong charges, since the format leaves them to be worked out from the hydrogens. |
 | CSV / TSV | `.csv`, `.tsv`, `.tab`, `.txt` | A column headed SMILES, Structure, Mol, Molecule, Canonical_SMILES or Isomeric_SMILES becomes a structure column. A column whose first 20 filled cells are all reaction SMILES (such as USPTO's `rxn_smiles`) becomes a [reaction column](#reactions-in-the-table), even if its name ends in "smiles". |
 | SMILES list | `.smi`, `.smiles` | One SMILES per line, with an optional name. |
 | Excel | `.xlsx` | The first sheet. Structure and reaction columns are found as for CSV. |
@@ -176,13 +177,17 @@ in the background, using every processor core. You can scroll and work while tha
   its filters or search are hiding rows (the status bar still says how many rows are shown).
 - Saving is safe. The new file is written next to the old one and swapped in only once it is
   complete, so a crash or a full disk never damages your previous version.
-- **File ▸ Export ▸ Table…** writes SDF, CSV/TSV, SMILES, Excel, an RD file or an RXN file.
+- **File ▸ Export ▸ Table…** writes SDF, mol2, CSV/TSV, SMILES, Excel, an RD file or an RXN file.
   **File ▸ Export ▸ Selected Rows…** writes only the selected rows.
   - An **RD file** holds the first reaction column as RXN blocks and every other column as
     data. Reactions read from SMILES have no drawing, so they are laid out as the sketcher lays
     them out (using every processor core). Blank values are left out.
   - An **RXN file** holds one reaction: export a single selected row.
   - CSV, TSV and Excel write reactions as reaction SMILES.
+  - A **mol2 file** holds the first structure column, one molecule per row (blank and invalid
+    structures are left out), with every hydrogen, SYBYL atom types and Gasteiger partial
+    charges. Molecules with 3D coordinates keep them; others get 2D ones. Only the **Title**
+    column is written (as each molecule's name): mol2 has no data fields.
 
 ### New and close
 

@@ -39,6 +39,7 @@ SMILES = "smiles"
 XLSX = "xlsx"
 RDF = "rdf"
 RXN = "rxn"
+MOL2 = "mol2"
 
 _SUFFIXES = {
     ".sdf": SDF,
@@ -54,6 +55,7 @@ _SUFFIXES = {
     ".rdf": RDF,
     ".rd": RDF,
     ".rxn": RXN,
+    ".mol2": MOL2,
 }
 
 #: Header names (case-insensitive) that mark a column of structures in tabular files.
