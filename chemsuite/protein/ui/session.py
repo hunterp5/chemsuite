@@ -28,6 +28,8 @@ bar and the 3D view all read and change the session, never each other, and redra
 - ``focusChanged``: a ligand was focused or the focus cleared (the panel moves the camera);
 - ``measurementsChanged``: a measurement was added or removed, or atoms picked for one;
 - ``labelsChanged``: labels were added or cleared;
+- ``edited``: a protein's structure was replaced (an edit here, or its undo): the panel follows
+  the current row again, so a pose is placed in the new structure;
 - ``rowsEdited``: table rows had a cell of ``row_columns`` changed (the host's
   :class:`~.host.LinkedRow` columns: the panel follows the current row again, so a ligand
   moved in the sketcher shows as a pose).
@@ -39,6 +41,12 @@ lane), slow parts (surfaces, interactions, large cartoons) are built off the GUI
 Selections are atom masks per protein. Saved ("named") selections, measurements, labels and
 the focused ligand are kept as atom uids, so they survive edits of the structure.
 
+Edits (delete, element, charge, rename, renumber: :mod:`chemsuite.protein.structure.edit`)
+replace the protein's asset, each one step of the document's history; the display of the
+edited structure takes the old one's look atom by atom (:meth:`Display.carry`). Renaming a
+ligand that table rows name renames it there too, in the same step, through ``relabel`` (the
+host's :meth:`~.host.LinkedRow.relabel`).
+
 A pose (a row's own 3D ligand that is not one of the protein's residues: docked, or moved in
 the sketcher) is drawn by a display of its own, ``pose``, holding the protein and the pose
 merged (:func:`chemsuite.protein.chem.poses.merged`) with only the pose drawn, so its interactions
@@ -48,19 +56,21 @@ table's current row brings it back.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import replace
 
 import numpy as np
 from PySide6.QtCore import QObject, Signal
 
-from chemsuite.core.table import AssetsChanged, Table
+from chemsuite.core.table import AssetsChanged, PutAsset, Table
 from chemsuite.core.table.events import CellsChanged, Changed
 from chemsuite.molview.measure import describe
 from chemsuite.protein.chem import poses
 from chemsuite.protein.look import display as displays
 from chemsuite.protein.look import scene as scenes
+from chemsuite.protein.structure import edit as edits
 from chemsuite.protein.structure import store
-from chemsuite.protein.structure.model import AMINO, LIGAND, NUCLEIC
+from chemsuite.protein.structure.model import AMINO, LIGAND, NUCLEIC, Structure
 from chemsuite.protein.structure.select import Mask, SelectionError, select
 
 from .builds import Builder, Run
@@ -96,6 +106,7 @@ class ProteinSession(QObject):
     measurementsChanged = Signal()
     labelsChanged = Signal()
     rowsEdited = Signal(object)  # oids whose cells in row_columns changed
+    edited = Signal()  # a protein's structure was replaced
 
     def __init__(
         self,
@@ -103,9 +114,13 @@ class ProteinSession(QObject):
         parent: QObject | None = None,
         run: Run | None = None,
         row_columns: Collection[str] = (),
+        relabel: Callable[[str, Mapping[str, str]], Sequence[object]] | None = None,
+        count_named: Callable[[str, Collection[str]], int] | None = None,
     ) -> None:
         super().__init__(parent)
         self.table = table
+        self._relabel = relabel
+        self._count_named = count_named
         self.row_columns = frozenset(row_columns)
         self.builder = Builder(self, run) if run is not None else None
         self.displays: list[displays.Display] = []
@@ -139,6 +154,7 @@ class ProteinSession(QObject):
         assets = [a for a in self.table.assets.values() if a.kind == KIND]
         old = {d.id: d for d in self.displays}
         new: list[displays.Display] = []
+        replaced = False
         for asset in assets:
             current = old.get(asset.id)
             same = self._shown_assets.get(asset.id) is asset or (
@@ -153,10 +169,11 @@ class ProteinSession(QObject):
                 asset.id, asset.name, structure, deferred=self.builder is not None
             )
             state = self._pending.pop(asset.id, None)
-            if state is None and current is not None:
-                state = current.state()  # replaced (an edit): keep the look if it fits
             if state is not None:
                 shown.set_state(state)
+            elif current is not None:
+                shown.carry(current)  # replaced (an edit, or its undo): atoms keep their look
+                replaced = True
             new.append(shown)
         self.displays = new
         self._shown_assets = {asset.id: asset for asset in assets}
@@ -169,6 +186,8 @@ class ProteinSession(QObject):
         self._scene = None
         self.proteinsChanged.emit()
         self.sceneChanged.emit()
+        if replaced:
+            self.edited.emit()
 
     def _on_table_event(self, event) -> None:
         if not isinstance(event, Changed):
@@ -290,6 +309,116 @@ class ProteinSession(QObject):
             out[name] = mask
         out[SELECTION] = shown.selected.copy()
         return out
+
+    # editing: each edit is one step of the document's history
+    def edit(
+        self, label: str, structures: Mapping[str, Structure], extra_ops: Sequence = ()
+    ) -> None:
+        """Replace proteins' structures (by protein id) in one undoable step, with
+        *extra_ops* (rows renamed with a ligand)."""
+        ops = []
+        for protein, structure in structures.items():
+            asset = self.table.assets.get(protein)
+            shown = self.display(protein)
+            if asset is not None and shown is not None and structure is not shown.structure:
+                ops.append(PutAsset(protein, asset, replace(asset, payload=structure)))
+        if ops:
+            self.table.edit(label, [*ops, *extra_ops])
+
+    def _chosen(self) -> list[displays.Display]:
+        return [d for d in self.displays if d.visible and d.selected.any()]
+
+    def delete_selected(self) -> int:
+        """Delete the selected atoms (each with its other locations); how many went. Raises
+        EditError."""
+        chosen = self._chosen()
+        made = {d.id: edits.delete(d.structure, d.selected) for d in chosen}
+        count = sum(d.structure.n_atoms - made[d.id].n_atoms for d in chosen)
+        where = f" from {chosen[0].name}" if len(chosen) == 1 else ""
+        self.edit(f"Delete {_atoms(count)}{where}", made)
+        return count
+
+    def set_element(self, symbol: str) -> None:
+        """Make the selected atoms *symbol*. Raises EditError."""
+        chosen = self._chosen()
+        made = {d.id: edits.set_element(d.structure, d.selected, symbol) for d in chosen}
+        count = sum(int(d.selected.sum()) for d in chosen)
+        self.edit(f"Make {_atoms(count)} {symbol.strip().capitalize()}", made)
+
+    def set_charge(self, charge: int) -> None:
+        """Give the selected atoms the formal charge *charge*. Raises EditError."""
+        chosen = self._chosen()
+        made = {d.id: edits.set_charge(d.structure, d.selected, charge) for d in chosen}
+        count = sum(int(d.selected.sum()) for d in chosen)
+        self.edit(f"Set the charge of {_atoms(count)} to {charge:+d}", made)
+
+    def selected_residues(self) -> tuple[displays.Display, np.ndarray] | None:
+        """The protein holding the whole selection, and the residues selected in it (None when
+        nothing is selected, or more than one protein is)."""
+        chosen = self._chosen()
+        if len(chosen) != 1:
+            return None
+        shown = chosen[0]
+        return shown, np.unique(shown.structure.residue_of[shown.selected])
+
+    def selected_chain(self) -> tuple[displays.Display, int] | None:
+        """The protein and chain holding the whole selection, if it is in one chain."""
+        found = self.selected_residues()
+        if found is None:
+            return None
+        shown, residues = found
+        chains = np.unique(shown.structure.chain_of[residues])
+        return (shown, int(chains[0])) if len(chains) == 1 else None
+
+    def rename_residues(self, protein: str, residues: np.ndarray, name: str) -> None:
+        """Raises EditError."""
+        shown = self._shown_or_raise(protein)
+        made = edits.rename_residues(shown.structure, residues, name)
+        if len(residues) == 1:
+            what = shown.structure.residue_label(int(residues[0]))
+        else:
+            what = f"{len(residues)} residues"
+        self._relabelled(shown, made, residues, f"Rename {what} to {name.strip().upper()}")
+
+    def rename_chain(self, protein: str, chain: int, name: str) -> None:
+        """Raises EditError."""
+        shown = self._shown_or_raise(protein)
+        made = edits.rename_chain(shown.structure, chain, name)
+        span = shown.structure.residues_of(chain)
+        residues = np.arange(span.start, span.stop)
+        old = shown.structure.chain_name[chain]
+        self._relabelled(shown, made, residues, f"Rename chain {old} to {name.strip()}")
+
+    def renumber(self, protein: str, residues: np.ndarray, first: int) -> None:
+        """Raises EditError."""
+        shown = self._shown_or_raise(protein)
+        made = edits.renumber(shown.structure, residues, first)
+        label = f"Renumber {len(residues)} residue(s) from {first}"
+        self._relabelled(shown, made, residues, label)
+
+    def rows_naming(self, protein: str, atoms: np.ndarray) -> int:
+        """How many table rows name a residue these atoms of *protein* belong to (0 without a
+        host that links rows)."""
+        shown = self.display(protein)
+        if self._count_named is None or shown is None or not atoms.any():
+            return 0
+        s = shown.structure
+        labels = {s.residue_label(int(r)) for r in np.unique(s.residue_of[atoms])}
+        return self._count_named(protein, labels)
+
+    def _shown_or_raise(self, protein: str) -> displays.Display:
+        shown = self.display(protein)
+        if shown is None:
+            raise edits.EditError(f"There is no protein {protein}")
+        return shown
+
+    def _relabelled(self, shown, made: Structure, residues, label: str) -> None:
+        """Apply *made*, with the linked rows' ligand labels following the residues."""
+        before = shown.structure
+        labels = {before.residue_label(int(r)): made.residue_label(int(r)) for r in residues}
+        labels = {old: new for old, new in labels.items() if old != new}
+        extra = self._relabel(shown.id, labels) if self._relabel and labels else ()
+        self.edit(label, {shown.id: made}, extra)
 
     # changing how the selection is shown
     def _each_selected(self):
@@ -686,6 +815,10 @@ class ProteinSession(QObject):
         self._scene = None
         self.proteinsChanged.emit()
         self.sceneChanged.emit()
+
+
+def _atoms(count: int) -> str:
+    return f"{count} atom" if count == 1 else f"{count} atoms"
 
 
 def _points(data) -> list[tuple[Point, ...]]:

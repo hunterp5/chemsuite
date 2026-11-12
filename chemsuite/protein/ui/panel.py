@@ -18,12 +18,16 @@
 The viewer is a workspace of its own, in a window of its own (``ToolContext.add_window``) whose
 menu bar is :mod:`.menubar` (files, copying, selecting, display, ligand work, the camera). The
 selection field runs across the top; below, the proteins list beside the 3D view (with the
-models bar under it while a shown protein has several models), and the sequence strip under
-them. Everything reads and changes one :class:`~.session.ProteinSession`.
+models bar under it while a shown protein has several models). The sequence has a window of
+its own (the Sequence menu). Everything reads and changes one
+:class:`~.session.ProteinSession`.
 
-In the view a click selects a residue, Alt-click an atom, a double-click its chain; Shift adds
-and Ctrl (Cmd) toggles; a click on nothing clears the selection; Esc clears it too. While
-measuring, clicks pick atoms instead and Esc stops. A focused ligand keeps a slab (a slice of
+In the view a click selects an atom (on a cartoon, where no atom is drawn, its residue), a
+double-click the residue, Alt-click (Option) the chain; Shift adds and Ctrl (Cmd) toggles; a
+click on nothing clears the selection; Esc clears it too. While measuring, clicks pick atoms
+instead and Esc stops. The selection can be deleted, its atoms given another element or
+charge, and its residues or chain renamed or renumbered (Edit menu), each one undoable step
+of the document. A focused ligand keeps a slab (a slice of
 depth around its pocket) as the camera moves. When the computer cannot draw 3D, the view's
 place says why and the rest keeps working.
 
@@ -55,7 +59,9 @@ from chemsuite.app.widgets.panel import ToolPanel
 from chemsuite.core.table import Table
 from chemsuite.molview.camera import Camera
 from chemsuite.protein.chem import ligands
+from chemsuite.protein.look import scene as scenes
 from chemsuite.protein.structure import io as protein_io
+from chemsuite.protein.structure.edit import EditError
 
 from . import menubar, menus
 from .builds import Run
@@ -63,7 +69,7 @@ from .host import LinkedRow
 from .models_bar import ModelsBar
 from .pocket import PocketCamera
 from .selection_bar import SelectionBar
-from .sequence_view import SequenceView
+from .sequence_view import SequenceView, SequenceWindow
 from .session import ADD, SET, TOGGLE, ProteinSession
 from .tree import ProteinTree
 
@@ -76,6 +82,8 @@ POCKET = "pocket"
 OPEN, FETCH, EXTRACT, LIGAND = menubar.OPEN, menubar.FETCH, menubar.EXTRACT, menubar.LIGAND
 PROFILE, REMOVE, SHOW_TABLE = menubar.PROFILE, menubar.REMOVE, menubar.SHOW_TABLE
 THEME, BACKGROUNDS = menubar.THEME, menubar.BACKGROUNDS
+#: what a click in the view selects
+ATOM, RESIDUE, CHAIN = "atom", "residue", "chain"
 
 
 class ProteinPanel(ToolPanel):
@@ -94,7 +102,14 @@ class ProteinPanel(ToolPanel):
         self.tool_id = TOOL_ID
         self.linked = linked
         columns = linked.columns if linked is not None else ()
-        self.session = ProteinSession(table, self, run=run, row_columns=columns)
+        self.session = ProteinSession(
+            table,
+            self,
+            run=run,
+            row_columns=columns,
+            relabel=linked.relabel if linked is not None else None,
+            count_named=linked.naming if linked is not None else None,
+        )
         self.view = None
         self.overlay = None
         self._view_page: QWidget | None = None
@@ -112,8 +127,8 @@ class ProteinPanel(ToolPanel):
         self.tree.focusRequested.connect(self.frame_selection)
         if REMOVE in self.commands:
             self.tree.removeRequested.connect(self.commands[REMOVE])
-        self.sequence = SequenceView(self.session)
-        self.sequence.strip.residueHovered.connect(self._sequence_hovered)
+        self._sequence_window: SequenceWindow | None = None
+        self._sequence_state: dict = {}  # saved, for the window when it is first made
         self.views = QStackedWidget()
         self.empty = self._empty_page(commands)
         self.views.addWidget(self.empty)
@@ -132,16 +147,11 @@ class ProteinPanel(ToolPanel):
         self.columns.addWidget(middle)
         self.columns.setStretchFactor(1, 1)
         self.columns.setSizes([200, 700])
-        self.rows = QSplitter(Qt.Orientation.Vertical)
-        self.rows.addWidget(self.columns)
-        self.rows.addWidget(self.sequence)
-        self.rows.setStretchFactor(0, 1)
-        self.rows.setSizes([700, self.sequence.sizeHint().height()])
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         self.menu_bar = menubar.build(self, commands)
         layout.addWidget(self.selection_bar)
-        layout.addWidget(self.rows, 1)
+        layout.addWidget(self.columns, 1)
         layout.addWidget(self.status)
 
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._escape)
@@ -160,10 +170,10 @@ class ProteinPanel(ToolPanel):
         if current is not None:
             self.follow_row(current())
             self.session.rowsEdited.connect(lambda oids: self._row_edited(current(), oids))
+            self.session.edited.connect(lambda: self.follow_row(current()))
 
         QWidget.setTabOrder(self.selection_bar.field, self.tree)
         QWidget.setTabOrder(self.tree, self.views)
-        QWidget.setTabOrder(self.views, self.sequence.strip)
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
@@ -340,17 +350,19 @@ class ProteinPanel(ToolPanel):
         if self.view is not None:
             self.view.reset_view()
 
-    # picking in the view
-    def _residue_mask(self, atom: int, whole_chain: bool = False, single: bool = False):
+    # picking in the view: an atom, its residue or its chain
+    def _mask(self, atom: int, scope: str):
         found = self.session.scene.locate(atom)
         if found is None or found[0] is self.session.pose:  # a pose is not selected
             return None
         shown, index = found
         s = shown.structure
-        if single:
+        if scope == ATOM and shown.styles[index] == scenes.HIDDEN:
+            scope = RESIDUE  # a cartoon picked through its trace: no atom is drawn there
+        if scope == ATOM:
             mask = np.zeros(s.n_atoms, bool)
             mask[index] = True
-        elif whole_chain:
+        elif scope == CHAIN:
             mask = s.atom_chain == s.atom_chain[index]
         else:
             mask = s.residue_of == s.residue_of[index]
@@ -364,7 +376,8 @@ class ProteinPanel(ToolPanel):
             mode = ADD
         elif modifiers & Qt.KeyboardModifier.ControlModifier:
             mode = TOGGLE
-        masks = self._residue_mask(atom, single=bool(modifiers & Qt.KeyboardModifier.AltModifier))
+        scope = CHAIN if modifiers & Qt.KeyboardModifier.AltModifier else ATOM
+        masks = self._mask(atom, scope)
         if masks is None:
             if mode == SET:
                 self.session.clear_selection()
@@ -372,9 +385,107 @@ class ProteinPanel(ToolPanel):
         self.session.select(masks, mode)
 
     def _double_clicked(self, atom: int) -> None:
-        masks = self._residue_mask(atom, whole_chain=True)
+        masks = self._mask(atom, RESIDUE)
         if masks is not None:
             self.session.select(masks, SET)
+
+    # editing (Edit menu): each edit is one undoable step of the document
+    def delete_selection(self) -> int:
+        """Delete the selected atoms; how many went (the status line says why none did)."""
+        named = sum(self.session.rows_naming(d.id, d.selected)
+                    for d in self.session.displays if d.visible)  # fmt: skip
+        try:
+            count = self.session.delete_selected()
+        except EditError as error:
+            self.status.setText(f"⚠ {error}")
+            return 0
+        if count:
+            said = f"Deleted {count} atom{'s' if count != 1 else ''}"
+            if named:
+                said += f"; {named} table row(s) name a residue that lost atoms"
+            self.status.setText(said)
+        return count
+
+    def set_element(self, symbol: str) -> bool:
+        return self._edit(self.session.set_element, symbol)
+
+    def set_charge(self, charge: int) -> bool:
+        return self._edit(self.session.set_charge, charge)
+
+    def _edit(self, edit: Callable[..., None], *args) -> bool:
+        try:
+            edit(*args)
+        except EditError as error:
+            self.status.setText(f"⚠ {error}")
+            return False
+        return True
+
+    def undo(self) -> str | None:
+        """Undo the document's last step (an edit here, or in the table)."""
+        label = self.session.table.undo()
+        self.status.setText(f"Undid {label}" if label else "")
+        return label
+
+    def redo(self) -> str | None:
+        label = self.session.table.redo()
+        self.status.setText(f"Redid {label}" if label else "")
+        return label
+
+    def rename_residue(self):
+        from . import edit_dialogs
+
+        return edit_dialogs.rename_residue(self)
+
+    def rename_chain(self):
+        from . import edit_dialogs
+
+        return edit_dialogs.rename_chain(self)
+
+    def renumber(self):
+        from . import edit_dialogs
+
+        return edit_dialogs.renumber(self)
+
+    # the Sequence window
+    @property
+    def sequence_window(self) -> SequenceWindow:
+        """The Sequence window, made when first asked for."""
+        if self._sequence_window is None:
+            window = SequenceWindow(self.session, self)
+            window.strip.residueHovered.connect(self._sequence_hovered)
+            for key in (QKeySequence.StandardKey.Delete, QKeySequence(Qt.Key.Key_Backspace)):
+                QShortcut(QKeySequence(key), window, self.delete_selection)
+            QShortcut(QKeySequence(QKeySequence.StandardKey.Undo), window, self.undo)
+            QShortcut(QKeySequence(QKeySequence.StandardKey.Redo), window, self.redo)
+            QShortcut(QKeySequence(Qt.Key.Key_Escape), window, self.session.clear_selection)
+            self._sequence_window = window
+            window.set_state(self._sequence_state)
+        return self._sequence_window
+
+    @property
+    def sequence(self) -> SequenceView:
+        return self.sequence_window.view
+
+    def show_sequence(self, on: bool = True) -> None:
+        window = self.sequence_window
+        if not on:
+            window.hide()
+            return
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    def sequence_shown(self) -> bool:
+        return self._sequence_window is not None and self._sequence_window.isVisible()
+
+    def sequence_hidden_kinds(self) -> set[int]:
+        """The kind rows (waters, ions…) the Sequence window leaves out."""
+        if self._sequence_window is not None:
+            return set(self._sequence_window.strip.hidden_kinds)
+        return {int(k) for k in self._sequence_state.get("hidden", []) if isinstance(k, int)}
+
+    def hide_sequence_kind(self, kind: int, hidden: bool) -> None:
+        self.sequence_window.set_hidden(kind, hidden)
 
     def _context_menu(self, atom: int, where) -> None:
         menu = menus.context_menu(
@@ -385,6 +496,7 @@ class ProteinPanel(ToolPanel):
             copy_smiles=self.copy_smiles,
             copy_as=self.copy_selection,
             add_ligand=self.commands.get(LIGAND),
+            panel=self,
         )
         menu.exec(where)
 
@@ -450,9 +562,12 @@ class ProteinPanel(ToolPanel):
         shown = self.session.display(protein)
         self._light(shown, residue)
         if shown is not None and residue >= 0:
-            self.status.setText(f"{shown.name}  {shown.structure.residue_label(residue)}")
+            said = f"{shown.name}  {shown.structure.residue_label(residue)}"
         else:
-            self.status.setText("")
+            said = ""
+        self.status.setText(said)
+        if self._sequence_window is not None:
+            self._sequence_window.status.setText(said)
 
     def _light(self, shown, residue: int) -> None:
         if self.view is None:
@@ -470,7 +585,11 @@ class ProteinPanel(ToolPanel):
         state = {
             "session": self.session.state(),
             "columns": self.columns.sizes(),
-            "rows": self.rows.sizes(),
+            "sequence": (
+                self._sequence_window.state()
+                if self._sequence_window is not None
+                else self._sequence_state
+            ),
             "background": self.background,
             "depth_cue": self.depth_cue,
         }
@@ -480,10 +599,13 @@ class ProteinPanel(ToolPanel):
 
     def set_state(self, state: dict) -> None:
         self.session.set_state(state.get("session", {}))
-        for splitter, key in ((self.columns, "columns"), (self.rows, "rows")):
-            sizes = state.get(key)
-            if isinstance(sizes, list) and len(sizes) == splitter.count():
-                splitter.setSizes([int(v) for v in sizes])
+        sizes = state.get("columns")
+        if isinstance(sizes, list) and len(sizes) == self.columns.count():
+            self.columns.setSizes([int(v) for v in sizes])
+        sequence = state.get("sequence")
+        self._sequence_state = dict(sequence) if isinstance(sequence, dict) else {}
+        if self._sequence_window is not None or self._sequence_state.get("open") is True:
+            self.sequence_window.set_state(self._sequence_state)
         self.set_background(str(state.get("background", THEME)))
         self.set_depth_cue(state.get("depth_cue") is not False)
         camera = state.get("camera")
@@ -496,6 +618,9 @@ class ProteinPanel(ToolPanel):
         so a session left listening would fail on the next table change."""
         self._stop_watching()
         self._stop_watching = lambda: None
+        if self._sequence_window is not None:
+            self._sequence_state = self._sequence_window.state()
+            self._sequence_window.hide()
         self.session.close()
 
     def closeEvent(self, event) -> None:

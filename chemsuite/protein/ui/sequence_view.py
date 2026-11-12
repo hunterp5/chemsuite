@@ -16,14 +16,20 @@
 """The sequence strip: one row of one-letter codes per polymer chain, under the 3D view.
 
 Positions follow the full (SEQRES) sequence, so residues missing from the model show faint.
-Selected residues are highlighted and the hovered one framed. Click selects a residue, drag or
-Shift-click a range, Ctrl-click (Cmd on macOS) toggles; hovering a letter lights the residue up
-in 3D. Only the visible part is painted, so long chains stay fast.
+Below a protein's chains come its ligands, glycans, additives, ions and waters, a row each,
+every residue in a cell of its own named by its residue name (``HOH``), so one water can be
+picked out and deleted. Selected residues are highlighted and the hovered one framed. Click
+selects a residue, drag or Shift-click a range, Ctrl-click (Cmd on macOS) toggles, a click on
+a row's name selects the whole row; hovering a cell lights the residue up in 3D. Only the
+visible part is painted, so long chains stay fast.
+
+The strip lives in the :class:`SequenceWindow`, the viewer's Sequence window.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 
 import numpy as np
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
@@ -35,23 +41,37 @@ from PySide6.QtGui import (
     QPaintEvent,
     QPalette,
 )
-from PySide6.QtWidgets import QScrollArea, QWidget
+from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
-from chemsuite.protein.structure.sequence import ChainSequence, chain_sequences
+from chemsuite.protein.structure.sequence import (
+    ChainSequence,
+    KindRow,
+    chain_sequences,
+    kind_rows,
+)
 
 from .session import ADD, SET, TOGGLE, ProteinSession
 
 _PAD = 4
 _EVERY = 10  # a residue number above every tenth letter
+_EVERY_WIDE = 5  # and every fifth residue name
+_WIDE = 3  # a residue name takes this many letters' room
+POLYMER = -1  # a row's kind when it is a chain
 
 
 @dataclass(frozen=True)
 class _Row:
     protein: str
     label: str
-    sequence: ChainSequence
-    letters: str
+    sequence: ChainSequence | KindRow
+    letters: Sequence[str]  # what each position shows: a letter, or a residue name
     numbers: np.ndarray  # author residue number at each modelled position
+    kind: int = POLYMER
+    span: int = field(default=1)  # letters' room per position
+
+    @property
+    def every(self) -> int:
+        return _EVERY if self.span == 1 else _EVERY_WIDE
 
 
 class SequenceStrip(QWidget):
@@ -66,7 +86,8 @@ class SequenceStrip(QWidget):
         self.setMouseTracking(True)
         self.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         self.rows: list[_Row] = []
-        self._cache: dict[int, list[ChainSequence]] = {}
+        self.hidden_kinds: set[int] = set()  # kind rows not shown (the Sequence menu's Rows)
+        self._cache: dict[int, tuple[list[ChainSequence], list[KindRow]]] = {}
         self._hover: tuple[int, int] | None = None  # row, position
         self._anchor: tuple[int, int] | None = None
         self._cursor: tuple[int, int] | None = None  # the keyboard's row and position
@@ -102,32 +123,56 @@ class SequenceStrip(QWidget):
             structure = shown.structure
             key = id(structure)
             if key not in self._cache:
-                self._cache[key] = chain_sequences(structure)
-            for sequence in self._cache[key]:
+                self._cache[key] = (chain_sequences(structure), kind_rows(structure))
+            chains, kinds = self._cache[key]
+            for sequence in chains:
                 chain = structure.chain_name[sequence.chain]
                 numbers = np.where(
                     sequence.modelled, structure.res_seq[np.maximum(sequence.residue_at, 0)], 0
                 )
                 rows.append(_Row(shown.id, f"{shown.name} {chain}", sequence,
                                  sequence.letters, numbers))  # fmt: skip
+            for kind in kinds:
+                if kind.kind in self.hidden_kinds:
+                    continue
+                rows.append(_Row(shown.id, f"{shown.name} {kind.title}", kind,
+                                 [str(n) for n in kind.names], structure.res_seq[kind.residue_at],
+                                 kind.kind, _WIDE))  # fmt: skip
+        live = {id(d.structure) for d in self.session.displays}
+        self._cache = {k: v for k, v in self._cache.items() if k in live}
         self.rows = rows
         self._hover = None
         self._cursor = self._anchor = None
         self.updateGeometry()
-        self.adjustSize()
+        self.resize(self.sizeHint())  # adjustSize waits until the strip is placed
         self.update()
 
     def sizeHint(self) -> QSize:
-        longest = max((len(r.letters) for r in self.rows), default=0)
+        longest = max((len(r.letters) * r.span for r in self.rows), default=0)
         return QSize(self.label_width + longest * self.cell + _PAD,
                      max(len(self.rows), 1) * self.row_height + _PAD)  # fmt: skip
 
     def position_at(self, point: QPoint) -> tuple[int, int] | None:
         row = point.y() // self.row_height
-        position = (point.x() - self.label_width) // self.cell
-        if 0 <= row < len(self.rows) and 0 <= position < len(self.rows[row].letters):
+        if not 0 <= row < len(self.rows) or point.x() < self.label_width:
+            return None
+        position = (point.x() - self.label_width) // (self.cell * self.rows[row].span)
+        if 0 <= position < len(self.rows[row].letters):
             return int(row), int(position)
         return None
+
+    def label_at(self, point: QPoint) -> int | None:
+        """The row whose name is at *point*, if any."""
+        row = point.y() // self.row_height
+        if 0 <= row < len(self.rows) and 0 <= point.x() < self.label_width:
+            return int(row)
+        return None
+
+    def box(self, row: int, position: int) -> QRect:
+        """Where a position's cell is, with its number line above it."""
+        width = self.cell * self.rows[row].span
+        return QRect(self.label_width + position * width, row * self.row_height, width,
+                     self.row_height)  # fmt: skip
 
     def residue_at(self, row: int, position: int) -> int:
         return int(self.rows[row].sequence.residue_at[position])
@@ -142,11 +187,12 @@ class SequenceStrip(QWidget):
         selected_text = palette.color(QPalette.ColorRole.HighlightedText)
         cell, line, label_width = self.cell, self.line, self.label_width
         area = event.rect()
-        first = max((area.left() - label_width) // cell, 0)
         for r, row in enumerate(self.rows):
             top = r * self.row_height
             if top > area.bottom() or top + self.row_height < area.top():
                 continue
+            width = cell * row.span
+            first = max((area.left() - label_width) // width, 0)
             painter.setPen(faint)
             painter.drawText(QRect(_PAD, top + line, label_width, line),
                              Qt.AlignmentFlag.AlignVCenter, row.label)  # fmt: skip
@@ -156,11 +202,11 @@ class SequenceStrip(QWidget):
                 if shown is None
                 else np.unique(shown.structure.residue_of[shown.selected])
             )
-            last = min(len(row.letters), (area.right() - label_width) // cell + 2)
+            last = min(len(row.letters), (area.right() - label_width) // width + 2)
             residue_at = row.sequence.residue_at
             for k in range(first, last):
-                x = label_width + k * cell
-                box = QRect(x, top + line, cell, line)
+                x = label_width + k * width
+                box = QRect(x, top + line, width, line)
                 residue = int(residue_at[k])
                 if residue >= 0 and np.isin(residue, chosen):
                     painter.fillRect(box, selected_fill)
@@ -168,24 +214,29 @@ class SequenceStrip(QWidget):
                 else:
                     painter.setPen(text if residue >= 0 else faint)
                 painter.drawText(box, Qt.AlignmentFlag.AlignCenter, row.letters[k])
-                if k % _EVERY == 0 and residue >= 0:
+                if k % row.every == 0 and residue >= 0:
                     painter.setPen(faint)
                     number = str(int(row.numbers[k]))
-                    painter.drawText(QRect(x, top, cell * _EVERY, line),
+                    painter.drawText(QRect(x, top, width * row.every, line),
                                      Qt.AlignmentFlag.AlignLeft, number)  # fmt: skip
             marked = self._hover if self._hover is not None else self._focused_cursor()
             if marked is not None and marked[0] == r:
                 painter.setPen(text)
-                painter.drawRect(QRect(label_width + marked[1] * cell, top + line,
-                                       cell - 1, line - 1))  # fmt: skip
+                painter.drawRect(QRect(label_width + marked[1] * width, top + line,
+                                       width - 1, line - 1))  # fmt: skip
         painter.end()
 
     # mouse
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        hit = self.position_at(event.position().toPoint())
+        point = event.position().toPoint()
+        modifiers = event.modifiers()
+        named = self.label_at(point)
+        if named is not None:  # a row's name: the whole row
+            self.select_row(named, _mode(modifiers))
+            return
+        hit = self.position_at(point)
         if hit is None:
             return
-        modifiers = event.modifiers()
         if modifiers & Qt.KeyboardModifier.ShiftModifier and self._anchor is not None:
             self._select_range(self._anchor, hit, ADD)
             return
@@ -249,8 +300,7 @@ class SequenceStrip(QWidget):
             self._select_range(self._anchor, self._cursor, SET)
         self.update()
         self.residueHovered.emit(self.rows[row].protein, self.residue_at(row, position))
-        self.cursorMoved.emit(QRect(self.label_width + position * self.cell,
-                                    row * self.row_height, self.cell, self.row_height))  # fmt: skip
+        self.cursorMoved.emit(self.box(row, position))
 
     def focusOutEvent(self, event) -> None:
         super().focusOutEvent(event)
@@ -265,6 +315,15 @@ class SequenceStrip(QWidget):
         low, high = sorted((start[1], end[1]))
         residues = row.sequence.residue_at[low : high + 1]
         residues = residues[residues >= 0]
+        self._select_residues(row, residues, mode)
+
+    def select_row(self, r: int, mode: str = SET) -> None:
+        """Select every residue of row *r* (a chain, or all the waters)."""
+        row = self.rows[r]
+        residues = row.sequence.residue_at
+        self._select_residues(row, residues[residues >= 0], mode)
+
+    def _select_residues(self, row: _Row, residues: np.ndarray, mode: str) -> None:
         shown = self.session.display(row.protein)
         if shown is None:
             return
@@ -272,14 +331,21 @@ class SequenceStrip(QWidget):
         self.session.select({row.protein: mask}, mode)
 
     def show_residue(self, protein: str, residue: int) -> QRect | None:
-        """Where a residue's letter is (to scroll to it)."""
+        """Where a residue's cell is (to scroll to it)."""
         for r, row in enumerate(self.rows):
             if row.protein == protein:
                 found = np.flatnonzero(row.sequence.residue_at == residue)
                 if len(found):
-                    x = self.label_width + int(found[0]) * self.cell
-                    return QRect(x, r * self.row_height, self.cell, self.row_height)
+                    return self.box(r, int(found[0]))
         return None
+
+
+def _mode(modifiers) -> str:
+    if modifiers & Qt.KeyboardModifier.ShiftModifier:
+        return ADD
+    if modifiers & Qt.KeyboardModifier.ControlModifier:
+        return TOGGLE
+    return SET
 
 
 class SequenceView(QScrollArea):
@@ -303,3 +369,53 @@ class SequenceView(QScrollArea):
         box = self.strip.show_residue(protein, residue)
         if box is not None:
             self.ensureVisible(box.center().x(), box.center().y(), 60, 0)
+
+
+class SequenceWindow(QWidget):
+    """The viewer's Sequence window: the strip, and a status line naming what is under the
+    pointer. A window of the viewer's own (it closes with it); its rows and place are saved
+    with the viewer."""
+
+    def __init__(self, session: ProteinSession, parent: QWidget) -> None:
+        super().__init__(parent, Qt.WindowType.Window)
+        self.setWindowTitle("Sequence")
+        self.view = SequenceView(session)
+        self.status = QLabel()
+        self.status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+        layout.addWidget(self.view, 1)
+        layout.addWidget(self.status)
+        self.resize(900, 260)
+
+    @property
+    def strip(self) -> SequenceStrip:
+        return self.view.strip
+
+    def set_hidden(self, kind: int, hidden: bool) -> None:
+        """Show or hide the row of one kind (waters, ions…) for every protein."""
+        if hidden:
+            self.strip.hidden_kinds.add(kind)
+        else:
+            self.strip.hidden_kinds.discard(kind)
+        self.strip.reload()
+
+    def state(self) -> dict:
+        place = self.geometry()
+        return {
+            "open": self.isVisible(),
+            "geometry": [place.x(), place.y(), place.width(), place.height()],
+            "hidden": sorted(self.strip.hidden_kinds),
+        }
+
+    def set_state(self, state: Mapping) -> None:
+        hidden = state.get("hidden")
+        if isinstance(hidden, list):
+            self.strip.hidden_kinds = {int(k) for k in hidden if isinstance(k, int)}
+            self.strip.reload()
+        place = state.get("geometry")
+        if isinstance(place, list) and len(place) == 4 and all(isinstance(v, int) for v in place):
+            self.setGeometry(*place)
+        if state.get("open") is True:
+            self.show()

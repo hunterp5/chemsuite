@@ -322,6 +322,13 @@ class ToolContext:
         """Change the document with *ops* (e.g. adding a protein) as one undo step."""
         self.table.edit(label, ops)
 
+    def cell_ops(
+        self, column: str, oids: Sequence[int] | np.ndarray, values: Sequence[object]
+    ) -> list[Op]:
+        """The ops that write *values* into *column* at *oids*, to run with others as one
+        undo step (:meth:`edit`, or a protein edit in the workbench)."""
+        return self.table.cell_ops(column, oids, values)
+
     def cache_folder(self, name: str) -> Path:
         """A folder (not yet created) for downloads kept between sessions, such as ``ccd``."""
         from ..shell.settings_hub import cache_folder

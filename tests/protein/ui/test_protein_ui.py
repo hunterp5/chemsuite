@@ -29,6 +29,7 @@ from chemsuite.protein.look import scene
 from chemsuite.protein.structure import io, store
 from chemsuite.protein.structure.model import Structure
 from chemsuite.protein.structure.select import SelectionError, select
+from chemsuite.protein.ui.sequence_view import POLYMER
 
 DATA = Path(__file__).resolve().parents[2] / "data" / "protein"
 
@@ -117,7 +118,8 @@ def test_hiding_a_protein_takes_it_out_of_the_scene(panel, table) -> None:
     assert panel.tree.topLevelItem(1) is item
     assert not session.display("3HTB").visible
     assert session.scene.atom_offsets[-1] == both - structure("3htb.cif.gz").n_atoms
-    assert len(panel.sequence.strip.rows) == 2  # 1ATP's chains E and I only
+    chains = [r.label for r in panel.sequence.strip.rows if r.kind == POLYMER]
+    assert chains == ["1ATP E", "1ATP I"]  # 1ATP's chains only
 
 
 # selecting
@@ -196,18 +198,25 @@ def test_clicking_letters_selects_residues(panel, qtbot) -> None:
     assert not shown.selected.any()
 
 
-def test_clicks_in_the_view_select_residues_atoms_and_chains(panel) -> None:
+def test_clicks_in_the_view_select_atoms_residues_and_chains(panel) -> None:
     session = panel.session
-    s = structure("1atp.cif.gz")
+    shown = session.display("1ATP")
+    s = shown.structure
     atom = int(np.flatnonzero(s.name == "CA")[20])
+    residue = (s.residue_of == s.residue_of[atom]) & shown.active
+    # under a cartoon no atom is drawn: a click there takes the residue
+    assert shown.styles[atom] == scene.HIDDEN
     panel._clicked(atom, Qt.KeyboardModifier.NoModifier)
-    assert session.display("1ATP").selected.sum() == len(
-        range(*s.atoms_of(int(s.residue_of[atom])).indices(s.n_atoms))
-    )
-    panel._clicked(atom, Qt.KeyboardModifier.AltModifier)
-    assert session.display("1ATP").selected.sum() == 1
+    assert np.array_equal(shown.selected, residue)
+    session.show_as(scene.STICK)  # the residue drawn: now a click takes one atom
+    panel._clicked(atom, Qt.KeyboardModifier.NoModifier)
+    assert np.flatnonzero(shown.selected).tolist() == [atom]
+    panel._clicked(atom + 1, Qt.KeyboardModifier.ShiftModifier)
+    assert np.flatnonzero(shown.selected).tolist() == [atom, atom + 1]
     panel._double_clicked(atom)
-    assert session.display("1ATP").selected.sum() == int((s.atom_chain == 0).sum())
+    assert np.array_equal(shown.selected, residue)
+    panel._clicked(atom, Qt.KeyboardModifier.AltModifier)
+    assert np.array_equal(shown.selected, (s.atom_chain == 0) & shown.active)
     panel._clicked(-1, Qt.KeyboardModifier.NoModifier)
     assert session.selected_count() == 0
 

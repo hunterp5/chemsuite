@@ -18,6 +18,10 @@
 Each polymer chain gives a :class:`ChainSequence`: one letter per position of its entity's
 full sequence and, for each position, the residue modelled there (or -1). A chain whose file
 had no SEQRES gets the residues it has, in order.
+
+Everything outside the polymers comes as :class:`KindRow` s, one per kind (ligands, glycans,
+additives, ions, waters), each residue in its own position, so a single water can be found,
+selected and deleted like a residue of a chain.
 """
 
 from __future__ import annotations
@@ -28,7 +32,7 @@ from functools import cache
 import gemmi
 import numpy as np
 
-from .model import AMINO, NUCLEIC, Structure
+from .model import ADDITIVE, AMINO, GLYCAN, ION, LIGAND, NUCLEIC, WATER, Structure
 
 
 @cache
@@ -82,3 +86,40 @@ def _chain(structure: Structure, chain: int, residues: np.ndarray) -> ChainSeque
         residue_at[positions] = residues[placed][first]
         return ChainSequence(chain, full.copy(), residue_at)
     return ChainSequence(chain, structure.res_name[residues].copy(), residues.astype(np.int32))
+
+
+#: the kind rows, in the order they are shown, with their plural titles
+KIND_ROWS = {LIGAND: "Ligands", GLYCAN: "Glycans", ADDITIVE: "Additives", ION: "Ions",
+             WATER: "Waters"}  # fmt: skip
+
+
+@dataclass(frozen=True)
+class KindRow:
+    """The residues of one kind outside the polymers, by chain and then number."""
+
+    kind: int
+    names: np.ndarray  # <U5 residue name at each position
+    residue_at: np.ndarray  # int32: the residue at each position (every one is modelled)
+
+    @property
+    def title(self) -> str:
+        return KIND_ROWS[self.kind]
+
+    @property
+    def modelled(self) -> np.ndarray:
+        return np.ones(len(self.residue_at), bool)
+
+
+def kind_rows(structure: Structure) -> list[KindRow]:
+    """A row for each kind of non-polymer residue the structure has, in :data:`KIND_ROWS`
+    order."""
+    out = []
+    for kind in KIND_ROWS:
+        residues = np.flatnonzero(structure.res_kind == kind)
+        if not len(residues):
+            continue
+        order = np.lexsort((structure.icode[residues], structure.res_seq[residues],
+                            structure.chain_of[residues]))  # fmt: skip
+        residues = residues[order].astype(np.int32)
+        out.append(KindRow(kind, structure.res_name[residues].copy(), residues))
+    return out

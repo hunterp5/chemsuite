@@ -17,12 +17,14 @@
 here (and in the right-click menu), not in toolbar buttons.
 
 - File: open, fetch, remove and save proteins; save the selection; close the window.
-- Edit: copy the selection.
+- Edit: undo and redo the document's steps; copy the selection; delete it, give its atoms an
+  element or a charge, rename or renumber its residues or chain.
 - Select: everything, kinds, chains, around the selection, saved selections.
 - Display: Show, Hide, Colour, Label (on the selection); Hydrogens, Surface Transparency.
 - Ligand: focus a ligand in its pocket, interactions, measurements, ligands to the table.
 - View: the camera, which areas show, full screen.
 - Window: minimise, the table's window.
+- Sequence (last, at the far right): the Sequence window, and which of its kind rows show.
 
 Menus are filled when they open, so they always match the session.
 """
@@ -37,6 +39,7 @@ from PySide6.QtGui import QActionGroup, QColor, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar
 
 from chemsuite.protein.structure import io as protein_io
+from chemsuite.protein.structure.sequence import KIND_ROWS
 
 from . import menus
 
@@ -61,7 +64,8 @@ PROFILE = "profile"  # each ligand row's interactions, as columns
 REMOVE = "remove"  # remove a protein: (protein id)
 SHOW_TABLE = "show_table"  # bring the document's table window forward
 Commands = Mapping[str, Callable[..., object]]
-MENUS = ("File", "Edit", "Select", "Display", "Ligand", "View", "Window")
+#: the Sequence menu sits last, at the far right of the bar
+MENUS = ("File", "Edit", "Select", "Display", "Ligand", "View", "Window", "Sequence")
 
 
 def build(panel: ProteinPanel, commands: Commands) -> QMenuBar:
@@ -76,6 +80,7 @@ def build(panel: ProteinPanel, commands: Commands) -> QMenuBar:
         lambda m: _ligand(m, panel, commands),
         lambda m: _view(m, panel),
         lambda m: _window(m, panel, commands),
+        lambda m: _sequence(m, panel),
     )
     filled = []
     for title, fill in zip(MENUS, fills, strict=True):
@@ -130,6 +135,14 @@ def _file(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
 
 def _edit(menu: QMenu, panel: ProteinPanel) -> None:
     selected = panel.session.selected_count() > 0
+    history = panel.session.table.history
+    undo = menu.addAction(_step("Undo", history.undo_label), panel.undo)
+    undo.setShortcut(QKeySequence.StandardKey.Undo)
+    undo.setEnabled(history.can_undo)
+    redo = menu.addAction(_step("Redo", history.redo_label), panel.redo)
+    redo.setShortcut(QKeySequence.StandardKey.Redo)
+    redo.setEnabled(history.can_redo)
+    menu.addSeparator()
     copy = menu.addAction("Copy", lambda: panel.copy_selection(protein_io.PDB))
     copy.setShortcut(QKeySequence.StandardKey.Copy)
     copy.setToolTip("Copy the selected atoms as PDB text")
@@ -141,6 +154,12 @@ def _edit(menu: QMenu, panel: ProteinPanel) -> None:
     image = menu.addAction("Copy Image", panel.copy_image)
     image.setShortcut(QKeySequence("Ctrl+Shift+C"))
     image.setEnabled(panel.view is not None and bool(panel.session.displays))
+    menu.addSeparator()
+    menus.fill_edit(menu, panel)
+
+
+def _step(verb: str, label: str | None) -> str:
+    return f"{verb} {label}" if label else verb
 
 
 def _select(menu: QMenu, panel: ProteinPanel) -> None:
@@ -218,10 +237,9 @@ def _view(menu: QMenu, panel: ProteinPanel) -> None:
     for action in (ortho, cue):
         action.setEnabled(panel.view is not None)
     menu.addSeparator()
-    for title, widget in (("Proteins List", panel.tree), ("Sequence", panel.sequence)):
-        action = menu.addAction(title, lambda w=widget: w.setVisible(not w.isVisible()))
-        action.setCheckable(True)
-        action.setChecked(not widget.isHidden())
+    tree = menu.addAction("Proteins List", lambda: panel.tree.setVisible(panel.tree.isHidden()))
+    tree.setCheckable(True)
+    tree.setChecked(not panel.tree.isHidden())
     menu.addSeparator()
     full = menu.addAction("Full Screen", panel.toggle_full_screen)
     full.setShortcut(QKeySequence.StandardKey.FullScreen)
@@ -234,6 +252,22 @@ def _window(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
     minimise.setShortcut(QKeySequence("Ctrl+M"))
     menu.addSeparator()
     _command(menu, "Show Table", commands, SHOW_TABLE)
+
+
+def _sequence(menu: QMenu, panel: ProteinPanel) -> None:
+    shown = panel.sequence_shown()
+    viewer = menu.addAction("Sequence Viewer", lambda: panel.show_sequence(not shown))
+    viewer.setShortcut(QKeySequence("Ctrl+Shift+L"))
+    viewer.setCheckable(True)
+    viewer.setChecked(shown)
+    viewer.setToolTip("A window with each chain's sequence, and a row each for the ligands, "
+                      "additives, ions and waters")  # fmt: skip
+    rows = menu.addMenu("Rows")
+    hidden = panel.sequence_hidden_kinds()
+    for kind, title in KIND_ROWS.items():
+        action = rows.addAction(title, lambda k=kind: panel.hide_sequence_kind(k, k not in hidden))
+        action.setCheckable(True)
+        action.setChecked(kind not in hidden)
 
 
 def save_selection(panel: ProteinPanel, path: str | None = None) -> str:

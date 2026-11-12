@@ -336,6 +336,38 @@ class Display:
         flags[np.unique(s.residue_of[self.ghost])] += scenes.GHOST
         return colour, flags
 
+    # an edited structure
+    def carry(self, old: Display) -> None:
+        """Take *old*'s look for this display of an edited structure, atom by atom through
+        their uids (the run lists of :meth:`state` are by position, which an edit shifts).
+        Atoms new to this structure (brought back by an undo) keep the default look; an atom
+        whose element changed takes its scheme's colour."""
+        s, o = self.structure, old.structure
+        self.visible, self.scheme, self.surface_scheme = old.visible, old.scheme, old.surface_scheme
+        self.hydrogens, self.transparency = old.hydrogens, old.transparency
+        self.model = old.model if old.model < self.n_models else 0
+        source = o.indices(s.uid)  # each atom's index in the old structure, or -1
+        kept = source >= 0
+        was = source[kept]
+        first = source[s.res_start[:-1]]  # each residue's first atom, in the old structure
+        old_residue = np.where(first >= 0, o.residue_of[np.maximum(first, 0)], -1)
+        residue_now = {int(r): i for i, r in enumerate(old_residue) if r >= 0}
+        self.altlocs = {residue_now[r]: letter for r, letter in old.altlocs.items()
+                        if r in residue_now}  # fmt: skip
+        carried = old_residue >= 0
+        self.cartoon[carried] = old.cartoon[old_residue[carried]]
+        self.styles[kept] = old.styles[was]
+        self.surface[kept] = old.surface[was]
+        self.query[kept] = old.query[was]
+        self.selected[kept] = old.selected[was]
+        self.colours = schemes.colour(s, self.scheme)
+        same = kept.copy()
+        same[kept] = s.element[kept] == o.element[was]
+        self.colours[same] = old.colours[source[same]]
+        self.styles[~self.active] = scenes.HIDDEN
+        self.surface &= self.active
+        self.touch("geometry", "cartoon", "surface", "pocket", "trace", "interactions")
+
     # saving
     def state(self) -> dict:
         return {

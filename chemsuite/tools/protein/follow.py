@@ -22,7 +22,10 @@ moved in the sketcher, or docked); otherwise the residue its ``Ligand ID`` names
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING
+
+import numpy as np
 
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.protein.chem import ligands, poses
@@ -72,6 +75,26 @@ class TableRow:
             return ""
         protein = str(table.cell(PROTEIN_COLUMN, oid) or "")
         return protein if protein and session.display(protein) is None else ""
+
+    def relabel(self, protein: str, labels: Mapping[str, str]) -> list:
+        oids, names = self._named(protein, labels)
+        new = [labels[name] for name in names]
+        return self._ctx.cell_ops(LIGAND_ID_COLUMN, oids, new) if len(oids) else []
+
+    def naming(self, protein: str, labels: Collection[str]) -> int:
+        return len(self._named(protein, labels)[0])
+
+    def _named(self, protein: str, labels: Collection[str]) -> tuple[np.ndarray, list[str]]:
+        """The rows linked to *protein* whose Ligand ID is one of *labels*, and those IDs."""
+        table = self._ctx.table
+        if PROTEIN_COLUMN not in table or LIGAND_ID_COLUMN not in table:
+            return np.zeros(0, np.int64), []
+        read = table.read([PROTEIN_COLUMN, LIGAND_ID_COLUMN])
+        proteins = [str(v) for v in read[PROTEIN_COLUMN].tolist()]
+        ids = [str(v) for v in read[LIGAND_ID_COLUMN].tolist()]
+        keep = [i for i, (p, name) in enumerate(zip(proteins, ids, strict=True))
+                if p == protein and name in labels]  # fmt: skip
+        return table.oids[np.array(keep, np.int64)], [ids[i] for i in keep]
 
     def _pose(self, oid: int):
         table = self._ctx.table

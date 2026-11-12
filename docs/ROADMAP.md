@@ -356,7 +356,9 @@ pip extra.
    tautomers, Asn/Gln/His flips and OH/SH/NH₃ rotors; short loops closed, longer gaps left and
    marked ⚠; propka for protonation at a chosen pH. Measured first, as the conformer plan was:
    benchmarked against PDBFixer, Reduce and propka outputs before it becomes the default.
-4. **Editing** (every edit one undoable step). Delete, rename and renumber; waters beyond X Å;
+4. **Editing** (every edit one undoable step). *Done 2026-11-12, ahead of the rest: delete,
+   element and charge, rename and renumber, with the Sequence window's kind rows to pick out
+   waters and ions.* Still to do: waters beyond X Å;
    move and rotate a ligand; bonds and orders; collapse alternate locations; split and merge;
    protonation states and flips by hand; mutations from a rotamer library (licence checked)
    with the fewest clashes; Edit in Sketcher with an MCS-constrained re-embed back into the

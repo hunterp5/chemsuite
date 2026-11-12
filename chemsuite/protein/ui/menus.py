@@ -17,14 +17,18 @@
 Transparency (for every protein), Focus and Measure, and the right-click menu on an atom.
 
 Every menu acts on the session's selection; the right-click menu first offers to select what
-was clicked (its residue, chain or binding site), so the rest of it then applies there.
+was clicked (its residue, chain or binding site), so the rest of it then applies there. Its
+Delete Atom and Delete Residue act on what was clicked at once; Edit is the Edit menu's
+editing of the selection (:func:`fill_edit`).
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
-from PySide6.QtGui import QActionGroup, QColor
-from PySide6.QtWidgets import QColorDialog, QMenu, QWidget
+from PySide6.QtGui import QActionGroup, QColor, QKeySequence
+from PySide6.QtWidgets import QColorDialog, QInputDialog, QMenu, QWidget
 
 from chemsuite.molview.geometry import HYDROGENS
 from chemsuite.protein.look import colours, scene
@@ -36,7 +40,13 @@ from chemsuite.protein.structure.select import SelectionError
 from .session import ADD, ATOM_LABEL, RESIDUE_LABEL, SET, ProteinSession
 from .tree import residue_expression
 
+if TYPE_CHECKING:
+    from .panel import ProteinPanel
+
 MEASURES = (("Distance", 2), ("Angle", 3), ("Dihedral", 4))
+#: the elements Element ▸ offers (Other… asks for any)
+ELEMENTS = ("C", "N", "O", "S", "P", "F", "Cl", "Br", "I", "H")
+CHARGES = (-2, -1, 0, 1, 2)
 SHOW_STYLES = (
     ("Wire", scene.WIRE),
     ("Sticks", scene.STICK),
@@ -165,6 +175,7 @@ def context_menu(
     copy_smiles=None,
     copy_as=None,
     add_ligand=None,
+    panel: ProteinPanel | None = None,
 ) -> QMenu:
     """The right-click menu for scene atom ``atom`` (-1: empty space)."""
     menu = QMenu(parent)
@@ -200,6 +211,11 @@ def context_menu(
         measuring = menu.addMenu("Measure From Here")
         for name, atoms in MEASURES:
             measuring.addAction(name, lambda n=atoms: _measure_from(session, n, atom))
+        if panel is not None:
+            menu.addSeparator()
+            menu.addAction("Delete Atom", lambda: _delete_here(panel, shown.id, index, False))
+            menu.addAction("Delete Residue", lambda: _delete_here(panel, shown.id, index, True))
+            fill_edit(menu.addMenu("Edit Selection"), panel, shortcuts=False)
         alternates = sorted(set(structure.altloc[structure.atoms_of(residue)].tolist()) - {""})
         if alternates:
             alt = menu.addMenu("Alternate Location")
@@ -234,3 +250,56 @@ def context_menu(
         copying.addAction("mmCIF", lambda: copy_as(MMCIF))
         copying.setEnabled(session.selected_count() > 0)
     return menu
+
+
+def fill_edit(menu: QMenu, panel: ProteinPanel, *, shortcuts: bool = True) -> None:
+    """Delete the selection, give its atoms an element or a charge, rename or renumber its
+    residues or chain: each one undoable step of the document."""
+    session = panel.session
+    selected = session.selected_count() > 0
+    delete = menu.addAction("Delete", panel.delete_selection)
+    if shortcuts:
+        delete.setShortcuts([QKeySequence(QKeySequence.StandardKey.Delete),
+                             QKeySequence("Backspace")])  # fmt: skip
+    delete.setToolTip("Delete the selected atoms (each with its alternate locations)")
+    delete.setEnabled(selected)
+    element = menu.addMenu("Element")
+    for symbol in ELEMENTS:
+        element.addAction(symbol, lambda s=symbol: panel.set_element(s))
+    element.addSeparator()
+    element.addAction("Other…", lambda: _other_element(panel))
+    element.setEnabled(selected)
+    charge = menu.addMenu("Charge")
+    for value in CHARGES:
+        charge.addAction(f"{value:+d}" if value else "0", lambda q=value: panel.set_charge(q))
+    charge.setEnabled(selected)
+    menu.addSeparator()
+    residues = session.selected_residues()
+    rename = menu.addAction("Rename Residue…" if residues is None or len(residues[1]) == 1
+                            else "Rename Residues…", panel.rename_residue)  # fmt: skip
+    rename.setEnabled(residues is not None)
+    chain = menu.addAction("Rename Chain…", panel.rename_chain)
+    chain.setEnabled(session.selected_chain() is not None)
+    renumber = menu.addAction("Renumber Residues…", panel.renumber)
+    renumber.setEnabled(session.selected_chain() is not None)
+
+
+def _other_element(panel: ProteinPanel) -> None:
+    symbol, ok = QInputDialog.getText(panel, "Element", "Element symbol:")
+    if ok and symbol.strip():
+        panel.set_element(symbol)
+
+
+def _delete_here(panel: ProteinPanel, protein: str, index: int, residue: bool) -> None:
+    """Select the clicked atom (or its residue), then delete it."""
+    shown = panel.session.display(protein)
+    if shown is None:
+        return
+    s = shown.structure
+    if residue:
+        mask = s.residue_of == s.residue_of[index]
+    else:
+        mask = np.zeros(s.n_atoms, bool)
+        mask[index] = True
+    panel.session.select({protein: mask & shown.active}, SET)
+    panel.delete_selection()

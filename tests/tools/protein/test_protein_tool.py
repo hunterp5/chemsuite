@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PySide6.QtWidgets import QPushButton
 
@@ -478,3 +479,23 @@ def test_save_protein_as_writes_every_atom(opened, tmp_path) -> None:
     file_menu = menu_of(panel, "File")
     saving = next(a.menu() for a in file_menu.actions() if a.text() == "Save Protein As")
     assert [a.text() for a in saving.actions()] == ["1ATP…"]
+
+
+def test_renaming_a_ligand_renames_its_row_in_the_same_step(with_rows) -> None:
+    ctx = ToolContext(with_rows)
+    table = with_rows.workspace.table
+    panel = ctx.find_panel("protein")
+    session = panel.session
+    oid = int(table.oids[-1])
+    assert table.cell("Ligand ID", oid) == "E/ATP 355"
+    atp = int(session.display("1ATP").structure.res_seq.tolist().index(355))
+    session.rename_residues("1ATP", np.array([atp]), "ANP")
+    assert table.cell("Ligand ID", oid) == "E/ANP 355"
+    assert session.display("1ATP").structure.residue_label(atp) == "E/ANP 355"
+    ctx.set_current_oid(oid)  # the row still finds its ligand
+    assert session.focused_residue() == ("1ATP", atp)
+    table.undo()  # one step: the residue and the row together
+    assert table.cell("Ligand ID", oid) == "E/ATP 355"
+    assert session.display("1ATP").structure.residue_label(atp) == "E/ATP 355"
+    atoms = session.display("1ATP").structure.residue_of == atp
+    assert session.rows_naming("1ATP", atoms) == 1

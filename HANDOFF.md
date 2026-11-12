@@ -1,4 +1,4 @@
-# Handoff: state of play (updated 2026-11-11, on Windows)
+# Handoff: state of play (updated 2026-11-12, on Windows)
 
 The rules live in `CLAUDE.md`; this file is only what is in flight, so the next session on the
 other machine can pick it up. Update it at the end of a session that leaves work open.
@@ -30,6 +30,18 @@ other machine can pick it up. Update it at the end of a session that leaves work
     external workers, splitting long files). After that, viewer Phases 3–5 (presets and views,
     look undo, analysis).
   - Several tables in one window was considered and set aside (2026-11-11).
+- **Protein editing and the Sequence window** (2026-11-11/12, before Phase C, at the user's
+  request): a click selects an atom (double-click the residue, Alt-click the chain); Edit ▸
+  Delete, Element, Charge, Rename Residue/Chain, Renumber, Undo/Redo, each one table step
+  (`protein/structure/edit.py`, `ProteinSession.edit`, the look carried by uid in
+  `Display.carry`); a ligand's linked rows are relabelled in the same step
+  (`LinkedRow.relabel`, `ToolContext.cell_ops`). The sequence strip moved into its own window
+  (the Sequence menu, last), with a row each for ligands, glycans, additives, ions and waters.
+  Phase C moves the session's edit code into `protein/workspace` with the rest.
+- **CI** was red from RDKit 2026.9.2 (fixed 2026-11-12): cocaine's wedges (the sketcher now
+  keeps the layout whose stereo survives nudges), Murcko scaffolds on macOS ("bad any cast":
+  `descriptors/scaffold.py` stands in, equal to RDKit's on 26,048 molecules), a protein-tree
+  use-after-free on Linux, and job callbacks reaching a closed window.
 - **By-hand check of Protein Viewer Phase 1 on Windows** (ROADMAP §7.0c).
   Done 2026-11-11 by script:
   - 5GNK: 80U's bond orders come from the file's own component table, and from the CCD when

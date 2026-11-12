@@ -1221,8 +1221,12 @@ viewer does is in its menus and the right-click menu:
   in the table name it you choose **Delete Rows** or **Keep Rows**; either way one Undo brings
   it all back. A kept row whose protein is gone says so on the viewer's status line when you
   make it current.
-- **Edit:** **Copy** (Ctrl+C: the selected atoms as PDB text), **Copy Selection As ▸ PDB /
-  mmCIF** and **Copy Image** (Ctrl+Shift+C: the view at twice its size, labels included).
+- **Edit:** **Undo** and **Redo** (Ctrl+Z, Ctrl+Y: the document's last step, named in
+  the menu, whether made here or in the table), **Copy** (Ctrl+C: the selected atoms as PDB
+  text), **Copy Selection As ▸ PDB / mmCIF**, **Copy Image** (Ctrl+Shift+C: the view at twice
+  its size, labels included), and the edits below: **Delete** (Delete or Backspace),
+  **Element ▸**, **Charge ▸**, **Rename Residue…**, **Rename Chain…** and **Renumber
+  Residues…**.
 - **Select:** **All** (Ctrl+A), the usual picks (ligands, binding site, protein, backbone,
   side chains, waters, ions…), **Chain ▸**, **Around ▸**, **Saved Selections ▸**, **Save
   Selection…** and **Clear Selection**.
@@ -1234,10 +1238,13 @@ viewer does is in its menus and the right-click menu:
 - **View:** **Frame Selection** (F), **Reset View**, **Background ▸** (the theme's, white,
   grey or black), **Orthographic** (parallel projection: no perspective, so sizes compare across
   depth), **Depth Cue** (fade what lies further back; off draws everything fully), whether the
-  proteins list and the sequence show, and **Full Screen**. Background, projection and depth
-  cue are saved with the document.
+  proteins list shows, and **Full Screen**. Background, projection and depth cue are saved with
+  the document.
 - **Window:** **Minimize** (Ctrl+M) and **Show Table**, which brings the document's table
   forward.
+- **Sequence** (the last menu, at the far right): **Sequence Viewer** (Ctrl+Shift+L) opens the
+  sequence in a window of its own, and **Rows ▸** chooses which of its rows for ligands,
+  glycans, additives, ions and waters show (below).
 
 **Figures.** **File ▸ Export Image…** draws the view again at the size you ask for, rather
 than enlarging the screen: give the width in pixels, centimetres or inches with a resolution
@@ -1278,13 +1285,21 @@ comparison. Editing the current row's ligand updates the pose at once. The pose 
 with the viewer; making the row current brings it back.
 
 **The viewer.** The proteins list (tick a protein to show or hide it; click a chain or ligand to
-select it), the 3D view and the sequence underneath.
+select it) beside the 3D view. The sequence has a window of its own (**Sequence ▸ Sequence
+Viewer**): a row for each chain, its letters following the full sequence (residues missing
+from the model show faint), and under the chains one row each for the ligands, glycans,
+additives, ions and waters, every residue in a cell of its own named by its residue name
+(`HOH`, `NO3`), numbered above. So one water among hundreds can be found, selected and
+deleted. Point at a cell to light the residue up in 3D and read its name and number in the
+window's status line. The window closes with the viewer and is saved with the document, open
+or not, with the rows you chose.
 
-- **Selecting.** Click selects a residue, Alt-click an atom, double-click its chain; Shift adds
-  and Ctrl (Cmd) toggles; click empty space or press Esc to clear. Click or drag across letters
-  in the sequence, or use its keys: the arrows move a cursor, Shift+arrows select from where it
-  started, Return selects the residue under it, Home and End jump to the ends of a chain. In
-  the viewer, Ctrl/⌘+A selects every atom, Ctrl/⌘+C copies the selection as PDB and F frames
+- **Selecting.** Click selects an atom; on a cartoon, where no atom is drawn, it selects the
+  residue. Double-click selects the residue, Alt-click (Option-click) the chain; Shift adds and
+  Ctrl (Cmd) toggles; click empty space or press Esc to clear. In the Sequence window click or
+  drag across cells, click a row's name to select the whole row (a chain, or every water), or
+  use its keys: the arrows move a cursor, Shift+arrows select from where it started, Return
+  selects the residue under it, Home and End jump to the ends of a row. In the viewer, Ctrl/⌘+A selects every atom, Ctrl/⌘+C copies the selection as PDB and F frames
   it (a text field keeps its own). The proteins list highlights a chain or ligand that is wholly selected and puts
   one partly selected in bold. Type in the selection field (point at it for the syntax): `chain A`,
   `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres (polymer within 5 of
@@ -1315,6 +1330,24 @@ select it), the 3D view and the sequence underneath.
   undoes the fading.
 - **Measure ▸ Distance / Angle / Dihedral**, then click two, three or four atoms. Esc stops
   measuring.
+- **Editing** (the Edit menu, or **Edit Selection ▸** in the right-click menu) changes the
+  protein itself; each edit is one step that Undo takes back, here or in the table, and is
+  saved with the document. Everything else about the atoms that stay (how they are shown,
+  coloured, selected, labelled or measured) stays as it was.
+  - **Delete** (Delete or Backspace, here and in the Sequence window) removes the selected
+    atoms; an atom goes with its alternate locations. To delete some waters and keep the rest,
+    pick them out in the Waters row of the Sequence window (Ctrl/⌘-click adds one at a time)
+    and press Delete. Deleting every atom of a protein is refused: use **File ▸ Remove
+    Protein**. When table rows name a residue that lost atoms, the status line says how many.
+  - **Element ▸** (C, N, O, S, P, F, Cl, Br, I, H or **Other…**) and **Charge ▸** (−2 to +2)
+    change the selected atoms; their bonds stay.
+  - **Rename Residue…** renames the selected residues (1 to 5 letters or digits); a residue
+    outside the protein's chains takes the kind its new name gives it, so a water renamed `NA`
+    becomes an ion. **Rename Chain…** renames the chain holding the selection (no other chain
+    may have the name). **Renumber Residues…** numbers the selected residues of one chain from
+    the number you give, in order; a number another residue of the chain has is refused, and
+    the dialog says which. When a ligand that table rows name (**Ligand ID**) is renamed or
+    renumbered, those rows follow in the same step.
 - **Models.** A file with several models (an NMR ensemble) gets a bar under the view: step
   with the arrows or `[` and `]`, type a model's number, drag the slider, or press Play to loop
   through them. The selection, colours and measurements stay as the atoms move. When several
@@ -1323,8 +1356,9 @@ select it), the 3D view and the sequence underneath.
 - Right-click an atom to select its residue, chain or surroundings, focus a ligand, switch an
   alternate location, copy a ligand's SMILES, **Add Ligand to Table** (a cofactor, say, or a
   ligand whose row you deleted), **Label ▸** its residue or the atom, start a **Measure From
-  Here ▸** distance, angle or dihedral with it as the first atom, or **Copy Selection As ▸
-  PDB / mmCIF**.
+  Here ▸** distance, angle or dihedral with it as the first atom, **Delete Atom** or
+  **Delete Residue** (what was clicked), **Edit Selection ▸** (as in the Edit menu), or **Copy
+  Selection As ▸ PDB / mmCIF**.
 
 Surfaces, interactions and the cartoons of very large proteins are built in the background,
 so the viewer never stops answering: each appears as soon as it is ready, and until then the

@@ -22,7 +22,7 @@ workbench runs on its own, with no table and so no :class:`LinkedRow`.
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -43,4 +43,14 @@ class LinkedRow(Protocol):
 
     def missing(self, session: ProteinSession, oid: int | None) -> str:
         """The protein row *oid* names when the document has no such protein, else ""."""
+        ...
+
+    def relabel(self, protein: str, labels: Mapping[str, str]) -> Sequence[object]:
+        """The document ops that rename, in the rows linked to *protein*, each ligand label
+        (``A/80U 1001``) in *labels* to its new one: they run in the same undo step as the
+        edit that renamed or renumbered those residues."""
+        ...
+
+    def naming(self, protein: str, labels: Collection[str]) -> int:
+        """How many rows linked to *protein* name one of these ligand labels."""
         ...

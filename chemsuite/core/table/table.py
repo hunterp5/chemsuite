@@ -470,6 +470,19 @@ class Table:
         self._put_ops(name, oids, incoming, ops)
         self._execute(Command(label, ops))
 
+    def cell_ops(
+        self, name: str, oids: Sequence[int] | np.ndarray, values: Sequence[object]
+    ) -> list[Op]:
+        """The ops that write *values* into column *name* at *oids*, as :meth:`set_cells`
+        would, for a caller that runs them with others as one step (:meth:`edit`)."""
+        oids = as_slots(oids)
+        if len(oids) != len(values):
+            raise ValueError("oids and values must have the same length")
+        ops: list[Op] = []
+        if len(oids):
+            self._put_ops(name, oids, column_from_values(values), ops)
+        return ops
+
     def set_block(
         self,
         updates: Mapping[str, tuple[Sequence[int] | np.ndarray, Sequence[object] | Column]],
