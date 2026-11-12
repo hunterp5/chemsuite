@@ -17,15 +17,27 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from functools import cache
 from pathlib import Path
 
 import pytest
 
-from chemsuite.protein.structure import io
+from chemsuite.protein.chem import ligands
+from chemsuite.protein.structure import components, io
 from chemsuite.protein.structure.model import Structure
 
 DATA = Path(__file__).resolve().parents[1] / "data" / "protein"
+
+
+def only_ligand(s: Structure) -> int:
+    (residue,) = ligands.ligand_residues(s)
+    return int(residue)
+
+
+def without_file_components(s: Structure) -> Structure:
+    """``s`` as read from a file that defines none of its components (a PDB file, say)."""
+    return replace(s, meta={k: v for k, v in s.meta.items() if k != components.META_KEY})
 
 
 @cache

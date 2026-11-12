@@ -66,7 +66,7 @@ jobs:
             libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
             libxcb-shape0 libxcb-xinerama0
           xvfb-run -a -s "-screen 0 1280x1024x24" \
-            python -m pytest tests/app/test_structure_viewer.py tests/app/test_protein_view.py -k "side_by_side or drawn" -rs
+            python -m pytest tests/app/viewer/test_structure_viewer.py tests/protein/ui/test_protein_view.py -k "side_by_side or drawn" -rs
       - name: Benchmarks (200k rows)
         if: runner.os == 'Linux'
         run: python -m pytest -m bench
