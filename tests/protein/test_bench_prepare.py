@@ -1,0 +1,87 @@
+# This file is part of chemsuite.
+# Copyright (C) 2026 Hunter Picard
+#
+# chemsuite is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# chemsuite is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
+"""Protein preparation against neutron structures (docs/prepare/p0-review.md).
+
+Needs the benchmark data under ``samples/prepare`` (``scripts/review/prepare_review.py``
+builds it); skipped without it. Run with ``pytest -m bench -s``.
+
+P0 checks the harness itself: a method that flips nothing scores about half on orientation
+(the inputs flip half the side chains at random), and Reduce keeps the scores recorded in the
+review. Each later phase adds our own method here with the review's acceptance thresholds.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+REVIEW = ROOT / "scripts" / "review"
+DATA = ROOT / "samples" / "prepare"
+
+pytestmark = [
+    pytest.mark.bench,
+    pytest.mark.skipif(
+        not (DATA / "neutron" / "ids.txt").exists(), reason="no samples/prepare benchmark data"
+    ),
+]
+
+ORIENTATIONS = ("ASN orientation", "GLN orientation", "HIS orientation")
+#: Reduce on the 262 entries (p0-review.md §3), less a point of headroom
+REDUCE = {
+    "ASN orientation": 0.84,
+    "GLN orientation": 0.78,
+    "HIS orientation": 0.87,
+    "His tautomer (HID/HIE/HIP)": 0.61,
+}
+
+
+@pytest.fixture(scope="module")
+def review():
+    sys.path.insert(0, str(REVIEW))
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "prepare_review", REVIEW / "prepare_review.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(REVIEW))
+    return module
+
+
+def share(tally) -> float:
+    return tally.right / tally.total
+
+
+def test_a_method_that_never_flips_scores_half(review) -> None:
+    covered, tallies = review.method_scores("naive")
+    assert covered == len(review.entries())
+    for question in ORIENTATIONS:
+        print(f"naive {question}: {share(tallies[question]):.1%}")
+        assert 0.45 <= share(tallies[question]) <= 0.55
+
+
+def test_reduce_keeps_its_recorded_scores(review) -> None:
+    if not (DATA / "out" / "reduce").is_dir():
+        pytest.skip("no Reduce outputs")
+    _, tallies = review.method_scores("reduce")
+    for question, floor in REDUCE.items():
+        print(f"reduce {question}: {share(tallies[question]):.1%}")
+        assert share(tallies[question]) >= floor

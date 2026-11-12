@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Edits to a structure: delete atoms, change an element or a charge, rename and renumber.
+"""Edits to a structure: add or delete atoms, change an element or a charge, rename and
+renumber.
 
 Each edit returns a new :class:`~.model.Structure` (structures are never changed in place) and
 keeps every atom's ``uid``, so selections, labels and measurements follow the atoms. An edit
@@ -101,6 +102,79 @@ def rename_residues(s: Structure, residues: np.ndarray, name: str) -> Structure:
         )
         kinds[residue] = residue_kind(name, gemmi.EntityType.NonPolymer, heavy)
     return replace(s, res_name=names, res_kind=kinds)
+
+
+def add_atoms(
+    s: Structure,
+    residues: np.ndarray,
+    names: np.ndarray,
+    elements: np.ndarray,
+    xyz: np.ndarray,
+    bonds: np.ndarray | None = None,
+    order: np.ndarray | None = None,
+    charge: np.ndarray | None = None,
+    b: np.ndarray | None = None,
+) -> Structure:
+    """New atoms added to existing residues, each at the end of its residue's atoms.
+
+    Atom *j* goes into residue ``residues[j]`` as ``names[j]`` (element ``elements[j]``, an
+    atomic number) at ``xyz[j]``, or ``xyz[k, j]`` in model *k*. *bonds* are pairs of atom
+    indices, where ``n_atoms + j`` is new atom *j*; *order* is each bond's order (single when
+    left out). The new atoms take uids from ``next_uid`` up, in the order given; every old atom
+    keeps its uid."""
+    residues = np.asarray(residues, dtype=np.int64)
+    m = len(residues)
+    if m == 0:
+        return s
+    if residues.min() < 0 or residues.max() >= s.n_residues:
+        raise EditError("Atoms can only be added to a residue of the structure")
+    xyz = np.asarray(xyz, dtype=np.float32)
+    if xyz.ndim == 2:
+        xyz = np.broadcast_to(xyz, (s.n_models, m, 3))
+    if xyz.shape != (s.n_models, m, 3):
+        raise EditError("The new atoms need a position in every model")
+    n = s.n_atoms
+    added = np.bincount(residues, minlength=s.n_residues)
+    before = np.concatenate([[0], np.cumsum(added)])  # atoms added ahead of each residue
+    res_start = (s.res_start + before).astype(np.int32)
+    # where every old and every new atom lands
+    old_at = np.arange(n) + before[s.residue_of]
+    sorted_new = np.argsort(residues, kind="stable")
+    rank = np.empty(m, dtype=np.int64)
+    rank[sorted_new] = np.arange(m) - before[residues[sorted_new]]
+    new_at = res_start[residues + 1] - added[residues] + rank
+    where = np.concatenate([old_at, new_at])
+
+    def grown(old: np.ndarray, new: np.ndarray, axis: int = 0) -> np.ndarray:
+        both = np.concatenate([old, np.asarray(new, dtype=old.dtype)], axis=axis)
+        out = np.empty_like(both)
+        if axis == 0:
+            out[where] = both
+        else:
+            out[:, where] = both
+        return out
+
+    zeros = np.zeros(m)
+    links = np.asarray(bonds if bonds is not None else np.zeros((0, 2)), dtype=np.int64)
+    links = where[links.reshape(-1, 2)]
+    kinds = np.asarray(order if order is not None else np.ones(len(links)), dtype=np.int8)
+    all_bonds = np.concatenate([where[s.bonds.astype(np.int64)], links]) if len(s.bonds) else links
+    all_bonds = np.sort(all_bonds, axis=1).astype(np.int32)
+    return replace(
+        s,
+        uid=grown(s.uid, s.next_uid + np.arange(m)),
+        coords=grown(s.coords, xyz, axis=1),
+        element=grown(s.element, elements),
+        name=grown(s.name, names),
+        altloc=grown(s.altloc, np.full(m, "")),
+        occupancy=grown(s.occupancy, np.ones(m)),
+        b=grown(s.b, b if b is not None else zeros),
+        charge=grown(s.charge, charge if charge is not None else zeros),
+        res_start=res_start,
+        bonds=all_bonds.reshape(-1, 2),
+        order=np.concatenate([s.order, kinds]),
+        next_uid=s.next_uid + m,
+    )
 
 
 def rename_chain(s: Structure, chain: int, name: str) -> Structure:

@@ -45,6 +45,7 @@ include = ["chemsuite*"]
 "chemsuite.ionisation" = ["data/*"]  # MolGpKa weights, site templates, licence
 "chemsuite.sketch" = ["data/*"]  # Ketcher licence and notice; templates from P2
 "chemsuite.protein.structure" = ["data/*"]  # residue templates from the wwPDB CCD (public domain)
+"chemsuite.protein.prepare" = ["data/*"]  # ideal residue geometry from the wwPDB CCD (public domain)
 "chemsuite.app.render3d" = ["shaders/*"]  # 3D Viewer shaders: sources and compiled .qsb
 "chemsuite.protein.ui" = ["shaders/*"]  # Protein Viewer shaders
 

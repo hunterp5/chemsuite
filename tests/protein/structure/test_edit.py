@@ -118,3 +118,50 @@ def test_renumber_one_chain_at_a_time(kinase) -> None:
     ends = [kinase.residues_of(c).start for c in range(2)]
     with pytest.raises(edit.EditError):
         edit.renumber(kinase, ends, 5000)
+
+
+def test_added_atoms_go_into_their_residues_with_new_uids(crambin) -> None:
+    from chemsuite.protein.structure import store
+
+    first, third = 0, 2
+    n = crambin.n_atoms
+    n_first = crambin.atoms_of(first).stop
+    ca = n_first - len(crambin.name[crambin.atoms_of(first)]) + 1  # residue 0's CA
+    assert crambin.name[ca] == "CA"
+    xyz = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+    edited = edit.add_atoms(
+        crambin,
+        residues=np.array([third, first, first]),
+        names=np.array(["X3", "X1", "X2"]),
+        elements=np.array([1, 1, 6]),
+        xyz=xyz,
+        bonds=np.array([[ca, n + 1], [n + 1, n + 2]]),
+        order=np.array([1, 2]),
+    )
+    assert edited.n_atoms == n + 3
+    assert edited.next_uid == crambin.next_uid + 3
+    # old atoms keep their uids and order; the new ones end their residues, in the order given
+    assert edited.uid[np.isin(edited.uid, crambin.uid)].tolist() == crambin.uid.tolist()
+    span = edited.atoms_of(first)
+    assert edited.name[span][-2:].tolist() == ["X1", "X2"]
+    assert edited.name[edited.atoms_of(third)][-1] == "X3"
+    added = edited.indices(crambin.next_uid + np.arange(3))
+    assert edited.name[added].tolist() == ["X3", "X1", "X2"]
+    assert np.allclose(edited.coords[0][added], xyz)
+    assert edited.element[added].tolist() == [1, 1, 6]
+    # every old bond still joins the same uids, and the new ones are in
+    old_pairs = {tuple(sorted(crambin.uid[b])) for b in crambin.bonds}
+    new_pairs = {tuple(sorted(edited.uid[b])) for b in edited.bonds}
+    x1, x2 = (int(u) for u in crambin.next_uid + np.array([1, 2]))
+    assert new_pairs == old_pairs | {tuple(sorted((int(crambin.uid[ca]), x1))), (x1, x2)}
+    assert (edited.bonds[:, 0] < edited.bonds[:, 1]).all()
+    assert edited.n_residues == crambin.n_residues
+    assert store.unpack(store.pack(edited)).n_atoms == n + 3
+
+
+def test_added_atoms_need_a_place_in_every_model(nmr) -> None:
+    one = np.zeros((1, 3))
+    grown = edit.add_atoms(nmr, np.array([0]), np.array(["X"]), np.array([1]), one)
+    assert grown.coords.shape == (2, nmr.n_atoms + 1, 3)
+    with pytest.raises(edit.EditError):
+        edit.add_atoms(nmr, np.array([0]), np.array(["X"]), np.array([1]), np.zeros((3, 1, 3)))

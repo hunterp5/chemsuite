@@ -121,13 +121,13 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
   - Protoss outputs from the ProteinsPlus web service, sending **public PDB IDs only**, cached
     under `samples/`;
   - MOE Protonate3D outputs, produced by the user by hand from a script and file list we
-    supply, kept as a reference column.
+    supply, kept as a reference column. Optional (2026-11-12): hard to get, so not awaited.
 
   Licences of every dataset and tool are checked before use.
 - **Acceptance**: it becomes the default only if it matches or beats Reduce on flips and His
   tautomers and PROPKA3 on pKa RMSE, and gets the named ligand cases right. It should also
-  reach agreement with Protoss and Protonate3D on ligand states in the neutron set; where they
-  disagree, the neutron data decide.
+  reach agreement with Protoss (and Protonate3D, if run) on ligand states in the neutron set;
+  where they disagree, the neutron data decide.
 
 ## Code layout
 
@@ -164,8 +164,9 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
 - **P2**: the coupled site graph with protein titration (PROPKA parity on PKAD).
 - **P3**: ligand sites, waters and metals in the graph. The named cases pass. Populations and ⚠.
 - **P4**: UI, report and docking export (ensemble for ambiguous sites, Meeko PDBQT).
-- **P5**: restrained relax and MD hand-off through the OpenMM worker. Per-site alternate states
-  for MD.
+- **P5**: restrained relax (now ROADMAP §7a 3, "Relax after preparation": optional, an in-app
+  MMFF pocket tier and an OpenMM tier, planned on its own) and MD hand-off through the OpenMM
+  worker. Per-site alternate states for MD.
 
 ## Verification
 

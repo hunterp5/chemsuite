@@ -78,6 +78,14 @@ def test_charges_follow_from_the_hydrogens_when_the_table_has_none() -> None:
     assert all(charge == 0 for _, _, charge in found["ASP"].atoms)  # drawn neutral, as the CCD
 
 
+def test_a_component_with_an_unknown_element_gives_no_molecule() -> None:
+    # the CCD writes "X" for an atom of unknown element (found on the neutron set, P0)
+    unknown = components.Component(
+        "UNX", (("C1", "C", 0), ("X1", "X", 0)), (("C1", "X1", 1, False),)
+    )
+    assert unknown.to_mol() is None
+
+
 def test_the_files_bonds_and_orders_draw_the_ligand(egfr) -> None:
     residue = only_ligand(egfr)
     span = egfr.atoms_of(residue)

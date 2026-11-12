@@ -81,8 +81,13 @@ class Component:
         None when RDKit cannot make sense of it."""
         mol = Chem.RWMol()
         index = {}
+        table = Chem.GetPeriodicTable()
         for name, element, charge in self.atoms:
-            atom = Chem.Atom(element.capitalize())
+            try:
+                number = table.GetAtomicNumber(element.capitalize())
+            except RuntimeError:  # the CCD's "X" for an unknown atom, say
+                return None
+            atom = Chem.Atom(number)
             atom.SetFormalCharge(charge)
             index[name] = mol.AddAtom(atom)
         for a, b, order, _aromatic in self.bonds:
@@ -198,6 +203,11 @@ class CcdCache:
         self.offline = offline
 
     def get(self, name: str, cancel: CancelToken | None = None) -> Component | None:
+        block = self.block(name, cancel)
+        return None if block is None else from_block(block, {name.upper()}).get(name.upper())
+
+    def block(self, name: str, cancel: CancelToken | None = None) -> gemmi.cif.Block | None:
+        """The whole CCD entry for *name* (with its hydrogens and ideal coordinates)."""
         name = name.upper()
         if not name.isalnum() or len(name) > 5:
             return None
@@ -205,10 +215,9 @@ class CcdCache:
         if not path.is_file() and not self._fetched(name, path, cancel):
             return None
         try:
-            block = gemmi.cif.read(str(path)).sole_block()
+            return gemmi.cif.read(str(path)).sole_block()
         except (RuntimeError, ValueError, OSError):
             return None
-        return from_block(block, {name}).get(name)
 
     def _fetched(self, name: str, path: Path, cancel: CancelToken | None) -> bool:
         if self.offline or (self.folder / f"{name}.missing").exists():
