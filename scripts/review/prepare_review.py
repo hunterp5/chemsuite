@@ -30,7 +30,8 @@ Steps, each skipping work already done::
     python scripts/review/prepare_review.py propka    # in samples/prepare/bench-venv
     python scripts/review/prepare_review.py gemmi     # gemmi h with the CCP4 monomer library
     python scripts/review/prepare_review.py protoss   # ProteinsPlus, public PDB IDs only
-    python scripts/review/prepare_review.py chemsuite # our own pipeline (no flips yet)
+    python scripts/review/prepare_review.py chemsuite # our own pipeline
+    python scripts/review/prepare_review.py fit       # fit its weights on half the entries
     python scripts/review/prepare_review.py score > /tmp/p0-scores.md
 """
 
@@ -41,9 +42,11 @@ import re
 import subprocess
 import sys
 import time
+import zlib
 from pathlib import Path
 
 import gemmi
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import prepare_truth as pt
@@ -55,6 +58,7 @@ SEED = 20261112
 BENCH_PY = DATA / "bench-venv" / "Scripts" / "python.exe"
 REDUCE = "~/bench/reduce/reduce_src/reduce"
 REDUCE_DICT = "~/bench/reduce/reduce_wwPDB_het_dict.txt"
+FITTED = None  # chemsuite's weights: None for the defaults (energy.Weights, fitted)
 METHODS = ("naive", "reduce", "propka", "gemmi", "protoss", "moe", "chemsuite")
 
 
@@ -185,22 +189,129 @@ def run_gemmi() -> None:
 def run_chemsuite() -> None:
     """chemsuite's own hydrogens (``protein/prepare``), with the CCD entries in ``ccd/``."""
     from chemsuite.protein.prepare.hydrogens import add_hydrogens
+    from chemsuite.protein.prepare.solve import optimise
     from chemsuite.protein.structure import io
     from chemsuite.protein.structure.components import CcdCache
 
     out = DATA / "out" / "chemsuite"
     out.mkdir(parents=True, exist_ok=True)
     ccd = CcdCache(DATA / "ccd", offline=True)
+    redo = "--redo" in sys.argv
     for pdb_id in entries():
         target = out / f"{pdb_id}.pdb"
-        if target.exists():
+        if target.exists() and not redo:
             continue
         try:
-            done = add_hydrogens(io.read(DATA / "inputs" / f"{pdb_id}.pdb"), ccd=ccd)
+            built = add_hydrogens(io.read(DATA / "inputs" / f"{pdb_id}.pdb"), ccd=ccd)
+            done, _choices = optimise(built, ph=crystal_ph(pdb_id), weights=FITTED)
         except (ValueError, RuntimeError, KeyError) as error:
             print(pdb_id, "failed:", error, flush=True)
             continue
         io.write(done.structure, target)
+
+
+# -- fitting the weights -----------------------------------------------------------------------
+def training(pdb_id: str) -> bool:
+    """Half the entries, fixed by a hash of the ID, fit the weights; the rest test them."""
+    return zlib.crc32(pdb_id.encode()) % 2 == 0
+
+
+def _site_answers(pdb_id: str, expected: pt.Truth):
+    """The tables of one entry, and for each scored site its key and each state's answer."""
+    from chemsuite.protein.prepare import energy, sites
+    from chemsuite.protein.prepare.hydrogens import add_hydrogens
+    from chemsuite.protein.structure import io
+    from chemsuite.protein.structure.components import CcdCache
+
+    built = add_hydrogens(io.read(DATA / "inputs" / f"{pdb_id}.pdb"),
+                          ccd=CcdCache(DATA / "ccd", offline=True))  # fmt: skip
+    found = sites.find_sites(built)
+    s = built.structure
+    table = energy.tables(s, found, crystal_ph(pdb_id))
+    scored = []
+    for k, site in enumerate(found):
+        if site.kind == sites.ROTOR:
+            continue
+        r = site.residue
+        name = str(s.res_name[r])
+        key = (str(s.chain_name[s.chain_of[r]]), int(s.res_seq[r]), str(s.icode[r]).strip())
+        where = expected.flips.get((key, name))
+        first, second = pt.FLIPS[name][0]
+        right = []
+        for state in site.states:
+            if where is None:
+                right.append(None)
+                continue
+            at = state.xyz[0, state.names.index(first)]
+            right.append(bool(np.linalg.norm(at - where[first])
+                              < np.linalg.norm(at - where[second])))  # fmt: skip
+        scored.append((k, name, right, [st.tautomer for st in site.states],
+                       expected.states.get((key, name))))  # fmt: skip
+    return table, scored
+
+
+def _accuracy(cases, weights) -> dict[str, tuple[int, int]]:
+    from chemsuite.protein.prepare.solve import solve
+
+    tally: dict[str, list[int]] = {}
+    for table, scored in cases:
+        picked = solve(table, weights)
+        for k, name, right, tautomers, state in scored:
+            got = picked[k]
+            if right[got] is not None:
+                tally.setdefault(f"{name} orientation", [0, 0])[0] += right[got]
+                tally[f"{name} orientation"][1] += 1
+            if name == "HIS" and state in ("HID", "HIE", "HIP"):
+                tally.setdefault("His tautomer", [0, 0])[0] += tautomers[got] == state
+                tally["His tautomer"][1] += 1
+    return {k: (v[0], v[1]) for k, v in tally.items()}
+
+
+def _mean(found: dict[str, tuple[int, int]]) -> float:
+    return float(np.mean([right / total for right, total in found.values() if total]))
+
+
+def fit() -> None:
+    """A coordinate search over the weights on the training half; prints both halves."""
+    from dataclasses import replace
+
+    from chemsuite.protein.prepare.energy import Weights
+
+    found = truths()
+    cases = {True: [], False: []}
+    for pdb_id in entries():
+        try:
+            cases[training(pdb_id)].append(_site_answers(pdb_id, found[pdb_id]))
+        except (ValueError, RuntimeError, KeyError) as error:
+            print(pdb_id, "failed:", error, flush=True)
+    weights = Weights()
+    best = _mean(_accuracy(cases[True], weights))
+    print("start", round(best, 4), weights, flush=True)
+    for _round in range(3):
+        for name, values in FIT_GRID.items():
+            for value in values:
+                trial = replace(weights, **{name: value})
+                score = _mean(_accuracy(cases[True], trial))
+                if score > best + 1e-6:
+                    best, weights = score, trial
+            print(name, round(best, 4), weights, flush=True)
+    for half, label in ((True, "training"), (False, "test")):
+        print(label, {k: f"{r / t:.1%} ({r}/{t})" for k, (r, t) in
+                      sorted(_accuracy(cases[half], weights).items())})  # fmt: skip
+
+
+FIT_GRID = {
+    "clash": (40.0, 80.0, 160.0, 320.0, 640.0),
+    "lone": (4.0, 8.0, 16.0, 32.0, 64.0),
+    "water": (0.0, 0.5, 1.0, 2.0),
+    "flip": (-0.2, 0.0, 0.1, 0.3),
+    "hip": (1.0, 2.0, 3.0, 4.0, 6.0),
+    "hid": (0.2, 0.4, 0.8, 1.2, 1.6),
+    "ph": (0.0, 0.25, 0.5, 1.0),
+    "coulomb": (0.0, 0.5, 1.0, 2.0, 4.0),
+    "burial": (0.0, 0.5, 1.0, 2.0, 4.0),
+    "metal": (0.0, 1.0, 2.0, 4.0, 8.0),
+}
 
 
 def run_propka() -> None:
@@ -418,7 +529,7 @@ def moe_list() -> None:
 
 
 STEPS = {"inputs": make_inputs, "moe": moe_list, "reduce": run_reduce, "gemmi": run_gemmi,
-         "propka": run_propka, "protoss": run_protoss, "chemsuite": run_chemsuite,
+         "propka": run_propka, "protoss": run_protoss, "chemsuite": run_chemsuite, "fit": fit,
          "score": score}  # fmt: skip
 
 if __name__ == "__main__":

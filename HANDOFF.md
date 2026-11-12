@@ -106,14 +106,19 @@ other machine can pick it up. Update it at the end of a session that leaves work
     the textbook numbers, ligand H count 96%. Fixed on the way: `Template.with_hydrogen`
     dropped `charges`; the harness read every 1.34 Å S–H as absent (Cys rows of
     p0-review.md re-scored, 356 Cys now).
-  - Next in P1, in order:
-    2. `sites.py` / `energy.py` / `solve.py`: Asn/Gln flips, His HID/HIE/HIP × flip,
-       OH/SH/NH₃ rotors; a Reduce-style contact score (Word et al. 1999); clusters, DEE,
-       branch-and-bound; weights fitted on half the neutron set (split by ID hash).
+  - **Flips, His states and rotors done 2026-11-12** (`sites.py`, `energy.py`, `solve.py`;
+    `solve.optimise(protonated, ph)` → structure and `Choice`s with gaps). Weights fitted by
+    `prepare_review.py fit` (training half by CRC32 of the ID) and set as the
+    `energy.Weights` defaults. All 262: Asn 86.2, Gln 80.4, His orientation 89.6, His
+    tautomer 63.9% (Reduce 85/79/88/62); the test half also beats or matches Reduce. Details
+    and what is open (His charge, HID read as HIE) in
+    [`docs/prepare/p1-review.md`](docs/prepare/p1-review.md); the bench test holds the
+    marks. Iterating: build the tables once and pickle them (the fit takes ~3 min
+    otherwise); re-run `chemsuite --redo` before `score`.
+  - Next in P1:
     3. `inspect.py`, `repair.py` (altlocs, missing side chains, OXT; no loop building),
-       `pipeline.prepare`, tests, `docs/prepare/p1-review.md`.
-    Pass marks: Asn/Gln/His orientation 85/79/88%, His tautomer 62%, textbook states kept,
-    ligand H 96%, all 262 entries answered.
+       `pipeline.prepare` (repair → hydrogens → optimise, one undoable edit), tests, and
+       the rest of `docs/prepare/p1-review.md`. The P1 pass marks are already met.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 

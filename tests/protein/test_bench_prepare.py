@@ -20,7 +20,8 @@ builds it); skipped without it. Run with ``pytest -m bench -s``.
 
 P0 checks the harness itself: a method that flips nothing scores about half on orientation
 (the inputs flip half the side chains at random), and Reduce keeps the scores recorded in the
-review. Each later phase adds our own method here with the review's acceptance thresholds.
+review. Each later phase adds our own method here with the review's acceptance thresholds
+(P1: chemsuite's flips, His states and hydrogens).
 """
 
 from __future__ import annotations
@@ -85,3 +86,27 @@ def test_reduce_keeps_its_recorded_scores(review) -> None:
     for question, floor in REDUCE.items():
         print(f"reduce {question}: {share(tallies[question]):.1%}")
         assert share(tallies[question]) >= floor
+
+
+#: P1's pass marks (p0-review.md §4): Reduce's scores, and the textbook states kept
+P1 = {
+    "ASN orientation": 0.85,
+    "GLN orientation": 0.79,
+    "HIS orientation": 0.88,
+    "His tautomer (HID/HIE/HIP)": 0.62,
+    "ASP state": 0.989,  # the textbook state: 3916 of 3956
+    "GLU state": 0.98,
+    "Ligand polar-atom H count": 0.955,
+}
+
+
+def test_chemsuite_meets_the_p1_marks(review) -> None:
+    """Scores the outputs ``prepare_review.py chemsuite`` wrote (re-run it with ``--redo``
+    after changing the pipeline)."""
+    if not (DATA / "out" / "chemsuite").is_dir():
+        pytest.skip("no chemsuite outputs")
+    covered, tallies = review.method_scores("chemsuite")
+    assert covered == len(review.entries())
+    for question, floor in P1.items():
+        print(f"chemsuite {question}: {share(tallies[question]):.1%}")
+        assert share(tallies[question]) >= floor, question
