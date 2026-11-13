@@ -190,8 +190,8 @@ def build_tables() -> None:
         except (ValueError, RuntimeError, KeyError) as error:
             print(pdb, "failed:", error, flush=True)
             continue
-        found = sites.find_sites(built, titrate=True)
-        table = energy.tables(built.structure, found, 7.0, titrate=True)
+        found = sites.find_sites(built, titrate=sites.ALL)
+        table = energy.tables(built.structure, found, 7.0)
         keys = [_key(built.structure, site) for site in found]
         with target.open("wb") as handle:
             pickle.dump({"keys": keys, "single": table.single, "pairs": table.pairs,
@@ -216,7 +216,7 @@ def loaded() -> dict[str, tuple[list, object]]:
     for path in sorted(TABLES.glob("*.pkl")):
         with path.open("rb") as handle:
             d = pickle.load(handle)
-        out[path.stem] = (d["keys"], Tables([], d["single"], d["pairs"], 7.0, True, d["protons"]))
+        out[path.stem] = (d["keys"], Tables([], d["single"], d["pairs"], 7.0, d["protons"]))
     return out
 
 

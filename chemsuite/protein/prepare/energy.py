@@ -39,8 +39,8 @@ The energy is a weighted sum of terms (:data:`TERMS`), kept apart so the weights
   ``hip`` and ``hid`` (1 for those His states), and ``ph`` (1.364·(pH − 6.5) for HIP, the free
   energy of protonating a His of solution pKa 6.5).
 
-With titration (``titrate=True``), every titratable group is a site with charged and neutral
-states, and the His priors give way to the terms below:
+A titrating site (:attr:`.sites.Site.titrating`) has charged and neutral states, and is
+scored without the His priors, by the terms below:
 
 - ``intrinsic``: each state's free energy in water (:attr:`.sites.State.intrinsic`, from the
   model pKa); the pH part, 1.364·protons·pH, is added by :meth:`Tables.energies` at any pH;
@@ -318,14 +318,14 @@ def _sum(v: np.ndarray) -> np.ndarray:
     return v.sum(axis=(2, 3))
 
 
-def priors(site: Site, ph: float, titrate: bool = False) -> np.ndarray:
-    """The flip prior, and either P1's His priors or (with *titrate*) each state's intrinsic
-    free energy."""
+def priors(site: Site, ph: float) -> np.ndarray:
+    """The flip prior, and either P1's His priors or (for a titrating site) each state's
+    intrinsic free energy."""
     out = np.zeros((len(site.states), len(TERMS)))
     for k, st in enumerate(site.states):
         out[k, FLIP] = st.flipped
         out[k, ANTI] = st.anti
-        if titrate:
+        if site.titrating:
             out[k, INTRINSIC] = st.intrinsic
             continue
         out[k, HIP] = st.tautomer == "HIP"
@@ -345,17 +345,17 @@ class Tables:
     single: list[np.ndarray]  # per site: (S, T)
     pairs: dict[tuple[int, int], np.ndarray]  # (i, j), i < j: (Si, Sj, T)
     ph: float = 7.0
-    titrate: bool = False
-    protons: list[np.ndarray] = field(default_factory=list)  # per site: (S,)
+    #: per site: (S,), each state's protons (zero for a site that does not titrate)
+    protons: list[np.ndarray] = field(default_factory=list)
 
     def energies(self, weights: Weights, ph: float | None = None) -> tuple[list[np.ndarray], dict]:
-        """Each site's own energies and each pair's, at *ph* (with titration; the tables' own
-        pH otherwise)."""
+        """Each site's own energies and each pair's, at *ph* (the tables' own by default)."""
         w = weights.vector()
+        at = self.ph if ph is None else ph
         single = [t @ w for t in self.single]
-        if self.titrate:
-            at = self.ph if ph is None else ph
-            single = [e + RT_LN10 * n * at for e, n in zip(single, self.protons, strict=True)]
+        if self.protons:
+            single = [e + RT_LN10 * n * at if n.any() else e
+                      for e, n in zip(single, self.protons, strict=True)]  # fmt: skip
         return single, {k: t @ w for k, t in self.pairs.items()}
 
 
@@ -366,7 +366,7 @@ def buried(env: Environment, centre: np.ndarray) -> float:
     return float(np.clip((heavy - NMIN) / (NMAX - NMIN), 0.0, 1.0))
 
 
-def _charged(site: Site, batch: Batch, env: Environment, titrate: bool) -> np.ndarray:
+def _charged(site: Site, batch: Batch, env: Environment) -> np.ndarray:
     """The Coulomb term of a site whose states carry charges, and its burial (P1's, for HIP)
     or its desolvation (with titration)."""
     out = np.zeros((len(site.states), len(TERMS)))
@@ -378,7 +378,7 @@ def _charged(site: Site, batch: Batch, env: Environment, titrate: bool) -> np.nd
     charged = np.array([j for j in near if env.batch.charge[0, j] != 0], dtype=np.int64)
     energy = coulomb(batch, env.batch.take(charged))[:, 0] if len(charged) else 0.0
     q = batch.charge.sum(axis=1)
-    if titrate:
+    if site.titrating:
         fraction = buried(env, centre)
         out[:, SCREENED] = energy
         out[:, DEEP] = energy * fraction
@@ -400,11 +400,11 @@ def _softened(table: np.ndarray) -> np.ndarray:
     return out
 
 
-def tables(s: Structure, sites: list[Site], ph: float = 7.0, titrate: bool = False) -> Tables:
-    """Every site's own terms and every pair's. With *titrate* the states carry their intrinsic
-    free energies and proton counts (sites found with ``titrate=True``)."""
+def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
+    """Every site's own terms and every pair's. Titrating sites carry their intrinsic free
+    energies and proton counts."""
     env = environment(s, sites)
-    batches = [of_states(site.states, titrate and site.titrates) for site in sites]
+    batches = [of_states(site.states, site.titrating) for site in sites]
     single = []
     for site, batch in zip(sites, batches, strict=True):
         points = batch.xyz[batch.valid]
@@ -412,8 +412,8 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0, titrate: bool = Fal
         keep = np.array([j for j in near if int(env.atoms[j]) not in site.excluded],
                         dtype=np.int64)  # fmt: skip
         terms = contact(batch, env.batch.take(keep))[:, 0] if len(keep) else 0.0
-        own = priors(site, ph, titrate) + terms + _charged(site, batch, env, titrate)
-        single.append(_softened(own) if titrate and site.titrates else own)
+        own = priors(site, ph) + terms + _charged(site, batch, env)
+        single.append(_softened(own) if site.titrating else own)
     pairs = {}
     if sites:
         centres = np.array([b.xyz[b.valid].mean(axis=0) for b in batches])
@@ -421,7 +421,8 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0, titrate: bool = Fal
                            for b, c in zip(batches, centres, strict=True)])  # fmt: skip
         tree = cKDTree(centres)
         charged = [b.charge.any() for b in batches]
-        depth = [buried(env, c) if titrate else 0.0 for c in centres]
+        depth = [buried(env, c) if site.titrating else 0.0
+                 for site, c in zip(sites, centres, strict=True)]  # fmt: skip
         for i, j in sorted(tree.query_pairs(2 * radius.max() + COULOMB_REACH)):
             if sites[i].excluded.intersection(sites[j].moving.tolist()):
                 continue  # too close in the bond graph
@@ -435,14 +436,15 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0, titrate: bool = Fal
                 if touching
                 else np.zeros((len(sites[i].states), len(sites[j].states), len(TERMS)))
             )
-            if both and titrate:
+            titrating = sites[i].titrating or sites[j].titrating
+            if both and titrating:
                 table[..., SCREENED] = coulomb(batches[i], batches[j])
                 table[..., DEEP] = table[..., SCREENED] * (depth[i] + depth[j]) / 2
             elif both:
                 table[..., COULOMB] = coulomb(batches[i], batches[j])
-            if titrate and (sites[i].titrates or sites[j].titrates):
+            if titrating:
                 table = _softened(table)
             if np.abs(table).max() > 1e-9:
                 pairs[(i, j)] = table
-    counts = [protons(site) if titrate else np.zeros(len(site.states)) for site in sites]
-    return Tables(sites, single, pairs, ph, titrate, counts)
+    counts = [protons(site) if site.titrating else np.zeros(len(site.states)) for site in sites]
+    return Tables(sites, single, pairs, ph, counts)

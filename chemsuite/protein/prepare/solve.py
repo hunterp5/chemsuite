@@ -58,13 +58,13 @@ def optimise(
     ph: float = 7.0,
     weights: Weights | None = None,
     cancel: CancelToken | None = None,
-    titrate: bool = False,
+    titrate: str = sites.OFF,
 ) -> tuple[Protonated, list[Choice]]:
-    """*p* with each flip, His state and rotor at its best; with *titrate*, each titratable
-    group in its best protonation state at *ph* too."""
+    """*p* with each flip, His state and rotor at its best; with *titrate* (``ALL``), each
+    titratable group in its best protonation state at *ph* too."""
     found = sites.find_sites(p, titrate)
     check(cancel)
-    table = energy.tables(p.structure, found, ph, titrate)
+    table = energy.tables(p.structure, found, ph)
     check(cancel)
     picked = solve(table, weights or Weights())
     return apply(p, found, picked), choices(table, weights or Weights(), picked)

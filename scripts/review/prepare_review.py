@@ -190,6 +190,7 @@ def run_chemsuite() -> None:
     """chemsuite's own hydrogens (``protein/prepare``), with the CCD entries in ``ccd/``; with
     ``--titrate``, P2's protonation states at the crystal pH (in ``out/titrated``)."""
     from chemsuite.protein.prepare.pipeline import Options, prepare
+    from chemsuite.protein.prepare.sites import ALL, OFF
     from chemsuite.protein.structure import io
     from chemsuite.protein.structure.components import CcdCache
 
@@ -203,7 +204,8 @@ def run_chemsuite() -> None:
         if target.exists() and not redo:
             continue
         try:
-            options = Options(ph=crystal_ph(pdb_id), weights=FITTED, titrate=titrate)
+            options = Options(ph=crystal_ph(pdb_id), weights=FITTED,
+                              titrate=ALL if titrate else OFF)  # fmt: skip
             done = prepare(io.read(DATA / "inputs" / f"{pdb_id}.pdb"), options, ccd)
         except (ValueError, RuntimeError, KeyError) as error:
             print(pdb_id, "failed:", error, flush=True)

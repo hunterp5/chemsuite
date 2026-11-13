@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from chemsuite.protein.prepare import inspect, pipeline, repair, templates
+from chemsuite.protein.prepare import inspect, pipeline, repair, sites, templates
 from chemsuite.protein.structure import edit
 from chemsuite.protein.structure.model import Structure
 from tests.protein.prepare.test_hydrogens import _on, _residue
@@ -109,7 +109,7 @@ def test_waters_near_ligands(kinase) -> None:
 
 
 def test_titration_in_one_call(lysozyme) -> None:
-    done = pipeline.prepare(lysozyme, pipeline.Options(waters=pipeline.NONE, titrate=True))
+    done = pipeline.prepare(lysozyme, pipeline.Options(waters=pipeline.NONE, titrate=sites.ALL))
     by_residue = {c.site.residue: c for c in done.choices if c.site.titrates}
     assert by_residue and set(done.pka) == set(by_residue) == set(done.population)
     for r, c in by_residue.items():

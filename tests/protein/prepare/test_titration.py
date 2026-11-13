@@ -43,7 +43,7 @@ def titrating(lysozyme_h) -> dict[str, sites.Site]:
     """One site of each kind: ASP, GLU, HIS, LYS, TYR, CYS and NTERM."""
     s = lysozyme_h.structure
     out: dict[str, sites.Site] = {}
-    for site in sites.find_sites(lysozyme_h, titrate=True):
+    for site in sites.find_sites(lysozyme_h, titrate=sites.ALL):
         if not site.titrates:
             continue
         nterm = any(st.form == "NH3+" for st in site.states)
@@ -99,11 +99,11 @@ def test_titration_off_finds_p1s_sites(lysozyme_h) -> None:
 def _alone(site: sites.Site, column: int | None = None, value: float = 0.0) -> Tables:
     """A table of one site with nothing around it: its intrinsic terms only, and *value* in
     *column* for its charged states."""
-    single = energy.priors(site, 7.0, titrate=True)
+    single = energy.priors(site, 7.0)
     if column is not None:
         charged = np.array([abs(sum(st.partial)) > 0 for st in site.states])
         single[charged, column] = value
-    return Tables([site], [single], {}, 7.0, True, [energy.protons(site)])
+    return Tables([site], [single], {}, 7.0, [energy.protons(site)])
 
 
 def test_alone_in_water_each_group_has_its_model_pka(titrating) -> None:
@@ -128,8 +128,8 @@ def _pair_of_acids(titrating, repulsion: float) -> Tables:
     charged_b = np.array([st.protons == 0 for st in b.states])
     pair[np.ix_(charged_a, charged_b)] = 0.0
     pair[np.ix_(charged_a, charged_b, [TERMS.index("screened")])] = repulsion
-    single = [energy.priors(a, 7.0, titrate=True), energy.priors(b, 7.0, titrate=True)]
-    return Tables([a, b], single, {(0, 1): pair}, 7.0, True,
+    single = [energy.priors(a, 7.0), energy.priors(b, 7.0)]
+    return Tables([a, b], single, {(0, 1): pair}, 7.0,
                   [energy.protons(a), energy.protons(b)])  # fmt: skip
 
 
@@ -192,7 +192,7 @@ def test_apply_writes_each_form(lysozyme_h, titrating) -> None:
 
 def test_the_ph_moves_the_answer(lysozyme_h) -> None:
     def forms(ph: float) -> set[str]:
-        _, picked = solve.optimise(lysozyme_h, ph, titrate=True)
+        _, picked = solve.optimise(lysozyme_h, ph, titrate=sites.ALL)
         return {c.site.states[c.state].form for c in picked if c.site.titrates}
 
     assert {"ASH", "GLH"} <= forms(1.0)

@@ -20,9 +20,9 @@ The result is a new structure (old atoms keep their uids, so the workbench can a
 undoable edit) and a report: what inspection found, what each site chose and how sure it is
 (:data:`AMBIGUOUS`), and what could not be done.
 
-With titration (:attr:`Options.titrate`) every titratable group takes its protonation state at
-the pH from :mod:`.populations`: the structure carries each group's most populated form (the
-best state within it), and the result each group's pKa and protonated share. A group between
+Every titrating group (:attr:`Options.titrate`) takes its protonation state at the pH from
+:mod:`.populations`: the structure carries each group's most populated form (the best state
+within it), and the result each group's pKa and protonated share. A group between
 :data:`MIXED` and 1 − :data:`MIXED` is marked ⚠: both forms are present at this pH.
 """
 
@@ -60,7 +60,7 @@ class Options:
     repair: bool = True
     optimise: bool = True
     weights: Weights | None = None
-    titrate: bool = False
+    titrate: str = sites.OFF  # OFF, POCKET or ALL (see :func:`.sites.find_sites`)
 
 
 @dataclass(frozen=True)
@@ -100,15 +100,15 @@ def prepare(
         weights = options.weights or Weights()
         found = sites.find_sites(protonated, options.titrate)
         check(cancel)
-        table = energy.tables(protonated.structure, found, options.ph, options.titrate)
+        table = energy.tables(protonated.structure, found, options.ph)
         check(cancel)
         picked = solve.solve(table, weights)
-        if options.titrate:
+        if any(site.titrating for site in found):
             done = populations.titration(table, weights, cancel=cancel)
             at = done.at(options.ph)
             picked = _majority(table, weights, picked, at)
             for site, k, fraction in zip(found, done.pka, at, strict=True):
-                if site.titrates:
+                if site.titrating:
                     pka[site.residue], share[site.residue] = k, fraction
         choices = solve.choices(table, weights, picked)
         protonated = solve.apply(protonated, found, picked)

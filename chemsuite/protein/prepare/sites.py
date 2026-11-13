@@ -23,10 +23,10 @@
   metal is a site like the others, which the energy's metal term orients.
 - **Rotors**: the polar hydrogens that turn (OH, SH, NH₃⁺, on the protein and the ligands),
   in 15° steps; a phenol or acid OH stays in the plane of its neighbour.
-- **Titration** (``titrate=True``): Asp and Glu also neutral, with H on either O (syn or
-  anti); Lys
-  and the N-terminus also neutral NH₂ (its lone pair in 15° steps); free Cys also S⁻; Tyr
-  also O⁻.
+- **Titration** (``titrate=ALL``, or ``POCKET`` for the groups a *pocket* mask holds): Asp
+  and Glu also neutral, with H on either O (syn or anti); Lys and the N-terminus also neutral
+  NH₂ (its lone pair in 15° steps); free Cys also S⁻; Tyr also O⁻. With ``ALL`` the His
+  states also titrate; otherwise His keeps P1's priors (:attr:`Site.titrating` is False).
 
 Every state lists the atoms that move with it (heavy atoms and hydrogens, in every model), so
 the energy can score it and the solver can write the choice back. Each carries its protons
@@ -39,7 +39,7 @@ the energy can score it and the solver can write the choice back. Each carries i
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -116,6 +116,8 @@ class Site:
     anchors: np.ndarray  # structure atoms the moving ones hang from
     states: tuple[State, ...]
     excluded: frozenset[int] = field(default=frozenset())  # atoms not scored against it
+    #: scored by its states' free energies in water and the pH (else P1's priors)
+    titrating: bool = False
 
     @property
     def titrates(self) -> bool:
@@ -123,14 +125,20 @@ class Site:
 
 
 AMIDE, HIS, ACID, ROTOR = "amide", "his", "acid", "rotor"
+OFF, POCKET, ALL = "off", "pocket", "all"  # which protein groups titrate
 
 
-def find_sites(p: Protonated, titrate: bool = False) -> list[Site]:
-    """Every site of the protonated structure *p*; with *titrate*, every titratable group
-    also takes its other protonation form."""
+def find_sites(p: Protonated, titrate: str = OFF, pocket: np.ndarray | None = None) -> list[Site]:
+    """Every site of the protonated structure *p*. With *titrate* ``ALL`` every titratable
+    group also takes its other protonation form; with ``POCKET``, those whose residue the mask
+    *pocket* holds (His aside)."""
     s = p.structure
     graph = _graph(s)
     found: list[Site] = []
+
+    def titrating(r: int) -> bool:
+        return titrate == ALL or (titrate == POCKET and pocket is not None and bool(pocket[r]))
+
     for r in np.flatnonzero(s.res_kind == AMINO).tolist():
         name = str(s.res_name[r])
         here = _named(s, r)
@@ -139,14 +147,18 @@ def find_sites(p: Protonated, titrate: bool = False) -> list[Site]:
             site = _amide(s, r, here, graph)
         elif name == "HIS":
             site = _histidine(s, r, here, graph)
-        elif name in ACIDS and titrate:
-            site = _acid(s, r, here, graph)
+            if site is not None and titrate == ALL:
+                site = replace(site, titrating=True)
+        elif name in ACIDS and titrating(r):
+            acid = _acid(s, r, here, graph)
+            site = None if acid is None else replace(acid, titrating=True)
         if site is not None:
             found.append(site)
     for rotor in p.rotors:
-        site = _rotor(s, rotor, graph, titrate)
+        parent = s.index_of_uid.get(rotor.parent, -1)
+        site = _rotor(s, rotor, graph, parent >= 0 and titrating(int(s.residue_of[parent])))
         if site is not None:
-            found.append(site)
+            found.append(replace(site, titrating=True) if site.titrates else site)
     return found
 
 
