@@ -106,3 +106,18 @@ def test_waters_near_ligands(kinase) -> None:
     kept = (near.res_name == "HOH").sum()
     assert kept == 8 and kept < (kinase.res_name == "HOH").sum()  # 8 within 5 Å of ATP
     assert pipeline.keep_waters(kinase, pipeline.ALL) is kinase
+
+
+def test_titration_in_one_call(lysozyme) -> None:
+    done = pipeline.prepare(lysozyme, pipeline.Options(waters=pipeline.NONE, titrate=True))
+    by_residue = {c.site.residue: c for c in done.choices if c.site.titrates}
+    assert by_residue and set(done.pka) == set(by_residue) == set(done.population)
+    for r, c in by_residue.items():
+        share = done.population[r]
+        assert 0.0 <= share <= 1.0 and 0.0 <= done.pka[r] <= 14.0
+        n = [st.protons for st in c.site.states]
+        # the structure carries the form most of the group is in
+        assert n[c.state] == (max(n) if share >= 0.5 else min(n))
+    mixed = [f for f in done.report if f.kind == pipeline.SITE and "protonated" in f.text]
+    assert all(f.warn == (pipeline.MIXED < done.population[f.residue] < 1 - pipeline.MIXED)
+               for f in mixed)  # fmt: skip

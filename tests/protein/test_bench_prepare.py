@@ -21,7 +21,8 @@ builds it); skipped without it. Run with ``pytest -m bench -s``.
 P0 checks the harness itself: a method that flips nothing scores about half on orientation
 (the inputs flip half the side chains at random), and Reduce keeps the scores recorded in the
 review. Each later phase adds our own method here with the review's acceptance thresholds
-(P1: chemsuite's flips, His states and hydrogens).
+(P1: chemsuite's flips, His states and hydrogens; P2: pKa values on PKAD-R's test half, at
+PROPKA's accuracy, from ``scripts/review/pkad_review.py chemsuite``).
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -110,3 +112,32 @@ def test_chemsuite_meets_the_p1_marks(review) -> None:
     for question, floor in P1.items():
         print(f"chemsuite {question}: {share(tallies[question]):.1%}")
         assert share(tallies[question]) >= floor, question
+
+
+def _load(name: str):
+    sys.path.insert(0, str(REVIEW))
+    try:
+        spec = importlib.util.spec_from_file_location(name, REVIEW / f"{name}.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module  # its dataclasses look themselves up there
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(REVIEW))
+    return module
+
+
+def test_chemsuite_pka_values_match_propka() -> None:
+    """P2's mark (docs/prepare/p2-review.md): on PKAD-R's test half, chemsuite's RMSE is no
+    worse than PROPKA's on the same residues (the null model, every residue at its model pKa,
+    is not yet beaten by either)."""
+    pkad = _load("pkad_review")
+    if not (pkad.DATA / "chemsuite.csv").is_file() or not (pkad.DATA / "propka").is_dir():
+        pytest.skip("no PKAD-R outputs")
+    found = {m: pkad.predictions(m) for m in ("null", "propka", "chemsuite")}
+    shared = [e for e in pkad.entries() if all(e in f for f in found.values())]
+    test = [e for e in shared if not pkad.training(e)]
+    rmse = {m: float(np.sqrt(np.mean([(f[e] - e.pka) ** 2 for e in test])))
+            for m, f in found.items()}  # fmt: skip
+    print(f"PKAD-R test half (n={len(test)}):", {m: round(v, 2) for m, v in rmse.items()})
+    assert len(test) > 250
+    assert rmse["chemsuite"] <= rmse["propka"] + 0.005

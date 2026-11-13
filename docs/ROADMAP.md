@@ -391,7 +391,11 @@ pip extra.
    `docs/PREPARE_PLAN.md`).
    - **Progress:** P0 (benchmark) and P1 (repair, hydrogens, flips, His states, rotors;
      `pipeline.prepare`) done 2026-11-12, at Reduce's accuracy or better
-     (`docs/prepare/p1-review.md`). No UI yet (P4). Next: P2, titration with PKAD-2.
+     (`docs/prepare/p1-review.md`). P2 (titration: Asp/Glu/His/Lys/Tyr/Cys/N-terminus states
+     at a pH, pKa values and populations) done 2026-11-12 at PROPKA's accuracy on PKAD-R, off
+     by default (`docs/prepare/p2-review.md`). No UI yet (P4). Next: P3 (ligand states, waters,
+     metals); a second titration round (PROPKA-style H-bond determinants) to beat the null
+     model and turn titration on.
    - **Repair:** missing heavy atoms and caps from the CCD templates; short loops closed, longer
      gaps capped and marked ⚠.
    - **Hydrogens and states, protein and ligand together:** one coupled site graph covers His

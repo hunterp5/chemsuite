@@ -39,29 +39,50 @@ The energy is a weighted sum of terms (:data:`TERMS`), kept apart so the weights
   ``hip`` and ``hid`` (1 for those His states), and ``ph`` (1.364·(pH − 6.5) for HIP, the free
   energy of protonating a His of solution pKa 6.5).
 
+With titration (``titrate=True``), every titratable group is a site with charged and neutral
+states, and the His priors give way to the terms below:
+
+- ``intrinsic``: each state's free energy in water (:attr:`.sites.State.intrinsic`, from the
+  model pKa); the pH part, 1.364·protons·pH, is added by :meth:`Tables.energies` at any pH;
+- ``screened``: the Coulomb energy of the titrating groups (as ``coulomb``, with its own
+  weight), and ``deep``: the same scaled by how buried the two groups are (their mean buried
+  fraction), as PROPKA weighs charge pairs: water screens an exposed pair;
+- ``anti``: 1 for an acid's OH pointing away from its other O (syn is preferred);
+- ``bump`` and ``repel``: ``clash`` and ``lone`` for a titrating site, with weights of their
+  own: a fixed hydrogen in the way of a proton costs strain, which the hard clash of P1's
+  orientation choice overstates;
+- ``ionic``: the hydrogen bonds made by a charged group (a salt bridge, or a backbone NH on a
+  carboxylate), on top of ``hbond``;
+- ``desolv_acid`` and ``desolv_base``: the buried fraction of a negative or positive state,
+  PROPKA's: 0 with :data:`NMIN` heavy atoms or fewer within :data:`BURIED_REACH` of the
+  group, 1 with :data:`NMAX` or more.
+
 Atoms within :data:`~.sites.EXCLUDED_BONDS` bonds of a site's anchors are not scored
 against it.
 """
 
 from __future__ import annotations
 
-from dataclasses import astuple, dataclass, fields
+from dataclasses import astuple, dataclass, field, fields
 
 import numpy as np
 from scipy.spatial import cKDTree
 
 from ..structure.model import ION, WATER, Structure
 from .hydrogens import HYDROGEN
-from .sites import POLAR, Site, State
+from .sites import POLAR, RT_LN10, Site, State
 
 TERMS = ("hbond", "clash", "lone", "water", "flip", "hip", "hid", "ph", "coulomb", "burial",
-         "metal")  # fmt: skip
-HBOND, CLASH, LONE, WATER_TERM, FLIP, HIP, HID, PH, COULOMB, BURIAL, METAL = range(len(TERMS))
+         "metal", "ionic", "desolv_acid", "desolv_base", "intrinsic", "screened", "deep", "bump",
+         "repel", "anti")  # fmt: skip
+(HBOND, CLASH, LONE, WATER_TERM, FLIP, HIP, HID, PH, COULOMB, BURIAL, METAL, IONIC, DESOLV_ACID,
+ DESOLV_BASE, INTRINSIC, SCREENED, DEEP, BUMP, REPEL, ANTI) = range(len(TERMS))  # fmt: skip
 METAL_REACH = 2.8
 REACH = 4.0  # Å: atoms further than this from every state do not touch the site
 COULOMB_REACH = 12.0
 BURIAL_REACH = 10.0
 HIS_PKA = 6.5
+BURIED_REACH, NMIN, NMAX = 15.5, 280, 560  # PROPKA 3's buried fraction
 #: groups whose charge is shared by their atoms, by residue and atom names
 SHARED = {"ASP": ("OD1", "OD2"), "GLU": ("OE1", "OE2"), "ARG": ("NE", "NH1", "NH2"),
           "HIS": ("ND1", "NE2")}  # fmt: skip
@@ -71,7 +92,8 @@ HALIDES = (9, 17, 35, 53)
 
 @dataclass(frozen=True)
 class Weights:
-    """Fitted on half the neutron set (2026-11-12, docs/prepare/p1-review.md)."""
+    """P1's terms fitted on half the neutron set (docs/prepare/p1-review.md), titration's on half
+    of PKAD-R (docs/prepare/p2-review.md), both 2026-11-12."""
 
     hbond: float = 1.0
     clash: float = 160.0
@@ -84,6 +106,15 @@ class Weights:
     coulomb: float = 1.0
     burial: float = 1.0
     metal: float = 2.0
+    ionic: float = 0.0
+    desolv_acid: float = 1.0
+    desolv_base: float = 0.0
+    intrinsic: float = 1.0
+    screened: float = 0.02
+    deep: float = 0.0
+    bump: float = 1.0
+    repel: float = 0.0
+    anti: float = 4.0
 
     def vector(self) -> np.ndarray:
         assert tuple(f.name for f in fields(self)) == TERMS
@@ -104,18 +135,24 @@ class Batch:
     valid: np.ndarray  # (S, M)
     charge: np.ndarray  # (S, M)
     metal: np.ndarray  # (S, M) bool: a metal ion
+    ionic: np.ndarray  # (S, M) bool: a charged acceptor, or a polar H on a charged atom
+    wet: np.ndarray  # (S, M) bool: the atoms whose contacts with water count
 
     def take(self, atoms: np.ndarray) -> Batch:
         """The environment's atoms *atoms* (a batch of one state)."""
         arrays = (self.xyz, self.hydrogen, self.polar_h, self.acceptor, self.lone, self.water,
-                  self.donor, self.valid, self.charge, self.metal)  # fmt: skip
+                  self.donor, self.valid, self.charge, self.metal, self.ionic,
+                  self.wet)  # fmt: skip
         return Batch(*(v[:, atoms] for v in arrays))
 
 
-def of_states(states: tuple[State, ...]) -> Batch:
+def of_states(states: tuple[State, ...], titrating: bool = False) -> Batch:
+    """The states as a batch. The water term counts the acceptors without hydrogens, or (for a
+    *titrating* site, whose forms all have their water) every N, O and S."""
     size = max(len(st.names) for st in states)
     n = len(states)
-    out = {k: np.zeros((n, size), dtype=bool) for k in ("hydrogen", "polar", "acc", "valid")}
+    keys = ("hydrogen", "polar", "acc", "lone", "valid", "ionic")
+    out = {k: np.zeros((n, size), dtype=bool) for k in keys}
     xyz = np.zeros((n, size, 3))
     donor = np.full((n, size, 3), np.nan)
     charge = np.zeros((n, size))
@@ -126,13 +163,31 @@ def of_states(states: tuple[State, ...]) -> Batch:
         out["hydrogen"][k, :m] = st.elements == HYDROGEN
         out["polar"][k, :m] = st.polar_h
         out["acc"][k, :m] = st.acceptor
+        out["lone"][k, :m] = st.lone
         out["valid"][k, :m] = True
-        if st.tautomer == "HIP":
-            for ring_n in ("ND1", "NE2"):
-                charge[k, st.names.index(ring_n)] = 0.5
+        charge[k, :m] = st.charges
+        out["ionic"][k, :m] = _ionic(st)
     water = np.zeros((n, size), dtype=bool)
-    return Batch(xyz, out["hydrogen"], out["polar"], out["acc"], out["acc"].copy(), water, donor,
-                 out["valid"], charge, np.zeros((n, size), dtype=bool))  # fmt: skip
+    polar = np.isin(_elements(states, size), list(POLAR))
+    wet = polar & out["valid"] if titrating else out["lone"].copy()
+    return Batch(xyz, out["hydrogen"], out["polar"], out["acc"], out["lone"], water, donor,
+                 out["valid"], charge, np.zeros((n, size), dtype=bool), out["ionic"],
+                 wet)  # fmt: skip
+
+
+def _elements(states: tuple[State, ...], size: int) -> np.ndarray:
+    out = np.zeros((len(states), size), dtype=np.int64)
+    for k, st in enumerate(states):
+        out[k, : len(st.names)] = st.elements
+    return out
+
+
+def _ionic(st: State) -> np.ndarray:
+    """The charged acceptors of *st*, and its polar hydrogens on charged atoms."""
+    charged = {name for name, q in zip(st.names, st.charges, strict=True) if q}
+    on_charged = np.array([parent in charged for parent in st.parents], dtype=bool)
+    in_charged = np.array([name in charged for name in st.names], dtype=bool)
+    return (in_charged & st.acceptor) | (on_charged & st.polar_h)
 
 
 @dataclass(frozen=True)
@@ -153,6 +208,7 @@ def environment(s: Structure, sites: list[Site]) -> Environment:
     heavy_degree = np.zeros(s.n_atoms, dtype=np.int64)
     donor = np.full((s.n_atoms, 3), np.nan)
     polar_h = np.zeros(s.n_atoms, dtype=bool)
+    parent = np.zeros(s.n_atoms, dtype=np.int64)
     x = s.xyz().astype(np.float64)
     for a, b in s.bonds.tolist():
         for h, p in ((a, b), (b, a)):
@@ -161,6 +217,7 @@ def environment(s: Structure, sites: list[Site]) -> Environment:
                 if int(s.element[p]) in POLAR:
                     polar_h[h] = True
                     donor[h] = x[p]
+                    parent[h] = p
             elif not hydrogen[h] and not hydrogen[p]:
                 heavy_degree[h] += 1
     element = s.element
@@ -168,10 +225,13 @@ def environment(s: Structure, sites: list[Site]) -> Environment:
     water = s.atom_kind == WATER
     lone = acceptor & (h_on == 0) & ~water
     metal = (s.atom_kind == ION) & (element > 2) & ~np.isin(element, HALIDES)
+    q = group_charges(s)
+    ionic = (acceptor & (q != 0)) | (polar_h & (q[parent] != 0))
     batch = Batch(x[atoms][None], hydrogen[atoms][None], polar_h[atoms][None],
                   acceptor[atoms][None], lone[atoms][None], water[atoms][None],
                   donor[atoms][None], np.ones((1, len(atoms)), dtype=bool),
-                  group_charges(s)[atoms][None], metal[atoms][None])  # fmt: skip
+                  q[atoms][None], metal[atoms][None], ionic[atoms][None],
+                  lone[atoms][None])  # fmt: skip
     return Environment(atoms, batch, cKDTree(x[atoms]))
 
 
@@ -209,6 +269,8 @@ def contact(a: Batch, b: Batch) -> np.ndarray:
     d = np.linalg.norm(b.xyz[pb] - a.xyz[pa], axis=-1)  # (Sa, Sb, Ma, Mb)
     both = a.valid[pa] & b.valid[pb]
     out[..., HBOND] = -(_hbond(a, b) + _hbond(b, a).T)
+    if a.ionic.any() or b.ionic.any():
+        out[..., IONIC] = -(_hbond(a, b, ionic=True) + _hbond(b, a, ionic=True).T)
     ha, hb = a.hydrogen[pa], b.hydrogen[pb]
     polar_pair = (a.polar_h[pa] & b.acceptor[pb]) | (b.polar_h[pb] & a.acceptor[pa])
     limit = np.where(ha & hb, 2.0, np.where(polar_pair, 1.6, 2.4))
@@ -216,7 +278,7 @@ def contact(a: Batch, b: Batch) -> np.ndarray:
     out[..., CLASH] = _sum(np.where(touching, np.clip(limit - d, 0, None) ** 2, 0))
     lone = both & a.lone[pa] & b.lone[pb] & ~a.water[pa] & ~b.water[pb]
     out[..., LONE] = _sum(np.where(lone, np.clip(3.1 - d, 0, None), 0))
-    wet = both & ((a.lone[pa] & ~a.water[pa] & b.water[pb]) | (b.lone[pb] & ~b.water[pb]
+    wet = both & ((a.wet[pa] & ~a.water[pa] & b.water[pb]) | (b.wet[pb] & ~b.water[pb]
                                                                 & a.water[pa]))  # fmt: skip
     near = np.clip((3.6 - d) / 0.4, 0, 1) * (d > 2.4)
     out[..., WATER_TERM] = -_sum(np.where(wet, near, 0))
@@ -229,11 +291,14 @@ def contact(a: Batch, b: Batch) -> np.ndarray:
     return out
 
 
-def _hbond(a: Batch, b: Batch) -> np.ndarray:
-    """Hydrogen bonds from the polar H of *a* to the acceptors of *b*: (Sa, Sb)."""
+def _hbond(a: Batch, b: Batch, ionic: bool = False) -> np.ndarray:
+    """Hydrogen bonds from the polar H of *a* to the acceptors of *b*: (Sa, Sb); with *ionic*,
+    only those where either side is charged."""
     pa = (slice(None), None, slice(None), None)
     pb = (None, slice(None), None, slice(None))
     pairs = a.valid[pa] & b.valid[pb] & a.polar_h[pa] & b.acceptor[pb]
+    if ionic:
+        pairs = pairs & (a.ionic[pa] | b.ionic[pb])
     if not pairs.any():
         return np.zeros((a.xyz.shape[0], b.xyz.shape[0]))
     d = np.linalg.norm(b.xyz[pb] - a.xyz[pa], axis=-1)
@@ -253,14 +318,24 @@ def _sum(v: np.ndarray) -> np.ndarray:
     return v.sum(axis=(2, 3))
 
 
-def priors(site: Site, ph: float) -> np.ndarray:
+def priors(site: Site, ph: float, titrate: bool = False) -> np.ndarray:
+    """The flip prior, and either P1's His priors or (with *titrate*) each state's intrinsic
+    free energy."""
     out = np.zeros((len(site.states), len(TERMS)))
     for k, st in enumerate(site.states):
         out[k, FLIP] = st.flipped
+        out[k, ANTI] = st.anti
+        if titrate:
+            out[k, INTRINSIC] = st.intrinsic
+            continue
         out[k, HIP] = st.tautomer == "HIP"
         out[k, HID] = st.tautomer == "HID"
-        out[k, PH] = 1.364 * (ph - HIS_PKA) if st.tautomer == "HIP" else 0.0
+        out[k, PH] = RT_LN10 * (ph - HIS_PKA) if st.tautomer == "HIP" else 0.0
     return out
+
+
+def protons(site: Site) -> np.ndarray:
+    return np.array([st.protons for st in site.states], dtype=np.float64)
 
 
 # -- every table a structure needs ---------------------------------------------------------
@@ -269,14 +344,31 @@ class Tables:
     sites: list[Site]
     single: list[np.ndarray]  # per site: (S, T)
     pairs: dict[tuple[int, int], np.ndarray]  # (i, j), i < j: (Si, Sj, T)
+    ph: float = 7.0
+    titrate: bool = False
+    protons: list[np.ndarray] = field(default_factory=list)  # per site: (S,)
 
-    def energies(self, weights: Weights) -> tuple[list[np.ndarray], dict]:
+    def energies(self, weights: Weights, ph: float | None = None) -> tuple[list[np.ndarray], dict]:
+        """Each site's own energies and each pair's, at *ph* (with titration; the tables' own
+        pH otherwise)."""
         w = weights.vector()
-        return [t @ w for t in self.single], {k: t @ w for k, t in self.pairs.items()}
+        single = [t @ w for t in self.single]
+        if self.titrate:
+            at = self.ph if ph is None else ph
+            single = [e + RT_LN10 * n * at for e, n in zip(single, self.protons, strict=True)]
+        return single, {k: t @ w for k, t in self.pairs.items()}
 
 
-def _charged(site: Site, batch: Batch, env: Environment) -> np.ndarray:
-    """The Coulomb and burial terms of a site whose states carry charges."""
+def buried(env: Environment, centre: np.ndarray) -> float:
+    """PROPKA's buried fraction: the heavy atoms (not water) within :data:`BURIED_REACH`."""
+    near = env.tree.query_ball_point(centre, BURIED_REACH)
+    heavy = sum(1 for j in near if not env.batch.hydrogen[0, j] and not env.batch.water[0, j])
+    return float(np.clip((heavy - NMIN) / (NMAX - NMIN), 0.0, 1.0))
+
+
+def _charged(site: Site, batch: Batch, env: Environment, titrate: bool) -> np.ndarray:
+    """The Coulomb term of a site whose states carry charges, and its burial (P1's, for HIP)
+    or its desolvation (with titration)."""
     out = np.zeros((len(site.states), len(TERMS)))
     if not batch.charge.any():
         return out
@@ -284,17 +376,35 @@ def _charged(site: Site, batch: Batch, env: Environment) -> np.ndarray:
     near = [j for j in env.tree.query_ball_point(centre, COULOMB_REACH)
             if int(env.atoms[j]) not in site.excluded]  # fmt: skip
     charged = np.array([j for j in near if env.batch.charge[0, j] != 0], dtype=np.int64)
-    if len(charged):
-        out[:, COULOMB] = coulomb(batch, env.batch.take(charged))[:, 0]
+    energy = coulomb(batch, env.batch.take(charged))[:, 0] if len(charged) else 0.0
+    q = batch.charge.sum(axis=1)
+    if titrate:
+        fraction = buried(env, centre)
+        out[:, SCREENED] = energy
+        out[:, DEEP] = energy * fraction
+        out[:, DESOLV_ACID] = np.where(q < 0, -q, 0.0) * fraction
+        out[:, DESOLV_BASE] = np.where(q > 0, q, 0.0) * fraction
+        return out
+    out[:, COULOMB] = energy
     heavy = sum(1 for j in env.tree.query_ball_point(centre, BURIAL_REACH)
                 if not env.batch.hydrogen[0, j])  # fmt: skip
-    out[:, BURIAL] = (batch.charge.sum(axis=1) > 0) * heavy / 100.0
+    out[:, BURIAL] = (q > 0) * heavy / 100.0
     return out
 
 
-def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
+def _softened(table: np.ndarray) -> np.ndarray:
+    """*table* with its clash and lone terms moved to bump and repel."""
+    out = table.copy()
+    out[..., BUMP], out[..., CLASH] = table[..., CLASH], 0.0
+    out[..., REPEL], out[..., LONE] = table[..., LONE], 0.0
+    return out
+
+
+def tables(s: Structure, sites: list[Site], ph: float = 7.0, titrate: bool = False) -> Tables:
+    """Every site's own terms and every pair's. With *titrate* the states carry their intrinsic
+    free energies and proton counts (sites found with ``titrate=True``)."""
     env = environment(s, sites)
-    batches = [of_states(site.states) for site in sites]
+    batches = [of_states(site.states, titrate and site.titrates) for site in sites]
     single = []
     for site, batch in zip(sites, batches, strict=True):
         points = batch.xyz[batch.valid]
@@ -302,7 +412,8 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
         keep = np.array([j for j in near if int(env.atoms[j]) not in site.excluded],
                         dtype=np.int64)  # fmt: skip
         terms = contact(batch, env.batch.take(keep))[:, 0] if len(keep) else 0.0
-        single.append(priors(site, ph) + terms + _charged(site, batch, env))
+        own = priors(site, ph, titrate) + terms + _charged(site, batch, env, titrate)
+        single.append(_softened(own) if titrate and site.titrates else own)
     pairs = {}
     if sites:
         centres = np.array([b.xyz[b.valid].mean(axis=0) for b in batches])
@@ -310,6 +421,7 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
                            for b, c in zip(batches, centres, strict=True)])  # fmt: skip
         tree = cKDTree(centres)
         charged = [b.charge.any() for b in batches]
+        depth = [buried(env, c) if titrate else 0.0 for c in centres]
         for i, j in sorted(tree.query_pairs(2 * radius.max() + COULOMB_REACH)):
             if sites[i].excluded.intersection(sites[j].moving.tolist()):
                 continue  # too close in the bond graph
@@ -323,8 +435,14 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
                 if touching
                 else np.zeros((len(sites[i].states), len(sites[j].states), len(TERMS)))
             )
-            if both:
+            if both and titrate:
+                table[..., SCREENED] = coulomb(batches[i], batches[j])
+                table[..., DEEP] = table[..., SCREENED] * (depth[i] + depth[j]) / 2
+            elif both:
                 table[..., COULOMB] = coulomb(batches[i], batches[j])
+            if titrate and (sites[i].titrates or sites[j].titrates):
+                table = _softened(table)
             if np.abs(table).max() > 1e-9:
                 pairs[(i, j)] = table
-    return Tables(sites, single, pairs)
+    counts = [protons(site) if titrate else np.zeros(len(site.states)) for site in sites]
+    return Tables(sites, single, pairs, ph, titrate, counts)

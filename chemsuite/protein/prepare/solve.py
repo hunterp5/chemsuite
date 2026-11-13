@@ -37,6 +37,9 @@ from .energy import Tables, Weights
 from .hydrogens import HYDROGEN, Protonated
 
 NODE_LIMIT = 200_000
+FORBIDDEN = 1e6  # the energy of a state a site is held away from
+#: forms recorded in :attr:`.hydrogens.Protonated.states` (the textbook ones are not)
+RECORDED = frozenset(["HID", "HIE", "HIP", "ASH", "GLH", "LYN", "CYM", "TYM", "NH2"])
 
 
 @dataclass(frozen=True)
@@ -55,19 +58,30 @@ def optimise(
     ph: float = 7.0,
     weights: Weights | None = None,
     cancel: CancelToken | None = None,
+    titrate: bool = False,
 ) -> tuple[Protonated, list[Choice]]:
-    """*p* with each flip, His state and rotor at its best."""
-    found = sites.find_sites(p)
+    """*p* with each flip, His state and rotor at its best; with *titrate*, each titratable
+    group in its best protonation state at *ph* too."""
+    found = sites.find_sites(p, titrate)
     check(cancel)
-    table = energy.tables(p.structure, found, ph)
+    table = energy.tables(p.structure, found, ph, titrate)
     check(cancel)
     picked = solve(table, weights or Weights())
     return apply(p, found, picked), choices(table, weights or Weights(), picked)
 
 
 # -- solving ---------------------------------------------------------------------------------------
-def solve(table: Tables, weights: Weights) -> list[int]:
-    single, pairs = table.energies(weights)
+def solve(
+    table: Tables,
+    weights: Weights,
+    ph: float | None = None,
+    allowed: dict[int, np.ndarray] | None = None,
+) -> list[int]:
+    """The best state of every site; *allowed* holds some sites to some of their states (a
+    mask per site)."""
+    single, pairs = table.energies(weights, ph)
+    for i, mask in (allowed or {}).items():
+        single[i] = np.where(mask, single[i], FORBIDDEN)
     n = len(single)
     links: list[set[int]] = [set() for _ in range(n)]
     for i, j in pairs:
@@ -202,8 +216,10 @@ class _Cluster:
         return found[0]
 
 
-def choices(table: Tables, weights: Weights, picked: list[int]) -> list[Choice]:
-    single, pairs = table.energies(weights)
+def choices(
+    table: Tables, weights: Weights, picked: list[int], ph: float | None = None
+) -> list[Choice]:
+    single, pairs = table.energies(weights, ph)
     out = []
     for i, site in enumerate(table.sites):
         e = single[i].copy()
@@ -219,8 +235,8 @@ def choices(table: Tables, weights: Weights, picked: list[int]) -> list[Choice]:
 
 # -- writing the answer back -----------------------------------------------------------------------
 def apply(p: Protonated, found: list[sites.Site], picked: list[int]) -> Protonated:
-    """*p* with the state *picked* for each site: atoms moved, His hydrogens added or removed
-    (other atoms keep their uids)."""
+    """*p* with the state *picked* for each site: atoms moved, hydrogens added or removed and
+    formal charges set (other atoms keep their uids)."""
     s = p.structure
     coords = s.coords.copy()
     charge = s.charge.copy()
@@ -243,11 +259,11 @@ def apply(p: Protonated, found: list[sites.Site], picked: list[int]) -> Protonat
                     new_xyz.append(state.xyz[:, m])
         gone += [i for name, i in by_name.items()
                  if name not in state.names and s.element[i] == HYDROGEN]  # fmt: skip
-        if site.kind == sites.HIS:
-            states[site.residue] = state.tautomer
-            for ring_n in ("ND1", "NE2"):
-                charge[residue_atoms[ring_n]] = 0
-            charge[residue_atoms["ND1"]] = 1 if state.tautomer == "HIP" else 0
+        for name, q in zip(state.names, state.formal, strict=False):
+            if name in residue_atoms:
+                charge[residue_atoms[name]] = q
+        if state.form in RECORDED:
+            states[site.residue] = state.form
     out = replace(s, coords=coords, charge=charge)
     if gone:
         mask = np.zeros(out.n_atoms, dtype=bool)

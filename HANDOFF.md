@@ -119,10 +119,18 @@ other machine can pick it up. Update it at the end of a session that leaves work
     side chains and OXT from templates), `pipeline.prepare` (repair → waters → hydrogens →
     optimise; report with ⚠ for near-ties). The benchmark runs the pipeline: Asn 86.2, Gln
     80.4, His orientation 89.6, His tautomer 63.6%, ligand H 96.0%, all 262 entries.
-  - **Next: P2** (titration: Asp/Glu/Lys/Tyr/Cys/His states at a pH, desolvation and the full
-    Coulomb network, PKAD-2, PROPKA parity), then P3 (ligand states, waters, metals), then P4
-    (the Prepare dialog and report panel, applied as one undoable edit). Each starts in plan
-    mode.
+  - **P2 done 2026-11-12** ([`docs/prepare/p2-review.md`](docs/prepare/p2-review.md)):
+    titration forms in `sites` (with `titrate=True`), pH-linear tables and new terms in
+    `energy`, `populations.py` (mean field, Monte Carlo as the check), `pipeline`
+    `Options.titrate`, `Prepared.pka` and `population`. On PKAD-R's test half the RMSE is 1.32
+    against PROPKA's 1.33; neither beats the null model (1.15). With titration on, the neutron
+    His and Asp/Glu marks drop, so it is **off by default**. P1 reproduces byte for byte with it
+    off. Data: `samples/prepare/pkad` (PKAD-R CSV saved by hand; `pkad_review.py fetch`,
+    `propka`, `tables`, `fit`, `chemsuite`, `score`).
+  - **Next:** P3 (ligand states, waters, metals), then P4 (the Prepare dialog and report
+    panel, applied as one undoable edit), each in plan mode. A second titration round
+    (PROPKA-style H-bond determinants, His titrated for charge only) is listed in
+    p2-review.md §4.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 

@@ -162,7 +162,10 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
   and gemmi H placement.
 - **P1**: inspect, repair and hydrogens. Protein-only flips and rotors (Reduce parity). Done
   2026-11-12 ([`prepare/p1-review.md`](prepare/p1-review.md)).
-- **P2**: the coupled site graph with protein titration (PROPKA parity on PKAD).
+- **P2**: the coupled site graph with protein titration (PROPKA parity on PKAD). Done
+  2026-11-12 at PROPKA's accuracy on PKAD-R; titration stays off by default until it beats the
+  null model and keeps the neutron marks
+  ([`prepare/p2-review.md`](prepare/p2-review.md)).
 - **P3**: ligand sites, waters and metals in the graph. The named cases pass. Populations and ⚠.
 - **P4**: UI, report and docking export (ensemble for ambiguous sites, Meeko PDBQT).
 - **P5**: restrained relax (now ROADMAP §7a 3, "Relax after preparation": optional, an in-app

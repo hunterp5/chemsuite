@@ -74,7 +74,8 @@ def test_a_hydrogen_bond_scores_and_a_clash_costs() -> None:
             np.array(xyz, dtype=float)[None], np.array(hydrogen)[None], np.array(polar)[None],
             np.array(acceptor)[None], np.array(acceptor)[None], np.zeros((1, n), dtype=bool),
             np.array(donor, dtype=float)[None], np.ones((1, n), dtype=bool), np.zeros((1, n)),
-            np.zeros((1, n), dtype=bool))  # fmt: skip
+            np.zeros((1, n), dtype=bool), np.zeros((1, n), dtype=bool),
+            np.array(acceptor)[None])  # fmt: skip
 
     nan = [np.nan] * 3
     donor = batch([[0, 0, 0], [1.0, 0, 0]], [False, True], [False, True], [False, False],

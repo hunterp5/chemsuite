@@ -191,8 +191,11 @@ class _Plan:
             n = here.get("N")
             if n is not None and not self.external(n) and "N" in t.index and t.hydrogens_on("N"):
                 free = next(h for h in ("H", "H2", "H3", "HN3") if h not in t.index)
-                t = t.with_hydrogen("N", free)  # NH3+
-                delta["N"] = 1
+                try:
+                    t = t.with_hydrogen("N", free)  # NH3+
+                    delta["N"] = 1
+                except ValueError:
+                    pass  # a planar N (N-formylmethionine's amide) keeps its hydrogen
         elif kind == NUCLEIC:
             removed |= set(PHOSPHATE) & set(t.atoms)
         removed |= set(TEXTBOOK.get(t.name, ())) & set(t.atoms)

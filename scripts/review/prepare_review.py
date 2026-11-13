@@ -30,7 +30,7 @@ Steps, each skipping work already done::
     python scripts/review/prepare_review.py propka    # in samples/prepare/bench-venv
     python scripts/review/prepare_review.py gemmi     # gemmi h with the CCP4 monomer library
     python scripts/review/prepare_review.py protoss   # ProteinsPlus, public PDB IDs only
-    python scripts/review/prepare_review.py chemsuite # our own pipeline
+    python scripts/review/prepare_review.py chemsuite # our own pipeline (--titrate: P2's states)
     python scripts/review/prepare_review.py fit       # fit its weights on half the entries
     python scripts/review/prepare_review.py score > /tmp/p0-scores.md
 """
@@ -59,7 +59,7 @@ BENCH_PY = DATA / "bench-venv" / "Scripts" / "python.exe"
 REDUCE = "~/bench/reduce/reduce_src/reduce"
 REDUCE_DICT = "~/bench/reduce/reduce_wwPDB_het_dict.txt"
 FITTED = None  # chemsuite's weights: None for the defaults (energy.Weights, fitted)
-METHODS = ("naive", "reduce", "propka", "gemmi", "protoss", "moe", "chemsuite")
+METHODS = ("naive", "reduce", "propka", "gemmi", "protoss", "moe", "chemsuite", "titrated")
 
 
 def entries() -> list[str]:
@@ -187,12 +187,14 @@ def run_gemmi() -> None:
 
 
 def run_chemsuite() -> None:
-    """chemsuite's own hydrogens (``protein/prepare``), with the CCD entries in ``ccd/``."""
+    """chemsuite's own hydrogens (``protein/prepare``), with the CCD entries in ``ccd/``; with
+    ``--titrate``, P2's protonation states at the crystal pH (in ``out/titrated``)."""
     from chemsuite.protein.prepare.pipeline import Options, prepare
     from chemsuite.protein.structure import io
     from chemsuite.protein.structure.components import CcdCache
 
-    out = DATA / "out" / "chemsuite"
+    titrate = "--titrate" in sys.argv
+    out = DATA / "out" / ("titrated" if titrate else "chemsuite")
     out.mkdir(parents=True, exist_ok=True)
     ccd = CcdCache(DATA / "ccd", offline=True)
     redo = "--redo" in sys.argv
@@ -201,7 +203,7 @@ def run_chemsuite() -> None:
         if target.exists() and not redo:
             continue
         try:
-            options = Options(ph=crystal_ph(pdb_id), weights=FITTED)
+            options = Options(ph=crystal_ph(pdb_id), weights=FITTED, titrate=titrate)
             done = prepare(io.read(DATA / "inputs" / f"{pdb_id}.pdb"), options, ccd)
         except (ValueError, RuntimeError, KeyError) as error:
             print(pdb_id, "failed:", error, flush=True)
