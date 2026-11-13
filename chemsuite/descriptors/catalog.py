@@ -26,7 +26,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from rdkit import Chem
-from rdkit.Chem import QED, Crippen, Descriptors, Lipinski, inchi, rdMolDescriptors
+from rdkit.Chem import QED, Crippen, Descriptors, Lipinski, MolSurf, inchi, rdMolDescriptors
+from rdkit.Chem.EState import EState_VSA
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from chemsuite.ionisation.profile import Profile, profile
@@ -140,6 +141,49 @@ _SHAPES = (
         "I2 / (I1 · I3).",
     ),
 )
+
+
+VSA_GROUP = "MOE-type (VSA)"
+_VSA_HELP = (
+    " Labute's binned surface-area descriptors (J. Mol. Graph. Model. 2000), as MOE defines"
+    " them, computed by RDKit; values can differ slightly from MOE's own."
+)
+#: (key prefix, title prefix, values of every bin, bin edges, what is binned, what is summed)
+_VSA_FAMILIES = (
+    ("SlogP_VSA", "SlogP_VSA", rdMolDescriptors.SlogP_VSA_, MolSurf.logpBins,
+     "Crippen logP contribution", "Labute surface area (Å²)"),
+    ("SMR_VSA", "SMR_VSA", rdMolDescriptors.SMR_VSA_, MolSurf.mrBins,
+     "Crippen molar refractivity contribution", "Labute surface area (Å²)"),
+    ("PEOE_VSA", "PEOE_VSA", rdMolDescriptors.PEOE_VSA_, MolSurf.chgBins,
+     "Gasteiger (PEOE) partial charge", "Labute surface area (Å²)"),
+    ("EState_VSA", "EState_VSA", EState_VSA.EState_VSA_, EState_VSA.estateBins,
+     "E-state index", "Labute surface area (Å²)"),
+    ("VSA_EState", "VSA_EState", EState_VSA.VSA_EState_, EState_VSA.vsaBins,
+     "Labute surface-area contribution", "E-state indices"),
+)  # fmt: skip
+
+
+def _bin_text(edges: list[float], k: int) -> str:
+    """Bin *k* of *edges*: below the first edge, between two, or at or above the last."""
+    if k == 0:
+        return f"< {edges[0]:g}"
+    if k == len(edges):
+        return f"≥ {edges[-1]:g}"
+    return f"{edges[k - 1]:g} to < {edges[k]:g}"
+
+
+def _vsa_bin(values: Callable[[Chem.Mol], list[float]], k: int) -> Callable[[Chem.Mol], float]:
+    return lambda mol: float(values(mol)[k])
+
+
+def _vsa_items() -> list[Descriptor]:
+    out = []
+    for key, title, values, edges, binned, summed in _VSA_FAMILIES:
+        for k in range(len(edges) + 1):
+            help = f"Sum of {summed} over atoms whose {binned} is {_bin_text(edges, k)}."
+            out.append(Descriptor(f"{key}{k + 1}", f"{title}{k + 1}", VSA_GROUP,
+                                  _vsa_bin(values, k), 2, help + _VSA_HELP))  # fmt: skip
+    return out
 
 
 def _tpsa_sp(mol: Chem.Mol) -> float:
@@ -395,6 +439,7 @@ _ITEMS: tuple[Descriptor, ...] = (
         3,
         "Gasteiger charges.",
     ),
+    *_vsa_items(),
     # -- identifiers --
     *(
         Descriptor(key, title, SHAPE_GROUP, _shape(fn), decimals, help + _SHAPE_HELP)

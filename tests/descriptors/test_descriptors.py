@@ -43,6 +43,22 @@ def test_catalog_is_consistent() -> None:
     assert sum(len(in_group(g)) for g in GROUPS) == len(CATALOG)
 
 
+def test_moe_type_vsa_descriptors_match_rdkit_by_name() -> None:
+    """The 57 binned VSA columns equal RDKit's descriptors of the same names, bin by bin."""
+    from rdkit.Chem import Descriptors
+
+    from chemsuite.descriptors.catalog import VSA_GROUP
+
+    named = dict(Descriptors.descList)
+    items = in_group(VSA_GROUP)
+    assert len(items) == 12 + 10 + 14 + 11 + 10
+    drug = mol("CN1CCC[C@H]1c1cccnc1.OC(=O)c1ccccc1OC(C)=O")
+    for item in items:
+        assert item.fn(drug) == pytest.approx(named[item.key](drug)), item.key
+        assert item.help.startswith("Sum of ")
+    assert "< -0.4" in CATALOG["SlogP_VSA1"].help and "≥ 0.6" in CATALOG["SlogP_VSA12"].help
+
+
 def test_every_descriptor_runs_on_a_drug() -> None:
     from chemsuite.conformers.etkdg import generate
     from chemsuite.core.mols import mol_from_blob, mol_to_blob

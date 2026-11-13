@@ -1107,6 +1107,7 @@ calculating MW again adds "MW (2)".
 | Atom Counts | C, N, O, S, P, F, Cl, Br, I |
 | Complexity | Bertz Complexity, Balaban J, Hall-Kier Alpha, Kappa 1–3 |
 | Partial Charges | Max/Min Partial Charge, Max/Min Abs Partial Charge |
+| MOE-type (VSA) | SlogP_VSA1–12, SMR_VSA1–10, PEOE_VSA1–14, EState_VSA1–11, VSA_EState1–10 |
 | 3D Shape | PMI 1–3, NPR1, NPR2, PBF, Radius of Gyration, Asphericity, Eccentricity, Spherocity Index, Inertial Shape Factor |
 | Identifiers | Canonical SMILES, InChIKey, InChI, Formula, Murcko Scaffold, Generic Scaffold |
 
@@ -1118,6 +1119,11 @@ calculating MW again adds "MW (2)".
   and a penalty for size, stereocentres, macrocycles and unusual ring fusions. Most drug-like
   compounds score 2-4.
 - **3D shape descriptors** use a 3D structure when the cell has conformers.
+- **MOE-type (VSA)** are Labute's binned surface-area descriptors (2000), with MOE's names and
+  bins, computed by RDKit (MOE itself is not needed; values can differ slightly from MOE's).
+  Each sums the surface area of the atoms whose property (Crippen logP, molar refractivity,
+  Gasteiger charge or E-state) falls in one range; VSA_EState sums E-states over atoms binned
+  by surface area. A column's tooltip gives its range.
 - **Fingerprints.** Tick any of the fingerprints the similarity tools use (ECFP4, ECFP6, FCFP4,
   RDKit paths, atom pairs, topological torsions, MACCS keys). Each becomes a text column
   ("ECFP4", "MACCS Keys"…) holding the bits in hexadecimal, bit 0 first (the high bit of the
