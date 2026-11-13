@@ -100,8 +100,10 @@ changes.
 
 ## Decided
 
-- pKa is MolGpKa ported to numpy in `chemsuite/ionisation/`. Never add torch. Uni-pKa waits on
-  the licence of its weights.
+- pKa: chemsuite's own model of Uni-pKa's design, trained on pKaHub's data in WSL and run in numpy
+  (`chemsuite/ionisation/unipka/`, `docs/UNIPKA_PLAN.md`); MolGpKa (numpy) stays until it is
+  replaced. Never add torch to the app. Uni-pKa's published weights, and the iBonD, DataWarrior
+  and IUPAC pKa data, never ship (licences).
 - The sketcher is original code that uses Ketcher (Apache-2.0) only as a reference for its
   rules. Never use MolManager's `iupac_*` modules. Every rule reused from MolManager needs a
   cited source and tests.

@@ -43,6 +43,7 @@ include = ["chemsuite*"]
 
 [tool.setuptools.package-data]
 "chemsuite.ionisation" = ["data/*"]  # MolGpKa weights, site templates, licence
+"chemsuite.ionisation.unipka" = ["data/*"]  # Uni-pKa site templates and licences
 "chemsuite.sketch" = ["data/*"]  # Ketcher licence and notice; templates from P2
 "chemsuite.protein.structure" = ["data/*"]  # residue templates from the wwPDB CCD (public domain)
 "chemsuite.protein.prepare" = ["data/*"]  # ideal residue geometry from the wwPDB CCD (public domain)

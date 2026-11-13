@@ -358,22 +358,14 @@ the same polish as the table and the dockable plots and tools.
   window grows as the phases land (align, dock, prepare, simulate), each opening or driving the
   viewer.
 
-### 7.0e Medium priority: Uni-pKa as the more accurate ligand pKa model (added 2026-11-12)
+### 7.0e High priority: our own Uni-pKa (revised 2026-11-12)
 
 Uni-pKa gives the free energy of each protonation microstate, so linked sites and tautomers
-are handled together. MolGpKa treats each site on its own. Uni-pKa would serve two places:
-- Predict pKa;
-- the ligand states in protein preparation (`docs/PREPARE_PLAN.md`), where the ligand step
-  takes solution free energies from a pluggable model, so Uni-pKa drops in without a redesign.
-
-- **Blocked on the weights licence** (`docs/PKA_PLAN.md` §3.1). The original checkpoint is
-  reported as CC BY-NC-SA 4.0, and the Apache-2.0 re-host is probably the same weights.
-  Internal company use counts as commercial, so this needs a yes from legal or written terms
-  from DP Technology.
-- It needs torch, so it runs in an interpreter of its own (an external worker, like OpenMM),
-  never in the app's.
-- Measure before adopting it: the preparation benchmark's neutron ligand set compares MolGpKa
-  with Uni-pKa on ligand states in real pockets, alongside PKA_PLAN's P0 spike.
+are handled together; MolGpKa treats each site on its own, and in protein preparation it
+catches few ligand states (`docs/prepare/`). Its published weights cannot be used (licence),
+so chemsuite trains its own on pKaHub's data from Uni-Mol's MIT backbone and runs them in numpy, with
+no torch: [UNIPKA_PLAN.md](UNIPKA_PLAN.md). Ligand states in preparation use it first; Predict
+pKa, standardise and the descriptors follow once it beats MolGpKa on the test sets.
 
 ### 7a. Proteins: from viewer to medicinal-chemistry workspace (revised 2026-11-11)
 

@@ -18,8 +18,9 @@ On 2026-11-05 the plan changed to **two models**:
        species at a chosen pH;
      - the Ionisation descriptor group;
      - cLogD 7.4, CNS MPO, BBB Score and AB-MPS, which no longer carry "(est.)".
-2. **Uni-pKa, as an optional, more accurate add-on.** This is the rest of this document. It is
-   still blocked on the weights licence (§3.1). If it is built, it plugs in behind the same
+2. **Uni-pKa, as an optional, more accurate add-on.** Superseded 2026-11-12 by
+   [UNIPKA_PLAN.md](UNIPKA_PLAN.md): chemsuite trains its own weights and runs them in numpy, so
+   the rest of this document is history. It was blocked on the weights licence (§3.1). If it is built, it plugs in behind the same
    outputs as a model choice in Predict pKa.
 
 MolGpKa's known limits are listed in the user guide: sites are treated independently,
