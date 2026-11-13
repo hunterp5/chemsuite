@@ -61,6 +61,7 @@ METAL_CONTACT = 2.9  # Å
 TEXTBOOK = {"ASP": ("HD2",), "GLU": ("HE2",)}
 PHOSPHATE = ("HOP2", "HOP3")
 POLAR = frozenset([7, 8, 16])
+KEPT = "Kept the hydrogens it has"  # the note on a residue that came with hydrogens
 _TETRAHEDRAL = np.radians(109.47)
 _TRIGONAL = np.radians(120.0)
 
@@ -156,7 +157,7 @@ class _Plan:
         if not atoms:
             return
         if (s.element[atoms] == HYDROGEN).any():
-            self.notes.append(Note(r, "Kept the hydrogens it has"))
+            self.notes.append(Note(r, KEPT))
             return
         if kind in (AMINO, NUCLEIC):
             template = self.library.get(str(s.res_name[r]), self.cancel)
@@ -323,7 +324,7 @@ class _Plan:
             axis = -1
             if rotor:
                 axis = lookup[heavy[0].GetIntProp("uid")] if heavy else partners[0]
-            names = _ligand_names(template, str(s.name[i]), len(kept), taken)
+            names = ligand_names(template, str(s.name[i]), len(kept), taken)
             for name, (_h, at, _a) in zip(names, kept, strict=True):
                 self.new.append(_New(r, name, i, at, axis))
 
@@ -413,7 +414,7 @@ def _perpendicular(u: np.ndarray) -> np.ndarray:
     return _unit(np.cross(u, axis))
 
 
-def _ligand_names(template: Template | None, parent: str, count: int, taken: set[str]) -> list:
+def ligand_names(template: Template | None, parent: str, count: int, taken: set[str]) -> list:
     """The component's names for the hydrogens on *parent*, else H1, H2… not yet taken."""
     own = () if template is None or parent not in template.index else template.hydrogens_on(parent)
     names = [h for h in own if h not in taken][:count]

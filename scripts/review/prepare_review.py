@@ -30,7 +30,7 @@ Steps, each skipping work already done::
     python scripts/review/prepare_review.py propka    # in samples/prepare/bench-venv
     python scripts/review/prepare_review.py gemmi     # gemmi h with the CCP4 monomer library
     python scripts/review/prepare_review.py protoss   # ProteinsPlus, public PDB IDs only
-    python scripts/review/prepare_review.py chemsuite # our own pipeline (--titrate: P2's states)
+    python scripts/review/prepare_review.py chemsuite # our own pipeline (--variant: see VARIANTS)
     python scripts/review/prepare_review.py fit       # fit its weights on half the entries
     python scripts/review/prepare_review.py score > /tmp/p0-scores.md
 """
@@ -59,7 +59,15 @@ BENCH_PY = DATA / "bench-venv" / "Scripts" / "python.exe"
 REDUCE = "~/bench/reduce/reduce_src/reduce"
 REDUCE_DICT = "~/bench/reduce/reduce_wwPDB_het_dict.txt"
 FITTED = None  # chemsuite's weights: None for the defaults (energy.Weights, fitted)
-METHODS = ("naive", "reduce", "propka", "gemmi", "protoss", "moe", "chemsuite", "titrated")
+#: chemsuite's runs, each in ``out/<name>``: name → pipeline.Options fields (pH aside)
+VARIANTS = {
+    "chemsuite": {},  # the defaults
+    "p1": {"titrate": "off", "ligand_states": False},
+    "titrated": {"titrate": "all", "ligand_states": False},  # P2
+    "ligands": {"titrate": "off", "ligand_states": True},
+    "pocket": {"titrate": "pocket", "ligand_states": True},
+}
+METHODS = ("naive", "reduce", "propka", "gemmi", "protoss", "moe", *VARIANTS)
 
 
 def entries() -> list[str]:
@@ -186,31 +194,43 @@ def run_gemmi() -> None:
             print(pdb_id, "failed:", done.stderr.strip().splitlines()[-1:], flush=True)
 
 
+def _option(name: str) -> str:
+    """The value after ``--name`` on the command line, or ""."""
+    flag = f"--{name}"
+    return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv else ""
+
+
 def run_chemsuite() -> None:
-    """chemsuite's own hydrogens (``protein/prepare``), with the CCD entries in ``ccd/``; with
-    ``--titrate``, P2's protonation states at the crystal pH (in ``out/titrated``)."""
+    """chemsuite's own pipeline (``protein/prepare``) at each crystal pH, with the CCD entries in
+    ``ccd/``: ``--variant NAME`` (one of :data:`VARIANTS`, default ``chemsuite``) into
+    ``out/NAME``; ``--jobs N`` runs N entries at once."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    variant = _option("variant") or "chemsuite"
+    out = DATA / "out" / variant
+    out.mkdir(parents=True, exist_ok=True)
+    redo = "--redo" in sys.argv
+    todo = [i for i in entries() if redo or not (out / f"{i}.pdb").exists()]
+    jobs = int(_option("jobs") or 1)
+    with ProcessPoolExecutor(jobs) as pool:
+        for message in pool.map(_prepare_one, todo, [variant] * len(todo)):
+            if message:
+                print(message, flush=True)
+
+
+def _prepare_one(pdb_id: str, variant: str) -> str:
     from chemsuite.protein.prepare.pipeline import Options, prepare
-    from chemsuite.protein.prepare.sites import ALL, OFF
     from chemsuite.protein.structure import io
     from chemsuite.protein.structure.components import CcdCache
 
-    titrate = "--titrate" in sys.argv
-    out = DATA / "out" / ("titrated" if titrate else "chemsuite")
-    out.mkdir(parents=True, exist_ok=True)
     ccd = CcdCache(DATA / "ccd", offline=True)
-    redo = "--redo" in sys.argv
-    for pdb_id in entries():
-        target = out / f"{pdb_id}.pdb"
-        if target.exists() and not redo:
-            continue
-        try:
-            options = Options(ph=crystal_ph(pdb_id), weights=FITTED,
-                              titrate=ALL if titrate else OFF)  # fmt: skip
-            done = prepare(io.read(DATA / "inputs" / f"{pdb_id}.pdb"), options, ccd)
-        except (ValueError, RuntimeError, KeyError) as error:
-            print(pdb_id, "failed:", error, flush=True)
-            continue
-        io.write(done.structure, target)
+    try:
+        options = Options(ph=crystal_ph(pdb_id), weights=FITTED, **VARIANTS[variant])
+        done = prepare(io.read(DATA / "inputs" / f"{pdb_id}.pdb"), options, ccd)
+    except (ValueError, RuntimeError, KeyError) as error:
+        return f"{pdb_id} failed: {error}"
+    io.write(done.structure, DATA / "out" / variant / f"{pdb_id}.pdb")
+    return ""
 
 
 # -- fitting the weights -----------------------------------------------------------------------
@@ -315,6 +335,143 @@ FIT_GRID = {
     "burial": (0.0, 0.5, 1.0, 2.0, 4.0),
     "metal": (0.0, 1.0, 2.0, 4.0, 8.0),
 }
+
+
+# -- fitting the ligand weights ------------------------------------------------------------------
+LIGAND_CASES = DATA / "ligand_cases.pkl"
+FIT_LIGAND_GRID = {
+    "ccd": (0.0, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0),
+    "tautomer": (0.0, 0.1, 0.2, 0.5, 1.0),
+    "within": (0.0, 0.5, 1.0, 2.0),
+    "attract": (0.0, 0.25, 0.5, 1.0, 1.5),
+    "coordination": (0.0, 2.0, 5.0, 10.0),
+    "ligand_coulomb": (0.0, 0.1, 0.25, 0.5, 1.0, 2.0),
+}
+
+
+def _ligand_case(pdb_id: str, expected: pt.Truth):
+    """The pipeline's tables for one entry (ligand states on, titration off), and each scored
+    ligand atom: (site, the hydrogens of each of its states) or (-1, the fixed count), with the
+    truth and the CCD's count."""
+    from chemsuite.protein.prepare import energy, hydrogens, pipeline, repair, sites, templates
+    from chemsuite.protein.structure import io
+    from chemsuite.protein.structure.components import CcdCache
+
+    ccd = CcdCache(DATA / "ccd", offline=True)
+    library = templates.Library(ccd)
+    ph = crystal_ph(pdb_id)
+    s = repair.build_missing(repair.one_location(io.read(DATA / "inputs" / f"{pdb_id}.pdb")),
+                             library)  # fmt: skip
+    built = hydrogens.add_hydrogens(s, library, ccd)
+    kept = frozenset(n.residue for n in built.notes if n.text == hydrogens.KEPT)
+    found = pipeline._sites(built, pipeline.Options(ph=ph), ccd, kept, [], None)
+    s = built.structure
+    table = energy.tables(s, found, ph)
+    graph = sites.bond_graph(s)
+    residue_of = {(str(s.chain_name[s.chain_of[r]]), int(s.res_seq[r]), str(s.icode[r]).strip(),
+                   str(s.res_name[r])): r for r in range(s.n_residues)}  # fmt: skip
+    site_of = {site.residue: k for k, site in enumerate(found) if site.kind == sites.LIGAND}
+    items = []
+    for (key, name, atom), count in expected.ligand_h.items():
+        r = residue_of.get((*key, name))
+        if r is None:
+            continue
+        ideal = expected.ligand_ideal.get((key, name, atom), count)
+        k = site_of.get(r, -1)
+        if k >= 0 and atom in found[k].states[0].names:
+            per_state = [sum(1 for p in st.parents if p == atom) for st in found[k].states]
+            items.append((k, per_state, count, ideal))
+            continue
+        span = s.atoms_of(r)
+        at = [i for i in range(span.start, span.stop) if s.name[i] == atom]
+        fixed = sum(1 for j in graph[at[0]] if s.element[j] == 1) if at else None
+        items.append((-1, fixed, count, ideal))
+    return table, items, ph
+
+
+def _ligand_case_or_none(pdb_id: str, expected: pt.Truth):
+    try:
+        return _ligand_case(pdb_id, expected)
+    except (ValueError, RuntimeError, KeyError) as error:
+        print(pdb_id, "failed:", error, flush=True)
+        return None
+
+
+def _ligand_accuracy(cases, weights) -> tuple[int, int, int, int]:
+    """(right, scored, exceptions caught, exceptions)."""
+    from chemsuite.protein.prepare import pipeline, populations
+    from chemsuite.protein.prepare.solve import solve
+
+    right = total = caught = unusual = 0
+    for table, items, ph in cases:
+        picked = solve(table, weights)
+        if any(site.titrating for site in table.sites):
+            done = populations.titration(table, weights)
+            at = done.at(ph)
+            states_at = [np.array([np.interp(ph, done.grid, c) for c in pop.T])
+                         for pop in done.populations]  # fmt: skip
+            picked = pipeline._majority(table, weights, picked, at, states_at)
+        for k, got, count, ideal in items:
+            h = got[picked[k]] if k >= 0 else got
+            total += 1
+            right += h == count
+            if count != ideal:
+                unusual += 1
+                caught += h == count
+    return right, total, caught, unusual
+
+
+def fit_ligands() -> None:
+    """A coordinate search over the ligand weights on the training half; prints both halves.
+    The cases are built once into ``ligand_cases.pkl`` (``--redo`` rebuilds them)."""
+    import pickle
+    from dataclasses import asdict, replace
+
+    from chemsuite.protein.prepare.energy import Weights
+
+    if LIGAND_CASES.exists() and "--redo" not in sys.argv:
+        cases = pickle.loads(LIGAND_CASES.read_bytes())
+    else:
+        from concurrent.futures import ProcessPoolExecutor
+
+        found = truths()
+        cases = {True: [], False: []}
+        ids = [i for i in entries() if found[i].ligand_h]
+        with ProcessPoolExecutor(int(_option("jobs") or 1)) as pool:
+            built = pool.map(_ligand_case_or_none, ids, [found[i] for i in ids])
+            for pdb_id, case in zip(ids, built, strict=True):
+                if case is not None:
+                    cases[training(pdb_id)].append(case)
+        LIGAND_CASES.write_bytes(pickle.dumps(cases))
+
+    def score(w) -> float:
+        right, total, caught, unusual = _ligand_accuracy(cases[True], w)
+        return right / total + caught / max(unusual, 1) / 4
+
+    def show(label, w) -> None:
+        right, total, caught, unusual = _ligand_accuracy(cases[label == "training"], w)
+        print(
+            f"{label}: H count {right / total:.1%} ({right}/{total}), unlike the CCD "
+            f"{caught / max(unusual, 1):.0%} ({caught}/{unusual})",
+            flush=True,
+        )
+
+    weights = Weights()
+    best = score(weights)
+    print("start", round(best, 4), flush=True)
+    for half in ("training", "test"):
+        show(half, weights)
+    for _round in range(2):
+        for name, values in FIT_LIGAND_GRID.items():
+            for value in values:
+                trial = replace(weights, **{name: value})
+                found_score = score(trial)
+                if found_score > best + 1e-6:
+                    best, weights = found_score, trial
+            chosen = {n: v for n, v in asdict(weights).items() if n in FIT_LIGAND_GRID}
+            print(name, round(best, 4), chosen, flush=True)
+    for half in ("training", "test"):
+        show(half, weights)
 
 
 def run_propka() -> None:
@@ -533,7 +690,7 @@ def moe_list() -> None:
 
 STEPS = {"inputs": make_inputs, "moe": moe_list, "reduce": run_reduce, "gemmi": run_gemmi,
          "propka": run_propka, "protoss": run_protoss, "chemsuite": run_chemsuite, "fit": fit,
-         "score": score}  # fmt: skip
+         "fit_ligands": fit_ligands, "score": score}  # fmt: skip
 
 if __name__ == "__main__":
     STEPS[sys.argv[1]]()

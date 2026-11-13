@@ -110,8 +110,13 @@ def test_waters_near_ligands(kinase) -> None:
 
 def test_titration_in_one_call(lysozyme) -> None:
     done = pipeline.prepare(lysozyme, pipeline.Options(waters=pipeline.NONE, titrate=sites.ALL))
-    by_residue = {c.site.residue: c for c in done.choices if c.site.titrates}
-    assert by_residue and set(done.pka) == set(by_residue) == set(done.population)
+    by_residue = {c.site.residue: c for c in done.choices
+                  if c.site.titrates and c.site.kind != sites.LIGAND}  # fmt: skip
+    ligand = {c.site.residue: c for c in done.choices if c.site.kind == sites.LIGAND}
+    assert by_residue and set(done.pka) == set(by_residue)
+    assert set(done.population) == set(by_residue) | set(ligand)
+    for r, c in ligand.items():  # a ligand's share is that of the form it takes
+        assert 1 / len({st.form for st in c.site.states}) <= done.population[r] <= 1.0
     for r, c in by_residue.items():
         share = done.population[r]
         assert 0.0 <= share <= 1.0 and 0.0 <= done.pka[r] <= 14.0

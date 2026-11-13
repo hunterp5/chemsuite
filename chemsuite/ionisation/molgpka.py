@@ -217,3 +217,14 @@ def predict_sites(prepared: Chem.Mol) -> list[Site]:
     # Hydrogens come after the heavy atoms in AddHs, so heavy indices carry over unchanged.
     order = {BASE: 0, ACID: 1}
     return sorted(found.values(), key=lambda site: (site.atom, order[site.kind]))
+
+
+def predict_on(mol: Chem.Mol) -> list[Site]:
+    """The sites of *mol* as it is (every fragment, its charges kept), numbered by its own
+    atoms rather than by the re-read molecule's. Empty when RDKit cannot re-read it."""
+    smiles = Chem.MolToSmiles(mol)
+    order = [int(i) for i in mol.GetPropsAsDict(True, True)["_smilesAtomOutputOrder"]]
+    prepared = Chem.MolFromSmiles(smiles)
+    if prepared is None or prepared.GetNumAtoms() != len(order):
+        return []
+    return [Site(order[site.atom], site.kind, site.pka) for site in predict_sites(prepared)]

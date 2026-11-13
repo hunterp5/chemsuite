@@ -30,6 +30,11 @@ package must handle:
   warhead on Cys797, a halogen bond to Leu788 O, and a drug-like ligand that is not among the
   bundled residue templates; the entry's own ``_chem_comp_atom``/``_chem_comp_bond`` rows are
   kept for the components left, as RCSB files carry them
+- The preparation's named cases, each cut to the residues within 8 Å of its ligand (6 Å of
+  the zinc): 4G0C, carbonic anhydrase II with acetazolamide on zinc (neutron); 5MO0, trypsin
+  with benzamidine (neutron); 2ZYE, HIV-1 protease with KNI-272 and its Asp25 dyad (neutron);
+  7D6G, DHFR with folate and NADP⁺ at pH 4.5 (neutron); 1RG7, DHFR with methotrexate; 1ZAA,
+  the Zif268 zinc fingers on DNA
 - 0G6 (PPACK) as the Chemical Component Dictionary serves it, with its leaving atom flagged:
   a stand-in for the online dictionary
 """
@@ -53,7 +58,8 @@ CCD_URL = "https://files.rcsb.org/ligands/download/{}.cif"
 COMPONENTS = ["0G6"]
 ENTRIES = ["1CRN.pdb", "1CRN.cif", "3HTB.cif", "1ATP.cif", "1PPB.cif"]
 #: (entry, ligand, radius in Å): cut to the residues near the ligand
-POCKETS = [("5GNK", "80U", 12.0)]
+POCKETS = [("5GNK", "80U", 12.0), ("4G0C", "AZM", 8.0), ("5MO0", "BEN", 8.0), ("2ZYE", "KNI", 8.0),
+           ("7D6G", "FOL", 8.0), ("1RG7", "MTX", 8.0), ("1ZAA", "ZN", 6.0)]  # fmt: skip
 #: the dictionary categories copied for the components left in a cut entry
 COMPONENT_TABLES = ("_chem_comp_atom.", "_chem_comp_bond.")
 

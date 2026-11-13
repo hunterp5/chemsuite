@@ -83,6 +83,10 @@ class State:
     intrinsic: float = 0.0  # kcal/mol in water, less the pH term (RT ln10 · protons · pH)
     formal: tuple[int, ...] = ()  # formal charge of each atom (written back)
     partial: tuple[float, ...] = ()  # charge of each atom for the Coulomb term
+    unlike: float = 0.0  # a ligand's polar atoms protonated unlike its drawing (the CCD's)
+    tautomer_cost: float = 0.0  # how much worse a ligand tautomer scores than the drawn one
+    within: float = 0.0  # kcal/mol between the like charges a ligand form adds (ε = 4r)
+    attract: float = 0.0  # and between its opposite charges (negative)
 
     @property
     def polar_h(self) -> np.ndarray:
@@ -111,7 +115,7 @@ class State:
 @dataclass(frozen=True)
 class Site:
     residue: int
-    kind: str  # AMIDE, HIS, ACID or ROTOR
+    kind: str  # AMIDE, HIS, ACID, ROTOR, LIGAND or WATER
     moving: np.ndarray  # structure atoms the states replace
     anchors: np.ndarray  # structure atoms the moving ones hang from
     states: tuple[State, ...]
@@ -124,16 +128,22 @@ class Site:
         return len({st.protons for st in self.states}) > 1
 
 
-AMIDE, HIS, ACID, ROTOR = "amide", "his", "acid", "rotor"
+AMIDE, HIS, ACID, ROTOR, LIGAND, WATER = "amide", "his", "acid", "rotor", "ligand", "water"
 OFF, POCKET, ALL = "off", "pocket", "all"  # which protein groups titrate
 
 
-def find_sites(p: Protonated, titrate: str = OFF, pocket: np.ndarray | None = None) -> list[Site]:
+def find_sites(
+    p: Protonated,
+    titrate: str = OFF,
+    pocket: np.ndarray | None = None,
+    taken: np.ndarray | None = None,
+) -> list[Site]:
     """Every site of the protonated structure *p*. With *titrate* ``ALL`` every titratable
     group also takes its other protonation form; with ``POCKET``, those whose residue the mask
-    *pocket* holds (His aside)."""
+    *pocket* holds (His aside). A rotor on an atom the mask *taken* holds (one a ligand's site
+    moves) is left out."""
     s = p.structure
-    graph = _graph(s)
+    graph = bond_graph(s)
     found: list[Site] = []
 
     def titrating(r: int) -> bool:
@@ -156,6 +166,8 @@ def find_sites(p: Protonated, titrate: str = OFF, pocket: np.ndarray | None = No
             found.append(site)
     for rotor in p.rotors:
         parent = s.index_of_uid.get(rotor.parent, -1)
+        if taken is not None and parent >= 0 and taken[parent]:
+            continue
         site = _rotor(s, rotor, graph, parent >= 0 and titrating(int(s.residue_of[parent])))
         if site is not None:
             found.append(replace(site, titrating=True) if site.titrates else site)
@@ -187,10 +199,10 @@ def _amide(s: Structure, r: int, here: dict[str, int], graph: list[list[int]]) -
             names.append(pl.atom)
             parents.append(nitrogen)
             xyz.append(_placed(pl, at))
-        states.append(_state("flipped" if flipped else "as built", names, parents, xyz,
+        states.append(make_state("flipped" if flipped else "as built", names, parents, xyz,
                              flipped=flipped))  # fmt: skip
     moving = _with_hydrogens(s, graph, [here[oxygen], here[nitrogen]])
-    return _site(s, r, AMIDE, moving, [here[carbon]], states, graph)
+    return make_site(s, r, AMIDE, moving, [here[carbon]], states, graph)
 
 
 # -- histidine -------------------------------------------------------------------------------------
@@ -222,12 +234,12 @@ def _histidine(s: Structure, r: int, here: dict[str, int], graph: list[list[int]
             formal = [1 if hip and n == "ND1" else 0 for n in names]
             partial = [0.5 if hip and n in ("ND1", "NE2") else 0.0 for n in names]
             label = f"{tautomer} flipped" if flipped else tautomer
-            states.append(_state(label, names, parents, xyz, flipped=flipped, tautomer=tautomer,
+            states.append(make_state(label, names, parents, xyz, flipped=flipped, tautomer=tautomer,
                                  form=tautomer, protons=int(hip),
                                  intrinsic=intrinsic[tautomer] + KT * np.log(2),
                                  formal=formal, partial=partial))  # fmt: skip
     moving = _with_hydrogens(s, graph, [here[a] for a in RING])
-    return _site(s, r, HIS, moving, [here["CG"]], states, graph)
+    return make_site(s, r, HIS, moving, [here["CG"]], states, graph)
 
 
 # -- Asp and Glu -----------------------------------------------------------------------------------
@@ -242,7 +254,7 @@ def _acid(s: Structure, r: int, here: dict[str, int], graph: list[list[int]]) ->
     x = s.coords.astype(np.float64)
     at = {a: x[:, here[a]] for a in (carbon, first, second)}
     neutral = MODEL_PKA[name] - np.log10(2)  # two oxygens to carry the H
-    states = [_state(name, [first, second], ["", ""], [at[first], at[second]], form=name,
+    states = [make_state(name, [first, second], ["", ""], [at[first], at[second]], form=name,
                      formal=[0, -1], partial=[-0.5, -0.5])]  # fmt: skip
     form = {"ASP": "ASH", "GLU": "GLH"}[name]
     for oxygen, other, h in ((first, second, h_first), (second, first, h_second)):
@@ -250,12 +262,12 @@ def _acid(s: Structure, r: int, here: dict[str, int], graph: list[list[int]]) ->
             xyz = templates.place(at[other], at[carbon], at[oxygen], OH_LENGTH, SYN_ANGLE,
                                   np.pi if anti else 0.0)  # fmt: skip
             label = f"{form} ({oxygen}{', anti' if anti else ''})"
-            states.append(_state(label, [first, second, h], ["", "", oxygen],
+            states.append(make_state(label, [first, second, h], ["", "", oxygen],
                                  [at[first], at[second], xyz], anti=anti, form=form, protons=1,
                                  intrinsic=-RT_LN10 * neutral,
                                  formal=[0, 0, 0], partial=[0.0, 0.0, 0.0]))  # fmt: skip
     moving = _with_hydrogens(s, graph, [here[first], here[second]])
-    return _site(s, r, ACID, moving, [here[carbon]], states, graph)
+    return make_site(s, r, ACID, moving, [here[carbon]], states, graph)
 
 
 # -- rotors ----------------------------------------------------------------------------------------
@@ -291,12 +303,12 @@ def _rotor(
     for start in starts:
         xyz = [templates.place(x[:, ref], x[:, axis], x[:, parent], length[k], angle[k],
                                start + offsets[k]) for k in range(len(hs))]  # fmt: skip
-        states.append(_state(f"{np.degrees(start):.0f}°", lead + names, [""] * len(lead) + on,
+        states.append(make_state(f"{np.degrees(start):.0f}°", lead + names, [""] * len(lead) + on,
                              at_parent + xyz, donor_xyz=x[0, parent]))  # fmt: skip
     moving = [parent, *hs] if kind else hs
     if kind:
         states = _titrated(states, kind, s, parent, axis, ref, names, x)
-    return _site(s, r, ROTOR, np.array(moving), [parent, axis], states, graph)
+    return make_site(s, r, ROTOR, np.array(moving), [parent, axis], states, graph)
 
 
 def _titrating(s: Structure, r: int, parent: int, n_h: int) -> str:
@@ -329,7 +341,7 @@ def _titrated(
     q = 1 if base else 0
     variants = KT * np.log(len(states))
     protonated = [
-        _state(st.label, list(st.names), list(st.parents), list(np.moveaxis(st.xyz, 1, 0)),
+        make_state(st.label, list(st.names), list(st.parents), list(np.moveaxis(st.xyz, 1, 0)),
                donor_xyz=x[0, parent], form=up, protons=1,
                intrinsic=-RT_LN10 * pka + variants,
                formal=[q] + [0] * (len(st.names) - 1),
@@ -337,7 +349,7 @@ def _titrated(
         for st in states
     ]  # fmt: skip
     if not base:
-        lone = [_state(down, [heavy], [""], [x[:, parent]], form=down, formal=[-1],
+        lone = [make_state(down, [heavy], [""], [x[:, parent]], form=down, formal=[-1],
                        partial=[-1.0])]  # fmt: skip
         return protonated + lone
     neutral = []
@@ -345,7 +357,7 @@ def _titrated(
     for phi in steps:  # the lone pair at phi, the two hydrogens 120° either side
         xyz = [templates.place(x[:, ref], x[:, axis], x[:, parent], NH_LENGTH, TETRAHEDRAL,
                                phi + turn) for turn in (2 * np.pi / 3, 4 * np.pi / 3)]  # fmt: skip
-        neutral.append(_state(f"{down} {np.degrees(phi):.0f}°", [heavy, *names[:2]],
+        neutral.append(make_state(f"{down} {np.degrees(phi):.0f}°", [heavy, *names[:2]],
                               ["", heavy, heavy], [x[:, parent], *xyz], donor_xyz=x[0, parent],
                               form=down, intrinsic=KT * np.log(len(steps)), formal=[0, 0, 0],
                               partial=[0.0, 0.0, 0.0]))  # fmt: skip
@@ -358,7 +370,7 @@ def _planar(s: Structure, atom: int) -> bool:
 
 
 # -- helpers ---------------------------------------------------------------------------------------
-def _state(
+def make_state(
     label: str,
     names: list[str],
     parents: list[str],
@@ -407,7 +419,7 @@ def _named(s: Structure, r: int) -> dict[str, int]:
     return {str(s.name[i]): i for i in range(span.start, span.stop) if active[i]}
 
 
-def _graph(s: Structure) -> list[list[int]]:
+def bond_graph(s: Structure) -> list[list[int]]:
     graph: list[list[int]] = [[] for _ in range(s.n_atoms)]
     for a, b in s.bonds.tolist():
         graph[a].append(b)
@@ -420,7 +432,7 @@ def _with_hydrogens(s: Structure, graph: list[list[int]], heavy: list[int]) -> n
     return np.array(heavy + hs, dtype=np.int64)
 
 
-def _site(
+def make_site(
     s: Structure,
     r: int,
     kind: str,

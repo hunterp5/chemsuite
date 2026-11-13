@@ -70,6 +70,18 @@ def test_an_atom_can_be_both_a_base_and_an_acid() -> None:
     assert [(s.atom, s.kind) for s in sites] == [(0, BASE), (0, ACID)]
 
 
+def test_sites_on_a_molecule_as_it_is_keep_its_numbering() -> None:
+    """``predict_on`` numbers sites by the molecule's own atoms, not the re-read SMILES's."""
+    mol = Chem.MolFromSmiles("OC(=O)CCc1ccncc1")  # the acid's O first, the pyridine N late
+    found = {(s.atom, s.kind): s.pka for s in molgpka.predict_on(mol)}
+    canonical = Chem.MolFromSmiles(Chem.MolToSmiles(mol))
+    expected = {s.kind: s.pka for s in predict_sites(canonical)}
+    assert set(found) == {(0, ACID), (8, BASE)}
+    assert mol.GetAtomWithIdx(8).GetSymbol() == "N"
+    assert found[0, ACID] == pytest.approx(expected[ACID])
+    assert found[8, BASE] == pytest.approx(expected[BASE])
+
+
 def test_salts_and_charges_are_prepared_to_the_neutral_parent() -> None:
     salt = prepare(Chem.MolFromSmiles("[Na+].CC(=O)[O-]"))
     assert Chem.MolToSmiles(salt) == "CC(=O)O"

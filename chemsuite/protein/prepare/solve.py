@@ -35,6 +35,7 @@ from ..structure import edit
 from . import energy, sites
 from .energy import Tables, Weights
 from .hydrogens import HYDROGEN, Protonated
+from .ligand_sites import AS_DRAWN
 
 NODE_LIMIT = 200_000
 FORBIDDEN = 1e6  # the energy of a state a site is held away from
@@ -262,7 +263,7 @@ def apply(p: Protonated, found: list[sites.Site], picked: list[int]) -> Protonat
         for name, q in zip(state.names, state.formal, strict=False):
             if name in residue_atoms:
                 charge[residue_atoms[name]] = q
-        if state.form in RECORDED:
+        if state.form in RECORDED or (site.kind == sites.LIGAND and state.form != AS_DRAWN):
             states[site.residue] = state.form
     out = replace(s, coords=coords, charge=charge)
     if gone:

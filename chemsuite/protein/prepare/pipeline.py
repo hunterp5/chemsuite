@@ -37,7 +37,7 @@ from chemsuite.core.jobs import CancelToken, check
 
 from ..structure.components import CcdCache
 from ..structure.model import LIGAND, WATER, Structure
-from . import energy, hydrogens, populations, repair, sites, solve
+from . import energy, hydrogens, ligand_sites, populations, repair, sites, solve, waters
 from .energy import Weights
 from .inspect import Finding, inspect
 from .templates import Library
@@ -61,6 +61,8 @@ class Options:
     optimise: bool = True
     weights: Weights | None = None
     titrate: str = sites.OFF  # OFF, POCKET or ALL (see :func:`.sites.find_sites`)
+    ligand_states: bool = True  # each ligand's protomers and tautomers (:mod:`.ligand_sites`)
+    orient_waters: bool = True  # hydrogens on the waters near ligands (:mod:`.waters`)
 
 
 @dataclass(frozen=True)
@@ -70,7 +72,8 @@ class Prepared:
     report: tuple[Finding, ...]
     choices: tuple[solve.Choice, ...]
     pka: dict[int, float] = field(default_factory=dict)  # residue → pKa (with titration)
-    population: dict[int, float] = field(default_factory=dict)  # residue → protonated share
+    #: residue → protonated share; a ligand's: the share of the form it takes
+    population: dict[int, float] = field(default_factory=dict)
 
     @property
     def net_charge(self) -> int:
@@ -91,14 +94,15 @@ def prepare(
     check(cancel)
     s = keep_waters(s, options.waters)
     protonated = hydrogens.add_hydrogens(s, library, ccd, cancel)
+    kept = frozenset(n.residue for n in protonated.notes if n.text == hydrogens.KEPT)
     report += [Finding(NOTE, s.residue_label(n.residue), n.text, warn=True, residue=n.residue)
-               for n in protonated.notes if n.text != "Kept the hydrogens it has"]  # fmt: skip
+               for n in protonated.notes if n.text != hydrogens.KEPT]  # fmt: skip
     choices: list[solve.Choice] = []
     pka: dict[int, float] = {}
     share: dict[int, float] = {}
     if options.optimise:
         weights = options.weights or Weights()
-        found = sites.find_sites(protonated, options.titrate)
+        found = _sites(protonated, options, ccd, kept, report, cancel)
         check(cancel)
         table = energy.tables(protonated.structure, found, options.ph)
         check(cancel)
@@ -106,25 +110,68 @@ def prepare(
         if any(site.titrating for site in found):
             done = populations.titration(table, weights, cancel=cancel)
             at = done.at(options.ph)
-            picked = _majority(table, weights, picked, at)
-            for site, k, fraction in zip(found, done.pka, at, strict=True):
-                if site.titrating:
+            states_at = [np.array([np.interp(options.ph, done.grid, column) for column in pop.T])
+                         for pop in done.populations]  # fmt: skip
+            picked = _majority(table, weights, picked, at, states_at)
+            for i, (site, k, fraction) in enumerate(zip(found, done.pka, at, strict=True)):
+                if site.kind == sites.LIGAND:
+                    form = site.states[picked[i]].form
+                    share[site.residue] = float(sum(
+                        w for st, w in zip(site.states, states_at[i], strict=True)
+                        if st.form == form))  # fmt: skip
+                elif site.titrating:
                     pka[site.residue], share[site.residue] = k, fraction
         choices = solve.choices(table, weights, picked)
         protonated = solve.apply(protonated, found, picked)
         report += _site_findings(protonated.structure, choices, share)
+        report += _water_finding(choices)
     return Prepared(protonated.structure, dict(protonated.states), tuple(report), tuple(choices),
                     pka, share)  # fmt: skip
 
 
+def _sites(
+    protonated: hydrogens.Protonated,
+    options: Options,
+    ccd: CcdCache | None,
+    kept: frozenset[int],
+    report: list[Finding],
+    cancel: CancelToken | None,
+) -> list[sites.Site]:
+    """The protein's sites and (with :attr:`Options.ligand_states`) the ligands'."""
+    s = protonated.structure
+    found: list[sites.Site] = []
+    if options.ligand_states:
+        found, notes = ligand_sites.find(protonated, options.ph, ccd, kept, cancel)
+        report += [Finding(NOTE, s.residue_label(n.residue), n.text, warn=True,
+                           residue=n.residue) for n in notes]  # fmt: skip
+    taken = np.zeros(s.n_atoms, dtype=bool)
+    for site in found:
+        taken[site.moving] = True
+    if options.orient_waters:
+        found += waters.find(protonated)
+    return sites.find_sites(protonated, options.titrate, taken=taken) + found
+
+
 def _majority(
-    table: energy.Tables, weights: Weights, picked: list[int], share: list[float]
+    table: energy.Tables,
+    weights: Weights,
+    picked: list[int],
+    share: list[float],
+    populations_at: list[np.ndarray],
 ) -> list[int]:
     """*picked*, with every titrating site in its most populated form (the lowest energy can
-    differ, as a form with many rotor states gains from their number)."""
+    differ, as a form with many rotor states gains from their number). A protein group's form
+    is its proton count; a ligand's, its protomer or tautomer."""
     allowed = {}
     for i, (n, fraction) in enumerate(zip(table.protons, share, strict=True)):
-        if len(n) and n.max() > n.min():
+        site = table.sites[i]
+        if site.kind == sites.LIGAND:
+            weight: dict[str, float] = {}
+            for st, w in zip(site.states, populations_at[i], strict=True):
+                weight[st.form] = weight.get(st.form, 0.0) + float(w)
+            best = max(weight, key=lambda form: weight[form])
+            allowed[i] = np.array([st.form == best for st in site.states])
+        elif len(n) and n.max() > n.min():
             allowed[i] = n == (n.max() if fraction >= 0.5 else n.min())
     if all(mask[picked[i]] for i, mask in allowed.items()):
         return picked
@@ -157,7 +204,12 @@ def _site_findings(
     found = []
     for c in choices:
         state = c.site.states[c.state]
-        fraction = share.get(c.site.residue)
+        fraction = share.get(c.site.residue) if c.site.titrating else None  # not its rotors
+        if c.site.kind == sites.LIGAND:
+            found += _ligand_finding(s, c, fraction)
+            continue
+        if c.site.kind == sites.WATER:
+            continue  # one row for them all (_water_finding)
         if fraction is not None and c.site.kind != sites.HIS:  # titration decides, not the gap
             mixed = MIXED < fraction < 1 - MIXED
             if state.form not in UNCOMMON and not mixed:
@@ -181,3 +233,27 @@ def _site_findings(
         found.append(Finding(SITE, s.residue_label(c.site.residue), text, warn=close,
                              residue=c.site.residue))  # fmt: skip
     return found
+
+
+def _ligand_finding(s: Structure, c: solve.Choice, fraction: float | None) -> list[Finding]:
+    """A row for a ligand not as drawn, or whose forms are mixed."""
+    state = c.site.states[c.state]
+    mixed = fraction is not None and fraction < 1 - MIXED
+    if state.form == ligand_sites.AS_DRAWN and not mixed:
+        return []
+    text = f"Ligand: {state.form}"
+    if state.form != ligand_sites.AS_DRAWN:
+        text += f" (charge on these atoms {int(sum(state.formal)):+d})"
+    if fraction is not None:
+        text += f", {fraction:.0%} of it"
+    return [Finding(SITE, s.residue_label(c.site.residue), text, warn=mixed,
+                    residue=c.site.residue)]  # fmt: skip
+
+
+def _water_finding(choices: list[solve.Choice]) -> list[Finding]:
+    """One row for the waters near ligands given hydrogens. No ⚠: a water's free hydrogen
+    nearly always has a second orientation as good, so a near tie says nothing."""
+    oriented = sum(1 for c in choices if c.site.kind == sites.WATER)
+    if not oriented:
+        return []
+    return [Finding(SITE, "Waters", f"Waters near ligands oriented: {oriented}")]

@@ -295,6 +295,22 @@ bioactive conformation**: the pose of a ligand crystallised in its protein.
 **Process:** this work starts in plan mode. Write the plan (benchmark set, licences, metrics,
 candidate methods, acceptance threshold) and get it approved before writing code.
 
+### 7.0f High priority: hundreds of conformers per molecule without slowing the app (added 2026-11-12)
+
+Users want hundreds of conformers per molecule. At about 1,000 compounds × 100 conformers
+(100,000 conformers) the whole app slows down. This is separate from 7.0b, which is about
+conformer quality; this item is about scale.
+
+- **Measure first.** Profile generation, storage, the table (cells, sorting, filtering,
+  copy), document save and load, memory, and the 3D views, at 1k × 10, 100 and 300
+  conformers. Find which parts cost time and memory, and which ones block the UI thread.
+- **Then decide** how conformers are held. Options to weigh in the plan: a conformer store
+  outside the table cells (compact coordinate arrays per molecule, loaded lazily); cells that
+  show a count and the selected conformer only; background loading for save and load; limits
+  and pruning by default.
+- **Process:** plan mode first. The plan states the numbers to reach (UI response, memory,
+  save and load times at 1k × 100 and 1k × 300) before any decision on storage.
+
 ### 7.0d High priority: TMAP and Chemical Space Networks (added 2026-11-11)
 
 Two more chemical-space plots, next to the Constellation Plot. Both are big new features, so

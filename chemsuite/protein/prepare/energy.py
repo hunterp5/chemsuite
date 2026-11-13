@@ -57,6 +57,19 @@ scored without the His priors, by the terms below:
   PROPKA's: 0 with :data:`NMIN` heavy atoms or fewer within :data:`BURIED_REACH` of the
   group, 1 with :data:`NMAX` or more.
 
+Ligand sites (:mod:`.ligand_sites`) titrate, and add:
+
+- ``ccd``: the polar atoms a form protonates unlike the ligand's drawing;
+- ``tautomer``: how much worse RDKit scores a tautomer than the drawn one;
+- ``within`` and ``attract``: the Coulomb energy between the like, and between the opposite,
+  charges a form adds to the ligand;
+- ``ligand_coulomb``: a ligand's charges with the charged groups around it (as ``coulomb``,
+  with a weight of its own), so methotrexate's N1 takes a proton opposite Asp27.
+
+For titrating, ligand and water sites, ``coordination`` counts each hydrogen within
+:data:`COORDINATION_REACH` of a metal ion: a group bound to a metal gives up the proton
+facing it (a sulfonamide N⁻ on zinc).
+
 Atoms within :data:`~.sites.EXCLUDED_BONDS` bonds of a site's anchors are not scored
 against it.
 """
@@ -70,14 +83,18 @@ from scipy.spatial import cKDTree
 
 from ..structure.model import ION, WATER, Structure
 from .hydrogens import HYDROGEN
-from .sites import POLAR, RT_LN10, Site, State
+from .sites import LIGAND, POLAR, RT_LN10, Site, State
+from .sites import WATER as WATER_SITE
 
 TERMS = ("hbond", "clash", "lone", "water", "flip", "hip", "hid", "ph", "coulomb", "burial",
          "metal", "ionic", "desolv_acid", "desolv_base", "intrinsic", "screened", "deep", "bump",
-         "repel", "anti")  # fmt: skip
+         "repel", "anti", "ccd", "tautomer", "coordination", "within",
+         "attract", "ligand_coulomb")  # fmt: skip
 (HBOND, CLASH, LONE, WATER_TERM, FLIP, HIP, HID, PH, COULOMB, BURIAL, METAL, IONIC, DESOLV_ACID,
- DESOLV_BASE, INTRINSIC, SCREENED, DEEP, BUMP, REPEL, ANTI) = range(len(TERMS))  # fmt: skip
+ DESOLV_BASE, INTRINSIC, SCREENED, DEEP, BUMP, REPEL, ANTI, CCD, TAUTOMER,
+ COORDINATION, WITHIN, ATTRACT, LIGAND_COULOMB) = range(len(TERMS))  # fmt: skip
 METAL_REACH = 2.8
+COORDINATION_REACH = 2.8  # Å from a metal ion: a hydrogen this close counts in full at 2.2
 REACH = 4.0  # Å: atoms further than this from every state do not touch the site
 COULOMB_REACH = 12.0
 BURIAL_REACH = 10.0
@@ -93,7 +110,8 @@ HALIDES = (9, 17, 35, 53)
 @dataclass(frozen=True)
 class Weights:
     """P1's terms fitted on half the neutron set (docs/prepare/p1-review.md), titration's on half
-    of PKAD-R (docs/prepare/p2-review.md), both 2026-11-12."""
+    of PKAD-R (docs/prepare/p2-review.md), the ligand terms on half the neutron set's ligand
+    atoms (docs/prepare/p3-review.md), all 2026-11-12."""
 
     hbond: float = 1.0
     clash: float = 160.0
@@ -115,6 +133,12 @@ class Weights:
     bump: float = 1.0
     repel: float = 0.0
     anti: float = 4.0
+    ccd: float = 8.0
+    tautomer: float = 0.2
+    coordination: float = 5.0
+    within: float = 2.0
+    attract: float = 1.0
+    ligand_coulomb: float = 1.0
 
     def vector(self) -> np.ndarray:
         assert tuple(f.name for f in fields(self)) == TERMS
@@ -325,6 +349,10 @@ def priors(site: Site, ph: float) -> np.ndarray:
     for k, st in enumerate(site.states):
         out[k, FLIP] = st.flipped
         out[k, ANTI] = st.anti
+        out[k, CCD] = st.unlike
+        out[k, TAUTOMER] = st.tautomer_cost
+        out[k, WITHIN] = st.within
+        out[k, ATTRACT] = st.attract
         if site.titrating:
             out[k, INTRINSIC] = st.intrinsic
             continue
@@ -380,7 +408,7 @@ def _charged(site: Site, batch: Batch, env: Environment) -> np.ndarray:
     q = batch.charge.sum(axis=1)
     if site.titrating:
         fraction = buried(env, centre)
-        out[:, SCREENED] = energy
+        out[:, LIGAND_COULOMB if site.kind == LIGAND else SCREENED] = energy
         out[:, DEEP] = energy * fraction
         out[:, DESOLV_ACID] = np.where(q < 0, -q, 0.0) * fraction
         out[:, DESOLV_BASE] = np.where(q > 0, q, 0.0) * fraction
@@ -390,6 +418,17 @@ def _charged(site: Site, batch: Batch, env: Environment) -> np.ndarray:
                 if not env.batch.hydrogen[0, j])  # fmt: skip
     out[:, BURIAL] = (q > 0) * heavy / 100.0
     return out
+
+
+def _coordination(batch: Batch, env: Environment) -> np.ndarray:
+    """Each state's hydrogens near a metal ion: 1 within 2.2 Å, falling to 0 at
+    :data:`COORDINATION_REACH`."""
+    metals = np.flatnonzero(env.batch.metal[0])
+    if not len(metals):
+        return np.zeros(batch.xyz.shape[0])
+    d = np.linalg.norm(batch.xyz[:, :, None] - env.batch.xyz[0, metals][None, None], axis=-1)
+    near = np.clip((COORDINATION_REACH - d) / 0.6, 0, 1)
+    return (near * (batch.hydrogen & batch.valid)[:, :, None]).sum(axis=(1, 2))
 
 
 def _softened(table: np.ndarray) -> np.ndarray:
@@ -413,6 +452,8 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
                         dtype=np.int64)  # fmt: skip
         terms = contact(batch, env.batch.take(keep))[:, 0] if len(keep) else 0.0
         own = priors(site, ph) + terms + _charged(site, batch, env)
+        if site.titrating or site.kind in (LIGAND, WATER_SITE):
+            own[:, COORDINATION] = _coordination(batch, env)
         single.append(_softened(own) if site.titrating else own)
     pairs = {}
     if sites:
@@ -437,7 +478,9 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
                 else np.zeros((len(sites[i].states), len(sites[j].states), len(TERMS)))
             )
             titrating = sites[i].titrating or sites[j].titrating
-            if both and titrating:
+            if both and LIGAND in (sites[i].kind, sites[j].kind):
+                table[..., LIGAND_COULOMB] = coulomb(batches[i], batches[j])
+            elif both and titrating:
                 table[..., SCREENED] = coulomb(batches[i], batches[j])
                 table[..., DEEP] = table[..., SCREENED] * (depth[i] + depth[j]) / 2
             elif both:
