@@ -40,6 +40,7 @@ from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, inline
 from chemsuite.app.widgets.flow_layout import FlowRow, compact, field
 from chemsuite.core.table import Changed
 from chemsuite.core.table.columns import NumberColumn
+from chemsuite.core.wording import plural
 from chemsuite.plotting.data import number_columns, numbers, shown_oids
 from chemsuite.sar.matrix import AGGREGATES
 from chemsuite.tools.sar.common import activity_combo
@@ -141,9 +142,8 @@ class SomDialog(ToolDialog):
 
         self.panel = _som_panel(ctx)
         ctx.show_message(
-            f"{int(counts.sum()):,} compound(s) on a {result.rows} × {result.columns} map; "
-            f"{int((counts == 0).sum()):,} empty cell(s)",
-            10_000,
+            f"Placed {plural(int(counts.sum()), 'compound')} on a {result.rows} × "
+            f"{result.columns} map; {plural(int((counts == 0).sum()), 'empty cell')}"
         )
         return self.panel
 

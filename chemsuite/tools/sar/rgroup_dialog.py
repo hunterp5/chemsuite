@@ -21,6 +21,7 @@ import numpy as np
 
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
+from chemsuite.core.wording import plural
 from chemsuite.sar.rgroups import Decomposition
 
 from .common import CoreChooser
@@ -72,7 +73,7 @@ class RGroupDialog(ToolDialog):
         count = int(d.matched.sum())
         varying = ", ".join(names[p] for p in d.varying()) or "none"
         ctx.show_message(
-            f"{count:,} of {len(oids):,} row(s) match the core; varying positions: {varying}",
-            10_000,
+            f"Matched {count:,} of {plural(len(oids), 'row')} to the core; varying positions: "
+            f"{varying}"
         )
         return names

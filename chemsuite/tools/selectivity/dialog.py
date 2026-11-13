@@ -31,6 +31,7 @@ from chemsuite.analysis.selectivity import (
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
+from chemsuite.core.wording import plural
 from chemsuite.plotting.data import number_columns, numbers
 
 
@@ -173,7 +174,7 @@ class SelectivityDialog(ToolDialog):
         names = ctx.apply_results(results, label="Selectivity")
         narrow = sum(1 for flag in result.narrow if flag == "yes")
         measured = int(np.isfinite(result.minimum).sum())
-        message = f"Selectivity for {measured:,} row(s)"
+        message = f"Calculated selectivity for {plural(measured, 'row')}"
         if self.flag.isChecked():
             message += f"; {narrow:,} in a narrow window"
         ctx.show_message(message)

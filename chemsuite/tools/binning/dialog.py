@@ -42,6 +42,7 @@ from chemsuite.analysis.binning import (
 )
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import FIELD_WIDTH, RowsChoice, ToolDialog
+from chemsuite.core.wording import plural
 from chemsuite.plotting.data import number_columns, numbers
 
 
@@ -263,5 +264,5 @@ class BinningDialog(ToolDialog):
             name = self.class_name.text().strip() or f"{source} Class"
             results[name] = (oids, result.labels(result.class_names))
         names = self.ctx.apply_results(results, label=f"Bin {source}")
-        self.ctx.show_message(f"Binned {source} into {len(result.intervals)} bin(s)")
+        self.ctx.show_message(f"Binned {source} into {plural(len(result.intervals), 'bin')}")
         return names

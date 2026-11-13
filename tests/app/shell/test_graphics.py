@@ -35,19 +35,32 @@ def no_problem():
 
 def test_automatic_leaves_the_graphics_to_the_system() -> None:
     environ: dict[str, str] = {}
-    graphics.prepare("auto", environ)
+    graphics.prepare("auto", environ, platform="linux")
     assert environ == {} and graphics.problem() is None
+
+
+def test_windows_and_macos_compose_every_window_through_the_rhi() -> None:
+    # so docking the first 3D view does not make Qt close and reopen the window
+    for platform in ("win32", "darwin"):
+        environ: dict[str, str] = {}
+        graphics.prepare("auto", environ, platform=platform)
+        assert environ == graphics.RHI_WINDOWS
+    kept = {"QT_WIDGETS_RHI": "0"}  # a choice made outside the app stands
+    graphics.prepare("auto", kept, platform="win32")
+    assert kept == {"QT_WIDGETS_RHI": "0"}
 
 
 def test_software_asks_direct3d_and_mesa_for_their_software_renderers() -> None:
     environ: dict[str, str] = {}
-    graphics.prepare("software", environ)
+    graphics.prepare("software", environ, platform="linux")
     assert environ == graphics.SOFTWARE_ENV
     assert graphics.problem() is None
 
 
 def test_turned_off_in_settings() -> None:
-    graphics.prepare("off", {})
+    environ: dict[str, str] = {}
+    graphics.prepare("off", environ, platform="win32")
+    assert environ == {}  # no 3D: the windows draw as they always have
     assert graphics.problem() == graphics.TURNED_OFF
     assert graphics.check() == graphics.TURNED_OFF  # the check never overrides it
     assert valid("performance.graphics", "software") and not valid("performance.graphics", "gpu")

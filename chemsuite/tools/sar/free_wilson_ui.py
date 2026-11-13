@@ -34,6 +34,7 @@ from chemsuite.app.document.tools import ToolContext, ToolPanel
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.mols import mol_to_blob, smiles_of
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
+from chemsuite.core.wording import plural
 from chemsuite.plotting.data import numbers
 from chemsuite.sar.free_wilson import FreeWilson, free_wilson
 from chemsuite.sar.rgroups import HYDROGEN, Decomposition, assemble
@@ -143,9 +144,8 @@ class FreeWilsonDialog(ToolDialog):
         self.panel = FreeWilsonPanel(ctx, oids, d, model, options)
         ctx.add_panel(self.panel, self.panel.title())
         ctx.show_message(
-            f"Free-Wilson: R² {model.fit.r2:.2f} on {model.fit.n:,} compound(s); "
-            f"predictions in “{names[name]}”",
-            10_000,
+            f"Fitted a Free-Wilson model: R² {model.fit.r2:.2f} on "
+            f"{plural(model.fit.n, 'compound')}; predictions in “{names[name]}”"
         )
         return self.panel
 
@@ -280,10 +280,10 @@ class FreeWilsonPanel(ToolPanel):
             },
             label="Add Free-Wilson proposals",
         )
-        message = f"Added {len(new):,} proposed compound(s) at the end of the table"
+        message = f"Added {plural(len(new), 'proposed compound')} at the end of the table"
         if failed:
             message += f"; {failed} could not be built"
-        self.ctx.show_message(message, 8000)
+        self.ctx.show_message(message)
         return new
 
     def state(self) -> dict:
@@ -310,7 +310,7 @@ def _compute(ctx: ToolContext, recipe: dict, done):
         d = decompose(job)
         return d, free_wilson(d, activity, min_count=min_count)
 
-    return ctx.run("Free-Wilson analysis…", work, lambda result: done(oids, *result))
+    return ctx.run("Fitting a Free-Wilson model…", work, lambda result: done(oids, *result))
 
 
 def restore(ctx: ToolContext, state: dict) -> RerunPanel:

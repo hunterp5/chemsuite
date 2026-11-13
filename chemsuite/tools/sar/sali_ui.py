@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from chemsuite.app.document.tools import ToolContext, ToolPanel
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
+from chemsuite.core.wording import plural
 from chemsuite.plotting.data import numbers
 from chemsuite.sar.sali import Cliffs, sali_pairs
 from chemsuite.tools.similarity.common import (
@@ -126,9 +127,8 @@ class SaliDialog(ToolDialog):
         self.panel = SaliPanel(ctx, oids, activity, name, cliffs, names, recipe)
         ctx.add_panel(self.panel, self.panel.title())
         ctx.show_message(
-            f"{len(cliffs):,} similar pair(s) scored; highest SALI per compound in "
-            f"“{written[SALI_COLUMN]}”",
-            10_000,
+            f"Scored {plural(len(cliffs), 'similar pair')}; highest SALI per compound in "
+            f"“{written[SALI_COLUMN]}”"
         )
         return self.panel
 

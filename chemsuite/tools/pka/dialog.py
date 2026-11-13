@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QVBoxLayout,
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
+from chemsuite.core.wording import plural
 from chemsuite.ionisation.predict import PkaResults, predict_pka
 
 POOL_MIN_ROWS = 200
@@ -185,8 +186,8 @@ def finish(
     fresh = ctx.table.unique_names(requested)
     columns = {name: (oids, value) for name, value in zip(fresh, flat, strict=True)}
     written = ctx.apply_results(columns, label="Predict pKa")
-    message = f"Predicted pKa for {len(oids):,} row(s) at pH {ph:g}"
+    message = f"Predicted pKa for {plural(len(oids), 'row')} at pH {ph:g}"
     if results.failed:
-        message += f"; {results.failed:,} structure(s) could not be processed"
-    ctx.show_message(message, 8000)
+        message += f"; {plural(results.failed, 'structure')} could not be processed"
+    ctx.show_message(message)
     return written

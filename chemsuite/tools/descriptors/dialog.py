@@ -37,6 +37,7 @@ from chemsuite.analysis.fingerprints import KINDS, as_hex, compute_fingerprints
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import FIELD_WIDTH, RowsChoice, ToolDialog
 from chemsuite.core.jobs import Cancelled
+from chemsuite.core.wording import plural
 from chemsuite.descriptors.catalog import CATALOG, COMMON, GROUPS, in_group
 from chemsuite.descriptors.compute import compute_descriptors
 
@@ -276,9 +277,10 @@ class DescriptorDialog(ToolDialog):
             done_oids = oids[:finished]
             names = ctx.apply_results(
                 {name: (done_oids, values) for name, values in columns.items()},
-                label=f"Calculate {len(columns)} descriptor(s)",
+                label=f"Calculate {plural(len(columns), 'descriptor')}",
             )
-            ctx.show_message(f"Added {len(names)} column(s) for {len(done_oids):,} row(s)")
+            ctx.show_message(
+                f"Added {plural(len(names), 'column')} for {plural(len(done_oids), 'row')}"
+            )
 
-        what = len(keys) + len(fingerprints)
-        return ctx.run(f"Calculating {what} descriptor(s)…", work, done, keep_partial=True)
+        return ctx.run("Calculating descriptors…", work, done, keep_partial=True)

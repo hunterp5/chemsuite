@@ -106,7 +106,10 @@ Each document has its own window. From top to bottom:
     (120/500)" or "Calculating UMAP…", followed by "· 2 queued" or "· 1 failed" when that
     applies. Click it to see the jobs in the Log window.
   - Next to it: the latest message, such as "Opened compounds.sdf" or "Cancelled:
-    Generating conformers; partial results kept".
+    Generating conformers; partial results kept". When a tool finishes, its message says what
+    it did, past tense first, with the counts and the column it wrote ("Generated 1,234
+    conformers for 100 rows in “Structure 3D”"); anything that went wrong follows a
+    semicolon. It stays for about eight seconds.
   - At the far right: the row and selection counts ("200 rows · 3 selected").
 
   Edit ▸ Status Bar hides or shows it.
@@ -838,8 +841,8 @@ descriptors, conformers, clustering, maps and searches.
   - Heavy jobs wait in a **queue** and run one at a time, in order.
   - Quick jobs, like a small search, never wait behind them.
 - **Status bar.** The job's progress shows at the far left of the status bar: "Generating
-  conformers… (120/500)", or just "Calculating UMAP…" when there is no count. Click it to open
-  the Log window at its Jobs tab.
+  conformers… (120/500)", counting each row as it finishes, or just "Calculating UMAP…" when
+  there is no count. Click it to open the Log window at its Jobs tab.
 - **Log**, at the right end of the menu bar (**Window ▸ Log** on macOS), opens the Log window.
   A dot beside it shows that jobs are running (accent colour) or that one failed and you have
   not looked yet (red). The window opens at **Jobs** while jobs run or a failure is unseen,
@@ -1850,7 +1853,9 @@ are weighted equally so neither drowns out the other (distances are Euclidean).
   "UMAP 2 (1)", the one after "(2)", and so on. Rename them in the table if you like.
 - The plot opens coloured by the activity column when there is one; change it with the cog.
 - A map needs at least 3 rows.
-- The job shows as "Calculating UMAP…" (or PCA / t-SNE / PaCMAP) in the status bar.
+- The job shows as "Calculating UMAP…" (or PCA / t-SNE / PaCMAP) in the status bar until
+  the plot opens. UMAP, t-SNE and PaCMAP run in a separate process, so the window stays
+  responsive on large sets.
 
 ### Self-Organizing Map
 

@@ -25,6 +25,7 @@ from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, selected_only
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.table.columns import NumberColumn
+from chemsuite.core.wording import plural
 
 from .common import FeatureChooser, fingerprint_task
 
@@ -136,7 +137,7 @@ class DiverseSubsetDialog(ToolDialog):
                 remember(fps)
             self.finish(everything, picks, name, len(seeds))
 
-        return ctx.run(f"Picking {count:,} diverse compounds…", work, done, keep_partial=True)
+        return ctx.run("Picking diverse compounds…", work, done, keep_partial=True)
 
     def finish(self, everything: np.ndarray, picks: Picks, name: str, seeds: int) -> None:
         ctx = self.ctx
@@ -149,12 +150,12 @@ class DiverseSubsetDialog(ToolDialog):
         picked = everything[picks.rows]
         if self.select.isChecked():
             ctx.selection.set(picked.tolist(), "diverse")
-        message = f"Picked {len(picks):,} compound(s) in “{names[name]}”"
+        message = f"Picked {plural(len(picks), 'compound')} in “{names[name]}”"
         if len(picks) < self.count.value() and not self.job_cancelled():
             message += " (the rest duplicate earlier picks)"
         if seeds:
             message += f", adding to {seeds:,} selected"
-        ctx.show_message(message, 8000)
+        ctx.show_message(message)
 
     def job_cancelled(self) -> bool:
         """Whether these picks are what a cancelled job had made so far."""

@@ -33,6 +33,7 @@ from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog, fol
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table.columns import NumberColumn
+from chemsuite.core.wording import plural
 
 from .common import FeatureChooser, fingerprint_task, labels
 
@@ -221,9 +222,10 @@ class SimilarityDialog(ToolDialog):
         column = names[name]
         if self.sort.isChecked():
             ctx.table.set_sort([(column, False)])
-        message = f"Similarity for {int(np.isfinite(sims).sum()):,} row(s) in “{column}”"
+        scored = int(np.isfinite(sims).sum())
+        message = f"Calculated similarity for {plural(scored, 'row')} in “{column}”"
         if self.select.isChecked():
             hits = targets[np.nan_to_num(sims, nan=-1) >= self.threshold.value()]
             ctx.selection.set(hits.tolist(), "similarity")
             message += f"; selected {len(hits):,} at ≥ {self.threshold.value():.2f}"
-        ctx.show_message(message, 8000)
+        ctx.show_message(message)

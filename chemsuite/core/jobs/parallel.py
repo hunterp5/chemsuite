@@ -60,40 +60,42 @@ def limit_app_threads(threads: int | None = None) -> None:
         os.environ.setdefault(name, count)
 
 
-def process_pool(workers: int | None = None) -> ProcessPoolExecutor:
+def process_pool(workers: int | None = None, threads: int = 1) -> ProcessPoolExecutor:
     """A pool using the *spawn* start method on every OS.
 
     Spawn behaves identically on Windows, macOS and Linux and never forks a process that holds
     Qt or open SQLite handles. Workers import only what the submitted function needs, and start
-    with :func:`worker_start`.
+    with :func:`worker_start` (*threads* numeric threads each).
     """
     return ProcessPoolExecutor(
         max_workers=workers or default_workers(),
         mp_context=multiprocessing.get_context("spawn"),
         initializer=worker_start,
+        initargs=(threads,),
     )
 
 
-def worker_start() -> None:
+def worker_start(threads: int = 1) -> None:
     """Set up a pool worker before its first task.
 
-    * One numeric thread each: the pool already runs a worker per core, and a BLAS, OpenMP or
-      numba pool per worker on top would put cores x cores busy threads on the machine.
+    * *threads* numeric threads: one in the shared pool, which already runs a worker per core
+      (a BLAS, OpenMP or numba pool per worker on top would put cores x cores busy threads on
+      the machine); more in a pool of one worker that runs a single multi-threaded task.
     * Below-normal priority, so the app window and the rest of the system stay responsive
       while the workers keep every core busy.
     * Exit when the app does, even if it is killed or crashes, instead of lingering.
     """
     for name in THREAD_VARS:
-        os.environ[name] = "1"  # libraries loaded from now on
+        os.environ[name] = str(threads)  # libraries loaded from now on
     try:  # libraries already loaded
         from threadpoolctl import threadpool_limits
 
-        threadpool_limits(1)
+        threadpool_limits(threads)
     except Exception:  # noqa: BLE001, S110 - optional; never stop a worker from starting
         pass
     numba = sys.modules.get("numba")
     if numba is not None:
-        numba.set_num_threads(1)
+        numba.set_num_threads(min(threads, numba.config.NUMBA_NUM_THREADS))
     lower_priority()
     exit_with_parent()
 
@@ -138,8 +140,13 @@ def ordered_map(
     *,
     window: int | None = None,
     cancel: CancelToken | None = None,
+    finished: Callable[[R], None] | None = None,
 ) -> Iterator[R]:
     """Like ``map(fn, items)``, run on *executor*, yielding results in input order.
+
+    *finished* is called with each result as soon as it is ready, in whatever order the
+    workers finish (one call at a time, from a pool thread): for progress that counts every
+    item done, not only those whose turn has come.
 
     At most *window* items are in flight, so a large input (a 1 GB SDF split into blocks) is
     never all in memory at once. Without an executor, runs inline.
@@ -152,10 +159,19 @@ def ordered_map(
     if executor is None:
         for item in items:
             check(cancel)
-            yield fn(item)
+            result = fn(item)
+            if finished is not None:
+                finished(result)
+            yield result
         return
     window = window or 2 * (getattr(executor, "_max_workers", None) or default_workers())
     pending: deque[Future[R]] = deque()
+    lock = threading.Lock()
+
+    def report(future: Future[R]) -> None:
+        if finished is not None and not future.cancelled() and future.exception() is None:
+            with lock:
+                finished(future.result())
 
     def next_result() -> R:
         head = pending.popleft()
@@ -168,7 +184,10 @@ def ordered_map(
     try:
         for item in items:
             check(cancel)
-            pending.append(executor.submit(fn, item))
+            future = executor.submit(fn, item)
+            if finished is not None:
+                future.add_done_callback(report)
+            pending.append(future)
             if len(pending) >= window:
                 yield next_result()
         while pending:

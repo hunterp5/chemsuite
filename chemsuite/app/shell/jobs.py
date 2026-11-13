@@ -45,7 +45,7 @@ from PySide6.QtCore import QObject, QRunnable, QThread, QThreadPool, Signal, Slo
 
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.awake import KeepAwake
-from chemsuite.core.jobs.parallel import process_pool
+from chemsuite.core.jobs.parallel import default_workers, process_pool
 
 log = logging.getLogger(__name__)
 
@@ -252,6 +252,7 @@ class JobRunner(QObject):
         self._heavy = QThreadPool(self)  # the queue's one worker
         self._heavy.setMaxThreadCount(1)
         self._pool: ProcessPoolExecutor | None = None
+        self._wide: ProcessPoolExecutor | None = None  # one worker, many threads (wide_process)
         self._pool_lock = threading.Lock()  # jobs on two threads may both want the pool first
         #: Settings ▸ General ▸ Processor cores, read on the GUI thread (see process_pool)
         self._pool_workers: int | None = None
@@ -274,6 +275,19 @@ class JobRunner(QObject):
                     workers = self._configured_workers()
                 self._pool = process_pool(workers or None)  # 0 or unknown: automatic
             return self._pool
+
+    def wide_process(self) -> ProcessPoolExecutor:
+        """One worker process whose numeric libraries (numba, BLAS) use as many threads as
+        the shared pool has workers: for one multi-threaded task that holds Python's GIL
+        (UMAP, t-SNE), which would freeze the window from a thread. Started on first use and
+        kept, so what it compiles is compiled once."""
+        with self._pool_lock:
+            if self._wide is None:
+                workers = self._pool_workers
+                if workers is None and QThread.currentThread() is self.thread():
+                    workers = self._configured_workers()
+                self._wide = process_pool(1, threads=workers or default_workers())
+            return self._wide
 
     @staticmethod
     def _configured_workers() -> int:
@@ -388,6 +402,7 @@ class JobRunner(QObject):
         self._heavy.waitForDone(timeout_ms)
         if self._awake is not None:
             self._awake.hold(False)
-        if self._pool is not None:
-            self._pool.shutdown(wait=False, cancel_futures=True)
-            self._pool = None
+        for pool in (self._pool, self._wide):
+            if pool is not None:
+                pool.shutdown(wait=False, cancel_futures=True)
+        self._pool = self._wide = None

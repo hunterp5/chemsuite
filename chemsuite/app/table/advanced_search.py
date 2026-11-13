@@ -58,6 +58,7 @@ from chemsuite.core.table.criteria import (
     CriterionError,
     ops_for,
 )
+from chemsuite.core.wording import plural
 
 from ..widgets.flow_layout import FlowRow, compact
 from ..widgets.pane import menu_button, pane_layout, section
@@ -591,17 +592,17 @@ class AdvancedSearchPanel(QWidget):
             frozen = tuple((i, frozenset(o.tolist())) for i, o in sorted(hits.items()))
             self.table.set_filter(FILTER_KEY, CriteriaFilter(search, frozen))
             self.showing = search
-            message = f"{len(oids):,} row(s) match: showing only those"
+            message = f"Showing the {plural(len(oids), 'matching row')}"
         elif action == "select":
             self.selection.set(oids.tolist(), ORIGIN)
-            message = f"Selected {len(oids):,} matching row(s)"
+            message = f"Selected {plural(len(oids), 'matching row')}"
         else:
             try:
                 self.lists.add(list_name, oids)
             except ListError as err:
                 self.status.setText(str(err))
                 return
-            message = f"Added {len(oids):,} matching row(s) to “{list_name}”"
+            message = f"Added {plural(len(oids), 'matching row')} to “{list_name}”"
         self.status.setText(message)
         self.show_message(message)
         self._update()

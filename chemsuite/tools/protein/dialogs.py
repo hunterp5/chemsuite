@@ -69,7 +69,7 @@ def fetch(ctx: ToolContext, code: str):
     def done(result) -> None:
         structure, rows, error = result
         if structure is None:
-            ctx.show_message(f"Could not fetch {code}: {error}", 10_000)
+            ctx.show_message(f"Could not fetch {code}: {error}")
         else:
             add_protein(ctx, structure, pdb.name_of(structure, code), f"PDB {code}", rows)
 

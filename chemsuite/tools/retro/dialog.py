@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.shell.settings_hub import settings_hub
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
+from chemsuite.core.wording import plural
 from chemsuite.retro import (
     OUTPUT_COLUMNS,
     SearchOptions,
@@ -261,7 +262,7 @@ class RetrosynthesisDialog(ToolDialog):
         def done(replies: list[SearchReply]) -> None:
             finish(ctx, oids, of_row, replies, resume=resume)
 
-        label = f"Planning routes to {len(targets):,} structure(s)…"
+        label = "Planning routes…"
         return ctx.run(label, work, done, keep_partial=True)
 
 
@@ -289,7 +290,7 @@ def finish(
         }
         written = ctx.apply_results(columns, label="Retrosynthesis", overwrite=resume)
     show_routes(ctx, replies)
-    ctx.show_message(_summary(replies, len(rows)), 8000)
+    ctx.show_message(_summary(replies, len(rows)))
     return written
 
 
@@ -311,7 +312,8 @@ def _summary(replies: list[SearchReply], rows: int) -> str:
     solved = sum(1 for reply in replies if reply.columns.get("AiZynth Solved") == "Yes")
     failed = [reply for reply in replies if not reply.ok]
     text = (
-        f"Searched {len(replies):,} structure(s) in {rows:,} row(s); {solved:,} with a solved route"
+        f"Searched {plural(len(replies), 'structure')} in {plural(rows, 'row')}; "
+        f"{solved:,} with a solved route"
     )
     if failed:
         text += f"; {len(failed):,} could not be searched ({failed[0].error.splitlines()[0]})"

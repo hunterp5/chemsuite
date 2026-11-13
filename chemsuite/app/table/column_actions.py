@@ -33,6 +33,7 @@ from chemsuite.core.selection import Selection
 from chemsuite.core.table import NUMBER, TEXT, Table
 from chemsuite.core.table import picks as row_picks
 from chemsuite.core.table.columns import REACTION, STRUCTURE, to_number
+from chemsuite.core.wording import plural
 
 KIND_TITLES = {TEXT: "Text", NUMBER: "Number", STRUCTURE: "Structure", REACTION: "Reaction"}
 #: the Select submenu: title, pick, tooltip (None: a separator)
@@ -108,7 +109,7 @@ class ColumnActions:
             return 0
         oids = row_picks.PICKS[pick](self._table, name, self._table.visible_oids())
         self._selection.set(oids.tolist(), SELECT_ORIGIN)
-        self._show(f"Selected {len(oids):,} row(s)")
+        self._show(f"Selected {plural(len(oids), 'row')}")
         return len(oids)
 
     # -- structure ----------------------------------------------------------------------------
@@ -161,9 +162,9 @@ class ColumnActions:
         on = not self._table.column(name).style.log10
         count = self._table.set_log10(name, on)
         self._show(
-            f"{name}: {count:,} value(s) converted to log₁₀"
+            f"Converted {plural(count, 'value')} in “{name}” to log₁₀"
             if on
-            else f"{name}: {count:,} value(s) converted back from log₁₀"
+            else f"Converted {plural(count, 'value')} in “{name}” back from log₁₀"
         )
         return True
 
@@ -208,7 +209,7 @@ class ColumnActions:
         if answer != QMessageBox.StandardButton.Yes:
             return False
         blanked = table.convert_column(name, NUMBER, force=True)
-        self._show(f"Converted {name} to numbers; cleared {blanked:,} value(s)")
+        self._show(f"Converted “{name}” to numbers; cleared {plural(blanked, 'value')}")
         return True
 
     # -- menu ---------------------------------------------------------------------------------

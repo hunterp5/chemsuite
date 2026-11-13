@@ -36,9 +36,10 @@ from chemsuite.core.mols import mol_from_blob, mol_from_text, mol_to_blob, smile
 
 #: A structure cell: its RDKit blob, or its text when not parsed yet (None: blank).
 Cell = bytes | str | None
-#: molecules per worker task. Each takes tens to hundreds of milliseconds, so small tasks keep
-#: cancelling quick (a busy worker finishes its task first); in the job's own thread, one.
-CHUNK_ROWS = 4
+#: molecules per worker task. Each takes tens to hundreds of milliseconds, far more than a
+#: task's overhead (one per task ran as fast as four on 300 BindingDB structures), so one: a
+#: cancel is quick (a busy worker finishes its task first) and progress counts each molecule.
+CHUNK_ROWS = 1
 FORCE_FIELDS = ("mmff", "uff")
 _FAILURES = (ValueError, RuntimeError, ArithmeticError)
 
@@ -223,14 +224,20 @@ def generate_conformers(
     """
     settings = settings or ConformerSettings()
     total = len(cells)
-    size = chunk_rows or (CHUNK_ROWS if executor is not None else 1)
+    size = chunk_rows or CHUNK_ROWS
     rows: list[tuple] = []
+    done = [0]
+
+    def finished(part: list) -> None:  # any order: the count goes up one structure at a time
+        done[0] += len(part)
+        if progress is not None:
+            progress(done[0], total)
+
     try:
         chunks = _chunks(settings, cells, size)
-        for part in ordered_map(generate_chunk, chunks, executor, cancel=cancel):
+        for part in ordered_map(generate_chunk, chunks, executor, cancel=cancel,
+                                finished=finished):  # fmt: skip
             rows.extend(part)
-            if progress is not None:
-                progress(len(rows), total)
     except Cancelled:
         raise Cancelled(_batch(rows) if rows else None) from None
     return _batch(rows)

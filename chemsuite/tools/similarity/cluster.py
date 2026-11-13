@@ -24,6 +24,7 @@ from chemsuite.analysis import clustering as cl
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
+from chemsuite.core.wording import plural
 
 from .common import FeatureChooser, fingerprint_task
 
@@ -170,7 +171,7 @@ class ClusterDialog(ToolDialog):
                 remember(fps)
             self.finish(oids, clusters, name)
 
-        return ctx.run("Clustering…", work, done)
+        return ctx.run("Clustering rows…", work, done)
 
     def finish(self, oids: np.ndarray, clusters: cl.Clusters, name: str) -> dict[str, str]:
         ctx = self.ctx
@@ -188,10 +189,10 @@ class ClusterDialog(ToolDialog):
         )
         left_out = int((~member).sum())
         message = (
-            f"{clusters.count:,} cluster(s) in “{names[name]}”, "
-            f"{clusters.singletons:,} singleton(s); cluster 1 is the largest"
+            f"Found {plural(clusters.count, 'cluster')} in “{names[name]}”, "
+            f"{plural(clusters.singletons, 'singleton')}; cluster 1 is the largest"
         )
         if left_out:
-            message += f"; {left_out:,} row(s) without a structure or value"
-        ctx.show_message(message, 10_000)
+            message += f"; {plural(left_out, 'row')} without a structure or value"
+        ctx.show_message(message)
         return names

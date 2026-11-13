@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.core.history import Op
+from chemsuite.core.jobs import Cancelled
 from chemsuite.core.lists import RowLists
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
@@ -59,6 +60,9 @@ if TYPE_CHECKING:
 
 
 T = TypeVar("T")
+#: seconds between checks for a cancel while waiting on a worker process
+WAIT_STEP = 0.1
+RESULT_MS = 8000  # how long a finished tool's message stays in the status bar
 
 #: the tool behind Data ▸ Browser and a cell's Browse (its ``open_at``)
 BROWSER_TOOL = "viewer"
@@ -255,6 +259,26 @@ class ToolContext:
         own thread."""
         return self.process_pool() if rows >= min_rows else None
 
+    def in_process(self, job: Job, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+        """``fn(*args, **kwargs)`` in a worker process of its own, waited for from *job*'s
+        thread.
+
+        For work that holds Python's GIL for long stretches (numba's compiler, UMAP and t-SNE,
+        long C calls): in the job's own thread it would freeze the window, since the GUI
+        thread needs the GIL too. The process may use every core but one, as the job's thread
+        could. *fn* and its arguments must pickle. A cancel stops the wait at once (raising
+        ``Cancelled``); a call already running finishes in its process and its answer is
+        dropped.
+        """
+        future = self._window.jobs.runner.wide_process().submit(fn, *args, **kwargs)
+        while True:
+            try:
+                return future.result(timeout=WAIT_STEP)
+            except TimeoutError:
+                if job.cancel_token.cancelled:
+                    future.cancel()
+                    raise Cancelled() from None
+
     def structure_inputs(self, column: str, oids: Sequence[int] | np.ndarray) -> list:
         """*column*'s structures for *oids* as worker processes take them (see
         :meth:`StructureColumn.worker_inputs`), in *oids* order."""
@@ -428,7 +452,7 @@ class ToolContext:
         """Open another tool (e.g. a scatter plot from a correlation) and return what it opened."""
         return self._window.open_tool(tool_id)
 
-    def show_message(self, text: str, ms: int = 5000) -> None:
+    def show_message(self, text: str, ms: int = RESULT_MS) -> None:
         self._window.statusBar().showMessage(text, ms)
         if self._finishing is not None:
             self._finishing.set_summary(text)

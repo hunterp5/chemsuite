@@ -149,7 +149,7 @@ def test_descriptor_dialog_end_to_end(chem, qtbot) -> None:
     qtbot.waitUntil(lambda: "MW" in table and "Formula" in table, timeout=20_000)
     assert [table.cell("MW", o) for o in table.oids] == ["46.07", "78.11", ""]
     assert table.kind("MW") == "number"
-    assert table.history.undo_label == "Calculate 2 descriptor(s)"
+    assert table.history.undo_label == "Calculate 2 descriptors"
     # Running again keeps the earlier columns and adds new ones (only the selected row here).
     table.set_cells("MW", table.oids[:1], ["0"])
     chem.workspace.selection.set([int(table.oids[0])], "test")
@@ -226,3 +226,20 @@ def test_tool_menu_shortcut_opens_dialog(chem) -> None:
     dialog = chem.findChild(DescriptorDialog)
     assert dialog is not None and dialog.structure.currentText() == "SMILES"
     dialog.reject()
+
+
+def test_work_that_holds_the_gil_runs_in_a_worker_process(window) -> None:
+    import time
+    from types import SimpleNamespace
+
+    from chemsuite.app.document.tools import ToolContext
+    from chemsuite.core.jobs import Cancelled, CancelToken
+
+    ctx = ToolContext(window)
+    job = SimpleNamespace(cancel_token=CancelToken())
+    assert ctx.in_process(job, pow, 2, 10) == 1024
+    job.cancel_token.cancel()  # a cancel stops the wait at once, the call left to finish
+    started = time.monotonic()
+    with pytest.raises(Cancelled):
+        ctx.in_process(job, time.sleep, 5)
+    assert time.monotonic() - started < 2

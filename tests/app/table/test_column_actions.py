@@ -104,7 +104,7 @@ def test_select_picks_rows_by_value(window) -> None:
     assert chosen() == ["D"]
     trigger(select, "All Duplicated Values")
     assert chosen() == ["B", "D"]
-    assert "2 row(s)" in window.statusBar().currentMessage()
+    assert "Selected 2 rows" in window.statusBar().currentMessage()
 
 
 def test_rename_and_delete_are_undoable(window, monkeypatch) -> None:

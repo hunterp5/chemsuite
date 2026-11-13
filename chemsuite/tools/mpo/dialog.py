@@ -40,6 +40,7 @@ from chemsuite.analysis.mpo import COMBINE, SHAPES, Desirability, MpoProfile
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
+from chemsuite.core.wording import plural
 from chemsuite.plotting.data import number_columns, numbers
 
 HEADERS = ("Column", "Shape", "Low", "High", "Target", "Width", "Weight", "Step")
@@ -346,5 +347,5 @@ class MpoDialog(ToolDialog):
                 results[f"{name}: {spec.column}"] = (oids, NumberColumn.from_floats(part, 3))
         names = ctx.apply_results(results, label="MPO score")
         scored = int(np.isfinite(overall).sum())
-        ctx.show_message(f"Scored {scored:,} of {len(oids):,} row(s) in “{names[name]}”")
+        ctx.show_message(f"Scored {scored:,} of {plural(len(oids), 'row')} in “{names[name]}”")
         return names

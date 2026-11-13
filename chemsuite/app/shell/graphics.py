@@ -24,6 +24,11 @@ machines, VDI and locked-down or missing drivers are where that can fail:
 - :func:`prepare` (before the QApplication) applies the ``performance.graphics`` setting, which
   IT can force through the policy file: ``software`` makes Windows use WARP and Linux Mesa's
   software OpenGL from the start; ``off`` disables 3D.
+- :func:`prepare` also has Windows and macOS compose every window through the RHI from the
+  start (``QT_WIDGETS_RHI``). Otherwise the first 3D view docked into a window makes Qt
+  destroy and recreate that window, which the user sees as the window closing and reopening.
+  Linux is left out: there the RHI is OpenGL, which may be missing, and every window would
+  depend on it.
 - :func:`check` (after the QApplication) asks Qt whether the system's graphics API can be
   started (Metal or OpenGL; PySide6 cannot start Direct3D from Python). When it cannot,
   :func:`problem` says why, and 3D views and plots are greyed out with that reason instead of
@@ -45,6 +50,8 @@ NO_GPU = "3D drawing is not available on this computer's graphics."
 TURNED_OFF = "3D drawing is turned off in Preferences."
 #: environment that asks for software drawing: Qt's widgets on Direct3D, Mesa's OpenGL
 SOFTWARE_ENV = {"QSG_RHI_PREFER_SOFTWARE_RENDERER": "1", "LIBGL_ALWAYS_SOFTWARE": "1"}
+#: every widget window composed through the RHI, so a 3D view never makes Qt recreate it
+RHI_WINDOWS = {"QT_WIDGETS_RHI": "1"}
 
 _problem: str | None = None
 
@@ -59,13 +66,17 @@ def set_problem(text: str | None) -> None:
     _problem = text
 
 
-def prepare(mode: str, environ=os.environ) -> None:
+def prepare(mode: str, environ=os.environ, platform: str = sys.platform) -> None:
     """Apply the 3D graphics setting (call before the QApplication exists)."""
     if mode == GRAPHICS_OFF:
         set_problem(TURNED_OFF)
-    elif mode == GRAPHICS_SOFTWARE:
+        return
+    if mode == GRAPHICS_SOFTWARE:
         log.info("3D draws in software (Settings)")
         environ.update(SOFTWARE_ENV)
+    if platform in ("win32", "darwin"):
+        for key, value in RHI_WINDOWS.items():
+            environ.setdefault(key, value)
 
 
 def check() -> str | None:

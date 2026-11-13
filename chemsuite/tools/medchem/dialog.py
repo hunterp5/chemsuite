@@ -26,6 +26,7 @@ from chemsuite.analysis import medchem_space as ms
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import ToolDialog
 from chemsuite.core.table.columns import NumberColumn
+from chemsuite.core.wording import plural
 from chemsuite.descriptors.catalog import CATALOG
 from chemsuite.descriptors.compute import compute_descriptors
 from chemsuite.plotting.data import numbers
@@ -153,12 +154,12 @@ class MedChemPlotDialog(ToolDialog):
             finished = len(next(iter(columns.values())))  # fewer after a cancel
             ctx.apply_results(
                 {title_of(k): (oids[:finished], columns[k]) for k in keys},
-                label=f"Calculate {len(keys)} descriptor(s)",
+                label=f"Calculate {plural(len(keys), 'descriptor')}",
             )
             if finished == len(oids):  # classify and plot only a complete set
                 self.finish()
 
-        return ctx.run(f"Calculating {len(keys)} descriptor(s)…", work, done, keep_partial=True)
+        return ctx.run("Calculating descriptors…", work, done, keep_partial=True)
 
     def finish(self):
         """Write the classification column and open the plot."""
@@ -181,7 +182,7 @@ class MedChemPlotDialog(ToolDialog):
         column = names[kind.column]
         self.plot = ctx.open_tool("scatter")
         self.plot.set_spec(x=x_name, y=y_name, color=column, guide=self.kind_key)
-        ctx.show_message(self.summary(column, oids), 10_000)
+        ctx.show_message(self.summary(column, oids))
         return self.plot
 
     def summary(self, column: str, oids: np.ndarray) -> str:
@@ -189,7 +190,9 @@ class MedChemPlotDialog(ToolDialog):
         if self.kind_key == "lipe":
             values = numbers(table, column, oids)
             good = int(np.sum(values >= 5))
-            return f"{good:,} compound(s) with LipE ≥ 5 (in “{column}”)"
+            return f"Found {plural(good, 'compound')} with LipE ≥ 5 in “{column}”"
         labels = table.column(column).displays(table.slots_of(oids))
         counts = {label: labels.count(label) for label in sorted(set(labels)) if label}
-        return f"{self.kind.title}: " + ", ".join(f"{k} {v:,}" for k, v in counts.items())
+        return f"Classified {plural(len(oids), 'row')} by {self.kind.title}: " + ", ".join(
+            f"{k} {v:,}" for k, v in counts.items()
+        )

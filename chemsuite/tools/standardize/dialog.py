@@ -25,6 +25,7 @@ from chemsuite.analysis.standardize import Options, StandardizeResults, standard
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.core.table.columns import StructureColumn
+from chemsuite.core.wording import plural
 
 POOL_MIN_ROWS = 200
 NOTES_COLUMN = "Standardization Notes"
@@ -195,8 +196,8 @@ def finish(
     written = ctx.apply_results(
         columns, label="Standardize Structures", overwrite={source} if replace else False
     )
-    message = f"Standardized {len(oids):,} row(s); {results.changed:,} changed"
+    message = f"Standardized {plural(len(oids), 'row')}; {results.changed:,} changed"
     if results.failed:
         message += f"; {results.failed:,} could not be standardized"
-    ctx.show_message(message, 8000)
+    ctx.show_message(message)
     return written

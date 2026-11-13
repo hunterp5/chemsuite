@@ -39,6 +39,7 @@ import numpy as np
 from chemsuite.app.document.tools import Tool, ToolContext
 from chemsuite.app.shell.jobs import QUICK
 from chemsuite.core.table import Asset, PutAsset
+from chemsuite.core.wording import plural
 from chemsuite.protein.chem import ligands
 from chemsuite.protein.structure import fetch as pdb
 from chemsuite.protein.structure import io
@@ -205,7 +206,7 @@ def add_protein(
     ctx.edit(f"Add protein {protein}",
              [PutAsset(protein, None, Asset(protein, KIND, protein, structure, meta))])  # fmt: skip
     count = len(rows[PROTEIN_COLUMN])
-    ctx.show_message(f"Added {protein} ({structure.n_atoms:,} atoms, {count} ligand(s))")
+    ctx.show_message(f"Added {protein} ({structure.n_atoms:,} atoms, {plural(count, 'ligand')})")
     open_viewer(ctx)
     return protein
 
@@ -241,7 +242,7 @@ def open_protein(ctx: ToolContext, paths: list[str] | None = None):
                 name = pdb.name_of(structure, _stem(path))
                 add_protein(ctx, structure, name, Path(path).name, rows)
         if problems:
-            ctx.show_message("Could not read " + "; ".join(problems), 10_000)
+            ctx.show_message("Could not read " + "; ".join(problems))
 
     return ctx.run("Reading proteins…", work, done)
 

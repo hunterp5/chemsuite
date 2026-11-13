@@ -31,6 +31,7 @@ from chemsuite.analysis.reactions import (
 )
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
+from chemsuite.core.wording import plural
 
 from .common import ReactionText, cells, current_reaction
 
@@ -142,4 +143,4 @@ def finish(
     else:
         values = ["Yes" if hit else "No" for hit in hits.tolist()]
         ctx.apply_results({COLUMN: (oids, values)}, label="Reaction Search")
-    ctx.show_message(f"{len(found):,} reaction(s) match {query.describe()}{partial}", 8000)
+    ctx.show_message(f"Found {plural(len(found), 'reaction')} matching {query.describe()}{partial}")

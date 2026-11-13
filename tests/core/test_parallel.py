@@ -118,3 +118,21 @@ def test_pool_workers_exit_when_the_app_dies(tmp_path) -> None:
     if lingering:
         os.kill(worker, signal.SIGKILL)  # do not leave it behind when the test fails
     assert not lingering
+
+
+def _nap(seconds: float) -> float:
+    time.sleep(seconds)
+    return seconds
+
+
+def test_progress_counts_items_as_they_finish_in_any_order() -> None:
+    # the first item is slow: the others are reported done long before its turn comes
+    seen: list[float] = []
+    with ThreadPoolExecutor(4) as pool:
+        results = ordered_map(_nap, [0.5, 0.0, 0.0, 0.0], pool, finished=seen.append)
+        first = next(results)
+        assert seen[:3] == [0.0, 0.0, 0.0] and first == 0.5
+        assert list(results) == [0.0, 0.0, 0.0] and len(seen) == 4
+    inline: list[float] = []
+    assert list(ordered_map(_nap, [0.0, 0.0], finished=inline.append)) == [0.0, 0.0]
+    assert inline == [0.0, 0.0]

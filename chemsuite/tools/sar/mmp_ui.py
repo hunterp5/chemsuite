@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from chemsuite.analysis.selectivity import looks_like_assay
 from chemsuite.app.document.tools import ToolContext, ToolPanel
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
+from chemsuite.core.wording import plural
 from chemsuite.plotting.data import number_columns, numbers
 from chemsuite.sar.mmp import Pair, Transform, find_pairs, readable, transforms
 from chemsuite.tools.similarity.common import labels
@@ -118,7 +119,8 @@ class MmpDialog(ToolDialog):
         self.panel = MmpPanel(ctx, oids, activity, name, found, recipe)
         ctx.add_panel(self.panel, self.panel.title())
         ctx.show_message(
-            f"{len(pairs):,} matched pair(s); {len(found):,} transformation(s) shown", 10_000
+            f"Found {plural(len(pairs), 'matched pair')}; "
+            f"{plural(len(found), 'transformation')} shown"
         )
         return self.panel
 

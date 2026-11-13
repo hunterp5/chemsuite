@@ -26,6 +26,7 @@ from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.core.mols import parse_structure
 from chemsuite.core.table.columns import StructureColumn
+from chemsuite.core.wording import plural
 
 from .common import cells
 
@@ -143,12 +144,14 @@ def finish(
         blobs = [parse_structure(t)[0] if t else b"" for t in texts]
         columns[name] = (oids, StructureColumn.from_parsed(blobs, texts))
     if not columns:
-        ctx.show_message("No reaction in these rows could be read", 8000)
+        ctx.show_message("Could not read a reaction in these rows")
         return {}
     written = ctx.apply_results(columns, label="Split Reaction")
     failed = sum(1 for row in split if row is None)
-    message = f"Split {len(oids) - failed:,} reaction(s) into {len(written)} column(s)"
+    message = (
+        f"Split {plural(len(oids) - failed, 'reaction')} into {plural(len(written), 'column')}"
+    )
     if failed:
         message += f"; {failed:,} blank or unreadable"
-    ctx.show_message(message, 8000)
+    ctx.show_message(message)
     return written

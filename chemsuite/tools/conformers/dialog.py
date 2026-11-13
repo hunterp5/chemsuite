@@ -32,6 +32,7 @@ from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, inline
 from chemsuite.conformers.etkdg import ConformerSettings, generate_conformers
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
+from chemsuite.core.wording import plural
 
 #: Below this many rows the work runs on the job's thread: starting worker processes costs more.
 POOL_MIN_ROWS = 50
@@ -183,10 +184,13 @@ class ConformerDialog(ToolDialog):
                 results[span] = (done_oids, NumberColumn.from_floats(batch.spans, 2))
             names = ctx.apply_results(results, label="Generate conformers")
             made = int(batch.counts[batch.counts > 0].sum())
-            message = f"{made:,} conformers for {len(done_oids):,} row(s) in “{names[target]}”"
+            message = (
+                f"Generated {plural(made, 'conformer')} for "
+                f"{plural(len(done_oids), 'row')} in “{names[target]}”"
+            )
             if batch.failed:
-                message += f"; {batch.failed:,} structure(s) could not be embedded"
-            ctx.show_message(message, 8000)
+                message += f"; {plural(batch.failed, 'structure')} could not be embedded"
+            ctx.show_message(message)
 
         return ctx.run("Generating conformers…", work, done, keep_partial=True)
 

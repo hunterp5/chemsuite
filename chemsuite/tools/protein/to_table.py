@@ -24,6 +24,7 @@ from collections.abc import Callable
 import numpy as np
 
 from chemsuite.app.document.tools import ToolContext
+from chemsuite.core.wording import plural
 from chemsuite.protein.chem import profile
 from chemsuite.protein.structure import store
 from chemsuite.protein.structure.model import Structure
@@ -59,7 +60,7 @@ def extract_ligands(ctx: ToolContext, then: Callable[[], object] | None = None):
                 ctx.add_rows(rows, f"Ligands of {protein} to table",
                              structures=(LIGAND_COLUMN,))  # fmt: skip
                 added += len(rows[PROTEIN_COLUMN])
-        ctx.show_message(f"Added {added} ligand row(s)" if added else "No ligands to add")
+        ctx.show_message(f"Added {plural(added, 'ligand row')}" if added else "No ligands to add")
         if then is not None and added:
             then()
 
@@ -125,10 +126,11 @@ def interactions_to_table(ctx: ToolContext):
         }
         results[profile.CONTACTS_COLUMN] = (done_oids, [p.contacts if p else "" for p in found])
         ctx.apply_results(results, label="Interactions to table", overwrite=True)
-        ctx.show_message(f"Interactions of {len(found):,} of {len(oids):,} ligand row(s)")
+        ctx.show_message(
+            f"Found interactions for {len(found):,} of {plural(len(oids), 'ligand row')}"
+        )
 
-    return ctx.run(f"Finding interactions of {len(oids):,} ligands…", work, done,
-                   keep_partial=True)  # fmt: skip
+    return ctx.run("Finding interactions…", work, done, keep_partial=True)
 
 
 def _row_ligands(ctx: ToolContext, oids: list[int]) -> tuple[list[str], list[str], list]:

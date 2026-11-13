@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 from chemsuite.app.document.tools import ToolContext, ToolPanel
 from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog, inline
 from chemsuite.core.table.columns import NumberColumn
+from chemsuite.core.wording import plural
 from chemsuite.plotting.data import numbers
 from chemsuite.sar.hansch import (
     ELECTRONIC,
@@ -241,9 +242,8 @@ class HanschDialog(ToolDialog):
         self.panel = HanschPanel(model, recipe)
         ctx.add_panel(self.panel, self.panel.title())
         ctx.show_message(
-            f"Hansch: R² {model.fit.r2:.2f} on {model.fit.n:,} compound(s); "
-            f"predictions in “{names[output]}”",
-            10_000,
+            f"Fitted a Hansch model: R² {model.fit.r2:.2f} on "
+            f"{plural(model.fit.n, 'compound')}; predictions in “{names[output]}”"
         )
         return self.panel
 
@@ -311,7 +311,7 @@ def _compute(ctx: ToolContext, recipe: dict, done):
         d = decompose(job)
         return hansch(d, activity, constants, settings, activity_name=name)
 
-    return ctx.run("Hansch analysis…", work, lambda model: done(oids, model))
+    return ctx.run("Fitting a Hansch model…", work, lambda model: done(oids, model))
 
 
 def restore(ctx: ToolContext, state: dict) -> RerunPanel:

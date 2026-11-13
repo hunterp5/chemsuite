@@ -26,6 +26,7 @@ from chemsuite.analysis import embedding as em
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
+from chemsuite.core.wording import plural
 from chemsuite.tools.sar.common import activity_combo
 from chemsuite.tools.similarity.common import FeatureChooser
 
@@ -44,6 +45,11 @@ HELP = {
 }
 #: default neighbours per method (the box is shared, so switching method updates it)
 NEIGHBOURS = {"umap": 15, "pacmap": 10}
+
+
+#: methods that hold Python's GIL for seconds (numba): run in a worker process, or the window
+#: freezes while they work (PCA is NumPy, which lets go of it, and reports its progress)
+IN_PROCESS = frozenset(["umap", "tsne", "pacmap"])
 
 
 class SpaceMapDialog(ToolDialog):
@@ -369,6 +375,8 @@ class SpaceMapDialog(ToolDialog):
 
         def work(job):
             features = build(job)
+            if method in IN_PROCESS:
+                return ctx.in_process(job, em.embed, features, method, **options)
             return em.embed(
                 features, method, progress=job.report, cancel=job.cancel_token, **options
             )
@@ -399,10 +407,10 @@ class SpaceMapDialog(ToolDialog):
         else:
             self.plot = ctx.open_tool("scatter")
             self.plot.set_spec(x=columns[0], y=columns[1], color=color)
-        message = f"{result.placed:,} of {len(oids):,} row(s) placed"
+        message = f"Placed {result.placed:,} of {plural(len(oids), 'row')} on the map"
         if result.notes:
             message += "; " + "; ".join(result.notes)
-        ctx.show_message(message, 10_000)
+        ctx.show_message(message)
         return self.plot
 
 

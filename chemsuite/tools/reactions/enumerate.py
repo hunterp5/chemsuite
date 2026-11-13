@@ -38,6 +38,7 @@ from chemsuite.core.jobs import Cancelled
 from chemsuite.core.mols import parse_structure
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import StructureColumn
+from chemsuite.core.wording import plural
 
 from .common import ReactionText, cells, current_reaction
 
@@ -276,10 +277,10 @@ def finish_rows(ctx: ToolContext, oids: np.ndarray, products: list[list[str]]) -
     )
     made = sum(1 for p in products if p)
     several = sum(1 for p in products if len(p) > 1)
-    message = f"Products for {made:,} of {len(oids):,} row(s)"
+    message = f"Enumerated products for {made:,} of {plural(len(oids), 'row')}"
     if several:
         message += f"; {several:,} with more than one (the first is shown)"
-    ctx.show_message(message, 8000)
+    ctx.show_message(message)
     return written
 
 
@@ -300,9 +301,8 @@ def library_table(blocks: list[list], library: Library) -> Table:
 def finish_library(ctx: ToolContext, blocks: list[list], library: Library) -> None:
     if not library.products:
         ctx.show_message(
-            f"None of the {library.combinations:,} combinations gave a product: check that "
-            "each building block has the group its reactant needs",
-            10000,
+            f"Could not enumerate a product from {plural(library.combinations, 'combination')}:"
+            " check that each building block has the group its reactant needs"
         )
         return
     ctx.open_table(
@@ -310,7 +310,6 @@ def finish_library(ctx: ToolContext, blocks: list[list], library: Library) -> No
         f"{len(library.products):,} products from {library.combinations:,} combinations",
     )
     ctx.show_message(
-        f"Enumerated {len(library.products):,} product(s) from {library.combinations:,} "
-        f"combination(s); {library.failed:,} gave none",
-        10000,
+        f"Enumerated {plural(len(library.products), 'product')} from "
+        f"{plural(library.combinations, 'combination')}; {library.failed:,} gave none"
     )

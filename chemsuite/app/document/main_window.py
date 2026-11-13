@@ -56,6 +56,7 @@ from chemsuite.core.structure_input import molblock_of, read_structure
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import REACTION, STRUCTURE
+from chemsuite.core.wording import plural
 from chemsuite.io.load import (
     apply_parsed,
     load_table,
@@ -979,12 +980,12 @@ class MainWindow(QMainWindow):
     def delete_rows(self) -> None:
         oids = self.view.selected_oids()
         if len(oids):
-            self.workspace.table.remove_rows(oids, label=f"Delete {len(oids)} row(s)")
+            self.workspace.table.remove_rows(oids, label=f"Delete {plural(len(oids), 'row')}")
 
     def add_rows(self) -> None:
         count, ok = QInputDialog.getInt(self, "Add Rows", "Number of empty rows:", 1, 1, 100_000)
         if ok:
-            self.workspace.table.add_rows(count=count, label=f"Add {count} row(s)")
+            self.workspace.table.add_rows(count=count, label=f"Add {plural(count, 'row')}")
 
     def add_column(self) -> None:
         table = self.workspace.table
@@ -1013,7 +1014,7 @@ class MainWindow(QMainWindow):
         )
         dialog.accepted.connect(
             lambda: self.statusBar().showMessage(
-                f"Added {len(dialog.result_names)} column(s)", 4000
+                f"Added {plural(len(dialog.result_names), 'column')}", 4000
             )
         )
         dialog.finished.connect(lambda _r: dialog.deleteLater())
@@ -1121,7 +1122,8 @@ class MainWindow(QMainWindow):
         oids = self.view.selected_oids()
         if not len(oids):
             return
-        copies = self.workspace.table.duplicate_rows(oids, label=f"Duplicate {len(oids)} row(s)")
+        label = f"Duplicate {plural(len(oids), 'row')}"
+        copies = self.workspace.table.duplicate_rows(oids, label=label)
         self.workspace.selection.set(copies.tolist(), "menu")
 
     def cell_menu(self, index: QModelIndex) -> QMenu:
@@ -1500,7 +1502,7 @@ class MainWindow(QMainWindow):
             message = f"Read {total:,} structures"
             self.statusBar().showMessage(message + (f"; {bad:,} invalid" if bad else ""), 6000)
 
-        job = self._runner.submit("Reading structures", work)
+        job = self._runner.submit("Reading structures…", work)
         job.partial.connect(apply)
         job.finished.connect(finished)
         job.failed.connect(
