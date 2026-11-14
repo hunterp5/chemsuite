@@ -43,7 +43,7 @@ Each document has its own window. From top to bottom:
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close |
   | Edit | Undo, Copy and Paste, selecting rows, Delete Selection, Status Bar, Preferences |
   | Tools | Utilities ▸ (Calculator, Random ▸ Random Numbers and Random Rows), Sketcher |
-  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Structure Viewer, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis, Enumerate Products), Routes, Decompose ▸ (R-Group Decomposition, Fragments) |
+  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Structure Viewer, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis, Enumerate Products), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
   | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸, Plot ▸ and Browser; Filters and Search ▸ |
   | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
   | Data ▸ Similarity | Cluster, Bin Values, Similarity Search, Diverse Subset |
@@ -1808,6 +1808,27 @@ again.
     compounds. **Select Compounds** selects the rows holding the fragments you pick, so you
     can see what a common piece does to activity. **Copy Fragments** copies the table.
 - **Cancelling** keeps the compounds already fragmented.
+
+### Central Ring
+
+Chemistry ▸ Decompose ▸ Central Ring… splits each compound around its own most central ring
+system, so there is no core to enter.
+
+- **How the core is chosen.** A ring's centrality is the mean bond-path distance from its
+  atoms to every heavy atom; the lowest mean wins. Ties prefer the larger ring, then the ring
+  holding the lowest canonical rank. Rings sharing an atom with the winner — fused, bridged
+  or spiro — join it, so an indole stays whole; a ring joined only by a bond, such as
+  biphenyl's second ring, becomes a substituent instead.
+- **Output.** A **Core** column with the numbered attachment points (`c1cc([*:2])ccc1[*:1]`),
+  then **R1**, **R2**… labelled as [R-Group Decomposition](#r-group-decomposition) labels
+  them (`*Cl`, `*OC`). Positions are numbered in the core's canonical rank order, so the same
+  scaffold numbers them the same way every time.
+- **Each compound is decomposed on its own**, so two rows share an R number only when they
+  share a core. Check the Core column before reading R1 across the whole table; to compare a
+  series on one scaffold, use [R-Group Decomposition](#r-group-decomposition) instead.
+- A compound with no ring, or a ring system of fewer than three atoms, gets an empty core and
+  no R-groups.
+- **Cancelling** keeps the compounds already decomposed.
 
 ### R-Group Decomposition
 

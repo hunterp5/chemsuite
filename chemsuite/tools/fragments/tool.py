@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Chemistry ▸ Decompose: Fragments (BRICS / RECAP)."""
+"""Chemistry ▸ Decompose: Fragments (BRICS / RECAP) and Central Ring."""
 
 from __future__ import annotations
 
@@ -29,6 +29,12 @@ def _fragments(ctx: ToolContext):
     return ctx.show_dialog(FragmentsDialog(ctx))
 
 
+def _central_ring(ctx: ToolContext):
+    from .central_ring import CentralRingDialog
+
+    return ctx.show_dialog(CentralRingDialog(ctx))
+
+
 TOOLS = (
     Tool(
         id="fragments",
@@ -39,5 +45,14 @@ TOOLS = (
         needs_structures=True,
         tip="Cut each compound at its BRICS or RECAP bonds, into fragment columns and a "
         "panel of the distinct fragments.",
+    ),
+    Tool(
+        id="central-ring",
+        title="Central Ring…",
+        menu=MENU,
+        open=_central_ring,
+        requires=("rdkit",),
+        needs_structures=True,
+        tip="R-groups around each compound's own most central ring system, with no core to enter.",
     ),
 )

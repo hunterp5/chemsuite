@@ -139,3 +139,26 @@ def test_choosing_neither_output_is_refused(chem) -> None:
     dialog.panel.setChecked(False)
     assert "Choose fragment columns" in dialog.status.text()
     assert not dialog.primary.isEnabled()
+
+
+def test_central_ring_writes_a_core_and_r_columns(chem, qtbot) -> None:
+    table = chem.workspace.table
+    dialog = chem.open_tool("central-ring")
+    assert dialog.primary.text() == "Decompose 4 Rows"
+    dialog.run()
+    qtbot.waitUntil(lambda: "Core" in table.column_names, timeout=20_000)
+    para, anilide, benzene, blank = (int(o) for o in table.oids)
+    assert table.cell("Core", para) == "c1cc([*:2])ccc1[*:1]"
+    assert {table.cell("R1", para), table.cell("R2", para)} == {"*NC(C)=O", "*O"}
+    # acetanilide has one substituent on the same ring
+    assert table.cell("Core", anilide) == "c1ccc([*:1])cc1"
+    assert table.cell("R1", anilide) == "*NC(C)=O"
+    assert table.cell("R2", anilide) == ""
+    assert table.cell("Core", benzene) == "c1ccccc1"  # a ring with nothing on it
+    assert table.cell("Core", blank) == ""
+
+
+def test_central_ring_needs_no_core_to_be_entered(chem) -> None:
+    dialog = chem.open_tool("central-ring")
+    assert not hasattr(dialog, "core")
+    assert dialog.primary.isEnabled()
