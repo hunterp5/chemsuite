@@ -1,4 +1,4 @@
-# Handoff: state of play (updated 2026-11-12, on Windows)
+# Handoff: state of play (updated 2026-11-14, on Windows)
 
 The rules live in `CLAUDE.md`; this file is only what is in flight, so the next session on the
 other machine can pick it up. Update it at the end of a session that leaves work open.
@@ -133,6 +133,35 @@ other machine can pick it up. Update it at the end of a session that leaves work
     p2-review.md §4.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
+
+- **chemsuite pKa, U2 training** (`docs/UNIPKA_PLAN.md`; Windows PC only, WSL
+  `~/bench/unipka`). The PC hard-reset (Kernel-Power 41) on 2026-11-12 with pKaHub
+  preprocessing and the reference fold training at once; `resume.sh` now runs one heavy job
+  at a time (log `logs/resume.log`): pKaHub lmdb by `scripts/unipka/prep_lmdb.py` (upstream's
+  conformers with 180 s per row: rifampicin-like macrocycles hung upstream's script; dropped
+  rows in `train.lmdb.dropped.tsv`, 22 of 22,132) → reference fold 0 on dwar-iBond, resumed
+  from epoch 6 (`reference/`; folds 1–4 skipped unless fold 0 is off from the paper) →
+  the 5 shipped pKaHub folds (`shipped/`, `shipped10.sh`, log `logs/shipped10.log`) at **10
+  epochs** (a pKaHub epoch is 553 updates, 2.7 × dwar's; 20 epochs would be ~25–30 h).
+  Reference fold 0 done (valid RMSE 0.94), converted to `samples/unipka/weights/reference_f0.npz`
+  (`convert_weights.py` now stores each fold's training-split mean, `fold_means`, and
+  `thermo.common_mean` puts the folds on their average). `evaluate.py` runs in WSL in
+  `~/bench/unipka/evalenv` (the app's RDKit 2026.09.2, `PYTHONPATH` = the repo; on Windows it
+  ran out of memory beside training). Paper's Table 1 RMSE (5 folds, after a ChEMBL pretraining
+  stage we do not have): Novartis acid 1.061, base 0.653, SAMPL6 0.716, SAMPL7 0.735, SAMPL8
+  0.878; MolGpKa there 1.287 / 1.064 / 0.773 / 0.98 / 1.150.
+  **Done 2026-11-14:** the 5 shipped folds (valid RMSE mean 0.753, every best epoch the 10th)
+  converted to `samples/unipka/weights/shipped.npz` (440 MB, not committed). External tests
+  (`samples/unipka/shipped.eval.txt`): 10 conformers, 5 folds RMSE 0.83 overall, MolGpKa 1.02;
+  3 conformers 0.84, 2D only 0.98. The training report and the novice's guide are Claude Docs,
+  exported to `samples/*.docx`. Next: `evaluate.py --enumerated` with the cache, pick the
+  app's conformer/fold count (3 conformers looks right), then U4 (protein ligand states).
+- **Decomposition and enumeration** (done 2026-11-14, ROADMAP §6): Chemistry ▸ Decompose
+  (R-Group Decomposition, Fragments, Central Ring), Chemistry ▸ Enumerate (Reaction
+  Products with 28 named templates in `analysis/reaction_templates.py`, R-Groups on a Core,
+  Recombine Fragments); Standardize keeps stripped salts in a `Salts` column and can form
+  salts (`analysis/salts.py`). The Structure Viewer is now Data ▸ Browser (bottom section,
+  Ctrl+Shift+B); Ctrl+Shift+3 is gone. Not yet merged to `main`: run the full suite first.
 
 ## Next
 
