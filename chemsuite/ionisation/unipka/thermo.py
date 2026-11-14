@@ -44,6 +44,16 @@ def populations(g: np.ndarray, protons: np.ndarray, ph: float, mean: float) -> n
     return np.exp(e - logsumexp(e))
 
 
+def common_mean(g: np.ndarray, charge: int, means: np.ndarray, mean: float) -> float:
+    """One microstate's free energies from folds trained with *means*, averaged on *mean*.
+
+    Each fold centres pKa on its own training split's mean; E(pH) above is unchanged when
+    G gains ln 10 · n · (μ_fold − μ). The net *charge* stands in for n (a common offset).
+    """
+    shifted = np.asarray(g, dtype=np.float64) - LN10 * charge * (np.asarray(means) - mean)
+    return float(shifted.mean())
+
+
 def macro_pka(g_acid: np.ndarray, g_base: np.ndarray, mean: float) -> float:
     """The pKa between the macrostate *g_acid* (one proton more) and *g_base*."""
     return mean + float(logsumexp(-np.asarray(g_acid)) - logsumexp(-np.asarray(g_base))) / LN10

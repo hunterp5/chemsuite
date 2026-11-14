@@ -94,6 +94,16 @@ def test_one_site_titrates_at_its_macro_pka() -> None:
     assert thermo.populations(g, protons, pka + 1, mean)[1] == pytest.approx(10 / 11)
 
 
+def test_common_mean_keeps_each_folds_pka():
+    """Folds trained on different means agree once moved onto one: a pair's pKa is unchanged."""
+    means = np.array([6.6, 6.4])
+    g_acid, g_base = np.array([1.0, 1.5]), np.array([-2.0, -1.0])  # charge 1 and 0, per fold
+    each = [thermo.macro_pka(g_acid[k : k + 1], g_base[k : k + 1], means[k]) for k in range(2)]
+    ga = thermo.common_mean(g_acid, 1, means, 6.5)
+    gb = thermo.common_mean(g_base, 0, means, 6.5)
+    assert thermo.macro_pka(np.array([ga]), np.array([gb]), 6.5) == pytest.approx(np.mean(each))
+
+
 def test_tautomers_share_a_macrostate() -> None:
     """Two microstates of the acid macrostate: the pKa counts both, and each keeps its share."""
     states = (

@@ -69,6 +69,8 @@ class Predictor:
         with np.load(path) as archive:
             self.mean = float(archive["mean"])
             folds = sorted({k.split("/", 1)[0] for k in archive.files if "/" in k})
+            self.fold_means = (archive["fold_means"] if "fold_means" in archive.files
+                               else np.full(len(folds), self.mean))  # fmt: skip
         self.nets = [model.Network.load(path, int(f[1:])) for f in folds]
         self.n_3d = n_3d
         self._cache: dict[str, float] = {}
@@ -79,7 +81,9 @@ class Predictor:
             found = conformers.atoms(smiles, self.n_3d)
             g = [model.free_energy(net, list(found.symbols), list(found.charges), found.coords)
                  for net in self.nets]  # fmt: skip
-            self._cache[smiles] = float(np.mean(g))
+            g = [float(np.mean(x)) for x in g]  # each fold over its conformers
+            charge = int(sum(found.charges))
+            self._cache[smiles] = thermo.common_mean(g, charge, self.fold_means, self.mean)
         return self._cache[smiles]
 
     def ensemble(
