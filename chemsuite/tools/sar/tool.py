@@ -57,7 +57,7 @@ TOOLS = (
     Tool(
         id="rgroups",
         title="R-Group Decomposition…",
-        menu=("Chemistry",),
+        menu=("Chemistry", "Decompose"),
         open=_dialog("rgroup_dialog", "RGroupDialog"),
         requires=("rdkit",),
         needs_structures=True,

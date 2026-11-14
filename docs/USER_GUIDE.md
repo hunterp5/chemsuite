@@ -43,7 +43,7 @@ Each document has its own window. From top to bottom:
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close |
   | Edit | Undo, Copy and Paste, selecting rows, Delete Selection, Status Bar, Preferences |
   | Tools | Utilities ▸ (Calculator, Random ▸ Random Numbers and Random Rows), Sketcher |
-  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Structure Viewer, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis, Enumerate Products), Routes, R-Group Decomposition |
+  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Structure Viewer, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis, Enumerate Products), Routes, Decompose ▸ (R-Group Decomposition, Fragments) |
   | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸, Plot ▸ and Browser; Filters and Search ▸ |
   | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
   | Data ▸ Similarity | Cluster, Bin Values, Similarity Search, Diverse Subset |
@@ -1782,9 +1782,36 @@ Data ▸ Similarity ▸ Cluster… groups compounds using one of three methods:
 
 ## 13. SAR
 
+### Fragments
+
+Chemistry ▸ Decompose ▸ Fragments… cuts each compound into pieces a chemist could join
+again.
+
+- **Cut at.**
+  - **BRICS** (Degen et al., *ChemMedChem* 2008) cuts 16 kinds of bond and labels each open
+    end with the environment it came from (`[16*]`, `[1*]`), so the pieces can only be put
+    back together where the rules allow. [Recombine Fragments](#recombine-fragments) needs
+    those labels.
+  - **RECAP** (Lewell et al., *J. Chem. Inf. Comput. Sci.* 1998) cuts 11 retrosynthetic bonds
+    and writes every open end as a plain `*`. A compound with nothing to cut is its own
+    fragment.
+- **Smallest piece** leaves out fragments with fewer heavy atoms than the number given
+  (3 by default). Attachment points are not counted.
+- **Plain attachment points** writes every open end as `*` for both methods, so the same
+  piece counts once however it was cut. Leave it off if you will recombine the fragments.
+- **Output.** Either or both:
+  - **Fragment columns**: `BRICS 1`, `BRICS 2`… (or `RECAP 1`…), largest fragment first, and
+    a `BRICS Fragments` count column. A compound cut into more than 20 pieces writes only
+    the largest 20.
+  - **Fragment panel**: one row per distinct fragment, with how many compounds hold it and,
+    when an **Activity** column is chosen, the mean and standard deviation of those
+    compounds. **Select Compounds** selects the rows holding the fragments you pick, so you
+    can see what a common piece does to activity. **Copy Fragments** copies the table.
+- **Cancelling** keeps the compounds already fragmented.
+
 ### R-Group Decomposition
 
-Chemistry ▸ R-Group Decomposition… splits a series onto a common core.
+Chemistry ▸ Decompose ▸ R-Group Decomposition… splits a series onto a common core.
 
 - **Core.** Enter it as SMILES or SMARTS, or let the tool suggest one.
   - Label attachment points `[*:1]`, `[*:2]`… to fix which position is R1, R2.

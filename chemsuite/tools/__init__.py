@@ -30,6 +30,7 @@ TOOL_MODULES: tuple[str, ...] = (
     "chemsuite.tools.protein.tool",
     "chemsuite.tools.conformers.tool",
     "chemsuite.tools.reactions.tool",
+    "chemsuite.tools.fragments.tool",
     "chemsuite.tools.retro.tool",
     "chemsuite.tools.plot.tool",
     "chemsuite.tools.medchem.tool",
