@@ -14,13 +14,14 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Chemistry ▸ Decompose: Fragments (BRICS / RECAP) and Central Ring."""
+"""Chemistry ▸ Decompose (Fragments, Central Ring) and Enumerate (R-Groups on a Core)."""
 
 from __future__ import annotations
 
 from chemsuite.app.document.tools import Tool, ToolContext
 
 MENU = ("Chemistry", "Decompose")
+BUILD = ("Chemistry", "Enumerate")
 
 
 def _fragments(ctx: ToolContext):
@@ -33,6 +34,12 @@ def _central_ring(ctx: ToolContext):
     from .central_ring import CentralRingDialog
 
     return ctx.show_dialog(CentralRingDialog(ctx))
+
+
+def _rgroup_library(ctx: ToolContext):
+    from .rgroups_library import RGroupLibraryDialog
+
+    return ctx.show_dialog(RGroupLibraryDialog(ctx))
 
 
 TOOLS = (
@@ -54,5 +61,14 @@ TOOLS = (
         requires=("rdkit",),
         needs_structures=True,
         tip="R-groups around each compound's own most central ring system, with no core to enter.",
+    ),
+    Tool(
+        id="rgroup-library",
+        title="R-Groups on a Core…",
+        menu=BUILD,
+        open=_rgroup_library,
+        requires=("rdkit",),
+        tip="Every combination of the substituents you choose on a numbered core, as a "
+        "virtual library.",
     ),
 )

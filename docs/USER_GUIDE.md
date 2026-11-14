@@ -43,7 +43,7 @@ Each document has its own window. From top to bottom:
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close |
   | Edit | Undo, Copy and Paste, selecting rows, Delete Selection, Status Bar, Preferences |
   | Tools | Utilities ▸ (Calculator, Random ▸ Random Numbers and Random Rows), Sketcher |
-  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Structure Viewer, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis, Enumerate Products), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
+  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Structure Viewer, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
   | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸, Plot ▸ and Browser; Filters and Search ▸ |
   | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
   | Data ▸ Similarity | Cluster, Bin Values, Similarity Search, Diverse Subset |
@@ -401,9 +401,9 @@ Chemistry ▸ Reaction ▸ Split Reactions… writes the parts of each reaction 
 - **Keep atom map numbers** is off by default, so the same molecule compares equal across
   reactions in structure search, duplicates and descriptors.
 
-### Enumerate Products
+### Reaction Products
 
-Chemistry ▸ Reaction ▸ Enumerate Products… applies a reaction template to building blocks.
+Chemistry ▸ Enumerate ▸ Reaction Products… applies a reaction template to building blocks.
 
 - **Reaction**: a named reaction, or **Custom** to write your own. The named ones are grouped:
   - **Coupling**: amide (from an acid or an acyl chloride), sulfonamide, urea, carbamate,
@@ -442,6 +442,29 @@ Chemistry ▸ Reaction ▸ Enumerate Products… applies a reaction template to 
   example "Nothing in Amines is a carboxylic acid".
 - Every named reaction is checked against hand-worked products, including that stereocentres
   away from the reaction are kept.
+
+### R-Groups on a Core
+
+Chemistry ▸ Enumerate ▸ R-Groups on a Core… makes every combination of the substituents you
+choose on one numbered core — the other direction from
+[R-Group Decomposition](#r-group-decomposition).
+
+- **Core**: SMILES with numbered attachment points, such as `c1cc([*:2])ccc1[*:1]`. This is
+  exactly what [R-Group Decomposition](#r-group-decomposition) and
+  [Central Ring](#central-ring) write, so a decomposition feeds straight back in. **Draw…**
+  opens the sketcher, where the **R** button places the attachment points. A row appears for
+  each position, up to six.
+- **Substituents** for each position come from a column or a typed list.
+  - A **column** uses its distinct values over the chosen rows: point R1 at the `R1` column a
+    decomposition wrote and you get the substituents the series already uses.
+  - **Typed…** takes one substituent per line (or comma separated), written as `*Cl`, `*OC`,
+    with `H` for an unsubstituted position.
+  - **and H** also leaves the position unsubstituted, without adding `H` to the list by hand.
+- **Output** is a virtual library in a new window: one product per row, with an `R1`, `R2`…
+  column holding the substituent it came from. Up to 2,000,000 combinations.
+- A substituent that cannot be read, or cannot be attached, is counted in the message rather
+  than quietly skipped.
+- **Cancelling** keeps the products already made.
 
 ### Filtering by reaction
 

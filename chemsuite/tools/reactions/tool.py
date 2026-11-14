@@ -61,8 +61,8 @@ TOOLS = (
     ),
     Tool(
         id="enumerate-products",
-        title="Enumerate Products…",
-        menu=("Chemistry", "Reaction"),
+        title="Reaction Products…",
+        menu=("Chemistry", "Enumerate"),
         open=_enumerate,
         requires=("rdkit",),
         needs_structures=True,

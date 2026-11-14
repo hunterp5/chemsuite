@@ -148,6 +148,7 @@ MENU_ORDER: dict[tuple[str, ...], tuple[str, ...]] = {
     ("Data", "Similarity"): ("cluster", "binning", "similarity", "diverse_subset"),
     ("Chemistry", "Reaction"): ("split-reaction", "retrosynthesis", "enumerate-products"),
     ("Chemistry", "Decompose"): ("rgroups", "fragments", "central-ring"),
+    ("Chemistry", "Enumerate"): ("enumerate-products", "rgroup-library", "recombine"),
 }
 
 

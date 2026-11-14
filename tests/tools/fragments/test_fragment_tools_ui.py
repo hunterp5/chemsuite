@@ -162,3 +162,56 @@ def test_central_ring_needs_no_core_to_be_entered(chem) -> None:
     dialog = chem.open_tool("central-ring")
     assert not hasattr(dialog, "core")
     assert dialog.primary.isEnabled()
+
+
+def test_rgroup_library_enumerates_every_combination(chem, qtbot) -> None:
+    dialog = chem.open_tool("rgroup-library")
+    assert "Enter a core" in dialog.status.text()
+    dialog.core.set_text("c1cc([*:2])ccc1[*:1]")
+    assert dialog.positions() == (1, 2)
+    assert dialog._groups_section.is_row_visible(dialog.sources[1].parentWidget())
+    assert not dialog._groups_section.is_row_visible(dialog.sources[2].parentWidget())
+    dialog.sources[0].setCurrentText("Typed…")
+    dialog.typed[0] = "*Cl\n*C"
+    dialog.sources[1].setCurrentText("Typed…")
+    dialog.typed[1] = "*OC"
+    dialog.refresh()
+    assert dialog.primary.text() == "Enumerate 2 Combinations"
+    opened = []
+    chem.open_table = lambda table, message="": opened.append((table, message))
+    dialog.run()
+    qtbot.waitUntil(lambda: bool(opened), timeout=20_000)
+    library, message = opened[0]
+    assert library.column_names == ["R1", "R2", "Product"]
+    assert "2 products from 2 combinations" in message
+
+
+def test_rgroup_library_takes_its_substituents_from_a_column(chem, qtbot) -> None:
+    table = chem.workspace.table
+    chem.open_tool("central-ring").run()
+    qtbot.waitUntil(lambda: "R1" in table.column_names, timeout=20_000)
+    dialog = chem.open_tool("rgroup-library")
+    dialog.core.set_text("c1ccc([*:1])cc1")
+    dialog.sources[0].setCurrentText("R1")
+    # the labels Central Ring wrote are the ones this takes
+    assert "*NC(C)=O" in dialog.groups_for(0)
+    assert dialog.primary.isEnabled()
+
+
+def test_and_h_adds_the_unsubstituted_position(chem) -> None:
+    dialog = chem.open_tool("rgroup-library")
+    dialog.core.set_text("c1ccc([*:1])cc1")
+    dialog.sources[0].setCurrentText("Typed…")
+    dialog.typed[0] = "*Cl"
+    dialog.refresh()
+    assert dialog.groups_for(0) == ["*Cl"]
+    dialog.hydrogens[0].setChecked(True)
+    assert dialog.groups_for(0) == ["*Cl", "H"]
+    assert dialog.primary.text() == "Enumerate 2 Combinations"
+
+
+def test_a_core_without_attachment_points_is_reported(chem) -> None:
+    dialog = chem.open_tool("rgroup-library")
+    dialog.core.set_text("c1ccccc1")
+    assert "no numbered attachment point" in dialog.status.text()
+    assert not dialog.primary.isEnabled()

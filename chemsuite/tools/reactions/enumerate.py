@@ -240,12 +240,7 @@ class EnumerateDialog(ToolDialog):
         if chosen == SINGLE:
             single = self.singles.get(slot)
             return [single] if single else []
-        oids = self.rows.oids()
-        seen: dict[str, None] = {}
-        for text in self.ctx.table.column(chosen).displays(self.ctx.table.slots_of(oids)):
-            if text:
-                seen.setdefault(text, None)
-        return list(seen)
+        return self.ctx.distinct_values(chosen, self.rows.oids())
 
     def combinations(self) -> int | None:
         """How many combinations an every-combination run tries (None when a file is used)."""

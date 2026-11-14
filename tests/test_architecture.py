@@ -122,7 +122,7 @@ def test_tools_never_reach_into_the_window() -> None:
 COLUMN_INTERNALS_IN_TOOLS = {
     "chemsuite/tools/retro/dialog.py": 9,
     "chemsuite/tools/utilities/calculator.py": 7,  # formulas read whole columns by design
-    "chemsuite/tools/reactions/enumerate.py": 6,
+    "chemsuite/tools/reactions/enumerate.py": 3,
     "chemsuite/tools/reactions/common.py": 4,
     "chemsuite/tools/similarity/common.py": 4,
     "chemsuite/tools/statistics/panel.py": 4,

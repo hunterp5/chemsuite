@@ -285,6 +285,21 @@ class ToolContext:
         table = self.table
         return table.column(column).worker_inputs(table.slots_of(oids))
 
+    def distinct_values(self, column: str, oids: Sequence[int] | np.ndarray) -> list[str]:
+        """*column*'s distinct cell texts over *oids*, first seen first, blanks left out.
+
+        The building blocks of an enumeration: a structure column's compounds, or the
+        substituent labels a decomposition wrote.
+        """
+        table = self.table
+        if not column or column not in table:
+            return []
+        seen: dict[str, None] = {}
+        for text in table.column(column).displays(table.slots_of(oids)):
+            if text:
+                seen.setdefault(text, None)
+        return list(seen)
+
     # -- writing ------------------------------------------------------------------------------
     def apply_results(
         self,
