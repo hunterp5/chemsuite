@@ -215,3 +215,75 @@ def test_a_core_without_attachment_points_is_reported(chem) -> None:
     dialog.core.set_text("c1ccccc1")
     assert "no numbered attachment point" in dialog.status.text()
     assert not dialog.primary.isEnabled()
+
+
+def _brics(chem, qtbot, smallest: int = 3) -> None:
+    table = chem.workspace.table
+    dialog = chem.open_tool("fragments")
+    dialog.panel.setChecked(False)
+    dialog.min_size.setValue(smallest)
+    dialog.run()
+    qtbot.waitUntil(lambda: "BRICS 1" in table.column_names, timeout=20_000)
+
+
+def _recombined(chem, qtbot, dialog) -> tuple[list, str]:
+    opened: list = []
+    chem.open_table = lambda table, message="": opened.append((table, message))
+    dialog.run()
+    qtbot.waitUntil(lambda: bool(opened), timeout=20_000)
+    return opened, chem.statusBar().currentMessage()
+
+
+def test_recombine_asks_for_a_brics_run_first(chem) -> None:
+    dialog = chem.open_tool("recombine")
+    assert "Run Fragments with BRICS first" in dialog.status.text()
+    assert not dialog.primary.isEnabled()
+
+
+def test_recombine_joins_the_brics_fragments(chem, qtbot) -> None:
+    from rdkit import Chem
+
+    _brics(chem, qtbot, smallest=1)  # keeps the [5*]N[5*] linker of the amides
+    dialog = chem.open_tool("recombine")
+    assert dialog.primary.isEnabled()
+    assert "[5*]N[5*]" in dialog.pool()
+    dialog.novel.setChecked(False)
+    opened, message = _recombined(chem, qtbot, dialog)
+    library, _title = opened[0]
+    assert library.column_names == ["Product"]
+    products = [library.cell("Product", int(o)) for o in library.oids]
+    assert Chem.CanonSmiles("CC(=O)Nc1ccc(O)cc1") in products  # paracetamol rebuilt
+    assert message.startswith("Recombined 4 fragments into")
+
+
+def test_recombine_skips_compounds_already_in_the_table(chem, qtbot) -> None:
+    from rdkit import Chem
+
+    _brics(chem, qtbot, smallest=1)
+    dialog = chem.open_tool("recombine")
+    assert dialog.novel.isChecked()
+    opened, message = _recombined(chem, qtbot, dialog)
+    library, _title = opened[0]
+    products = [library.cell("Product", int(o)) for o in library.oids]
+    assert Chem.CanonSmiles("CC(=O)Nc1ccc(O)cc1") not in products
+    assert "already in the table" in message
+
+
+def test_a_drug_likeness_preset_fills_the_ranges(chem, qtbot) -> None:
+    _brics(chem, qtbot)
+    dialog = chem.open_tool("recombine")
+    assert not dialog.chosen_limits()
+    dialog.preset.setCurrentText("Rule of 5")
+    assert dialog.chosen_limits().ranges["MW"] == (None, 500.0)
+    dialog.preset.setCurrentText("None")
+    assert not dialog.chosen_limits()
+
+
+def test_a_range_upside_down_is_refused(chem, qtbot) -> None:
+    _brics(chem, qtbot)
+    dialog = chem.open_tool("recombine")
+    low, high = dialog.limits["MW"]
+    low.setValue(400.0)
+    high.setValue(300.0)
+    assert "MW" in dialog.status.text()
+    assert not dialog.primary.isEnabled()

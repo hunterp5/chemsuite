@@ -185,7 +185,7 @@ modified.
   - A radar plot for MPO profiles.
   - Several Y columns on one plot.
   - Saved plot templates.
-- **Structure Viewer:** sort options, a size slider, and pinning compounds to compare them
+- **Browser:** sort options, a size slider, and pinning compounds to compare them
   side by side.
 - **SAR tools**
   - MMP neighbourhood map and transform ledger (from MolManager).
@@ -205,7 +205,7 @@ modified.
 | Potency standardisation | IC50, Ki or EC50 in any units to pIC50 / pKi, with unit detection. |
 | Structure preparation | RDKit MolStandardize: salt strip, largest fragment, neutralise, canonical tautomer, add or remove Hs. "Fast Prepare" uses sensible defaults. |
 | Scaffolds | Bemis–Murcko and generic scaffolds as columns, plus a scaffold tree or count view. |
-| Decomposition and enumeration | BRICS, RECAP and most-central-ring decomposition. R-group enumeration from a core and R-group lists, and SMARTS reaction enumeration. |
+| Decomposition and enumeration | **Done 2026-11-14:** Chemistry ▸ Decompose (R-Group Decomposition, Fragments by BRICS or RECAP, Central Ring) and Chemistry ▸ Enumerate (Reaction Products with 28 named templates, R-Groups on a Core, Recombine Fragments). |
 | Documents | Duplicate document, send selected rows to a new document, and Notes (a notepad saved in the `.csd`). |
 | Macros | Record and replay sequences of commands with their settings. The new command registry is the base for this. |
 | Random utilities | Random numbers and a random molecule sample. Low priority. |
@@ -215,7 +215,7 @@ modified.
 | Feature | Notes |
 |---|---|
 | Confab and CONFORGE conformers | Through the external-tool paths now in Settings. |
-| Superpose conformers, pharmacophore screen | RDKit only. The Structure Viewer's 3D view (Chemistry ▸ Structure Viewer) is done and aligns a molecule's conformers; superposing different molecules is next. |
+| Superpose conformers, pharmacophore screen | RDKit only. The Browser's 3D view (Data ▸ Browser) is done and aligns a molecule's conformers; superposing different molecules is next. |
 | PubChem, ChEMBL, vendor, patent and SQL queries | Network access, off by default under policy. Plain HTTPS REST calls, not MolManager's client libraries. SQL through the standard library or an optional driver. |
 | Retrosynthesis | AiZynthFinder through its own Python interpreter (path in Settings). |
 | Sketcher | **Decided: needed.** A robust drawing sketcher that works with the table: edit a structure cell in place, draw a query for structure search and filters, and add new compounds. Plan: [SKETCHER_PLAN.md](SKETCHER_PLAN.md) (native, Ketcher rules as reference, verified; no MolManager iupac_* code). |

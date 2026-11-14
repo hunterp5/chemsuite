@@ -869,7 +869,7 @@ class StructureViewer(ToolPanel):
             super().keyPressEvent(event)
 
     def title(self) -> str:
-        return "Structure Viewer"
+        return "Browser"
 
     def state(self) -> dict:
         camera = self._camera_state if self.renderer is None else self.renderer.camera.state()

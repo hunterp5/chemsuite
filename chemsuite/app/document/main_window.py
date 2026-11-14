@@ -506,7 +506,8 @@ class MainWindow(QMainWindow):
         return self._lists
 
     def show_browser(self, oid: int | None = None) -> QWidget:
-        """Data ▸ Browser: the Structure Viewer in 2D; a cell's Browse: at *oid*, as it is."""
+        """Data ▸ Browser: brought forward as it is (a new one in 2D); a cell's Browse: the
+        same, at *oid*."""
         tool = next(t for t in registered_tools() if t.id == BROWSER_TOOL)
         assert tool.open_at is not None
         return tool.open_at(ToolContext(self), oid)
@@ -727,7 +728,6 @@ class MainWindow(QMainWindow):
         sar.setToolTipsVisible(True)
         plot = data.addMenu("&Plot")
         plot.setToolTipsVisible(True)
-        data.addAction(A("view.browser", "&Browser", self.show_browser, "Ctrl+Shift+B"))
         data.addSeparator()
         toggle = self.filter_dock.toggleViewAction()
         toggle.setText("&Filters")
@@ -754,6 +754,8 @@ class MainWindow(QMainWindow):
         self._tool_slots = {("Data", "Search"): search_tools, ("Data",): sar.menuAction()}
         for tool in registered_tools():
             self._add_tool(tool, menus)
+        data.addSeparator()  # the Browser, in a section of its own at the bottom
+        data.addAction(self._tool_actions[BROWSER_TOOL])
 
         self._building = "Window"
         log = A("view.log", "&Log", self.show_log)
@@ -809,6 +811,11 @@ class MainWindow(QMainWindow):
         )
         action.setEnabled(not missing)
         action.triggered.connect(lambda _checked=False, t=tool: self.open_tool(t))
+        self._tool_actions[tool.id] = action
+        self._commands[f"tool.{tool.id}"] = action
+        if not tool.menu:  # the window places it (Data ▸ Browser)
+            self.addAction(action)
+            return
         menu = menus[tool.menu]
         slot = self._tool_slots.get(tool.menu)
         order = MENU_ORDER.get(tool.menu, ())
@@ -823,8 +830,6 @@ class MainWindow(QMainWindow):
             menu.addAction(action)
             if tool.separator_after:
                 menu.addSeparator()
-        self._tool_actions[tool.id] = action
-        self._commands[f"tool.{tool.id}"] = action
 
     # -- settings ----------------------------------------------------------------------------
     def _apply_settings(self, settings: Settings) -> None:

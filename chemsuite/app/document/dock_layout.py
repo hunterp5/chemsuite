@@ -16,7 +16,7 @@
 
 """Arranging panes around the table, and saving that arrangement with the document.
 
-Panes (plots, the Structure Viewer) dock left of, right of or below the table, side by side,
+Panes (plots, the Browser) dock left of, right of or below the table, side by side,
 stacked or as tabs. Two are exceptions: Filters is pinned at the right edge of the window at a
 fixed width (``FILTER_WIDTH``), and every arrangement keeps it there; Advanced Search is always
 its own floating window (``float_search``).

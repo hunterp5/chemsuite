@@ -91,10 +91,13 @@ def _current(chem, oid: int) -> None:
 
 
 def _open(chem, qtbot, oid: int = 1):
-    """The viewer opened in 3D (Chemistry ▸ Structure Viewer) with *oid* the table's current
+    """The Browser opened in 3D (as a saved 3D view reopens), with *oid* the table's current
     row."""
+    from chemsuite.app.document.tools import ToolContext
+    from chemsuite.tools.viewer.tool import open_viewer
+
     _current(chem, oid)
-    panel = chem.open_tool("viewer")
+    panel = open_viewer(ToolContext(chem), "3d")
     assert panel.mode == "3d"
     _shows(panel, qtbot, oid)
     return panel
@@ -330,12 +333,12 @@ def shown_id(viewer) -> str:
     return viewer.table.cell("ID", viewer.oid)
 
 
-def test_browser_is_the_viewer_in_2d(window, browser) -> None:
+def test_the_browser_opens_in_2d(window, browser) -> None:
     assert browser.mode == "2d" and browser in window.panels
     assert browser.renderer is None  # 2D never makes the 3D view (or touches the GPU)
     assert not browser.depiction.pixmap().isNull()
     browser.set_mode("3d")
-    assert window.show_browser() is browser and browser.mode == "2d"  # brought forward
+    assert window.show_browser() is browser and browser.mode == "3d"  # brought forward, as is
 
 
 def test_a_cells_browse_opens_the_browser_at_its_row(window, browser) -> None:

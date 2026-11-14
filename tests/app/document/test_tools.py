@@ -56,14 +56,16 @@ def test_menu_bar_order(window) -> None:
             groups.append([])
         else:
             groups[-1].append(a.text().replace("&", ""))
-    # every group in order, Filters and Search at the bottom
+    # every group in order, the Browser in a section of its own at the bottom
     assert groups == [
         ["Table", "Lists"],
         ["Scoring", "Similarity"],
         ["Dimensionality Reduction…", "Self-Organizing Map…"],
-        ["Statistics…", "SAR", "Plot", "Browser"],
+        ["Statistics…", "SAR", "Plot"],
         ["Filters", "Search"],
+        ["Browser"],
     ]
+    assert data.actions()[-1].shortcut().toString() == "Ctrl+Shift+B"
 
 
 def test_tools_fill_slots_among_menu_commands(window) -> None:
@@ -96,11 +98,19 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
         "Diverse Subset…",
     ]
     assert visible(submenu(menus["Data"], "Scoring")) == ["MPO Score…", "Selectivity…"]
-    assert "R-Group Decomposition…" in visible(menus["Chemistry"])
+    decompose = submenu(menus["Chemistry"], "Decompose")
+    assert visible(decompose) == ["R-Group Decomposition…", "Fragments…", "Central Ring…"]
+    enumerate_ = submenu(menus["Chemistry"], "Enumerate")
+    assert visible(enumerate_) == [
+        "Reaction Products…",
+        "R-Groups on a Core…",
+        "Recombine Fragments…",
+    ]
+    assert not {"Structure Viewer", "Browser"} & set(visible(menus["Chemistry"]))
     calculate = submenu(menus["Chemistry"], "Calculate")
     assert visible(calculate) == ["Descriptors…", "pKa…"]
     reaction = submenu(menus["Chemistry"], "Reaction")
-    assert visible(reaction) == ["Split Reactions…", "Retrosynthesis…", "Enumerate Products…"]
+    assert visible(reaction) == ["Split Reactions…", "Retrosynthesis…"]
     assert "Preferences…" in visible(menus["Edit"])
     assert "Status Bar" in visible(menus["Edit"])
     assert "Sketcher…" not in visible(menus["Chemistry"])

@@ -157,7 +157,7 @@ def enumerate_chunk(args: tuple[str, list[list[str]], int, int]) -> Library:
         [
             (True, None)
             if is_hydrogen(text)
-            else ((g := parse_group(text, positions[i])) is not None, g)  # noqa: E501
+            else ((g := parse_group(text, positions[i])) is not None, g)
             for text in column
         ]
         for i, column in enumerate(groups)

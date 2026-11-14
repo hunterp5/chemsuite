@@ -72,7 +72,8 @@ BROWSER_TOOL = "viewer"
 class Tool:
     """A menu entry and what it opens.
 
-    ``menu`` is the menu path, e.g. ``("Chemistry",)`` or ``("Chemistry", "Calculate")``.
+    ``menu`` is the menu path, e.g. ``("Chemistry",)`` or ``("Chemistry", "Calculate")``;
+    an empty path leaves the action for the window to place (Data ▸ Browser).
     ``requires`` names importable modules; a tool whose module is missing is shown disabled
     with the reason. ``needs_structures`` disables the tool while the table has no structure
     column, ``needs_reactions`` while it has no reaction column. ``restore`` reopens a panel

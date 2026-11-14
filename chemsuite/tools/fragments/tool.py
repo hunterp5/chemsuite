@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Chemistry ▸ Decompose (Fragments, Central Ring) and Enumerate (R-Groups on a Core)."""
+"""Chemistry ▸ Decompose (Fragments, Central Ring) and Enumerate (R-Groups on a Core,
+Recombine Fragments)."""
 
 from __future__ import annotations
 
@@ -40,6 +41,12 @@ def _rgroup_library(ctx: ToolContext):
     from .rgroups_library import RGroupLibraryDialog
 
     return ctx.show_dialog(RGroupLibraryDialog(ctx))
+
+
+def _recombine(ctx: ToolContext):
+    from .recombine import RecombineDialog
+
+    return ctx.show_dialog(RecombineDialog(ctx))
 
 
 TOOLS = (
@@ -70,5 +77,15 @@ TOOLS = (
         requires=("rdkit",),
         tip="Every combination of the substituents you choose on a numbered core, as a "
         "virtual library.",
+    ),
+    Tool(
+        id="recombine",
+        title="Recombine Fragments…",
+        menu=BUILD,
+        open=_recombine,
+        requires=("rdkit",),
+        needs_structures=True,
+        tip="New molecules joined from the BRICS fragments in the table, only where the "
+        "BRICS rules allow.",
     ),
 )

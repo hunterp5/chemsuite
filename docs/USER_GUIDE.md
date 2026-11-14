@@ -43,8 +43,8 @@ Each document has its own window. From top to bottom:
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close |
   | Edit | Undo, Copy and Paste, selecting rows, Delete Selection, Status Bar, Preferences |
   | Tools | Utilities ▸ (Calculator, Random ▸ Random Numbers and Random Rows), Sketcher |
-  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Structure Viewer, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
-  | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸, Plot ▸ and Browser; Filters and Search ▸ |
+  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
+  | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
   | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
   | Data ▸ Similarity | Cluster, Bin Values, Similarity Search, Diverse Subset |
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
@@ -65,7 +65,7 @@ Each document has its own window. From top to bottom:
     right. A second plot joins the first as a tab.
   - Panels sit flush against the table, divided by a thin line you can drag to resize them
     (the grab area is a few pixels wider than the line).
-    Every panel (plots, Filters, Advanced Search, Structure Viewer) has the same header
+    Every panel (plots, Filters, Advanced Search, Browser) has the same header
     showing its title. Drag the header to move the panel. A plot's
     header also holds the plot toolbar. The buttons at the right are:
 
@@ -217,7 +217,7 @@ in the background, using every processor core. You can scroll and work while tha
 - Double-click a cell to edit it, or start typing. Double-clicking a structure opens the
   sketcher (see [Structures](#4-structures)).
 - Right-click a cell for **Browse**, Copy, Paste and Clear Cells. **Browse** opens the
-  Structure Viewer at that row (in 2D, or as it is when it is already open). Structure cells
+  [Browser](#browser) at that row (in 2D, or as it is when it is already open). Structure cells
   offer **Edit in Sketcher…** and **Copy As ▸ Molfile / SMILES / InChI / InChIKey / Image** instead of Copy.
   Copy As takes every selected structure in that column, in the order shown: text formats one
   per line, molfiles as an SD file. A single molfile also pastes into ChemDraw as a drawing.
@@ -244,7 +244,7 @@ Each column has a type:
 
 **Selecting columns.** Click a column header to select the whole column; Shift-click selects a
 range and Ctrl-click (⌘-click) adds or removes one. Selected columns are not a selection of
-compounds, so plots and the Structure Viewer are left alone. **Delete** removes the selected
+compounds, so plots and the Browser are left alone. **Delete** removes the selected
 columns in one step you can undo. Sorting is in the header's right-click menu.
 
 **Moving columns.** Drag a column header left or right to move the column (one undoable
@@ -466,7 +466,31 @@ choose on one numbered core — the other direction from
   than quietly skipped.
 - **Cancelling** keeps the products already made.
 
-### Filtering by reaction
+### Recombine Fragments
+
+Chemistry ▸ Enumerate ▸ Recombine Fragments… builds new molecules from the BRICS fragments
+in the table. Two pieces are joined only where the BRICS rules allow (RDKit's `BRICSBuild`),
+so an acyl goes onto an amine or linker, never straight onto an aromatic carbon.
+
+- **Rows**: the fragment pool is every distinct fragment in the `BRICS 1`, `BRICS 2`…
+  columns of these rows. Run [Fragments](#fragments) with BRICS first, with **Plain
+  attachment points** off and, to keep amide and ether linkers, **Smallest piece** at 1.
+  RECAP fragments carry no rule labels and cannot be recombined.
+- **Most products** stops the build once that many molecules have been made (2,000 by
+  default).
+- **Most fragments joined** is how many pieces one product may be built from (3 by default).
+- **More Options**:
+  - **Drug-likeness** fills the property ranges: **Rule of 5** (Lipinski 1997: MW ≤ 500,
+    cLogP ≤ 5, HBD ≤ 5, HBA ≤ 10) or **Lead-like** (Teague 1999: MW 200–350, cLogP −1 to 3,
+    HBD ≤ 3, HBA ≤ 6, rotatable bonds ≤ 7).
+  - **MW, cLogP, TPSA, HBD, HBA, RotB**: the least and most of each; `—` leaves that end
+    unchecked.
+  - **Skip compounds already in the table** (on by default) drops products that match a
+    structure in the table.
+- **Output** is a new window, one product per row. The message says how many candidates the
+  limits and the novelty check removed. A run with tight limits gives up after examining
+  50 candidates per product asked for (at least 5,000), and says so.
+- **Cancelling** keeps the products already made.
 
 **Add Filter** on a reaction column gives a reaction card: the same query and **Find** choices
 as Reaction Search, applied as a filter together with the other cards.
@@ -691,12 +715,6 @@ structure.
   - selecting points in a plot selects the rows;
   - selecting rows highlights their points.
 - Many tools can run on all rows, the shown rows or just the selected rows.
-
-### Browser
-
-Data ▸ Browser (Ctrl+Shift+B) opens the [Structure Viewer](#structure-viewer) in 2D: it
-steps through rows one at a time with a large drawing, keeping the table's current row in
-step. If a Structure Viewer is already open, it is brought forward and switched to 2D.
 
 ### Named lists
 
@@ -1289,12 +1307,12 @@ Writes every conformer as its own SD record, carrying the row's other columns. C
 **Shown** or **Selected** rows (Selected when rows are selected), then **Export** asks for the
 file.
 
-### Structure Viewer
+### Browser
 
-The Structure Viewer is a panel that shows one row's structure at a time, drawn in **2D** or
-in **3D**, starting at the table's current row. Open it in 2D with **Data ▸ Browser
-(Ctrl+Shift+B)** or in 3D with **Chemistry ▸ Structure Viewer (Ctrl+Shift+3)**; either
-brings an open viewer forward. The **2D | 3D** switch at the left of its header changes only
+The Browser is a panel that shows one row's structure at a time, drawn in **2D** or in
+**3D**, starting at the table's current row. Open it with **Data ▸ Browser (Ctrl+Shift+B)**,
+at the bottom of the Data menu: a new Browser opens in 2D, and an open one is brought forward
+as it is. The **2D | 3D** switch at the left of its header changes only
 how the row is drawn: the row, the structure column, the rows browsed and the caption stay as
 they are, and a 3D view you turned is still turned when you come back to it.
 
@@ -1311,12 +1329,11 @@ they are, and a 3D view you turned is still turned when you come back to it.
 - **Caption:** column values drawn over the structure, in the corner, as the table shows
   them. Choose the columns in the options menu (an ID or name column is chosen at first, if
   there is one). The caption is the same in 2D and 3D, and is part of an exported picture.
-- **Structure column:** chosen in the options menu. Opened in 3D, a "3D" column is chosen
-  first.
+- **Structure column:** chosen in the options menu.
 - **Export** saves the view (with its caption) as a PNG.
 - The panel, its settings, 2D or 3D, the caption, the row and conformer shown and the 3D view
-  are saved with the document. A 3D Viewer panel saved by an earlier version reopens as a
-  Structure Viewer in 3D.
+  are saved with the document. A Structure Viewer or 3D Viewer panel saved by an earlier
+  version reopens as a Browser.
 
 **In 2D** the structure is drawn as in the table, larger; ↑ and ↓ step through the rows too.
 
@@ -1819,7 +1836,9 @@ again.
     and writes every open end as a plain `*`. A compound with nothing to cut is its own
     fragment.
 - **Smallest piece** leaves out fragments with fewer heavy atoms than the number given
-  (3 by default). Attachment points are not counted.
+  (3 by default). Attachment points are not counted. To recombine the fragments, set it to 1:
+  BRICS cuts an amide into an acyl, an aryl and a one-atom linker (`[5*]N[5*]`), and without
+  the linker no amide can be rebuilt.
 - **Plain attachment points** writes every open end as `*` for both methods, so the same
   piece counts once however it was cut. Leave it off if you will recombine the fragments.
 - **Output.** Either or both:
@@ -2039,6 +2058,5 @@ You can change any of these in Preferences ▸ Keyboard.
 | Calculate Descriptors | Ctrl+Shift+D |
 | Scatter plot | Ctrl+Shift+P |
 | Filters | Ctrl+Shift+F |
-| Browser (Structure Viewer in 2D) | Ctrl+Shift+B |
-| Structure Viewer in 3D | Ctrl+Shift+3 |
+| Browser | Ctrl+Shift+B |
 | Preferences | Ctrl+, |

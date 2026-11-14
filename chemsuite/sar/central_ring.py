@@ -304,7 +304,7 @@ def _order(frag: Chem.Mol) -> tuple[int, int]:
         a.GetAtomMapNum()
         for a in frag.GetAtoms()
         if a.GetAtomicNum() == 0 and a.GetAtomMapNum() > 0
-    ]  # noqa: E501
+    ]
     return (min(maps), len(maps)) if maps else (10**9, frag.GetNumAtoms())
 
 

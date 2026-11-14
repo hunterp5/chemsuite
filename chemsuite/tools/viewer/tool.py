@@ -13,8 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Chemistry ▸ Structure Viewer and Data ▸ Browser: the table's structures one row at a time,
-in 2D or 3D, in a panel."""
+"""Data ▸ Browser: the table's structures one row at a time, in 2D or 3D, in a panel."""
 
 from __future__ import annotations
 
@@ -66,16 +65,16 @@ def _restore(ctx: ToolContext, state: dict):
 
 TOOL = Tool(
     id=TOOL_ID,
-    title="Structure Viewer",
-    menu=("Chemistry",),
-    open=lambda ctx: open_viewer(ctx, "3d"),
+    title="Browser",
+    menu=(),  # the window puts it at the bottom of Data, in a section of its own
+    open=lambda ctx: open_viewer(ctx, None),
     restore=_restore,
     aliases=("molview",),  # the 3D Viewer, before it drew in 2D too
     requires=("rdkit",),
     needs_structures=True,
-    shortcut="Ctrl+Shift+3",
+    shortcut="Ctrl+Shift+B",
     tip="Browse the table's structures one row at a time, in 2D or 3D: step through or "
     "overlay conformers, measure, show column values over the structure.",
-    # Data ▸ Browser opens it in 2D; a cell's Browse brings it to that row, as it is
-    open_at=lambda ctx, oid: open_viewer(ctx, "2d" if oid is None else None, at=oid),
+    # a cell's Browse brings it to that row, as it is
+    open_at=lambda ctx, oid: open_viewer(ctx, None, at=oid),
 )

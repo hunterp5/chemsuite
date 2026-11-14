@@ -72,7 +72,7 @@ TOOL_APP_IMPORTS = {
     "chemsuite.app.table.structure_copy",  # Copy as SMILES / molfile
     "chemsuite.app.sketcher",  # the structure editor, opened by tools that draw
     "chemsuite.app.plots.panel",  # plots opened by analysis tools
-    "chemsuite.app.viewer.panel",  # the Structure Viewer, opened by its tool
+    "chemsuite.app.viewer.panel",  # the Browser, opened by its tool
     "chemsuite.app.widgets.reaction_text",  # the reaction field (shared with a filter card)
 }
 

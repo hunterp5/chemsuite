@@ -227,10 +227,10 @@ def removed_fragments(before: Chem.Mol, after: Chem.Mol) -> str:
     with rdBase.BlockLogs():
         was = [
             Chem.MolToSmiles(f) for f in Chem.GetMolFrags(before, asMols=True, sanitizeFrags=False)
-        ]  # noqa: E501
+        ]
         kept = [
             Chem.MolToSmiles(f) for f in Chem.GetMolFrags(after, asMols=True, sanitizeFrags=False)
-        ]  # noqa: E501
+        ]
     for smiles in kept:
         if smiles in was:
             was.remove(smiles)

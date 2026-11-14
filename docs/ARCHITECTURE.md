@@ -22,7 +22,7 @@ changing code.
   - `render3d`: the `RhiView` base and the shared shaders.
   - `document`: the table window (main window, session, `ToolContext`, panels and docks).
   - `table`: the table view and model, column actions, search and filters.
-  - `plots`, `viewer`, `sketcher`: the plot panels, the Structure Viewer, the sketcher.
+  - `plots`, `viewer`, `sketcher`: the plot panels, the Browser, the sketcher.
 - `chemsuite/protein`: the Protein Workbench, a subproject. `structure`, `chem` and `look`
   are Qt-free; `ui` is its Qt workbench.
 - `chemsuite/tools`: one package per menu feature. `tools/protein` is the workbench's

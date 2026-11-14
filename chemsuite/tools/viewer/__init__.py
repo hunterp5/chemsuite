@@ -13,4 +13,4 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Chemistry ▸ Structure Viewer and Data ▸ Browser: one row at a time, in 2D or 3D."""
+"""Data ▸ Browser: one row at a time, in 2D or 3D."""

@@ -418,6 +418,11 @@ def library_table(
         data[title if title not in data else f"{title} {i + 1}"] = StructureColumn.from_texts(texts)
     blobs = [parse_structure(t)[0] for t in library.products]
     data[PRODUCT] = StructureColumn.from_parsed(blobs, library.products)
+    return new_table(data)
+
+
+def new_table(data: dict) -> Table:
+    """A table for a new window (a library, recombined products), not the document's."""
     table = Table()
     table.add_rows(data, undoable=False)
     table.history.mark_clean()
