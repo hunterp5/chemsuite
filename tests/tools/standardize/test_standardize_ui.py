@@ -89,3 +89,66 @@ def test_running_again_keeps_the_earlier_results(chem, qtbot) -> None:
     assert "SMILES (Standardized)" in table.column_names
     assert "SMILES (Standardized) (2)" in table.column_names
     assert "Standardization Notes (2)" in table.column_names
+
+
+def test_stripped_salts_go_to_their_own_column(chem, qtbot) -> None:
+    table = chem.workspace.table
+    dialog = chem.open_tool("standardize")
+    for box in dialog.steps.values():
+        box.setChecked(False)
+    dialog.steps["strip_salts"].setChecked(True)
+    dialog.run()
+    qtbot.waitUntil(lambda: "Salts" in table.column_names, timeout=20_000)
+    amine, acetate, alanine, _bad, _blank = (int(o) for o in table.oids)
+    assert table.cell("Salts", amine) == "Cl"  # the hydrochloride's counter-ion is kept
+    assert table.cell("Salts", acetate) == "[Na+]"
+    assert table.cell("Salts", alanine) == ""  # nothing was stripped
+
+
+def test_no_salts_column_when_nothing_was_stripped(chem, qtbot) -> None:
+    table = chem.workspace.table
+    table.set_cells("SMILES", table.oids[:2], ["CCN", "CCO"])
+    dialog = chem.open_tool("standardize")
+    for box in dialog.steps.values():
+        box.setChecked(False)
+    dialog.steps["strip_salts"].setChecked(True)
+    dialog.rows.set_value("all")
+    dialog.run()
+    qtbot.waitUntil(lambda: "Standardization Notes" in table.column_names, timeout=20_000)
+    assert "Salts" not in table.column_names
+
+
+def test_form_salt_adds_a_counterion(chem, qtbot) -> None:
+    table = chem.workspace.table
+    dialog = chem.open_tool("standardize")
+    for box in dialog.steps.values():
+        box.setChecked(False)
+    dialog.steps["strip_salts"].setChecked(True)
+    dialog.steps["neutralise"].setChecked(True)
+    assert not dialog.counterion.isEnabled()
+    dialog.form_salt.setChecked(True)
+    assert dialog.counterion.isEnabled() and dialog.salt_count.isEnabled()
+    dialog.counterion.setCurrentText("Mesylate")
+    assert dialog.options().salt == "mesylate"
+    dialog.run()
+    qtbot.waitUntil(lambda: "SMILES (Standardized)" in table.column_names, timeout=20_000)
+    amine, _acetate, alanine, _bad, _blank = (int(o) for o in table.oids)
+    # the hydrochloride is stripped and the mesylate put on in its place
+    assert table.cell("SMILES (Standardized)", amine) == "CS(=O)(=O)[O-].C[NH+]1CCCCC1"
+    assert "mesylate salt formed" in table.cell("Standardization Notes", amine)
+    assert table.cell("Salts", amine) == "Cl"
+    # alanine's acid is the strongest site, so a mesylate has nowhere to go but its amine
+    assert "[NH3+]" in table.cell("SMILES (Standardized)", alanine)
+
+
+def test_form_salt_notes_a_molecule_with_no_site(chem, qtbot) -> None:
+    table = chem.workspace.table
+    table.set_cells("SMILES", table.oids[:1], ["CCO"])
+    dialog = chem.open_tool("standardize")
+    dialog.form_salt.setChecked(True)
+    dialog.counterion.setCurrentText("Hydrochloride (HCl)")
+    dialog.run()
+    qtbot.waitUntil(lambda: "Standardization Notes" in table.column_names, timeout=20_000)
+    first = int(table.oids[0])
+    assert "no site for a hydrochloride salt" in table.cell("Standardization Notes", first)
+    assert table.cell("SMILES (Standardized)", first) == "CCO"

@@ -185,3 +185,95 @@ def test_reaction_filter_card(chem, qtbot) -> None:
     second = int(table.oids[1])
     qtbot.waitUntil(lambda: card.hits == frozenset({second}), timeout=20_000)
     assert card.body_state() == {"query": "c1ccccc1-c1ccccc1", "role": "product"}
+
+
+def test_named_template_fills_the_smarts_and_names_the_components(chem) -> None:
+    dialog = chem.open_tool("enumerate-products")
+    dialog.choice.set_template("suzuki")
+    dialog.choice.picked.emit()
+    assert dialog.template.text().startswith("[c:1]")
+    assert dialog.role(0) == "Aryl halide or triflate"
+    assert dialog.role(1) == "Boronic acid or ester"
+    assert dialog._blocks_section.caption(dialog.sources[0]).text() == "Aryl halide or triflate"
+
+
+def test_editing_a_named_template_makes_it_custom(chem) -> None:
+    dialog = chem.open_tool("enumerate-products")
+    dialog.choice.set_template("amide")
+    dialog.choice.picked.emit()
+    assert dialog.choice.template() is not None
+    dialog.template.set_text(AMIDE)  # a hand-written template of the same reaction
+    assert dialog.choice.template() is None
+    assert dialog.role(0) == "Reactant 1"
+
+
+def test_multicomponent_template_shows_four_components(chem) -> None:
+    dialog = chem.open_tool("enumerate-products")
+    dialog.choice.set_template("ugi")
+    dialog.choice.picked.emit()
+    assert dialog.reactant_count() == 4
+    assert dialog._blocks_section.is_row_visible(dialog.sources[3])
+    assert dialog.role(3) == "Isocyanide"
+
+
+def test_a_component_that_does_not_fit_its_role_is_reported(chem) -> None:
+    dialog = chem.open_tool("enumerate-products")
+    dialog.choice.set_template("amide")
+    dialog.choice.picked.emit()
+    dialog.sources[0].setCurrentText("Amine")  # amines in the acid slot
+    dialog.sources[1].setCurrentText("Amine")
+    assert "is a carboxylic acid" in dialog.status.text()
+    dialog.sources[0].setCurrentText("Acid")
+    assert dialog.primary.isEnabled()
+
+
+def test_a_single_structure_reacts_with_every_row(chem, qtbot) -> None:
+    table = chem.workspace.table
+    dialog = chem.open_tool("enumerate-products")
+    dialog.choice.set_template("amide")
+    dialog.choice.picked.emit()
+    dialog.sources[1].setCurrentText("Amine")
+    dialog.set_single(0, "CC(=O)O")  # one acid against every amine in the table
+    dialog.mode.set_value("rows")
+    dialog.run()
+    qtbot.waitUntil(lambda: "Product" in table.column_names, timeout=20_000)
+    r1, r2 = (int(o) for o in table.oids[:2])
+    assert table.cell("Product", r1) == "CNC(C)=O"
+    assert table.cell("Product", r2) == "CCNC(C)=O"
+
+
+def test_library_columns_take_the_roles_of_a_named_template(chem, qtbot) -> None:
+    dialog = chem.open_tool("enumerate-products")
+    dialog.choice.set_template("amide")
+    dialog.choice.picked.emit()
+    dialog.sources[0].setCurrentText("Acid")
+    dialog.sources[1].setCurrentText("Amine")
+    opened = []
+    chem.open_table = lambda table, message="": opened.append((table, message))
+    dialog.run()
+    qtbot.waitUntil(lambda: bool(opened), timeout=20_000)
+    assert opened[0][0].column_names == ["Carboxylic acid", "Amine", "Product"]
+
+
+def test_swap_exchanges_the_first_two_components(chem) -> None:
+    dialog = chem.open_tool("enumerate-products")
+    dialog.choice.set_template("amide")
+    dialog.choice.picked.emit()
+    dialog.sources[0].setCurrentText("Amine")
+    dialog.sources[1].setCurrentText("Acid")
+    dialog._swap()
+    assert dialog.sources[0].currentText() == "Acid"
+    assert dialog.sources[1].currentText() == "Amine"
+    assert dialog.primary.isEnabled()
+
+
+def test_swap_carries_a_single_structure_with_it(chem) -> None:
+    dialog = chem.open_tool("enumerate-products")
+    dialog.choice.set_template("amide")
+    dialog.choice.picked.emit()
+    dialog.set_single(0, "CC(=O)O")
+    dialog.sources[1].setCurrentText("Amine")
+    dialog._swap()
+    assert dialog.singles == {1: "CC(=O)O"}
+    assert dialog.sources[0].currentText() == "Amine"
+    assert "CC(=O)O" in dialog.sources[1].currentText()

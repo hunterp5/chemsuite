@@ -405,20 +405,43 @@ Chemistry ▸ Reaction ▸ Split Reactions… writes the parts of each reaction 
 
 Chemistry ▸ Reaction ▸ Enumerate Products… applies a reaction template to building blocks.
 
-- **Template**: an atom-mapped reaction SMARTS, such as
-  `[C:1](=[O:2])[OH].[N;H2,H1;!$(NC=O):3]>>[C:1](=[O:2])[N:3]` (amide coupling), or
-  **Draw…** and map the atoms with the sketcher's Atom Map tool. Up to four reactants.
-- **Reactant 1, 2 …**: a structure column of this table for each, or **From a File…** (SDF,
-  CSV or any table chemsuite opens).
+- **Reaction**: a named reaction, or **Custom** to write your own. The named ones are grouped:
+  - **Coupling**: amide (from an acid or an acyl chloride), sulfonamide, urea, carbamate,
+    ester, Suzuki-Miyaura, Buchwald-Hartwig, Sonogashira, Chan-Lam, SNAr, reductive amination,
+    N-alkylation, Williamson ether and the copper-catalysed azide-alkyne cycloaddition.
+  - **Ring Formation**: Hantzsch thiazole, Paal-Knorr pyrrole, pyrazole, benzimidazole,
+    1,2,4-oxadiazole, Pictet-Spengler and tetrazole from a nitrile.
+  - **Multicomponent**: Ugi (four components), Passerini, Biginelli,
+    Groebke-Blackburn-Bienaymé and Van Leusen imidazole.
+  - **Deprotection**: Boc removal and ester hydrolysis.
+
+  Each one names its components, so the building-block rows read "Aryl halide or triflate" and
+  "Boronic acid or ester" rather than "Reactant 1" and "Reactant 2". Hover a reaction for what
+  it assumes and where it comes from. The templates are chemoselective: an amide nitrogen is
+  not treated as an amine, an SNAr needs a ring activated by a nitrogen or a nitro group, and
+  a reagent that is never varied (TosMIC in a Van Leusen, azide in a tetrazole synthesis) is
+  built into the product rather than asked for.
+- **Template**: the reaction SMARTS itself. A named reaction fills it in; editing it makes the
+  reaction **Custom**. For your own, write atom-mapped reaction SMARTS such as
+  `[C:1](=[O:2])[OH].[N;H2,H1;!$(NC=O):3]>>[C:1](=[O:2])[N:3]` (amide coupling), or **Draw…**
+  and map the atoms with the sketcher's Atom Map tool. Up to four reactants.
+- **Each component**: a structure column of this table, **From a File…** (SDF, CSV or any
+  table chemsuite opens), or **A Single Structure…** typed or drawn, to run one building block
+  against every other.
+- **More Options ▸ Swap Components** exchanges the first two components when the building
+  blocks are the other way round.
 - **Combine: Row by row** reacts reactant 1 and reactant 2 from the same row and writes the
   product to a **Product** column, with **Products Found** counting how many products the row
   gave (a building block with two reactive sites gives two).
 - **Combine: Every combination** reacts every distinct building block with every other and
   opens the virtual library in a new window, one product per row with its building blocks.
-  Up to 2,000,000 combinations.
+  The building-block columns take the names of a named reaction's components. Up to 2,000,000
+  combinations.
 - Cancelling keeps the products already made.
-- Checked against hand-worked products of amide coupling, Suzuki coupling, reductive
-  amination and Boc removal, including that stereocentres away from the reaction are kept.
+- A component whose building blocks cannot fill its role is reported before the run, for
+  example "Nothing in Amines is a carboxylic acid".
+- Every named reaction is checked against hand-worked products, including that stereocentres
+  away from the reaction are kept.
 
 ### Filtering by reaction
 
@@ -1184,6 +1207,7 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 | Remove isotopes | Off | Deuterium becomes hydrogen, ¹³C becomes carbon. |
 | Canonical tautomer | Off | One consistent tautomer per molecule (RDKit), so duplicates collapse. It is not necessarily the most stable or the bioactive form. If the canonical tautomer would lose any drawn stereo, the drawn tautomer is kept. |
 | Protonate at pH | Off | Each ionisable site in its majority form at the pH (default 7.4), from MolGpKa's predicted pKa values (see [Predict pKa](#predict-pka) and its limits). Carbon acids are ignored, so no carbanions are made. Kept counter-ions stay as they are. |
+| Form salt | Off | Adds the counter-ion you pick and balances the charge. Runs last, so leaving **Strip salts** on switches one salt for another. |
 
 - **Stereo** is never invented or lost. Each step keeps drawn stereocentres and double-bond
   geometry. Over the 3,024 FDA-approved structures, with every step on, no drawn stereo was
@@ -1196,7 +1220,26 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
   - A **Standardization Notes** column is always written (replaced on a rerun). It says what
     changed in each row, for example "salts stripped; neutralised; protonated at pH 7.4; net
     charge +1; 1 undefined stereocentre".
+  - A **Salts** column is written whenever **Strip salts** removed something, holding the
+    fragments it took (`Cl`, `[Na+]`), so a counter-ion is recorded rather than lost. Rows
+    that had nothing stripped are blank, and the column is left out when no row had a salt.
   - Undo restores the table in one step.
+- **Form salt** takes the parent to its salt form, the opposite of stripping.
+  - **The counter-ion** list holds the common ones: hydrochloride, hydrobromide, sulfate,
+    phosphate, mesylate, tosylate, besylate, trifluoroacetate, acetate, citrate, fumarate,
+    maleate, succinate, tartrate, oxalate, sodium, potassium, lithium, calcium, magnesium,
+    zinc, ammonium, choline, meglumine and tromethamine. **×** sets how many go on.
+  - **The charge is balanced.** An acid's ion (chloride, mesylate) protonates the strongest
+    base in the molecule; a base's ion (sodium, calcium) deprotonates the strongest acid.
+    Charge the molecule already carries counts, so a quaternary ammonium just gains its ion.
+  - **The strongest site** is chosen by group: for bases, guanidine, then amidine, aliphatic
+    amine, aromatic nitrogen, aniline; for acids, sulfonic acid, then carboxylic acid,
+    tetrazole, acyl sulfonamide, phosphonic acid, phenol. It is the usual ordering of these
+    groups, not a pKa calculation; [Predict pKa](#predict-pka) does that.
+  - **A multiply charged ion repeats the molecule** when one copy cannot balance it, so
+    ethylamine and sulfate give the 2:1 salt, and acetic acid and calcium the calcium diacetate.
+  - **A molecule with no suitable site is left alone**, and its notes say "no site for a
+    hydrochloride salt".
 - **Next steps.** For docking, follow with [Generate Conformers](#generate-conformers) for 3D
   coordinates. Standardized structures carry no explicit hydrogens; docking programs add them.
 - **Cancelling** keeps the rows already standardized.

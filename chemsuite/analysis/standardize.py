@@ -52,6 +52,7 @@ from dataclasses import dataclass, field
 from rdkit import Chem, rdBase
 from rdkit.Chem.MolStandardize import rdMolStandardize
 
+from chemsuite.analysis.salts import by_id, form_salt, removed_fragments
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text, mol_to_blob, smiles_of
@@ -75,9 +76,13 @@ class Options:
     tautomer: bool = False
     protonate: bool = False
     ph: float = 7.4
+    #: the id of a counter-ion to form a salt with (``chemsuite.analysis.salts``); "" is off
+    salt: str = ""
+    salt_count: int = 1
 
     def steps(self) -> list[str]:
         """The chosen steps, in the order they run, as short names."""
+        ion = by_id(self.salt) if self.salt else None
         chosen = [
             (self.cleanup, "clean up"),
             (self.strip_salts, "strip salts"),
@@ -85,6 +90,7 @@ class Options:
             (self.remove_isotopes, "remove isotopes"),
             (self.tautomer, "canonical tautomer"),
             (self.protonate, f"protonate at pH {self.ph:g}"),
+            (ion is not None, f"form the {ion.name.lower()} salt" if ion else ""),
         ]
         return [name for on, name in chosen if on]
 
@@ -99,6 +105,8 @@ class Outcome:
 
     mol: Chem.Mol | None
     notes: list[str] = field(default_factory=list)
+    #: the fragments a salt strip removed, dot-joined ("" when none were)
+    salts: str = ""
 
 
 @dataclass
@@ -108,6 +116,7 @@ class StandardizeResults:
     blobs: list[bytes] = field(default_factory=list)
     texts: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    salts: list[str] = field(default_factory=list)
     changed: int = 0
     failed: int = 0
 
@@ -118,6 +127,7 @@ class StandardizeResults:
         self.blobs.extend(other.blobs)
         self.texts.extend(other.texts)
         self.notes.extend(other.notes)
+        self.salts.extend(other.salts)
         self.changed += other.changed
         self.failed += other.failed
 
@@ -208,9 +218,12 @@ def standardize(mol: Chem.Mol, options: Options = DOCKING) -> Outcome:
     work = Chem.Mol(mol)
     if options.cleanup:
         work = _step(work, "cleaned up", notes, rdMolStandardize.Cleanup)
+    salts = ""
     if options.strip_salts and len(Chem.GetMolFrags(work)) > 1:
         chooser = rdMolStandardize.LargestFragmentChooser(preferOrganic=True)
+        before = Chem.Mol(work)
         work = _step(work, "salts stripped", notes, chooser.choose)
+        salts = removed_fragments(before, work)
     if options.neutralise:
         uncharger = rdMolStandardize.Uncharger(canonicalOrder=True)
         work = _step(work, "neutralised", notes, uncharger.uncharge)
@@ -230,7 +243,15 @@ def standardize(mol: Chem.Mol, options: Options = DOCKING) -> Outcome:
         notes.append(f"{centres} undefined stereocentre{'s' if centres > 1 else ''}")
     if bonds:
         notes.append(f"{bonds} undefined double bond{'s' if bonds > 1 else ''}")
-    return Outcome(work, notes)
+    ion = by_id(options.salt) if options.salt else None
+    if ion is not None:  # last, so the counter-ion is not stripped or neutralised again
+        made = form_salt(work, ion, options.salt_count)
+        if made is None:
+            notes.append(f"no site for a {ion.name.lower()} salt")
+        else:
+            work = made
+            notes.append(f"{ion.name.lower()} salt formed")
+    return Outcome(work, notes, salts)
 
 
 def _mol(cell: Cell) -> Chem.Mol | None:
@@ -247,23 +268,24 @@ def standardize_chunk(args: tuple[Options, Sequence[Cell]]) -> StandardizeResult
     out = StandardizeResults()
     with rdBase.BlockLogs():
         for cell in cells:
-            blob, text, note = b"", "", ""
+            blob, text, note, salts = b"", "", "", ""
             try:
                 mol = _mol(cell)
                 if mol is not None:
                     outcome = standardize(mol, options)
                     blob, text = mol_to_blob(outcome.mol), smiles_of(outcome.mol)
-                    note = "; ".join(outcome.notes)
+                    note, salts = "; ".join(outcome.notes), outcome.salts
                     out.changed += text != smiles_of(mol)
                 elif cell is not None:
                     note = "not a valid structure"
             except _FAILURES:
-                blob, text, note = b"", "", "could not be standardized"
+                blob, text, note, salts = b"", "", "could not be standardized", ""
             if cell is not None and not blob:
                 out.failed += 1
             out.blobs.append(blob)
             out.texts.append(text)
             out.notes.append(note)
+            out.salts.append(salts)
     return out
 
 

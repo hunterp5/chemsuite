@@ -19,8 +19,16 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QHBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QHBoxLayout,
+    QSpinBox,
+    QWidget,
+)
 
+from chemsuite.analysis.salts import COUNTERIONS
 from chemsuite.analysis.standardize import Options, StandardizeResults, standardize_cells
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
@@ -29,6 +37,7 @@ from chemsuite.core.wording import plural
 
 POOL_MIN_ROWS = 200
 NOTES_COLUMN = "Standardization Notes"
+SALTS_COLUMN = "Salts"
 
 #: option -> (label, help), in the order the steps run
 STEPS = {
@@ -49,6 +58,13 @@ STEPS = {
         "necessarily the most stable or the bioactive form. Drawn stereocentres are kept.",
     ),
 }
+FORM_SALT = (
+    "Form salt",
+    "Add a counter-ion and balance the charge: an acid's ion protonates the strongest base "
+    "in the molecule, a base's ion deprotonates the strongest acid. A molecule with no such "
+    "site is left alone and the notes say so. Runs last, so stripping salts first switches "
+    "one salt for another.",
+)
 PROTONATE = (
     "Protonate at pH",
     "Each ionisable site in its majority form at the pH, from MolGpKa's predicted pKa "
@@ -56,7 +72,8 @@ PROTONATE = (
 )
 NOTES_HELP = (
     f"A “{NOTES_COLUMN}” column is always added: what changed in each structure, and any "
-    "undefined stereo to resolve before docking."
+    "undefined stereo to resolve before docking. Stripping salts also writes a “"
+    f"{SALTS_COLUMN}” column holding the fragments it removed, so they are not lost."
 )
 
 
@@ -102,6 +119,27 @@ class StandardizeDialog(ToolDialog):
         steps.row("", protonation, help=PROTONATE[1])
         self.protonate.toggled.connect(self.ph.setEnabled)
 
+        salt = QWidget()
+        salt_line = QHBoxLayout(salt)
+        salt_line.setContentsMargins(0, 0, 0, 0)
+        salt_line.setSpacing(8)
+        self.form_salt = QCheckBox(FORM_SALT[0])
+        self.counterion = QComboBox()
+        for ion in COUNTERIONS:
+            self.counterion.addItem(ion.label, ion.id)
+        self.counterion.setEnabled(False)
+        self.salt_count = QSpinBox()
+        self.salt_count.setRange(1, 4)
+        self.salt_count.setPrefix("× ")
+        self.salt_count.setEnabled(False)
+        salt_line.addWidget(self.form_salt)
+        salt_line.addWidget(self.counterion)
+        salt_line.addWidget(self.salt_count)
+        salt_line.addStretch(1)
+        steps.row("", salt, help=FORM_SALT[1])
+        self.form_salt.toggled.connect(self.counterion.setEnabled)
+        self.form_salt.toggled.connect(self.salt_count.setEnabled)
+
         output = self.section("Output")
         self.target = output.row(
             "Write to",
@@ -112,9 +150,15 @@ class StandardizeDialog(ToolDialog):
         )
 
         self.structure.currentTextChanged.connect(lambda *_: self.refresh())
-        for signal in (self.ph.valueChanged, self.rows.changed, self.target.changed):
+        for signal in (
+            self.ph.valueChanged,
+            self.rows.changed,
+            self.target.changed,
+            self.counterion.currentIndexChanged,
+            self.salt_count.valueChanged,
+        ):
             signal.connect(lambda *_: self.refresh())
-        for box in (*self.steps.values(), self.protonate):
+        for box in (*self.steps.values(), self.protonate, self.form_salt):
             box.toggled.connect(lambda *_: self.refresh())
         self.refresh()
 
@@ -124,6 +168,8 @@ class StandardizeDialog(ToolDialog):
             **{key: box.isChecked() for key, box in self.steps.items()},
             protonate=self.protonate.isChecked(),
             ph=self.ph.value(),
+            salt=self.counterion.currentData() if self.form_salt.isChecked() else "",
+            salt_count=self.salt_count.value(),
         )
 
     def _replacing(self) -> bool:
@@ -193,6 +239,8 @@ def finish(
         ),
         NOTES_COLUMN: (oids, results.notes),
     }
+    if any(results.salts):  # keep what a strip removed, rather than losing it
+        columns[SALTS_COLUMN] = (oids, StructureColumn.from_texts(results.salts))
     written = ctx.apply_results(
         columns, label="Standardize Structures", overwrite={source} if replace else False
     )
