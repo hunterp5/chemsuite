@@ -23,6 +23,7 @@ from rdkit import Chem
 
 from chemsuite.analysis.rgroup_library import (
     CoreError,
+    core_from_drawing,
     core_positions,
     enumerate_rgroups,
     parse_core,
@@ -36,6 +37,48 @@ ONE = "c1ccc([*:1])cc1"
 
 def canonical(smiles: str) -> str:
     return Chem.MolToSmiles(Chem.MolFromSmiles(smiles))
+
+
+#: a piperidine drawn in the sketcher with an R1 on its nitrogen (the molfile R-label)
+DRAWN = """
+  chemsuite
+
+  7  7  0  0  0  0            999 V2000
+    0.0000    0.0000    0.0000 N   0  0
+    1.0000    0.0000    0.0000 C   0  0
+    1.5000    0.8660    0.0000 C   0  0
+    1.0000    1.7320    0.0000 C   0  0
+    0.0000    1.7320    0.0000 C   0  0
+   -0.5000    0.8660    0.0000 C   0  0
+   -0.5000   -0.8660    0.0000 R#  0  0
+  1  2  1  0
+  2  3  1  0
+  3  4  1  0
+  4  5  1  0
+  5  6  1  0
+  6  1  1  0
+  1  7  1  0
+M  RGP  1   7   1
+M  END
+"""
+
+
+def test_a_drawn_core_keeps_its_r_numbers() -> None:
+    """The sketcher's R1 becomes [*:1], not a query that matches any atom: a drawn core is
+    what the dialog's Draw… writes into the Core field."""
+    from chemsuite.core.structure_input import read_structure
+
+    parsed = read_structure(DRAWN)
+    assert parsed.mol is not None
+    text = core_from_drawing(parsed.mol)
+    assert text == canonical("C1CCN([*:1])CC1")
+    assert core_positions(text) == (1,)  # the isotope is gone, so the position is read
+    assert parse_core(text) is not None
+
+
+def test_a_drawn_plain_dummy_stays_unnumbered() -> None:
+    mol = Chem.MolFromSmiles("*c1ccccc1")
+    assert core_positions(core_from_drawing(mol)) == ()
 
 
 def test_core_positions_are_found_in_order() -> None:

@@ -503,8 +503,9 @@ choose on one numbered core — the other direction from
 - **Core**: SMILES with numbered attachment points, such as `c1cc([*:2])ccc1[*:1]`. This is
   exactly what [R-Group Decomposition](#r-group-decomposition) and
   [Central Ring](#central-ring) write, so a decomposition feeds straight back in. **Draw…**
-  opens the sketcher, where the **R** button places the attachment points. A row appears for
-  each position, up to six.
+  opens the sketcher, where the **R** button places the attachment points: an R1 on a ring
+  nitrogen comes back as `C1CCN([*:1])CC1`, so the substituent replaces that hydrogen. A row
+  appears for each position, up to six.
 - **Substituents** for each position come from a column, a typed list or a file.
   - A **column** uses its distinct values over the chosen rows: point R1 at the `R1` column a
     decomposition wrote and you get the substituents the series already uses.

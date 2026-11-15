@@ -34,6 +34,7 @@ from chemsuite.analysis.reactions import Library, TemplateError, combinations_co
 from chemsuite.analysis.rgroup_library import (
     POOL_MIN_COMBINATIONS,
     CoreError,
+    core_from_drawing,
     core_positions,
     enumerate_rgroups,
     is_hydrogen,
@@ -123,6 +124,7 @@ class RGroupLibraryDialog(ToolDialog):
             "Central Ring write them. Draw… and use the sketcher's R-group button.",
         )
         self.core.set_reactions(False)
+        self.core.set_drawn_text(core_from_drawing)  # an R1 drawn becomes [*:1], not a query
 
         groups = self.section("Substituents")
         self._groups_section = groups

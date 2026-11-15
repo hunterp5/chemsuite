@@ -210,6 +210,20 @@ def test_and_h_adds_the_unsubstituted_position(chem) -> None:
     assert dialog.primary.text() == "Enumerate 2 Combinations"
 
 
+def test_the_core_field_turns_a_drawing_into_numbered_attachment_points(chem) -> None:
+    """The sketcher is modal, so this checks the converter the field was given: without it the
+    field writes a substructure query, whose R-groups match any atom and carry no number."""
+    from chemsuite.analysis.rgroup_library import core_from_drawing
+    from chemsuite.core.structure_input import read_structure
+    from tests.analysis.test_rgroup_library import DRAWN
+
+    dialog = chem.open_tool("rgroup-library")
+    assert dialog.core._drawn_text is core_from_drawing
+    dialog.core.set_text(core_from_drawing(read_structure(DRAWN).mol))
+    assert dialog.positions() == (1,)
+    assert "no numbered attachment point" not in dialog.status.text()
+
+
 def test_a_core_without_attachment_points_is_reported(chem) -> None:
     dialog = chem.open_tool("rgroup-library")
     dialog.core.set_text("c1ccccc1")
@@ -421,7 +435,5 @@ def test_rgroups_reports_a_file_without_attachment_points(chem, qtbot, tmp_path)
     dialog.core.set_text("C1CCN([*:1])CC1")
     dialog.set_file(0, path)
     dialog.run()
-    qtbot.waitUntil(
-        lambda: "as a substituent" in chem.statusBar().currentMessage(), timeout=20_000
-    )
+    qtbot.waitUntil(lambda: "as a substituent" in chem.statusBar().currentMessage(), timeout=20_000)
     assert "Prepare Reagents" in chem.statusBar().currentMessage()

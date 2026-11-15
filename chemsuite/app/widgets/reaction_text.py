@@ -47,6 +47,7 @@ class ReactionText(QWidget):
         super().__init__(parent)
         self.reactions = True
         self._current = current
+        self._drawn_text: Callable[[object], str] | None = None
         self.edit = QLineEdit()
         self.edit.setPlaceholderText(placeholder)
         self.edit.setClearButtonEnabled(True)
@@ -89,6 +90,15 @@ class ReactionText(QWidget):
         if self.current_button is not None:
             self.current_button.setVisible(on)
 
+    def set_drawn_text(self, convert: Callable[[object], str]) -> None:
+        """Turn a drawing into text with *convert* instead of as a substructure query.
+
+        A query means an R-group to match any atom; a core means a numbered attachment point
+        (:func:`chemsuite.analysis.rgroup_library.core_from_drawing`), so the field that takes
+        a core says so.
+        """
+        self._drawn_text = convert
+
     def use_current_row(self) -> None:
         text = self._current() if self._current else ""
         if text:
@@ -112,9 +122,14 @@ class ReactionText(QWidget):
         from chemsuite.app.sketcher import SketcherDialog
         from chemsuite.core.structure_input import read_structure
 
-        dialog = SketcherDialog(self.text(), "Query Structure", self)
+        title = "Query Structure" if self._drawn_text is None else "Structure"
+        dialog = SketcherDialog(self.text(), title, self)
         if not dialog.exec() or not dialog.molblock:
             return
         parsed = read_structure(dialog.molblock)
-        if parsed.mol is not None:
-            self.edit.setText(drawn_query_text(parsed.mol))
+        if parsed.mol is None:
+            return
+        convert = self._drawn_text or drawn_query_text
+        text = convert(parsed.mol)
+        if text:
+            self.edit.setText(text)

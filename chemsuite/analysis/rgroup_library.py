@@ -50,6 +50,8 @@ POOL_MIN_COMBINATIONS = 5000
 #: a position left unsubstituted
 HYDROGEN = "H"
 _POSITION = re.compile(r"\[\*:(\d+)\]")
+#: the largest isotope read as an attachment number rather than a real isotope label
+MAX_LABEL = 99
 _FAILURES = (ValueError, RuntimeError)
 
 
@@ -74,6 +76,34 @@ def parse_core(core: str) -> Chem.Mol:
     if not core_positions(text):
         raise CoreError("The core has no numbered attachment point ([*:1], [*:2] …).")
     return mol
+
+
+def core_from_drawing(mol: Chem.Mol) -> str:
+    """A drawn core as SMILES with numbered attachment points: an R1 becomes ``[*:1]``.
+
+    The sketcher writes an R-group as a molfile R-label, which RDKit reads back as a dummy
+    atom carrying ``_MolFileRLabel`` and that number as its isotope. The isotope has to go:
+    ``[1*:1]`` is not an attachment point as :func:`core_positions` reads them.
+    """
+    work = Chem.RWMol(mol)
+    for atom in work.GetAtoms():
+        if atom.GetAtomicNum() != 0:
+            continue
+        label = atom.GetPropsAsDict().get("_MolFileRLabel") or atom.GetAtomMapNum()
+        if not label and atom.GetIsotope() <= MAX_LABEL:
+            label = atom.GetIsotope()  # a plain * stays unnumbered
+        if label:
+            atom.SetAtomMapNum(int(label))
+            atom.SetIsotope(0)
+            if atom.HasProp("_MolFileRLabel"):
+                atom.ClearProp("_MolFileRLabel")
+    out = work.GetMol()
+    with rdBase.BlockLogs():
+        try:
+            Chem.SanitizeMol(out)
+            return Chem.MolToSmiles(out)
+        except _FAILURES:
+            return ""
 
 
 def is_hydrogen(text: str) -> bool:
@@ -219,6 +249,7 @@ def enumerate_rgroups(
 
 __all__ = [
     "is_hydrogen",
+    "core_from_drawing",
     "HYDROGEN",
     "POOL_MIN_COMBINATIONS",
     "CoreError",
