@@ -40,9 +40,11 @@ class FragmentPanel(ToolPanel):
         stats: list[FragmentStat],
         method: str,
         activity: str = NO_ACTIVITY,
+        recipe: dict | None = None,
     ) -> None:
         super().__init__()
         self.ctx = ctx
+        self.recipe = dict(recipe or {})  # how the fragments were made, to remake them
         self.oids = np.asarray(oids)
         self.stats = stats
         self.method = method
@@ -88,7 +90,12 @@ class FragmentPanel(ToolPanel):
         return oids
 
     def state(self) -> dict:
-        return {"method": self.method, "activity": self.activity, "oids": self.oids.tolist()}
+        return {
+            **self.recipe,
+            "method": self.method,
+            "activity": self.activity,
+            "oids": self.oids.tolist(),
+        }
 
     def close_panel(self) -> None:
         pass

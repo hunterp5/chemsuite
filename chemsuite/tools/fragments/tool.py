@@ -31,6 +31,12 @@ def _fragments(ctx: ToolContext):
     return ctx.show_dialog(FragmentsDialog(ctx))
 
 
+def _restore_fragments(ctx: ToolContext, state: dict):
+    from .decompose import restore
+
+    return restore(ctx, state)
+
+
 def _central_ring(ctx: ToolContext):
     from .central_ring import CentralRingDialog
 
@@ -55,6 +61,7 @@ TOOLS = (
         title="Fragments…",
         menu=MENU,
         open=_fragments,
+        restore=_restore_fragments,
         requires=("rdkit",),
         needs_structures=True,
         tip="Cut each compound at its BRICS or RECAP bonds, into fragment columns and a "

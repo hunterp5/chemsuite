@@ -148,6 +148,7 @@ class FragmentsDialog(ToolDialog):
         want_columns = self.columns.isChecked()
         want_panel = self.panel.isChecked()
         activity = self.activity.currentText()
+        recipe = {"structure": source, "min_size": min_size, "plain": plain}
 
         def work(job):
             return fragment_rows(
@@ -169,6 +170,7 @@ class FragmentsDialog(ToolDialog):
                 columns=want_columns,
                 panel=want_panel,
                 activity=activity,
+                recipe=recipe,
             )
 
         return ctx.run("Finding fragments…", work, done, keep_partial=True)
@@ -183,6 +185,7 @@ def finish(
     columns: bool,
     panel: bool,
     activity: str = NO_ACTIVITY,
+    recipe: dict | None = None,
 ) -> dict[str, str]:
     """Write the fragment columns for *oids*, and open the panel."""
     written: dict[str, str] = {}
@@ -198,7 +201,8 @@ def finish(
         results[count_name(method)] = (oids, [float(len(row)) for row in found.rows])
         written = ctx.apply_results(results, label="Fragments")
     if panel:
-        open_panel(ctx, oids, found, method, activity)
+        shown = make_panel(ctx, oids, found, method, activity, recipe)
+        ctx.add_panel(shown, shown.title())
     message = (
         f"Fragmented {plural(found.fragmented(), 'compound')} into "
         f"{plural(len({f for row in found.rows for f in row}), 'distinct fragment')}"
@@ -209,10 +213,15 @@ def finish(
     return written
 
 
-def open_panel(
-    ctx: ToolContext, oids: np.ndarray, found: FragmentRows, method: str, activity: str
-) -> object:
-    """Show the distinct fragments of *found* in a panel."""
+def make_panel(
+    ctx: ToolContext,
+    oids: np.ndarray,
+    found: FragmentRows,
+    method: str,
+    activity: str,
+    recipe: dict | None = None,
+):
+    """A panel of the distinct fragments of *found*."""
     from chemsuite.plotting.data import numbers
 
     from .panel import FragmentPanel
@@ -224,6 +233,35 @@ def open_panel(
     )
     stats = fragment_stats(found, values)
     name = activity if values is not None else NO_ACTIVITY
-    panel = FragmentPanel(ctx, oids, stats, method, name)
-    ctx.add_panel(panel, panel.title())
-    return panel
+    return FragmentPanel(ctx, oids, stats, method, name, recipe)
+
+
+def restore(ctx: ToolContext, state: dict):
+    """Reopen a saved panel: fragment the rows it covered again."""
+    from chemsuite.tools.sar.common import RerunPanel, saved_rows
+
+    structure = state["structure"]
+    method = state.get("method", "brics")
+    activity = state.get("activity", NO_ACTIVITY)
+    oids = np.asarray(saved_rows(ctx, state, structure), dtype=np.int64)
+    min_size, plain = int(state.get("min_size", MIN_SIZE)), bool(state.get("plain", False))
+    recipe = {"structure": structure, "min_size": min_size, "plain": plain}
+    holder = RerunPanel("fragments", f"{method.upper()} Fragments", state)
+    ctx.add_panel(holder, holder.title())
+    cells = structure_cells(ctx, structure, oids)
+
+    def work(job):
+        return fragment_rows(
+            cells,
+            method,
+            min_size=min_size,
+            plain=plain,
+            progress=job.report,
+            cancel=job.cancel_token,
+        )
+
+    def done(found: FragmentRows) -> None:
+        holder.fill(make_panel(ctx, oids, found, method, activity, recipe))
+
+    holder.job = ctx.run("Finding fragments…", work, done)
+    return holder
