@@ -242,3 +242,9 @@ def test_a_network_of_many_small_parts_does_not_overlap() -> None:
         others = net.coords[labels != part]
         lo, hi = inside.min(axis=0), inside.max(axis=0)
         assert not ((others >= lo) & (others <= hi)).all(axis=1).any()
+
+
+def test_a_tmap_is_the_same_every_time() -> None:
+    fps = clustered(600, clusters=12)
+    first, second = tmap(fps, 5), tmap(fps, 5)
+    assert np.array_equal(first.coords, second.coords) and np.array_equal(first.a, second.a)

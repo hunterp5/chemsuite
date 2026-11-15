@@ -167,3 +167,19 @@ def test_a_filter_finds_the_graph_again(network, qtbot) -> None:
         timeout=60_000,
     )
     assert len(panel.renderer.data.oids) == 6  # D has no pIC50, H is 4
+
+
+def test_tmap_keeps_its_fingerprints(window, qtbot, monkeypatch) -> None:
+    import chemsuite.analysis.fingerprints as fingerprints
+
+    panel = open_plot(window, qtbot, "tmap")
+    calls = []
+    real = fingerprints.compute_fingerprints
+    monkeypatch.setattr(
+        fingerprints,
+        "compute_fingerprints",
+        lambda cells, *a, **kw: calls.append(len(cells)) or real(cells, *a, **kw),
+    )
+    panel.set_spec(neighbours=4)
+    qtbot.waitUntil(lambda: panel.renderer.data is not None, timeout=60_000)
+    assert calls == []  # the first build stored them

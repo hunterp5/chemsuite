@@ -112,7 +112,8 @@ class GraphFinder(Finder):
         def job(handle=None) -> Outcome:
             fps = compute(handle)
             if spec.kind == TMAP:
-                return Drawn(oids, tmap(fps, spec.neighbours, **_job_args(handle))), "", None
+                tree = tmap(fps, spec.neighbours, **_job_args(handle))
+                return Drawn(oids, tree), "", lambda: remember(fps)
             try:
                 a, b, s = similarity_edges(fps, spec.threshold, **_job_args(handle))
             except TooManyPairs as many:
