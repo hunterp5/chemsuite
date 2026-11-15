@@ -91,6 +91,18 @@ CC BY-SA 3.0 requires).
     templates had no site for 24 weak N–H acids (imides, hydantoins, acylated aminothiazoles,
     rhodanines); the full set finds 22 of them, and Novartis acids improve (1.15 → 1.08), so it
     is the bundled default. The full set costs about 21% more microstates.
+  - **20 epochs, 2026-11-15** (fold 0 alone, same data and settings; full templates; RMSE):
+    the shipped folds all peaked at their 10th epoch, so fold 0 was trained to 20. Validation
+    RMSE 0.742 → 0.699 (best at epoch 19).
+
+    | fold 0 | given, 2D only | given, 3 + 2D | enumerated, 3 + 2D | enumerated, 10 + 2D |
+    |---|---|---|---|---|
+    | 10 epochs (shipped) | 1.02 | 0.85 | 0.84 | 0.83 |
+    | 20 epochs | 0.96 | 0.84 | 0.81 | 0.80 |
+
+    One 20-epoch fold matches the five 10-epoch folds (0.82). Novartis acids 1.08 → 1.03,
+    SAMPL6 0.74 → 0.64, SAMPL8 0.78 → 0.72; SAMPL7 (20 molecules) 0.82 → 0.94. Folds 1–4 at
+    20 epochs: `~/bench/unipka/e20_rest.sh` (log `logs/e20_rest.log`), started 2026-11-15.
   - Errors by acid group (`novartis_acid`, SAMPL7): ring N–H acids (RMSE 1.66) and
     sulfonamides (SAMPL7 0.88 too acidic on average) are worst; the training set has about
     590 sulfonamide and 570 ring N–H transitions against 11,900 bases. More data in those

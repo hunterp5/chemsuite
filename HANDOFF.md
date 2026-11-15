@@ -205,10 +205,13 @@ other machine can pick it up. Update it at the end of a session that leaves work
   **2026-11-14, later:** enumerated evaluation done (results table in `docs/UNIPKA_PLAN.md`
   U2): the full Uni-pKa site templates are now bundled (failures 24 → 2 of 356; RMSE 0.82 with
   3 conformers × 5 folds, 0.84 with 1 fold; Uni-pKa's paper 0.83). pKaHub is aqueous (its
-  paper), now a CLAUDE.md rule. Ready, not started: `~/bench/unipka/e20_fold0.sh` (fold 0 at
-  20 epochs, same data; compare against shipped fold 0's "1 fold" rows after
-  `convert_weights.py`). Start it only when nothing else heavy runs (the PC hard-reset before).
-  Then: pick the app's conformer/fold count (3 + 2D, 1 fold looks right), U4.
+  paper), now a CLAUDE.md rule.
+  **2026-11-15:** fold 0 at 20 epochs (`e20_fold0.sh`, 2.1 h) beat the shipped fold 0: 0.81
+  against 0.84 (enumerated, 3 conformers + 2D), as good as the five 10-epoch folds (results in
+  `docs/UNIPKA_PLAN.md` U2; archives `samples/unipka/weights/e20_f0.npz`, `s10_f0.npz`).
+  Folds 1–4 at 20 epochs are training (`~/bench/unipka/e20_rest.sh`, log `logs/e20_rest.log`,
+  about 8.5 h; nothing else heavy meanwhile). Then: `convert_weights.py e20 …` to all five
+  folds, evaluate, pick the app's conformer/fold count, U4.
 - **CONFORGE conformers** (§7.0b, plan approved 2026-11-14): the default Generator in Generate
   Conformers since 2026-11-15 (`conformers/conforge.py`); `cdpkit` is a base dependency with
   platform markers (no wheel on Windows 3.11/3.13 or Intel Macs: ETKDG there).
