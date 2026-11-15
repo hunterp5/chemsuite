@@ -232,34 +232,34 @@ modified.
 
 ## 7. Proposed order
 
-### 7.0 High priority: graceful exit (added 2026-11-11)
+### 7.0 Done on Windows: graceful exit (added 2026-11-11, built 2026-11-15)
 
-Closing the main window and accepting the exit prompt must shut chemsuite down completely: no
-windows left open and no Python process, worker process or external program still running.
-This must hold whatever is in flight: a job in the queue or quick lane, a file loading or
-being exported or saved, structures being parsed, a download, or an external tool (the warm
-AiZynthFinder worker, and later Vina, Gnina, OpenMM).
+Closing the last document window (or Quit) shuts chemsuite down completely, whatever is in
+flight:
+- **The prompt** counts every job the user started, from every window, and names the
+  background tasks that stop with them; background work alone stops without asking
+  (`app/shell/quitting.py`). A window closed while others stay open asks only about its own
+  document.
+- **Windows:** once the last document window has closed, every other top-level window (Log,
+  Sketcher, tool windows, error reports) closes and the event loop ends.
+- **Work:** `JobRunner.shutdown` cancels every job, gives the threads 3 s in all, then ends the
+  process pools' workers whatever they are doing (`parallel.stop_pool`: terminate, then kill)
+  and every external program.
+- **External programs** (Vina, the AiZynthFinder worker, the keep-awake helper) start through
+  `core/jobs/children.start`: a process group of their own on macOS and Linux (SIGTERM, then
+  SIGKILL), a kill-on-close Job Object on Windows, so whatever they start ends with them, even
+  if chemsuite crashes. Programs chemsuite opens for the user (a browser, a file viewer) are
+  left alone.
+- **The last resort:** if a job's thread is stuck in a call that never looks at its cancel
+  token, `main.run_app` logs a forced exit, writes the audit `exit` record and ends the process
+  without waiting (saves are atomic, so nothing is half-written).
 
-What happens today: the window cancels its jobs and closes. Then, on `aboutToQuit`,
-`JobRunner.shutdown` cancels everything, waits up to 5 s for each thread pool, and shuts down
-the process pool without waiting, and the retro worker is closed.
-
-Gaps to close:
-- work that cannot see its cancel token (a long RDKit call, a C extension) keeps its thread
-  alive past the 5 s wait, and Python then waits for it at exit;
-- the process pool's workers are not waited for or killed, so a busy one can outlive the app;
-- external programs must be terminated, then killed after a grace period, including their
-  child processes;
-- floating panels (the Protein Viewer), dialogs and error reports must close with the last
-  document window;
-- a save or export cut short must leave the old file intact (write to a temporary file, then
-  rename), never a half-written one;
-- the "jobs still running" prompt must count every job that would be stopped, background
-  work included.
-
-Done when a test starts each kind of work, quits mid-way, and finds no child processes, no
-live threads and no open windows; and when a by-hand check on macOS, Windows and Linux shows
-the process gone from Activity Monitor, Task Manager or `ps`.
+`tests/app/shell/test_exit.py` starts a stuck job, a busy pool worker, an external program with
+a child of its own, background work, the Log and a tool window, closes the last window and
+checks that the app and every process it started are gone. It passes on Windows. Still to do:
+run `tests/core/test_children.py`, `tests/core/test_parallel.py` and
+`tests/app/shell/test_exit.py` on macOS (the process-group path has not run yet), and by hand
+dock several ligands, quit mid-run, and check Activity Monitor, Task Manager or `ps` on each OS.
 
 ### 7.0b High priority: bioactive-quality conformers (added 2026-11-11)
 

@@ -66,6 +66,7 @@ from chemsuite.io.load import (
     save_table,
 )
 
+from ..shell import quitting
 from ..shell.commands import apply_shortcuts, register
 from ..shell.error_report import show_log_folder
 from ..shell.job_host import JobHost
@@ -1530,6 +1531,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(message + (f"; {bad:,} invalid" if bad else ""), 6000)
 
         job = self._runner.submit("Reading structures…", work)
+        job.background = True  # made ahead for the table: quitting stops it without asking
         job.partial.connect(apply)
         job.finished.connect(finished)
         job.failed.connect(
@@ -1542,18 +1544,10 @@ class MainWindow(QMainWindow):
 
     # -- closing -----------------------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:
-        jobs = [job for job in self._runner.jobs_of(self) if not job.background]
-        if jobs:
-            answer = QMessageBox.question(
-                self,
-                "chemsuite",
-                f"{len(jobs)} job(s) for this document are still running or queued.\n\n"
-                "Cancel them and close?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                event.ignore()
-                return
+        question = quitting.jobs_question(self._runner, self, last=_windows == [self])
+        if question and not quitting.confirm(self, question):
+            event.ignore()
+            return
         if self.workspace.is_modified and not self.workspace.is_empty:
             answer = QMessageBox.question(
                 self,
@@ -1576,10 +1570,13 @@ class MainWindow(QMainWindow):
             _windows.remove(self)
             with contextlib.suppress(RuntimeError, TypeError):
                 settings_hub().changed.disconnect(self._apply_settings)
+            quitting.window_closed(lambda: not _windows)
         event.accept()
 
     def _quit(self) -> None:
-        for window in list(_windows):
-            if not window.close():
-                return
-        QApplication.quit()
+        if not quitting.confirm_quit(self, self._runner):
+            return
+        closed = all(window.close() for window in list(_windows))  # stops at a refusal
+        quitting.quit_finished()
+        if closed:
+            QApplication.quit()

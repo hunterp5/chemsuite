@@ -43,9 +43,9 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, QThread, QThreadPool, Signal, Slot
 
-from chemsuite.core.jobs import Cancelled, CancelToken
+from chemsuite.core.jobs import Cancelled, CancelToken, children
 from chemsuite.core.jobs.awake import KeepAwake
-from chemsuite.core.jobs.parallel import default_workers, process_pool
+from chemsuite.core.jobs.parallel import default_workers, process_pool, stop_pool
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +109,9 @@ class Job(QObject):
         #: what a cancelled job finished before stopping (see ``Cancelled.partial``), or None
         self.partial_result: Any = None
         self.cancel_token = CancelToken()
+        #: set on the worker thread when the work function returns (the state follows later,
+        #: on the GUI thread): what shutdown reads to name a job that is really stuck
+        self.returned = False
         self._lock = threading.Lock()
         self._progress = (0, 0)
         self._worker_started.connect(self._on_started)
@@ -235,6 +238,7 @@ class _Runnable(QRunnable):
             except BaseException as err:  # noqa: BLE001 - top-level job handler; logged on end
                 job.error_text = "".join(traceback.format_exception(err))
                 outcome, value = FAILED, err
+        job.returned = True
         job._worker_end.emit(outcome, value, carried)
 
 
@@ -396,13 +400,28 @@ class JobRunner(QObject):
             if owner is None or job.owner is owner:
                 job.cancel()
 
-    def shutdown(self, timeout_ms: int = 5000) -> None:
+    def shutdown(self, timeout_ms: int = 3000) -> bool:
+        """Stop all work on the way out: cancel every job, give the threads *timeout_ms* in all
+        to see it, then end the worker processes and external programs whatever they are doing.
+
+        Returns whether everything stopped. False means a job's thread is stuck in a call that
+        never looks at its cancel token; the app then ends without waiting for it (see
+        ``main.run_app``).
+        """
         self.cancel_all()
-        self._threads.waitForDone(timeout_ms)
-        self._heavy.waitForDone(timeout_ms)
-        if self._awake is not None:
-            self._awake.hold(False)
+        deadline = time.monotonic() + timeout_ms / 1000
+        stopped = True
+        for threads in (self._threads, self._heavy):
+            left = max(0, int((deadline - time.monotonic()) * 1000))
+            stopped = threads.waitForDone(left) and stopped
+        if not stopped:
+            stuck = [j.name for j in self.active_jobs if j.state == RUNNING and not j.returned]
+            log.warning("still running at exit: %s", "; ".join(stuck) or "a job")
         for pool in (self._pool, self._wide):
             if pool is not None:
-                pool.shutdown(wait=False, cancel_futures=True)
+                stopped = stop_pool(pool) and stopped
         self._pool = self._wide = None
+        children.stop_all()
+        if self._awake is not None:
+            self._awake.hold(False)
+        return stopped

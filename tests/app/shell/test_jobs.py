@@ -17,10 +17,11 @@
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
-from chemsuite.app.shell.jobs import JobRunner
+from chemsuite.app.shell.jobs import RUNNING, JobRunner
 from chemsuite.core.jobs import check
 
 
@@ -178,3 +179,24 @@ def test_keep_awake_follows_the_queue(qtbot, qapp, monkeypatch) -> None:
         assert calls == [True, False]
     finally:
         runner.shutdown()
+
+
+def test_shutdown_is_clean_when_jobs_see_their_cancel(qtbot) -> None:
+    runner = JobRunner()
+    work, _release = _gate()
+    job = runner.submit("waits", work)
+    qtbot.waitUntil(lambda: job.state == RUNNING, timeout=5000)
+    assert runner.shutdown() is True
+
+
+def test_shutdown_does_not_wait_for_a_job_that_ignores_cancel(qtbot) -> None:
+    runner = JobRunner()
+    release = threading.Event()
+    job = runner.submit("deaf", lambda job: release.wait(30))
+    qtbot.waitUntil(lambda: job.state == RUNNING, timeout=5000)
+    start = time.monotonic()
+    try:
+        assert runner.shutdown(timeout_ms=300) is False
+        assert time.monotonic() - start < 3
+    finally:
+        release.set()

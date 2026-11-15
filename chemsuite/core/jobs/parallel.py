@@ -23,6 +23,7 @@ import multiprocessing.connection
 import os
 import sys
 import threading
+import time
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import Executor, Future, ProcessPoolExecutor, wait
@@ -131,6 +132,31 @@ def exit_with_parent() -> None:
         os._exit(0)
 
     threading.Thread(target=watch, name="exit-with-parent", daemon=True).start()
+
+
+def stop_pool(pool: ProcessPoolExecutor, grace: float = 2.0) -> bool:
+    """Shut *pool* down now, ending workers that are still busy (on the way out).
+
+    ``shutdown(wait=False)`` alone leaves a busy worker running its task, and the interpreter
+    then waits for it at exit. Each worker gets *grace* seconds after a terminate request
+    before it is killed. Returns whether every worker and the pool's own thread ended.
+    """
+    workers = list((pool._processes or {}).values())
+    manager = pool._executor_manager_thread
+    pool.shutdown(wait=False, cancel_futures=True)
+    for worker in workers:
+        if worker.is_alive():
+            worker.terminate()
+    deadline = time.monotonic() + grace
+    for worker in workers:
+        worker.join(max(0.0, deadline - time.monotonic()))
+        if worker.is_alive():
+            worker.kill()
+            worker.join(grace)
+    if manager is not None:
+        manager.join(grace)
+    stuck = any(w.is_alive() for w in workers) or (manager is not None and manager.is_alive())
+    return not stuck
 
 
 def ordered_map(

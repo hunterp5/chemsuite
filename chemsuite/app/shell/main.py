@@ -20,10 +20,19 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
+import os
 import platform
 import sys
+from collections.abc import Iterable
 from importlib import metadata
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QApplication
+
+    from ..document.main_window import MainWindow
+    from .jobs import JobRunner
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,23 +77,39 @@ def main(argv: list[str] | None = None) -> int:
     graphics.check()  # 3D views and plots read graphics.problem()
     logbook.audit("start", version=_version())
     runner = JobRunner(app, keep_awake=True)
-    images = StructureImages()
-    app.aboutToQuit.connect(runner.shutdown)
-    app.aboutToQuit.connect(_close_external_workers)
-
-    window = MainWindow(runner, images)
-    window.show()
-    for arg in argv[1:]:
-        if not arg.startswith("-"):
-            window.open_path(Path(arg))
-    return app.exec()
+    window = MainWindow(runner, StructureImages())
+    paths = [Path(arg) for arg in argv[1:] if not arg.startswith("-")]
+    return run_app(app, runner, window, paths)
 
 
-def _close_external_workers() -> None:
-    """Stop the long-lived helper processes (the warm AiZynthFinder worker) on the way out."""
+def run_app(
+    app: QApplication, runner: JobRunner, window: MainWindow, paths: Iterable[Path] = ()
+) -> int:
+    """Show *window*, run until the last document window closes, then stop everything.
+
+    Everything ends with the app: jobs are cancelled, worker processes and external programs
+    (Vina, the AiZynthFinder worker) are ended whatever they are doing. If a job's thread is
+    stuck in a call that never looks at its cancel token, the process ends without waiting for
+    it: documents and settings are always written atomically, so nothing is half-saved.
+    """
+    from chemsuite.core import logbook
     from chemsuite.retro.runner import close_workers
 
-    close_workers()
+    from . import quitting
+
+    quitting.state.with_last_window = True
+    window.show()
+    for path in paths:
+        window.open_path(path)
+    code = app.exec()
+    close_workers()  # asks the warm AiZynthFinder worker to quit before it is ended
+    clean = runner.shutdown()
+    logbook.audit("exit", code=code, forced=not clean)
+    if clean:
+        return code
+    logging.getLogger("chemsuite").warning("forced exit: a job did not stop in time")
+    logging.shutdown()
+    os._exit(code)
 
 
 def _version() -> str:

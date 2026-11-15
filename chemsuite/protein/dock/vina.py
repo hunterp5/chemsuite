@@ -41,7 +41,7 @@ from pathlib import Path
 
 from rdkit import Chem
 
-from chemsuite.core.jobs import CancelToken
+from chemsuite.core.jobs import CancelToken, children
 
 from . import pdbqt
 from .box import Box
@@ -222,48 +222,31 @@ def _run(
     from chemsuite.core.jobs import Cancelled
 
     try:
-        process = subprocess.Popen(
+        process = children.start(
             command,
             cwd=None if cwd is None else str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            **_no_window_kwargs(),
         )
     except OSError as err:
         raise VinaError(f"Could not start AutoDock Vina: {err}") from err
     start = time.monotonic()
-    while True:
-        try:
-            stdout, stderr = process.communicate(timeout=0.2)
-            break
-        except subprocess.TimeoutExpired:
-            if cancel is not None and cancel.cancelled:
-                _kill(process)
-                raise Cancelled from None
-            if time.monotonic() - start > TIMEOUT_S:
-                _kill(process)
-                raise VinaError(
-                    f"AutoDock Vina took longer than {TIMEOUT_S // 60} minutes on one ligand."
-                ) from None
-    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
-
-
-def _no_window_kwargs() -> dict:
-    """Keep Windows from flashing a console window for each ligand."""
-    if sys.platform != "win32":
-        return {}
-    return {"creationflags": subprocess.CREATE_NO_WINDOW}
-
-
-def _kill(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
     try:
-        process.kill()
-        process.wait(timeout=5)
-    except (OSError, subprocess.TimeoutExpired):
-        log.warning("could not stop AutoDock Vina (pid %s)", process.pid)
+        while True:
+            try:
+                stdout, stderr = process.communicate(timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                if cancel is not None and cancel.cancelled:
+                    raise Cancelled from None
+                if time.monotonic() - start > TIMEOUT_S:
+                    raise VinaError(
+                        f"AutoDock Vina took longer than {TIMEOUT_S // 60} minutes on one ligand."
+                    ) from None
+    finally:
+        children.stop(process)  # on cancel or timeout; done, it only forgets the program
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def _message(done: subprocess.CompletedProcess[str]) -> str:

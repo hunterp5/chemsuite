@@ -34,7 +34,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from chemsuite.core.jobs import Cancelled, CancelToken, Progress, check
+from chemsuite.core.jobs import Cancelled, CancelToken, Progress, check, children
 
 from . import worker as worker_script
 from .config import SearchOptions
@@ -93,7 +93,7 @@ class Worker:
         self.close()
         command = worker_script.command(self.python, self.config)
         try:
-            self._process = subprocess.Popen(
+            self._process = children.start(
                 command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -104,7 +104,6 @@ class Worker:
                 bufsize=1,
                 env=child_environment(self.python),
                 cwd=str(Path(self.config).parent if Path(self.config).parent.is_dir() else "."),
-                **_no_window_kwargs(),
             )
         except OSError as err:
             raise RetroError(f"Could not start {self.python}: {err}") from err
@@ -130,7 +129,7 @@ class Worker:
         except (OSError, ValueError, subprocess.TimeoutExpired):
             pass
         finally:
-            _kill(process)
+            children.stop(process)
 
     # -- requests -----------------------------------------------------------------------------
     def request(
@@ -393,22 +392,6 @@ def _conda_root(python: str) -> Path | None:
         if (parent / "conda-meta").is_dir() or (parent / "pyvenv.cfg").is_file():
             return parent
     return None
-
-
-def _no_window_kwargs() -> dict:
-    """Keep Windows from flashing a console window for the worker."""
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    return {"creationflags": flags} if flags else {}
-
-
-def _kill(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    try:
-        process.kill()
-        process.wait(timeout=5)
-    except (OSError, subprocess.TimeoutExpired):
-        log.warning("could not stop the AiZynthFinder worker (pid %s)", process.pid)
 
 
 def _message(reply: dict) -> str:

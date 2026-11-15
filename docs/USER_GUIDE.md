@@ -960,7 +960,14 @@ descriptors, conformers, clustering, maps and searches.
   The tools in the right-hand column have no meaningful result until the whole run is complete.
 - **Safety.**
   - Closing a document cancels its queued jobs and asks about running ones.
-  - Quitting with jobs running asks first.
+  - Quitting (or closing the last document window) asks first when jobs you started are
+    running or queued, in any window, and says how many background tasks (pictures, views
+    made ahead, structures being read) stop with them. Background work alone stops without
+    asking.
+  - When the last document window closes, everything closes with it: the Log, Sketcher and
+    Protein Viewer windows, the worker processes and external programs such as AutoDock
+    Vina, together with anything they started. Nothing keeps running after chemsuite is
+    gone, and a save that was cut short leaves the old file as it was.
   - Results from a job are never written into a different document.
 - **Long runs.**
   - The computer is kept awake while jobs run.

@@ -19,7 +19,6 @@ Pool workers: one numeric thread, below-normal priority, gone when the app is.""
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -28,7 +27,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from chemsuite.core.jobs import Cancelled, CancelToken
-from chemsuite.core.jobs.parallel import THREAD_VARS, ordered_map, process_pool
+from chemsuite.core.jobs.parallel import THREAD_VARS, ordered_map, process_pool, stop_pool
+from tests.processes import alive, gone, kill
 
 
 def slow_square(x: int) -> int:
@@ -85,17 +85,6 @@ def test_pool_workers_use_one_thread_at_lower_priority() -> None:
         assert state["nice"] > os.getpriority(os.PRIO_PROCESS, 0)
 
 
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)  # signal 0: existence check only
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="signal-0 liveness check is POSIX")
 def test_pool_workers_exit_when_the_app_dies(tmp_path) -> None:
     """A crashed or killed app (no shutdown) does not leave its workers behind."""
     script = (
@@ -111,12 +100,9 @@ def test_pool_workers_exit_when_the_app_dies(tmp_path) -> None:
             [sys.executable, "-c", script], stdout=sink, stdin=subprocess.DEVNULL, timeout=120
         )
     worker = int(out.read_text().strip())
-    deadline = time.monotonic() + 10
-    while _alive(worker) and time.monotonic() < deadline:
-        time.sleep(0.05)
-    lingering = _alive(worker)
+    lingering = not gone(worker)
     if lingering:
-        os.kill(worker, signal.SIGKILL)  # do not leave it behind when the test fails
+        kill(worker)  # do not leave it behind when the test fails
     assert not lingering
 
 
@@ -136,3 +122,20 @@ def test_progress_counts_items_as_they_finish_in_any_order() -> None:
     inline: list[float] = []
     assert list(ordered_map(_nap, [0.0, 0.0], finished=inline.append)) == [0.0, 0.0]
     assert inline == [0.0, 0.0]
+
+
+def test_stop_pool_ends_a_busy_worker() -> None:
+    """Shutting down on the way out does not wait for a worker stuck in a long task."""
+    pool = process_pool(1)
+    worker = pool.submit(os.getpid).result(timeout=60)
+    busy = pool.submit(time.sleep, 600)
+    time.sleep(0.2)
+    start = time.monotonic()
+    try:
+        assert stop_pool(pool, grace=1.0)
+        assert time.monotonic() - start < 5
+        assert gone(worker, within=2)
+        assert busy.done()
+    finally:
+        if alive(worker):
+            kill(worker)

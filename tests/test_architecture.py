@@ -154,7 +154,7 @@ def test_tools_use_the_table_through_the_context() -> None:
 #: Whole-package counts of patterns MolManager drowned in (it had ~2,000 getattr/hasattr
 #: fallbacks and 1,088 blind excepts). Each use should be rare and deliberate.
 BUDGETS = {
-    r"\b(?:getattr|hasattr)\(": 55,
+    r"\b(?:getattr|hasattr)\(": 54,
     r"except\s+(?:Exception|BaseException)\b": 16,
     r"#\s*type:\s*ignore": 29,
 }
@@ -188,3 +188,17 @@ def test_files_stay_within_their_line_budgets() -> None:
     lines = {name: text.count("\n") for name, text in _sources().items()}
     over = _over(lines, LONG_FILES, default=MAX_LINES)
     assert not over, "split these files (see LONG_FILES):\n" + "\n".join(over)
+
+
+#: The only modules that start a program with ``subprocess.Popen`` themselves: the registry
+#: every other external program goes through, and the desktop notifier, whose short-lived
+#: helper hands the message to the system and must outlive nothing.
+POPEN_MODULES = {"chemsuite/core/jobs/children.py", "chemsuite/app/shell/notify.py"}
+
+
+def test_external_programs_start_through_the_registry() -> None:
+    """A program started with ``core.jobs.children.start`` ends when chemsuite quits."""
+    found = set(_count(r"\bPopen\(")) - POPEN_MODULES
+    assert not found, "start these programs with core.jobs.children.start:\n" + "\n".join(
+        sorted(found)
+    )

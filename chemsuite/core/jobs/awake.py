@@ -28,6 +28,8 @@ import shutil
 import subprocess
 import sys
 
+from . import children
+
 log = logging.getLogger(__name__)
 
 _ES_CONTINUOUS = 0x80000000
@@ -62,7 +64,7 @@ class KeepAwake:
             return
         command = _command()
         if command:
-            self._process = subprocess.Popen(
+            self._process = children.start(
                 command,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
@@ -76,12 +78,8 @@ class KeepAwake:
             ctypes.windll.kernel32.SetThreadExecutionState(_ES_CONTINUOUS)
             return
         process, self._process = self._process, None
-        if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
+        if process is not None:
+            children.stop(process)
 
 
 def _command() -> list[str] | None:
