@@ -712,7 +712,8 @@ structure.
   - **Select All (Ctrl+A)**, **Invert Selection (Ctrl+I)**, **Clear Selection
     (Ctrl+Shift+A)**.
 - The selection is shared by the table, the plots and the tools:
-  - selecting points in a plot selects the rows;
+  - selecting points in a plot selects the rows, and the table scrolls to the first new one
+    unless one of them is already in view;
   - selecting rows highlights their points.
 - Many tools can run on all rows, the shown rows or just the selected rows.
 

@@ -76,6 +76,7 @@ from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table.columns import REACTION, STRUCTURE, ParsedColumn, ReactionColumn
 
 from .frozen_columns import RowHeader, quiet_column_header
+from .snap import follow_selection, rows_for
 from .structure_clipboard import structure_text_from_mime
 from .table_model import KIND_ROLE, STATUS_ROLE, STRUCTURE_ROLE, TableModel
 
@@ -378,7 +379,7 @@ class TableView(QTableView):
         model.headerDataChanged.connect(self._on_header_data_changed)
         self.selectionModel().selectionChanged.connect(self._on_view_selection)
         self.selectionModel().selectionChanged.connect(self._highlight_header)
-        self._unsubscribe = selection.subscribe(self._on_store_selection)
+        self._unsubscribe = follow_selection(self, selection, self._on_store_selection)
         self._fit_layout()
 
     def apply_appearance(self, appearance) -> None:
@@ -660,13 +661,7 @@ class TableView(QTableView):
 
     def _on_store_selection(self, oids: frozenset[int], origin: str) -> None:
         if origin != self._origin:
-            self._apply_rows(self._rows_for(oids))
-
-    def _rows_for(self, oids: frozenset[int]) -> np.ndarray:
-        if not oids:
-            return np.empty(0, dtype=np.int64)
-        rows = self.table_model.rows_of_oids(np.fromiter(oids, dtype=np.int64, count=len(oids)))
-        return np.sort(rows[rows >= 0])
+            self._apply_rows(rows_for(self.table_model, oids))
 
     def _apply_rows(self, rows: np.ndarray) -> None:
         model = self.table_model
@@ -696,7 +691,7 @@ class TableView(QTableView):
             return  # a column selection survives re-sorting
         if self._restore_cells():
             return
-        self._apply_rows(self._rows_for(self._selection.oids))
+        self._apply_rows(rows_for(self.table_model, self._selection.oids))
 
     def _remember_cells(self, *_args) -> None:
         """Before rows move (sorting, filtering): note a selection of cells (not whole rows) by
