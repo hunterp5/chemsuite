@@ -1640,11 +1640,14 @@ or not, with the rows you chose.
   hydrophobic contacts (grey), halogen bonds (cyan), metal contacts (purple) and water bridges
   (light blue). Point at an atom to read its interactions in the status line.
 - **Hydrogen bonds use the hydrogen where the structure has one** — a protein you have
-  prepared, an NMR model, a ligand drawn with hydrogens: the H···A distance (up to 2.5 Å) and
-  the D–H···A angle (at least 100°) decide, and the dashed line starts at the hydrogen, which
-  is where the bond is. A residue that carries hydrogens and has none on a polar atom does not
-  donate there, so a prepared His donates from the nitrogen its tautomer protonated and not
-  from the other. Structures from the PDB rarely carry hydrogens; without them the donor and
+  prepared, an NMR model, a ligand drawn with hydrogens: the H···A distance (up to 2.5 Å, after
+  Baker & Hubbard 1984) and the D–H···A angle (at least 100°, as PLIP) decide, and the dashed
+  line starts at the hydrogen, which is where the bond is. A hydroxyl, thiol or ammonium
+  (Ser, Thr, Tyr, Cys, Lys, a ligand's OH) is the exception: its hydrogen turns freely about
+  one bond and was placed rather than seen, so when it points elsewhere the bond is judged on
+  the heavy atoms as below, and drawn from them. A residue that carries hydrogens and has none
+  on a polar atom does not donate there, so a prepared His donates from the nitrogen its
+  tautomer protonated and not from the other. Structures from the PDB rarely carry hydrogens; without them the donor and
   acceptor heavy atoms are judged on their distance (2.5–3.5 Å) and on whether a hydrogen or
   lone pair could point the right way, and the line runs heavy atom to heavy atom. Either way
   the distance reported is the donor–acceptor one.
@@ -1745,7 +1748,9 @@ in the **Inspect** panel beside the structure, for you to go through first.
   Each line gives the state chosen and how much worse the next best would be. Double-click the
   state to choose another: each state is listed with its cost against the best, so you can see
   how close the call was. A choice made by hand is in bold. Long groups (rotors, waters) come
-  folded.
+  folded. A His can always be made HIP; the other protonation states (ASH, GLH, LYN, CYM, TYM,
+  a neutral N-terminus) are choices only for the groups that titrate, so set **Titration** to
+  **Pocket** or **All** to choose them.
 - **Alternate locations** has a line for each residue the file models more than once, with
   the location kept (the highest occupancy, as Prepare… keeps); choose another letter to keep
   that one instead. Each letter is listed with its mean occupancy. With **Repair** off the

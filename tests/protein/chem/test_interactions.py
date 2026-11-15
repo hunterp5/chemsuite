@@ -208,3 +208,21 @@ def test_a_protonated_residue_donates_only_where_it_has_a_hydrogen(nmr) -> None:
     ]
     for i in donated:  # each one is the acceptor's partner, never the donor
         assert not hydrogens.on(i)
+
+
+def test_a_hydroxyl_whose_hydrogen_points_elsewhere_still_donates(nmr) -> None:
+    """A hydroxyl's hydrogen spins about its C–O bond and was placed, not seen: Thr 7's points
+    away from Lys 11's carbonyl, yet the heavy atoms say the bond is there, and it is kept,
+    drawn from the oxygen."""
+    hydrogens = it._Hydrogens(nmr, nmr.active())
+    og1 = next(i for i in range(nmr.n_atoms) if nmr.atom_label(i) == "A/THR 7/OG1")
+    o = next(i for i in range(nmr.n_atoms) if nmr.atom_label(i) == "A/LYS 11/O")
+    assert hydrogens.on(og1) and it._donor_hydrogen(nmr.xyz(0), hydrogens, og1, o) is None
+    found = it.find(nmr, np.arange(nmr.n_atoms) == og1)
+    k = next(k for k in np.flatnonzero(found.kind == it.HBOND).tolist() if found.b[k] == o)
+    assert np.allclose(found.start[k], nmr.xyz(0)[og1])
+    # a backbone N–H is not free to turn: with no hydrogen pointing, it does not donate
+    neighbours = it._heavy_neighbours(nmr)
+    n = next(i for i in range(nmr.n_atoms) if nmr.atom_label(i) == "A/LYS 11/N")
+    assert not it._free_rotor(nmr, neighbours, hydrogens, n)
+    assert it._free_rotor(nmr, neighbours, hydrogens, og1)

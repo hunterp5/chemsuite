@@ -25,10 +25,13 @@ donors and acceptors.
 A hydrogen bond needs the donor–acceptor distance and, at both ends, the partner where a
 hydrogen or lone pair can point (:func:`_points_at`). **Where the donor carries its hydrogen**
 — a prepared structure (Protein ▸ Prepare…), an NMR model, a ligand drawn with hydrogens — the
-real geometry is used instead of that proxy: the H···A distance and the D–H···A angle
-(:func:`_donor_hydrogen`), and the dashed line is drawn from the hydrogen, which is where the
-bond is. A residue that carries hydrogens and still has none on a polar atom is not a donor
-there, so a prepared His donates from the nitrogen its tautomer protonated and not the other.
+real geometry is used instead of that proxy: the H···A distance (at most 2.5 Å, Baker &
+Hubbard 1984) and the D–H···A angle (at least 100°, PLIP's) (:func:`_donor_hydrogen`), and the
+dashed line is drawn from the hydrogen, which is where the bond is. A hydroxyl, thiol or
+ammonium is the exception (:func:`_free_rotor`): its hydrogen spins about one bond and was
+placed, not seen, so when none points at the acceptor the heavy atoms decide as before. A
+residue that carries hydrogens and still has none on a polar atom is not a donor there, so a
+prepared His donates from the nitrogen its tautomer protonated and not the other.
 One bond to a water is shown as part of a water bridge, one between salt-bridge atoms as the
 salt bridge. Cut-offs follow PLIP (Salentin et al. 2015). Hydrophobic contacts and charged
 pairs keep only the closest pair per residue pair, so a pocket does not fill with lines.
@@ -79,7 +82,8 @@ COLOURS = {
 HBOND_MIN, HBOND_MAX = 2.5, 3.5
 HBOND_NEIGHBOUR_ANGLE = 90.0
 HBOND_BISECTOR_ANGLE = 50.0
-#: with the donor's hydrogen present: H···A at most this, and D–H···A at least this (PLIP)
+#: with the donor's hydrogen present: H···A at most this (Baker & Hubbard 1984), and D–H···A
+#: at least this (PLIP's donor angle, Salentin et al. 2015)
 HBOND_H_MAX = 2.5
 HBOND_DHA_MIN = 100.0
 SALT_BRIDGE_MAX = 4.0
@@ -440,6 +444,16 @@ def _donor_hydrogen(xyz, hydrogens: _Hydrogens, donor: int, acceptor: int) -> in
     return best
 
 
+def _free_rotor(s: Structure, neighbours, hydrogens: _Hydrogens, donor: int) -> bool:
+    """Whether *donor*'s hydrogens turn freely about its one bond: a hydroxyl or thiol (O or
+    S with one heavy neighbour), or an ammonium (N with one heavy neighbour and three H). Their
+    hydrogens are placed by a guess or a docking program, not seen, so they decide nothing."""
+    if len(neighbours[donor]) != 1:
+        return False
+    element = int(s.element[donor])
+    return element in (8, 16) or (element == 7 and len(hydrogens.on(donor)) >= 3)
+
+
 def _hbonds(found: _Found, q: Features, p: Features, neighbours, bonded, hydrogens) -> None:
     xyz = found.xyz
     seen = {(a, b) for kind, a, b, *_rest in found.rows if kind == SALT_BRIDGE}
@@ -454,14 +468,17 @@ def _hbonds(found: _Found, q: Features, p: Features, neighbours, bonded, hydroge
                 continue  # no lone pair to offer
             if hydrogens.on(donor):
                 h = _donor_hydrogen(xyz, hydrogens, donor, acceptor)
-                if h is None:
+                if h is not None:
+                    # the line starts where the bond does: at the hydrogen
+                    start, end = (xyz[h], xyz[j]) if query_donates else (xyz[i], xyz[h])
+                    seen.add((i, j))
+                    found.add(HBOND, i, j, start, end, distance=d)
                     continue
-                # the line starts where the bond does: at the hydrogen
-                start, end = (xyz[h], xyz[j]) if query_donates else (xyz[i], xyz[h])
-                seen.add((i, j))
-                found.add(HBOND, i, j, start, end, distance=d)
-                continue
-            if hydrogens.protonated(donor):
+                if not _free_rotor(found.s, neighbours, hydrogens, donor):
+                    continue
+                # a hydroxyl or an ammonium spins: where its hydrogen happens to sit is no
+                # reason against the bond, so the heavy atoms decide, as with no hydrogens
+            elif hydrogens.protonated(donor):
                 continue  # its residue has hydrogens and this atom none: not a donor here
             if _points_at(xyz, neighbours, donor, acceptor):
                 seen.add((i, j))
