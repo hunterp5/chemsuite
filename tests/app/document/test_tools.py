@@ -103,6 +103,7 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
     enumerate_ = submenu(menus["Chemistry"], "Enumerate")
     assert visible(enumerate_) == [
         "Reaction Products…",
+        "Prepare Reagents…",  # before the tool that uses what it prepares
         "R-Groups on a Core…",
         "Recombine Fragments…",
     ]
