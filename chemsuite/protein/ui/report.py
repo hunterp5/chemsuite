@@ -27,13 +27,10 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QAction, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QHBoxLayout,
     QHeaderView,
-    QLabel,
-    QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -72,17 +69,15 @@ class PrepareReportPanel(ToolPanel):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.rows.itemSelectionChanged.connect(self._selected)
 
-        self.summary = QLabel()
-        copy = QPushButton("Copy Report")
-        copy.clicked.connect(self.copy_text)
-        footer = QHBoxLayout()
-        footer.addWidget(self.summary)
-        footer.addStretch(1)
-        footer.addWidget(copy)
+        self.rows.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+        copy = QAction("Copy Report", self.rows)
+        copy.setShortcut(QKeySequence.StandardKey.Copy)
+        copy.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        copy.triggered.connect(self.copy_text)
+        self.rows.addAction(copy)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(self.rows, 1)
-        layout.addLayout(footer)
         self.fill(report)
 
     # -- contents -----------------------------------------------------------------------------
@@ -97,13 +92,11 @@ class PrepareReportPanel(ToolPanel):
                 item.setForeground(0, Qt.GlobalColor.darkYellow)
                 item.setToolTip(0, "Worth checking: the next best choice was nearly as good")
             self.rows.addTopLevelItem(item)
-        charge = f"net charge {report.net_charge:+d}"
-        check = f" · {report.warnings} to check" if report.warnings else ""
-        self.summary.setText(f"pH {report.ph:g} · {charge}{check}")
         self.titleChanged.emit(self.title())
 
     def title(self) -> str:
-        return f"Prepare: {self.report.protein}"
+        report = self.report
+        return f"Prepare: {report.protein} · pH {report.ph:g} · net charge {report.net_charge:+d}"
 
     def copy_text(self) -> str:
         """The report as lines of text, on the clipboard."""

@@ -93,10 +93,14 @@ def test_the_proteins_tools_are_the_viewer_prepare_and_docking(window) -> None:
         "protein",
         tool.PREPARE_ID,
         tool.DOCK_ID,
+        tool.POSES_ID,
         tool.RESCORE_ID,
     ]
-    # Prepare reopens its report panel, so it is not in the Protein menu; docking is
+    # Prepare and Poses reopen their panels, so they are not in the Protein menu; docking is
     assert [t.id for t in tool.TOOLS if t.menu] == ["protein", tool.DOCK_ID, tool.RESCORE_ID]
+    from chemsuite.protein.ui.poses import PosesPanel
+
+    assert PosesPanel.tool_id == tool.POSES_ID
 
 
 def test_the_viewer_has_a_menu_of_its_own(window) -> None:
@@ -535,6 +539,17 @@ def test_the_workspace_is_saved_with_the_viewer_closed(opened, qtbot, tmp_path) 
     assert ToolContext(opened).find_panel("protein") is None
     again = tool.open_viewer(ToolContext(opened))
     assert set(again.session.named) == {"atp"} and again.background == "black"
+
+
+def test_a_closed_viewers_menus_stop_listening_to_the_session(opened, qtbot) -> None:
+    """The menu bar refills itself when the session changes, so that it stops when its window
+    closes: a deleted QMenu filled again raises, and the edit that provoked it is lost."""
+    ctx = ToolContext(opened)
+    panel = ctx.find_panel("protein")
+    panel.window().close()
+    qtbot.waitUntil(lambda: ctx.find_panel("protein") is None, timeout=5_000)
+    assert tool.remove_protein(ctx, "1ATP", tool.KEEP_ROWS)  # fires proteinsChanged
+    assert "1ATP" not in opened.workspace.table.assets
 
 
 def test_a_document_saves_its_workspace_back_unopened(opened, qtbot, tmp_path) -> None:

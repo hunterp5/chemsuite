@@ -104,6 +104,27 @@ def test_preparing_adds_hydrogens_in_one_undoable_step(opened, qtbot) -> None:
     assert hydrogens(opened) == 0 and list(table.assets) == ["1CRN"]
 
 
+def test_the_report_docks_in_the_viewers_window(opened, qtbot) -> None:
+    """A result worked out in the viewer shows there, not beside the table in another window."""
+    from chemsuite.app.document.panel_window import PanelWindow
+
+    viewer = ToolContext(opened).find_panel(tool.TOOL_ID)
+    assert isinstance(viewer.window(), PanelWindow)
+    panel = prepared(opened, qtbot)
+    assert panel.window() is viewer.window()
+    assert panel not in [dock.widget() for dock in opened.tool_panels.docks]
+    # and it is saved with the document, as a panel beside the table would be
+    assert REPORT_ID in [entry.get("tool") for entry in opened.panel_states()]
+
+
+def test_the_report_docks_beside_the_table_with_the_viewer_closed(opened, qtbot) -> None:
+    viewer = ToolContext(opened).find_panel(tool.TOOL_ID)
+    viewer.window().close()
+    qtbot.waitUntil(lambda: ToolContext(opened).find_panel(tool.TOOL_ID) is None, timeout=5_000)
+    panel = prepared(opened, qtbot)
+    assert panel.window() is opened  # never out of reach
+
+
 def test_the_report_lines_select_their_residue_in_the_workbench(opened, qtbot) -> None:
     panel = prepared(opened, qtbot)
     session = tool.protein_workspace(ToolContext(opened)).session()
@@ -124,8 +145,8 @@ def test_the_warned_lines_are_marked_and_counted(opened, qtbot) -> None:
     warned = [i for i, row in enumerate(panel.report.rows) if row.warn]
     for i in warned:
         assert panel.rows.topLevelItem(i).text(0) == "⚠"
-    assert f"net charge {panel.report.net_charge:+d}" in panel.summary.text()
-    assert ("to check" in panel.summary.text()) == bool(warned)
+    assert f"net charge {panel.report.net_charge:+d}" in panel.title()
+    assert f"pH {panel.report.ph:g}" in panel.title()
     assert panel.copy_text().startswith("Residue\tWhat was done")
 
 

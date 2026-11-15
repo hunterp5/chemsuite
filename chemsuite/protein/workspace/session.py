@@ -589,7 +589,7 @@ class WorkbenchSession:
             shown.show(~(site | waters | ligand | polymer), scenes.HIDDEN)
             shown.show(site, scenes.STICK)
             shown.show(waters, scenes.BALL_AND_STICK)
-            shown.show(ligand, scenes.BALL_AND_STICK)
+            shown.show(ligand, scenes.STICK)
         self._site = site
         shown.show_pocket(site if self.pocket_surface else None)
 
@@ -617,7 +617,7 @@ class WorkbenchSession:
             deferred=self.deferred,
         )
         display.show(~mine, scenes.HIDDEN)
-        display.show(mine, scenes.BALL_AND_STICK)
+        display.show(mine, scenes.STICK)
         display.show_cartoon(np.ones(both.n_atoms, bool), False)
         display.show_interactions(mine)
         named = {"focus": mine}

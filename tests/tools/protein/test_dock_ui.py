@@ -123,7 +123,11 @@ def test_the_box_comes_from_the_atoms_it_is_asked_for(opened) -> None:
     dialog.close()
 
 
-def test_every_pose_becomes_a_row_linked_to_its_protein(opened, qtbot, no_vina) -> None:
+def test_every_pose_is_kept_in_the_viewer_and_copied_to_a_row_on_request(
+    opened, qtbot, no_vina
+) -> None:
+    from chemsuite.protein.ui.poses import PosesPanel
+
     ctx = ToolContext(opened)
     dialog = dock_dialog.DockDialog(ctx)
     dialog.structure.setCurrentText("Ligand")
@@ -135,6 +139,14 @@ def test_every_pose_becomes_a_row_linked_to_its_protein(opened, qtbot, no_vina) 
     qtbot.waitUntil(lambda: not job.running, timeout=60_000)
     dialog.close()
     table = opened.workspace.table
+    panel = ctx.find_panel(PosesPanel.tool_id)
+    assert isinstance(panel, PosesPanel)
+    assert [pose.rank for pose in panel.run.poses] == [1, 2]
+    assert [pose.affinity for pose in panel.run.poses] == [-8.5, -7.25]
+    assert {pose.ligand for pose in panel.run.poses} == {"ethanol"}
+    assert dock.POSE_COLUMN not in table  # nothing written until asked for
+    panel.rows.selectAll()
+    assert len(panel.send_to_table()) == 2
     poses = [
         oid for oid in table.oids.tolist() if str(table.cell(dock.POSE_COLUMN, oid) or "") != ""
     ]
@@ -149,23 +161,37 @@ def test_every_pose_becomes_a_row_linked_to_its_protein(opened, qtbot, no_vina) 
     assert mol is not None and mol.GetNumConformers() == 1
 
 
-def test_rescoring_writes_one_pose_a_row(opened, qtbot, no_vina) -> None:
+def test_rescoring_keeps_one_pose_a_row_in_the_viewer(opened, qtbot, no_vina) -> None:
+    """A rescore is work done in the pocket, so its scores stay in the viewer's panel and
+    the table is left alone until they are asked for."""
+    from chemsuite.protein.ui.poses import PosesPanel
+
     ctx = ToolContext(opened)
     ctx.add_rows(
         {"Name": ["pose"], "Ligand": [Chem.MolToMolBlock(_mol())]},
         "Add pose",
         structures=("Ligand",),
     )
+    table = opened.workspace.table
+    before = len(table.oids)
     dialog = dock_dialog.RescoreDialog(ctx)
     assert dialog.problem() == ""
     job = dialog.run()
     qtbot.waitUntil(lambda: not job.running, timeout=60_000)
     dialog.close()
-    table = opened.workspace.table
+    panel = ctx.find_panel(PosesPanel.tool_id)
+    assert isinstance(panel, PosesPanel)
+    run_poses = panel.run
+    assert len(run_poses.poses) == 2  # the 2D row got a conformer, the pose taken as it stands
+    assert {pose.affinity for pose in run_poses.poses} == {-6.75}
+    assert dock.AFFINITY_COLUMN not in table and len(table.oids) == before
+    # Copy to Table is what puts them there
+    panel.rows.selectAll()
+    assert len(panel.send_to_table()) == 2
     scored = [
         oid for oid in table.oids.tolist() if str(table.cell(dock.AFFINITY_COLUMN, oid) or "") != ""
     ]
-    assert len(scored) == 2  # the 2D row got a conformer, the pose was taken as it stands
+    assert len(scored) == 2
     assert {float(table.cell(dock.AFFINITY_COLUMN, o)) for o in scored} == {-6.75}
 
 
@@ -177,14 +203,103 @@ def test_a_ligand_with_no_3d_gets_a_conformer() -> None:
     assert dock.with_coordinates(None) is None
 
 
-def test_the_pose_rows_of_a_run_name_their_source() -> None:
+def test_the_poses_of_a_run_name_their_source() -> None:
     mol = _mol()
     results = [
         dock_run.Docked(0, (Pose(mol, 1, -9.0, 0.0, 0.0),)),
         dock_run.Docked(1, error="Meeko could not prepare this ligand"),
     ]
-    rows = dock.pose_rows("1CRN", results, ["first", "second"])
+    run_poses = dock.docked_poses("1CRN", results, ["first", "second"])
+    assert run_poses.protein == "1CRN" and run_poses.failed == 1
+    assert [pose.ligand for pose in run_poses.poses] == ["first"]  # the failed one keeps none
+    assert run_poses.best == -9.0
+    assert "V2000" in run_poses.poses[0].molblock or "V3000" in run_poses.poses[0].molblock
+    rows = dock.pose_rows("1CRN", run_poses.poses)
     assert rows[PROTEIN_COLUMN] == ["1CRN"]
-    assert rows[dock.PARENT_COLUMN] == ["first"]  # the failed ligand writes no row
+    assert rows[dock.PARENT_COLUMN] == ["first"]
     assert rows[dock.AFFINITY_COLUMN] == ["-9.00"]
     assert "V2000" in rows[LIGAND_COLUMN][0] or "V3000" in rows[LIGAND_COLUMN][0]
+
+
+def _dock(window, qtbot):
+    """Dock the ligand row and return the Poses panel."""
+    from chemsuite.protein.ui.poses import PosesPanel
+
+    ctx = ToolContext(window)
+    dialog = dock_dialog.DockDialog(ctx)
+    dialog.structure.setCurrentText("Ligand")
+    dialog.source.set_value(dock_dialog.WHOLE)
+    dialog._update()
+    job = dialog.run()
+    qtbot.waitUntil(lambda: not job.running, timeout=60_000)
+    dialog.close()
+    panel = ctx.find_panel(PosesPanel.tool_id)
+    assert isinstance(panel, PosesPanel)
+    return panel
+
+
+def test_the_poses_panel_docks_in_the_viewers_window(opened, qtbot, no_vina) -> None:
+    from chemsuite.app.document.panel_window import PanelWindow
+
+    viewer = tool.open_viewer(ToolContext(opened))
+    panel = _dock(opened, qtbot)
+    assert isinstance(viewer.window(), PanelWindow)
+    assert panel.window() is viewer.window()  # beside the pocket, not beside the table
+    assert panel not in [dock.widget() for dock in opened.tool_panels.docks]
+
+
+def test_choosing_a_pose_shows_it_in_the_pocket(opened, qtbot, no_vina) -> None:
+    tool.open_viewer(ToolContext(opened))
+    panel = _dock(opened, qtbot)
+    session = tool.protein_workspace(ToolContext(opened)).session()
+    top = panel.rows.topLevelItem(0)
+    panel.rows.setCurrentItem(top.child(0))
+    assert len(panel.chosen()) == 1 and panel.chosen()[0].rank == 1
+    assert any(shown.id.endswith("1CRN") for shown in session.displays)
+
+
+def test_the_poses_come_back_with_the_document(opened, qtbot, no_vina, tmp_path) -> None:
+    from chemsuite.protein.ui.poses import PosesPanel
+
+    panel = _dock(opened, qtbot)
+    kept = panel.run
+    path = tmp_path / "docked.csd"
+    assert opened._save_to(path)
+    assert PosesPanel.tool_id in [entry.get("tool") for entry in opened.panel_states()]
+    opened.open_path(path)
+    qtbot.waitUntil(lambda: opened.workspace.path == path, timeout=10_000)
+    qtbot.wait(20)
+    ctx = ToolContext(opened)
+    assert tool.protein_workspace(ctx).docked("1CRN") == kept
+    again = ctx.find_panel(PosesPanel.tool_id)
+    assert isinstance(again, PosesPanel) and again.run == kept
+
+
+def test_rescore_offers_the_docked_poses_first(opened, qtbot, no_vina) -> None:
+    """A protein that has been docked into is rescored from its own poses, not the table."""
+    ctx = ToolContext(opened)
+    dialog = dock_dialog.RescoreDialog(ctx)
+    assert dialog.source.value() == dock_dialog.TABLE  # nothing docked yet
+    assert dialog.problem() == "" and dialog.verb().endswith("Rows")
+    dialog.close()
+
+    panel = _dock(opened, qtbot)
+    dialog = dock_dialog.RescoreDialog(ctx)
+    assert dialog.source.value() == dock_dialog.KEPT
+    assert dialog.verb() == "Rescore 2 Poses"
+    job = dialog.run()
+    qtbot.waitUntil(lambda: not job.running, timeout=60_000)
+    dialog.close()
+    # the scores replace the run in place, and the table is still untouched
+    assert {pose.affinity for pose in panel.run.poses} == {-6.75}
+    assert panel.run.kind == "rescored"
+    assert dock.AFFINITY_COLUMN not in opened.workspace.table
+
+
+def test_rescore_says_so_when_a_protein_has_no_docked_poses(opened) -> None:
+    dialog = dock_dialog.RescoreDialog(ToolContext(opened))
+    dialog.source.set_value(dock_dialog.KEPT)
+    assert dialog.problem() == (
+        "This protein has no docked poses: dock into it first (Protein ▸ Dock…)"
+    )
+    dialog.close()

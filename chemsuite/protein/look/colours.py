@@ -16,7 +16,7 @@
 """Colour schemes for protein atoms: RGBA in 0..1, one row per atom.
 
 The default (:data:`ELEMENT`) is what medicinal chemists expect: heteroatoms by element (Jmol),
-protein carbons in their chain's soft colour and ligand carbons in a strong green, so the
+protein carbons in their chain's soft colour and ligand carbons in a strong purple, so the
 ligand stands out from the pocket around it.
 """
 
@@ -75,14 +75,14 @@ CHAIN_PALETTE = np.array(
     ],  # fmt: skip
     np.float32,
 )
-LIGAND_CARBON = np.array(rgb(0x2EC84A), np.float32)
+LIGAND_CARBON = np.array(rgb(0xA13DE0), np.float32)
 _SS = {HELIX: rgb(0xE0557A), STRAND: rgb(0xF2C14E), 0: rgb(0xC8CCD2)}
 _KIND = {
     AMINO: rgb(0xB0B7C3),
     NUCLEIC: rgb(0xE3B58A),
-    LIGAND: rgb(0x2EC84A),
+    LIGAND: rgb(0xA13DE0),
     WATER: rgb(0xFF4040),
-    ION: rgb(0x9A6AD6),
+    ION: rgb(0xD98C3A),
     ADDITIVE: rgb(0xA0A0A0),
     GLYCAN: rgb(0x5FA8D3),
 }

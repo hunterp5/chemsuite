@@ -25,9 +25,10 @@ There is one per document, whether or not the viewer's window is open:
   knows it needs saving.
 
 The saved form (:meth:`capture`) is versioned: ``{"version": 1, "session": …, "view": …,
-"reports": …}``, ``view`` holding the background, depth cue and camera and ``reports`` each
-protein's last preparation report (:mod:`.reports`; added later, so it is optional and an older
-chemsuite simply ignores it). A state from a newer chemsuite is kept as it was and saved back
+"reports": …, "poses": …}``, ``view`` holding the background, depth cue and camera, ``reports``
+each protein's last preparation report (:mod:`.reports`) and ``poses`` each protein's docked
+poses (:mod:`.poses`; both were added later, so each is optional and an older chemsuite simply
+ignores it). A state from a newer chemsuite is kept as it was and saved back
 unchanged rather than half read.
 """
 
@@ -39,6 +40,7 @@ from typing import Any
 
 from chemsuite.core.assets import AssetHost
 
+from .poses import DockedPoses
 from .reports import PrepareReport
 from .session import WorkbenchSession
 
@@ -70,6 +72,8 @@ class ProteinWorkspace:
         self.view: dict = {}
         #: each protein's last preparation report, by protein id
         self.reports: dict[str, PrepareReport] = {}
+        #: each protein's docked poses, by protein id
+        self.poses: dict[str, DockedPoses] = {}
         #: while the viewer is open: its view settings now
         self.view_source: Callable[[], dict] | None = None
         self._newer: Any = None  # a state from a newer chemsuite, kept as it was
@@ -96,6 +100,10 @@ class ProteinWorkspace:
             made = PrepareReport.from_json(report)
             if made is not None and isinstance(protein, str):
                 self.reports[protein] = made
+        for protein, run in dict(saved.get("poses") or {}).items():
+            docked = DockedPoses.from_json(run)
+            if docked is not None and isinstance(protein, str):
+                self.poses[protein] = docked
 
     # -- the session --------------------------------------------------------------------------
     @property
@@ -150,6 +158,23 @@ class ProteinWorkspace:
         self._changes += 1
         return True
 
+    # -- docked poses -------------------------------------------------------------------------
+    def docked(self, protein: str) -> DockedPoses | None:
+        """The poses docked into *protein*, if it has been docked into."""
+        return self.poses.get(protein)
+
+    def set_docked(self, run: DockedPoses) -> None:
+        """Keep a docking run's poses (replacing that protein's last run)."""
+        self.poses[run.protein] = run
+        self._changes += 1
+
+    def drop_docked(self, protein: str) -> bool:
+        """Forget *protein*'s poses (the protein went, or they were cleared)."""
+        if self.poses.pop(protein, None) is None:
+            return False
+        self._changes += 1
+        return True
+
     def set_view(self, view: Mapping) -> None:
         """The viewer's view settings now (when it closes)."""
         new = {k: view[k] for k in VIEW_KEYS if k in view}
@@ -177,12 +202,16 @@ class ProteinWorkspace:
             return self._newer
         session = self._session.state() if self._session is not None else self._pending
         view = self._live_view()
-        kept = {id: report for id, report in self.reports.items() if id in self.store.assets}
-        if not session and not view and not kept:
+        here = self.store.assets
+        kept = {id: report for id, report in self.reports.items() if id in here}
+        docked = {id: run for id, run in self.poses.items() if id in here}
+        if not session and not view and not kept and not docked:
             return None
         saved = {"version": VERSION, "session": session, "view": view}
         if kept:
             saved["reports"] = {id: report.to_json() for id, report in kept.items()}
+        if docked:
+            saved["poses"] = {id: run.to_json() for id, run in docked.items()}
         return saved
 
     def close(self) -> None:

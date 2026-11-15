@@ -31,7 +31,7 @@ from chemsuite.protein.structure.select import select
 def test_default_styles(kinase: Structure, nmr: Structure) -> None:
     styles = scene.default_styles(kinase)
     assert (styles[kinase.atom_kind == WATER] == scene.HIDDEN).all()
-    assert (styles[kinase.atom_kind == LIGAND] == scene.BALL_AND_STICK).all()
+    assert (styles[kinase.atom_kind == LIGAND] == scene.STICK).all()
     assert (styles[select(kinase, "protein")] == scene.WIRE).all()
     nmr_styles = scene.default_styles(nmr)
     polar = select(nmr, "hydrogen and name H")  # backbone amide hydrogens stay
@@ -54,9 +54,9 @@ def test_geometry_draws_shown_atoms_and_bonds_between_them(kinase: Structure) ->
     assert (styles[ends] != scene.HIDDEN).all()
     assert np.allclose(geometry.cylinders[:, :3], kinase.coords[0][ends[:, 0]])
     assert np.allclose(geometry.cylinders[:, 4:7], kinase.coords[0][ends[:, 1]])
-    # ball and stick: bonds thinner than the balls; ions are visible balls
+    # the ligand as sticks: joints as wide as its bonds; ions are visible balls
     ligand = np.isin(geometry.atoms, np.flatnonzero(kinase.atom_kind == LIGAND))
-    assert (geometry.spheres[ligand, 3] > 0.25).all()
+    assert np.allclose(geometry.spheres[ligand, 3], 0.15)
     ion = np.isin(geometry.atoms, np.flatnonzero(kinase.atom_kind == ION))
     assert ion.sum() == 2 and (geometry.spheres[ion, 3] > 0.5).all()
 
@@ -96,7 +96,11 @@ def test_ligand_carbons_stand_out_from_the_protein(kinase: Structure) -> None:
     ligand_carbon = rgba[select(kinase, "ligand and elem C")]
     protein_carbon = rgba[select(kinase, "protein and elem C")]
     assert np.allclose(ligand_carbon[:, :3], colours.LIGAND_CARBON)
-    assert (ligand_carbon[:, 1] > protein_carbon[:, 1].max()).all()
+
+    def saturation(rgba: np.ndarray) -> np.ndarray:
+        return rgba[:, :3].max(axis=1) - rgba[:, :3].min(axis=1)
+
+    assert (saturation(ligand_carbon) > saturation(protein_carbon).max() + 0.2).all()
     oxygen = rgba[select(kinase, "elem O")]
     assert (oxygen[:, 0] > 0.9).all() and (oxygen[:, 1] < 0.2).all()
 

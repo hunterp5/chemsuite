@@ -222,7 +222,7 @@ for name, image in (("BEFORE", before), ("AFTER", after)):
 )
 def test_proteins_are_drawn_picked_and_selected() -> None:
     """Draws a binding site with the GPU in a subprocess (the offscreen platform the other
-    tests use cannot draw): the ligand's carbons are green, a click picks the atom in front,
+    tests use cannot draw): the ligand's carbons are purple, a click picks the atom in front,
     selecting the ligand tints it with the selection colour, and a cartoon draws."""
     env = {k: v for k, v in os.environ.items() if k != "QT_QPA_PLATFORM"}
     out = subprocess.run(
@@ -238,9 +238,9 @@ def test_proteins_are_drawn_picked_and_selected() -> None:
     assert "OK" in lines, out.stdout + out.stderr
     assert lines["PICK"] == ["True"]
     r, g, b = (int(v) for v in lines["BEFORE"])
-    assert g > 120 and g > r + 40 and g > b + 40, (r, g, b)  # ligand carbon green
+    assert b > 120 and r > g + 40 and b > g + 40, (r, g, b)  # ligand carbon purple
     r2, g2, b2 = (int(v) for v in lines["AFTER"])
-    assert r2 > r + 40 and b2 < g2, (r2, g2, b2)  # tinted towards the selection's amber
+    assert r2 > r + 20 and b2 < b - 40, (r2, g2, b2)  # tinted towards the selection's amber
     r3, g3, b3 = (int(v) for v in lines["CARTOON"])
     assert b3 > 60 and b3 > 3 * r3 and b3 > 2 * g3, (r3, g3, b3)  # the cartoon's blue
     # holding the QRhi's wrapper outlives the QRhi when the view changes window, and PySide
@@ -320,7 +320,7 @@ def test_figures_draw_at_any_size_and_orthographic() -> None:
     assert lines["SIZE"] == ["1200", "900"], out.stdout + out.stderr
     assert lines["CORNER"] == ["0"] and lines["BACK"] == ["255"]
     r, g, b = (int(v) for v in lines["ORTHO"])
-    assert g > 120 and g > r + 40 and g > b + 40, (r, g, b)  # ligand carbon green
+    assert b > 120 and r > g + 40 and b > g + 40, (r, g, b)  # ligand carbon purple
     assert lines["PICK"] == ["True"]
 
 

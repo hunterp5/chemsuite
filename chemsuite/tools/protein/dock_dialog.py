@@ -48,6 +48,9 @@ SOURCES = (
     (TYPED, "Typed"),
 )
 SCORING = ((vina.VINA, "Vina"), (vina.VINARDO, "Vinardo"))
+#: where Rescore Poses… takes its poses from
+KEPT, TABLE = "kept", "table"
+POSE_SOURCE = ((KEPT, "Docked"), (TABLE, "Table Column"))
 _last = vina.Options()  # remembered for the session
 
 
@@ -244,32 +247,64 @@ class RescoreDialog(ToolDialog):
         if chosen is not None and self.protein.findData(chosen) >= 0:
             self.protein.setCurrentIndex(self.protein.findData(chosen))
         inputs.row("Protein", self.protein)
+        self.source = Segmented(POSE_SOURCE, KEPT if self._kept() else TABLE)
+        inputs.row(
+            "Poses",
+            self.source,
+            help="The poses of the last docking run, kept with the protein, or a structure "
+            "column of the table.",
+        )
         self.structure = QComboBox()
         self.structure.addItems(ctx.structure_columns())
         default = ctx.default_structure_column()
         if default:
             self.structure.setCurrentText(default)
-        inputs.row("Poses", self.structure, help="Each one is scored exactly where it sits.")
+        inputs.row("Column", self.structure, help="Each one is scored exactly where it sits.")
         self.rows = inputs.row("Rows", RowsChoice(ctx, "selected" if len(ctx.selection) else "all"))
+        self.inputs = inputs
 
         method = self.section("Method")
         self.scoring = Segmented(SCORING, vina.VINA)
         method.row("Scoring", self.scoring)
-        self.protein.currentIndexChanged.connect(lambda *_: self.refresh())
+        self.protein.currentIndexChanged.connect(lambda *_: self._source_changed())
+        self.source.changed.connect(lambda *_: self._source_changed())
         self.rows.changed.connect(lambda *_: self.refresh())
+        self._source_changed()
+
+    def _kept(self) -> list:
+        """The poses kept with the chosen protein (the last run's), if any."""
+        protein = self.protein.currentData()
+        if not isinstance(protein, str):
+            return []
+        run_poses = protein_workspace(self.ctx).docked(protein)
+        return list(run_poses.poses) if run_poses is not None else []
+
+    def _from_table(self) -> bool:
+        return self.source.value() == TABLE
+
+    def _source_changed(self) -> None:
+        """Only the chosen source's fields are shown."""
+        table = self._from_table()
+        for field in (self.structure, self.rows):
+            self.inputs.set_row_visible(field, table)
         self.refresh()
 
     def problem(self) -> str:
         if self.protein.count() == 0:
             return "There are no proteins in this document"
-        if not self.structure.currentText():
-            return "There is no structure column"
-        if not len(self.rows.oids()):
-            return "There are no rows to score"
+        if self._from_table():
+            if not self.structure.currentText():
+                return "There is no structure column"
+            if not len(self.rows.oids()):
+                return "There are no rows to score"
+        elif not self._kept():
+            return "This protein has no docked poses: dock into it first (Protein ▸ Dock…)"
         return dock.docking_problem(structure_of(self.ctx, self.protein.currentData()))
 
     def verb(self) -> str:
-        return f"Rescore {len(self.rows.oids()):,} Rows"
+        if self._from_table():
+            return f"Rescore {len(self.rows.oids()):,} Rows"
+        return f"Rescore {len(self._kept()):,} Poses"
 
     def run(self):
         protein = self.protein.currentData()
@@ -277,6 +312,8 @@ class RescoreDialog(ToolDialog):
         if not isinstance(protein, str) or s is None:
             return None
         options = vina.Options(scoring=self.scoring.value())
+        if not self._from_table():
+            return dock.rescore_kept(self.ctx, protein, s, self._kept(), options)
         return dock.dock_rows(
             self.ctx,
             protein,

@@ -36,7 +36,7 @@ from chemsuite.protein.structure import store
 from chemsuite.protein.structure.model import Structure
 from chemsuite.protein.workspace.reports import PrepareReport, Row
 
-from .tool import KIND, ccd, dialog_parent, protein_workspace
+from .tool import KIND, TOOL_ID, ccd, dialog_parent, protein_workspace
 
 WATERS = ((pipeline.ALL, "All"), (pipeline.NEAR_LIGANDS, "Near Ligands"), (pipeline.NONE, "None"))
 TITRATE = ((sites.OFF, "Off"), (sites.POCKET, "Pocket"), (sites.ALL, "All"))
@@ -195,7 +195,10 @@ def summary(protein: str, prepared: pipeline.Prepared, ph: float) -> PrepareRepo
 
 # -- the report panel ---------------------------------------------------------------------------
 def show_report(ctx: ToolContext, report: PrepareReport):
-    """Open the report panel on *report*, or fill the open one."""
+    """Open the report panel on *report*, or fill the open one.
+
+    It docks in the viewer's window, beside the structure it describes; with the viewer
+    closed it goes beside the table, so a report is never out of reach."""
     from chemsuite.protein.ui.report import PrepareReportPanel
 
     panel = ctx.find_panel(PrepareReportPanel.tool_id)
@@ -203,7 +206,7 @@ def show_report(ctx: ToolContext, report: PrepareReport):
         panel.fill(report)
         return panel
     panel = PrepareReportPanel(report, select=lambda id, residue: select(ctx, id, residue))
-    ctx.add_panel(panel, panel.title())
+    ctx.add_panel(panel, panel.title(), beside=ctx.find_panel(TOOL_ID))
     return panel
 
 

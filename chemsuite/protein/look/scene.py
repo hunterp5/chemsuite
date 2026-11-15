@@ -95,7 +95,7 @@ SITE = 5.0
 def default_styles(
     structure: Structure, active: np.ndarray | None = None, cartoon: bool = False
 ) -> np.ndarray:
-    """A first look at a complex: the ligands as ball and stick, ions as balls, additives and
+    """A first look at a complex: the ligands as sticks, ions as balls, additives and
     glycans as sticks; the protein as wire, or with ``cartoon`` hidden but for the binding
     site's residues as sticks; waters and non-polar hydrogens hidden; of alternate locations
     only the shown one."""
@@ -106,7 +106,7 @@ def default_styles(
         styles[polymer & binding_site(structure)] = STICK
     else:
         styles[polymer] = WIRE
-    styles[kind == LIGAND] = BALL_AND_STICK
+    styles[kind == LIGAND] = STICK
     styles[kind == ION] = BALL_AND_STICK
     styles[np.isin(kind, (ADDITIVE, GLYCAN))] = STICK
     styles[nonpolar_hydrogens(structure)] = HIDDEN

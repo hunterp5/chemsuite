@@ -57,6 +57,8 @@ TOOL_ID = "protein"
 PREPARE_ID = "protein-prepare"
 #: Protein ▸ Dock… and Rescore Poses… (the viewer's Tools menu holds them too)
 DOCK_ID = "protein-dock"
+#: the Poses panel (``chemsuite.protein.ui.poses.TOOL_ID``, kept in step by the tests)
+POSES_ID = "protein-poses"
 RESCORE_ID = "protein-rescore"
 #: the document part holding the protein workspace
 WORKSPACE_KEY = "protein_workspace"
@@ -128,7 +130,9 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
             workbench.view_source = None
         panel.close_panel()
 
-    window = ctx.add_window(panel, panel.title(), menu_bar=panel.menu_bar, on_close=closed)
+    # docks: what the viewer works out (a preparation report, docked poses) shows beside it
+    window = ctx.add_window(panel, panel.title(), menu_bar=panel.menu_bar, on_close=closed,
+                            docks=True)  # fmt: skip
     if state is None:
         centre_over(window, ctx.parent)
     panel.setFocus()
@@ -345,6 +349,12 @@ def restore_report(ctx: ToolContext, state: dict):
     return open_report(ctx, state)
 
 
+def restore_poses(ctx: ToolContext, state: dict):
+    from .dock import open_poses
+
+    return open_poses(ctx, state)
+
+
 TOOLS = [
     Tool(
         id=TOOL_ID,
@@ -373,8 +383,17 @@ TOOLS = [
         menu=MENU,
         open=open_dock,
         requires=("gemmi",),
-        tip="Dock the document's ligands into a pocket with AutoDock Vina: every pose becomes "
-        "a row linked to its protein",
+        tip="Dock the document's ligands into a pocket with AutoDock Vina: the poses are kept "
+        "with the protein and shown in the viewer",
+    ),
+    Tool(
+        id=POSES_ID,
+        title="Poses",
+        menu=(),  # this entry reopens the Poses panel with the document
+        open=lambda ctx: None,
+        restore=restore_poses,
+        requires=("gemmi",),
+        tip="The poses of the last docking run, beside the pocket they were docked into",
     ),
     Tool(
         id=RESCORE_ID,

@@ -101,8 +101,10 @@ def build(panel: ProteinPanel, commands: Commands) -> QMenuBar:
                 menu.clear()
                 fill(menu)
 
-    session = panel.session
-    for signal in (session.selectionChanged, session.proteinsChanged, session.sceneChanged):
+    # through the window's own SessionSignals, not the session's plain events: those outlive
+    # the window, and a closed window's deleted menus must not be filled again
+    signals = panel.signals
+    for signal in (signals.selectionChanged, signals.proteinsChanged, signals.sceneChanged):
         signal.connect(refresh)
     refresh()
     return bar

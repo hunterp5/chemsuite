@@ -13,13 +13,18 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Docking as table rows: the work behind Protein ▸ Dock… and Rescore Poses….
+"""Docking from the table's ligands into the viewer's Poses panel: Protein ▸ Dock… and
+Rescore Poses….
 
 The docking itself is :mod:`chemsuite.protein.dock` (Qt-free, table-free). This module is the
 bridge: it reads the ligands out of a structure column, gives each one 3D coordinates if the
 column holds none, runs the receptor and the ligands past AutoDock Vina in a background job,
-and writes each pose as a row linked to its protein — so a pose follows into its pocket like
-any ligand row, and plots, filters and SAR work on poses as on anything else.
+and keeps the poses with the protein (:mod:`chemsuite.protein.workspace.poses`), shown in the
+**Poses** panel beside the pocket they were docked into.
+
+Poses reach the table when the chemist asks (:func:`poses_to_table`, the panel's Copy to
+Table): each becomes a row linked to its protein, so it follows into its pocket like any
+ligand row and plots, filters and SAR work on it as on anything else.
 
 Cancelling keeps the ligands that finished: the engine raises ``Cancelled(partial)`` and the
 dialogs pass ``keep_partial=True`` (docking is per-row work).
@@ -27,7 +32,7 @@ dialogs pass ``keep_partial=True`` (docking is per-row work).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 
 import numpy as np
@@ -42,6 +47,7 @@ from chemsuite.protein.chem import poses as pose_tools
 from chemsuite.protein.dock import pdbqt, run, vina
 from chemsuite.protein.dock.box import Box
 from chemsuite.protein.structure.model import Structure
+from chemsuite.protein.workspace.poses import DOCKED, RESCORED, DockedPoses, Pose
 
 from .rows import LIGAND_COLUMN, PROTEIN_COLUMN
 
@@ -94,22 +100,54 @@ def with_coordinates(mol: Chem.Mol | None) -> Chem.Mol | None:
     return made.mol
 
 
-def pose_rows(
-    protein: str, results: Sequence[run.Docked], names: Sequence[str]
-) -> dict[str, list[str]]:
-    """Every pose of *results* as a row: the protein it is in, the pose, and its scores."""
+def docked_poses(
+    protein: str,
+    results: Sequence[run.Docked],
+    names: Sequence[str],
+    *,
+    rescore: bool = False,
+    skipped: int = 0,
+) -> DockedPoses:
+    """What a run produced, in the form the document keeps."""
+    poses = [
+        Pose(
+            names[docked.index] if docked.index < len(names) else "",
+            pose.rank,
+            pose.affinity,
+            pose.rmsd_lb,
+            pose.rmsd_ub,
+            Chem.MolToMolBlock(pose.mol),
+        )
+        for docked in results
+        for pose in docked.poses
+    ]
+    failed = sum(1 for d in results if d.error)
+    return DockedPoses(protein, tuple(poses), RESCORED if rescore else DOCKED, failed, skipped)
+
+
+def pose_rows(protein: str, poses: Sequence[Pose]) -> dict[str, list[str]]:
+    """Every pose as a row: the protein it is in, the pose, and its scores."""
     rows: dict[str, list[str]] = {name: [] for name in POSE_COLUMNS}
-    for docked in results:
-        parent = names[docked.index] if docked.index < len(names) else ""
-        for pose in docked.poses:
-            rows[PROTEIN_COLUMN].append(protein)
-            rows[LIGAND_COLUMN].append(Chem.MolToMolBlock(pose.mol))
-            rows[POSE_COLUMN].append(str(pose.rank))
-            rows[AFFINITY_COLUMN].append(f"{pose.affinity:.2f}")
-            rows[RMSD_LB_COLUMN].append(f"{pose.rmsd_lb:.2f}")
-            rows[RMSD_UB_COLUMN].append(f"{pose.rmsd_ub:.2f}")
-            rows[PARENT_COLUMN].append(parent)
+    for pose in poses:
+        rows[PROTEIN_COLUMN].append(protein)
+        rows[LIGAND_COLUMN].append(pose.molblock)
+        rows[POSE_COLUMN].append(str(pose.rank))
+        rows[AFFINITY_COLUMN].append(f"{pose.affinity:.2f}")
+        rows[RMSD_LB_COLUMN].append(f"{pose.rmsd_lb:.2f}")
+        rows[RMSD_UB_COLUMN].append(f"{pose.rmsd_ub:.2f}")
+        rows[PARENT_COLUMN].append(pose.ligand)
     return rows
+
+
+def poses_to_table(ctx: ToolContext, protein: str, poses: Sequence[Pose]) -> int:
+    """Copy *poses* into the table, one row each. Returns how many were copied."""
+    if not poses:
+        return 0
+    rows = pose_rows(protein, poses)
+    ctx.add_rows(rows, f"Copy {plural(len(poses), 'pose')} of {protein}",
+                 structures=(LIGAND_COLUMN,))  # fmt: skip
+    ctx.show_message(f"{plural(len(poses), 'pose')} copied to the table")
+    return len(poses)
 
 
 def dock_rows(
@@ -127,15 +165,47 @@ def dock_rows(
     Returns the job, or None when there is nothing to dock.
     """
     cells = ctx.structure_inputs(column, oids)
-    names = row_names(ctx, oids)
     if not cells:
         return None
+    return _dock_job(ctx, protein, structure, lambda: ligand_mols(cells),
+                     row_names(ctx, oids), box, options, rescore)  # fmt: skip
+
+
+def rescore_kept(
+    ctx: ToolContext,
+    protein: str,
+    structure: Structure,
+    poses: Sequence[Pose],
+    options: vina.Options,
+):
+    """Score the poses already kept with *protein* where they stand, as a job.
+
+    Returns the job, or None when there are no poses.
+    """
+    if not poses:
+        return None
+    return _dock_job(ctx, protein, structure, lambda: [mol_from_text(p.molblock) for p in poses],
+                     [pose.ligand for pose in poses], None, options, True)  # fmt: skip
+
+
+def _dock_job(
+    ctx: ToolContext,
+    protein: str,
+    structure: Structure,
+    ligands: Callable[[], list[Chem.Mol | None]],
+    names: Sequence[str],
+    box: Box | None,
+    options: vina.Options,
+    rescore: bool,
+):
+    """The background run behind docking and rescoring: *ligands* is read in the job (reading
+    and embedding structures is work), and the poses are kept with the protein."""
     label = "Rescoring poses…" if rescore else f"Docking into {protein}…"
     cache = ctx.cache_folder("vina")
 
     def work(job):
         receptor = pdbqt.receptor(structure)
-        made = [with_coordinates(mol) for mol in ligand_mols(cells)]
+        made = [with_coordinates(mol) for mol in ligands()]
         # a blank cell, or a structure RDKit could not read, is skipped rather than docked
         usable = [(i, mol) for i, mol in enumerate(made) if mol is not None]
         skipped = len(made) - len(usable)
@@ -153,12 +223,11 @@ def dock_rows(
         if result is None:
             return
         receptor, results, skipped = result
-        rows = pose_rows(protein, results, names)
-        poses = len(rows[PROTEIN_COLUMN])
+        run_poses = docked_poses(protein, results, names, rescore=rescore, skipped=skipped)
+        poses = len(run_poses.poses)
         if poses:
-            step = f"Rescore poses of {protein}" if rescore else f"Dock into {protein}"
-            ctx.add_rows(rows, step, structures=(LIGAND_COLUMN,))
-        failed = sum(1 for d in results if d.error)
+            show_poses(ctx, run_poses)
+        failed = run_poses.failed
         message = f"{plural(poses, 'pose')} from {plural(len(results) - failed, 'ligand')}"
         if failed:
             message += f"; {failed} could not be docked"
@@ -202,3 +271,48 @@ def cancelled_partial(err: Cancelled) -> list[run.Docked]:
     """The ligands a cancelled run finished."""
     partial = err.partial
     return list(partial) if isinstance(partial, list) else []
+
+
+# -- the poses panel ----------------------------------------------------------------------------
+def show_poses(ctx: ToolContext, run_poses: DockedPoses):
+    """Keep *run_poses* with the document and open the Poses panel on them (or fill the open
+    one). The panel docks in the viewer's window, beside the pocket they were docked into."""
+    from chemsuite.protein.ui.poses import PosesPanel
+
+    from .tool import TOOL_ID, protein_workspace
+
+    protein_workspace(ctx).set_docked(run_poses)
+    panel = ctx.find_panel(PosesPanel.tool_id)
+    if isinstance(panel, PosesPanel):
+        panel.fill(run_poses)
+        return panel
+    protein = run_poses.protein
+    panel = PosesPanel(
+        run_poses,
+        show=lambda pose: show_pose(ctx, protein, pose),
+        to_table=lambda poses: poses_to_table(ctx, protein, poses),
+    )
+    ctx.add_panel(panel, panel.title(), beside=ctx.find_panel(TOOL_ID))
+    return panel
+
+
+def open_poses(ctx: ToolContext, state: dict):
+    """Reopen the Poses panel with the document (the poses were saved with the protein
+    workspace)."""
+    from .tool import protein_workspace
+
+    protein = state.get("protein")
+    if not isinstance(protein, str):
+        return None
+    run_poses = protein_workspace(ctx).docked(protein)
+    return show_poses(ctx, run_poses) if run_poses is not None else None
+
+
+def show_pose(ctx: ToolContext, protein: str, pose: Pose) -> bool:
+    """Draw *pose* in *protein*'s pocket (a pose was chosen in the panel)."""
+    from .tool import protein_workspace
+
+    mol = mol_from_text(pose.molblock)
+    if mol is None:
+        return False
+    return protein_workspace(ctx).session().show_pose(protein, mol)

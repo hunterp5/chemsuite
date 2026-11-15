@@ -38,6 +38,7 @@ from PySide6.QtWidgets import QDockWidget, QMenu, QMenuBar, QWidget
 from ..shell.windows import ToolWindow
 from ..widgets.panel import ToolPanel
 from .panel_dock import DockHost, PanelDock
+from .panel_window import PanelWindow
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -63,8 +64,13 @@ class DocumentPanels(DockHost):
         self.pinning = False
 
     def widgets(self) -> list[QWidget]:
-        """Every open panel, docked or in a window."""
-        return [dock.widget() for dock in self.docks] + [shown.panel for shown in self.windows]
+        """Every open panel: docked beside the table, a window of its own, or docked in one."""
+        found = [dock.widget() for dock in self.docks]
+        for shown in self.windows:
+            found.append(shown.panel)
+            if isinstance(shown, PanelWindow):
+                found += shown.panel_widgets()
+        return found
 
     # -- docks ---------------------------------------------------------------------------------
     def new_dock(self, title: str) -> PanelDock:
@@ -93,11 +99,14 @@ class DocumentPanels(DockHost):
         title: str,
         menu_bar: QMenuBar | None,
         on_close: Callable[[], None] | None,
+        docks: bool = False,
     ) -> ToolWindow:
-        """Show *widget* in a new tool window of the document."""
+        """Show *widget* in a new tool window of the document; with *docks*, one that can
+        hold panels of its own (:class:`PanelWindow`)."""
         window = self.window
-        shown = ToolWindow(widget, title, name=lambda: window.document_name, menu_bar=menu_bar,
-                           on_close=on_close)  # fmt: skip
+        make = PanelWindow if docks else ToolWindow
+        shown = make(widget, title, name=lambda: window.document_name, menu_bar=menu_bar,
+                     on_close=on_close)  # fmt: skip
         window.windowTitleChanged.connect(shown.retitle)
         self.windows.append(shown)
         shown.destroyed.connect(lambda _o=None, w=shown: self._forget_window(w))
@@ -120,6 +129,10 @@ class DocumentPanels(DockHost):
             if isinstance(shown.panel, ToolPanel) and shown.panel.tool_id == tool_id:
                 shown.bring_forward()
                 return shown.panel
+            if isinstance(shown, PanelWindow):
+                found = shown.find_panel(tool_id)
+                if found is not None:
+                    return found
         return None
 
     def close_all(self) -> None:
@@ -155,6 +168,10 @@ class DocumentPanels(DockHost):
                 geometry = bytes(shown.saveGeometry().data())
                 entry[GEOMETRY] = base64.b64encode(geometry).decode("ascii")
                 states.append(entry)
+            if isinstance(shown, PanelWindow):
+                # a panel docked in the window: its tool reopens it there (the window's own
+                # entry comes first, so the window is open again by then)
+                states += [e for e in map(_entry, shown.panel_widgets()) if e is not None]
         return states
 
     def restore(self, saved: list, tools: Iterable[Tool]) -> None:

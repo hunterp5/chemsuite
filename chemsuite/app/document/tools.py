@@ -54,6 +54,7 @@ from chemsuite.plotting.data import scope_oids
 
 from ..shell.jobs import QUEUE, Job
 from ..widgets.panel import ToolPanel as ToolPanel  # what a tool's panel is built on
+from .panel_window import PanelWindow
 
 if TYPE_CHECKING:
     from .main_window import MainWindow
@@ -390,12 +391,22 @@ class ToolContext:
         return network_allowed()
 
     # -- showing ------------------------------------------------------------------------------
-    def add_panel(self, widget: QWidget, title: str) -> QDockWidget:
+    def add_panel(
+        self, widget: QWidget, title: str, *, beside: QWidget | None = None
+    ) -> QDockWidget:
         """Show *widget* in a dock beside the table; it closes with the document.
 
         A ``ToolPanel``'s ``close_panel()`` is called when the dock is closed, and its
         ``titleChanged`` keeps the dock's title up to date.
+
+        *beside* is a widget whose own window should hold the panel instead — the result of a
+        workspace with a window of its own (the Protein Viewer) belongs beside the structure
+        it describes. When that window cannot hold panels, or is not open, the dock goes
+        beside the table as usual.
         """
+        host = beside.window() if beside is not None else None
+        if isinstance(host, PanelWindow):
+            return host.add_panel(widget, title)
         return self._window.add_panel(widget, title)
 
     def find_panel(self, tool_id: str) -> QWidget | None:
@@ -413,14 +424,18 @@ class ToolContext:
         *,
         menu_bar: QMenuBar | None = None,
         on_close: Callable[[], None] | None = None,
+        docks: bool = False,
     ) -> QMainWindow:
         """Show *widget* in a window of its own (not dockable), with *menu_bar* as its menus.
 
         The window is titled "*title* — document", closes with the document (calling
         *on_close* first) and, when the widget has ``tool_id`` and ``state()``, is saved and
         reopened with it, in the same size and place.
+
+        With *docks*, the window can hold tool panels of its own, which a tool puts there
+        with ``add_panel(..., beside=widget)``.
         """
-        return self._window.tool_panels.add_window(widget, title, menu_bar, on_close)
+        return self._window.tool_panels.add_window(widget, title, menu_bar, on_close, docks)
 
     def show_dialog(self, dialog: QDialog) -> QDialog:
         """Show a tool's dialog without blocking the window.

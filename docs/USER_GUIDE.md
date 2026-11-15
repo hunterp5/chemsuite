@@ -1593,7 +1593,7 @@ marked ⚠ in the proteins list. Ligands become table rows only when you ask:
 
 Make a ligand row current in the table and the viewer shows that ligand in its pocket. When
 the row's **Ligand** is 3D and no longer sits where the file has it (a docked pose, or a ligand
-moved in the sketcher), the viewer shows the row's own pose instead: in ball and stick with its
+moved in the sketcher), the viewer shows the row's own pose instead: in sticks with its
 pocket and interactions, and the ligand of the file it stands in for faded beside it for
 comparison. Editing the current row's ligand updates the pose at once. The pose is not saved
 with the viewer; making the row current brings it back.
@@ -1622,6 +1622,10 @@ or not, with the rows you chose.
   field), **Around ▸** (the residues or atoms within 3, 5, 8 or 10 Å of the selection, added to
   it) and **Save Selection…**; saved selections are used as `$name`, and `$selection` is what
   is selected now.
+- **A protein opens** with its chains as wire, its ligands and ions as sticks and balls, its
+  glycans and additives as sticks, and its waters and non-polar hydrogens hidden. Ligand
+  carbons are **purple** and ions amber, so a ligand reads at once against the pocket around
+  it.
 - **Show, Hide, Colour** act on the selection: wire, sticks, ball and stick, spacefill,
   cartoon, surface; colour by element, chain, secondary structure, B-factor, hydrophobicity or
   a colour you choose.
@@ -1704,14 +1708,15 @@ The work runs in the background and can be cancelled. What comes back replaces t
 **one** step: Undo (Ctrl+Z, in the table or the viewer) puts the structure back as it was.
 Everything else about the protein — how it is shown, coloured, selected and labelled — stays.
 
-The **report** opens beside the table, one line per thing found or decided: alternate
+The **report** opens beside the structure in the viewer's own window — with the viewer closed
+it goes beside the table instead — one line per thing found or decided: alternate
 locations, chain breaks and missing atoms, covalent links, disulfides and metal sites, each
 flip, His state and uncommon protonation state. A line marked ⚠ is worth your eye: a chain
 break, a residue with no template, or a choice whose next best was nearly as good. Click a
 line to select its residue in the viewer. Hydroxyl and amine hydrogens with nothing to bind to
-are free to spin, so they are counted in one line rather than listed. The foot of the panel
-gives the pH and the structure's net charge. The report is saved with the document and comes
-back with it.
+are free to spin, so they are counted in one line rather than listed. The panel's title gives
+the pH and the structure's net charge; right-click (or Ctrl+C) copies the report as text. The
+report is saved with the document and comes back with it.
 
 Accuracy, against 262 neutron structures: Asn flips 86%, Gln flips 80%, His orientation 90%,
 His tautomer 64% (Reduce: 85/79/88/62).
@@ -1720,9 +1725,11 @@ His tautomer 64% (Reduce: 85/79/88/62).
 
 **Protein ▸ Dock…** docks the document's ligands into a pocket with
 [AutoDock Vina](https://github.com/ccsb-scripps/AutoDock-Vina) 1.2.7, which ships with
-chemsuite (Apache-2.0; no download and nothing to install). Every pose becomes a row linked to
-its protein, so it draws in its pocket when its row is current, and plots, filters and SAR
-work on poses as on anything else.
+chemsuite (Apache-2.0; no download and nothing to install). The poses are kept with the
+protein and listed in the **Poses** panel beside the pocket they were docked into, since that
+is where the work was done; **Copy to Table** puts the ones you choose into the table, where
+each becomes a row linked to its protein, draws in its pocket when its row is current, and
+answers plots, filters and SAR as anything else does.
 
 Prepare the protein first: Vina types an atom by the hydrogens on it, so a structure with none
 is turned away with a line pointing at **Protein ▸ Prepare…**.
@@ -1740,18 +1747,26 @@ is turned away with a line pointing at **Protein ▸ Prepare…**.
   the **Seed** (the same seed docks the same way every time).
 
 The run is a background job with progress, and cancelling keeps the ligands that already
-finished. Each pose row holds **Protein**, **Ligand** (the pose), **Pose** (1 is the best),
-**Affinity (kcal/mol)**, **RMSD l.b.**, **RMSD u.b.** (Vina's own spread of that pose against
-the best one) and **Docked From** (the row it came from). Run **Ligand ▸ Interactions to
-Table** on the pose rows to profile them.
+finished.
+
+The **Poses** panel groups the poses by ligand, each ligand showing its best affinity and its
+poses under it: **Pose** (1 is Vina's best), **Affinity (kcal/mol)**, **RMSD l.b.** and
+**RMSD u.b.** (Vina's own spread of that pose against the best one). Click a pose to see it in
+the pocket. Ctrl+C copies the scores as text, and **Copy to Table** writes the chosen poses as
+rows holding **Protein**, **Ligand** (the pose), **Pose**, **Affinity (kcal/mol)**,
+**RMSD l.b.**, **RMSD u.b.** and **Docked From** (the row it was docked from) — then run
+**Ligand ▸ Interactions to Table** on those rows to profile them. The poses are saved with the
+document and come back with it, panel and all.
 
 Only the parts of a receptor that AutoDock knows are used: the polymer, waters, ions and
 glycans. Ligands, buffers and additives are left out — a ligand is what is being docked — and
 the run says which residue names were left out.
 
 **Protein ▸ Rescore Poses…** scores poses that already exist exactly where they stand, with
-Vina or Vinardo, and writes them as rows the same way. Use it to compare the two functions, or
-to score a pose moved by hand in the sketcher.
+Vina or Vinardo. **Poses** chooses what to score: **Docked**, the poses kept with the protein
+from its last run, which the new scores replace in place; or a **Table Column** of structures
+over the rows you choose. Use it to compare the two functions, or to score a pose moved by hand
+in the sketcher.
 
 Docking is not yet covalent, does not move side chains, and docks one receptor at a time.
 
