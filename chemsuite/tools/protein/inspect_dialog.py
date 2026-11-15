@@ -96,17 +96,18 @@ def _survey(
     skipped: tuple[str, ...],
     overrides: Mapping[str, str],
     base: review.Survey | None = None,
-) -> review.Survey:
-    """The survey of *s*, with what was decided held. Decisions are named by the lines of a
-    survey, so one without a *base* is surveyed once plainly to read them against."""
-    if not skipped and not overrides:
-        return review.survey(protein, s, options, cache, cancel)
+) -> tuple[review.Survey, review.Survey]:
+    """The survey of *s* with nothing held (the proposals), and with what was decided held.
+    Decisions are named by the lines of the survey with nothing held, so without a *base* it
+    is surveyed once plainly first."""
     if base is None:
         base = review.survey(protein, s, options, cache, cancel)
+    if not skipped and not overrides:
+        return base, base
     decisions = review.decisions_from(
         base, skip_issues=dict.fromkeys(skipped, True), overrides=overrides
     )
-    return review.survey(protein, s, options, cache, cancel, decisions=decisions)
+    return base, review.survey(protein, s, options, cache, cancel, decisions=decisions)
 
 
 def inspect_protein(
@@ -128,11 +129,12 @@ def inspect_protein(
     def work(job):
         return _survey(protein, s, options, cache, job.cancel_token, skipped, held, base)
 
-    def done(found: review.Survey) -> None:
+    def done(surveyed: tuple[review.Survey, review.Survey]) -> None:
         if structure_of(ctx, protein) is None:
             ctx.show_message(f"{protein} is no longer in this document")
             return
-        panel = show_inspector(ctx, found, skipped, held)
+        proposals, found = surveyed
+        panel = show_inspector(ctx, found, skipped, held, base=proposals)
         panel.set_busy(False)
         remember(ctx, panel)
         warned = f", {found.warnings} to check" if found.warnings else ""
@@ -147,14 +149,15 @@ def show_inspector(
     found: review.Survey,
     skipped: tuple[str, ...] = (),
     overrides: Mapping[str, str] | None = None,
+    base: review.Survey | None = None,
 ):
-    """Open the Inspect panel on *found*, or fill the open one. It docks in the viewer's
-    window, beside the structure it describes."""
+    """Open the Inspect panel on *found*, or fill the open one (*base*: the survey with
+    nothing held). It docks in the viewer's window, beside the structure it describes."""
     from chemsuite.protein.ui.inspector import InspectorPanel
 
     panel = ctx.find_panel(InspectorPanel.tool_id)
     if isinstance(panel, InspectorPanel):
-        panel.fill(found, skipped, overrides)
+        panel.fill(found, skipped, overrides, base)
         return panel
     panel = InspectorPanel(
         found,
@@ -162,7 +165,7 @@ def show_inspector(
         resurvey=lambda skip, held: _resurvey(ctx, panel, skip, held),
         apply=lambda skip, held: apply_review(ctx, panel, skip, held),
     )
-    panel.fill(found, skipped, overrides)
+    panel.fill(found, skipped, overrides, base)
     panel.decided.connect(lambda: remember(ctx, panel))
     ctx.add_panel(panel, panel.title(), beside=ctx.find_panel(TOOL_ID))
     return panel
@@ -179,8 +182,9 @@ def remember(ctx: ToolContext, panel) -> None:
 
 def _resurvey(ctx: ToolContext, panel, skipped, overrides):
     panel.set_busy(True)
-    found = panel.survey
-    job = inspect_protein(ctx, found.protein, found.options, skipped, overrides, base=found)
+    proposals = panel.base  # the survey with nothing held: the decisions are read against it
+    job = inspect_protein(ctx, proposals.protein, proposals.options, skipped, overrides,
+                          base=proposals)  # fmt: skip
     if job is None:
         panel.set_busy(False)
     return job
@@ -202,7 +206,7 @@ def open_saved(ctx: ToolContext, state: dict):
 # -- applying -------------------------------------------------------------------------------------
 def apply_review(ctx: ToolContext, panel, skipped, overrides):
     """Prepare the protein as reviewed, as one undoable edit; the review becomes its report."""
-    found: review.Survey = panel.survey
+    found: review.Survey = panel.base  # the proposals: read the answers against them
     protein = found.protein
     s = structure_of(ctx, protein)
     if s is None:

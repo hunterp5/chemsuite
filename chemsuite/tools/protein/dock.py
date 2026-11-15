@@ -286,11 +286,12 @@ def show_poses(ctx: ToolContext, run_poses: DockedPoses):
     if isinstance(panel, PosesPanel):
         panel.fill(run_poses)
         return panel
-    protein = run_poses.protein
+    # the protein is read from the panel when asked, not captured now: a later run into
+    # another protein fills this same panel
     panel = PosesPanel(
         run_poses,
-        show=lambda pose: show_pose(ctx, protein, pose),
-        to_table=lambda poses: poses_to_table(ctx, protein, poses),
+        show=lambda pose: show_pose(ctx, panel.run.protein, pose),
+        to_table=lambda poses: poses_to_table(ctx, panel.run.protein, poses),
     )
     ctx.add_panel(panel, panel.title(), beside=ctx.find_panel(TOOL_ID))
     return panel

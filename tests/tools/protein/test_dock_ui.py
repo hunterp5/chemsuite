@@ -252,10 +252,12 @@ def test_choosing_a_pose_shows_it_in_the_pocket(opened, qtbot, no_vina) -> None:
     tool.open_viewer(ToolContext(opened))
     panel = _dock(opened, qtbot)
     session = tool.protein_workspace(ToolContext(opened)).session()
+    assert session.pose is None
     top = panel.rows.topLevelItem(0)
     panel.rows.setCurrentItem(top.child(0))
     assert len(panel.chosen()) == 1 and panel.chosen()[0].rank == 1
-    assert any(shown.id.endswith("1CRN") for shown in session.displays)
+    # the pose is drawn, in 1CRN's pocket
+    assert session.pose is not None and session.pose.name == "1CRN"
 
 
 def test_the_poses_come_back_with_the_document(opened, qtbot, no_vina, tmp_path) -> None:
@@ -303,3 +305,23 @@ def test_rescore_says_so_when_a_protein_has_no_docked_poses(opened) -> None:
         "This protein has no docked poses: dock into it first (Protein ▸ Dock…)"
     )
     dialog.close()
+
+
+def test_a_later_run_into_another_protein_copies_with_that_protein(opened, qtbot) -> None:
+    """The panel is filled again by a run into another protein, and what it copies to the
+    table must say which protein the poses are in now, not which it was first opened for."""
+    from chemsuite.protein.workspace.poses import DockedPoses
+    from chemsuite.protein.workspace.poses import Pose as KeptPose
+
+    ctx = ToolContext(opened)
+    block = Chem.MolToMolBlock(_mol())
+    first = DockedPoses("1CRN", (KeptPose("a", 1, -7.0, 0.0, 0.0, block),))
+    second = DockedPoses("2XYZ", (KeptPose("b", 1, -8.0, 0.0, 0.0, block),))
+    panel = dock.show_poses(ctx, first)
+    assert dock.show_poses(ctx, second) is panel  # the same panel, filled again
+    panel.rows.selectAll()
+    assert len(panel.send_to_table()) == 1
+    table = opened.workspace.table
+    copied = [oid for oid in table.oids.tolist()
+              if str(table.cell(dock.AFFINITY_COLUMN, oid) or "") == "-8.00"]  # fmt: skip
+    assert [str(table.cell(PROTEIN_COLUMN, oid)) for oid in copied] == ["2XYZ"]

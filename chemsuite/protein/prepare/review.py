@@ -206,27 +206,23 @@ def decisions_from(
 ) -> Decisions:
     """The chemist's answers as :class:`Decisions`.
 
-    *skip_issues* marks issue ids to leave alone (untick a repair); *overrides* holds site ids
-    against the state label each must take. What is not named is left to the preparation.
+    *found* must be the survey run **without** decisions (the proposals): the answers are read
+    against it, and nothing it was itself run with is carried over, so a re-survey that held a
+    choice never turns that choice into a silent default. *skip_issues* marks issue ids to
+    leave alone (untick a repair); *overrides* holds site ids against the state label each must
+    take. What is not named is left to the preparation.
     """
     skipped = {id for id, skip in (skip_issues or {}).items() if skip}
     repair: set[int] | None = None
-    altlocs = dict(found.decisions.altlocs)
     if any(i.kind == inspection.MISSING and i.id in skipped for i in found.issues):
         repair = {
             i.residue
             for i in found.issues
             if i.kind == inspection.MISSING and i.residue >= 0 and i.id not in skipped
         }
-    states = dict(found.decisions.states)
+    states: dict[str, str] = {}
     for id, label in (overrides or {}).items():
         choice = found.choice(id)
         if choice is not None and any(state.label == label for state in choice.states):
             states[choice.id] = label
-    return Decisions(
-        repair=frozenset(repair) if repair is not None else None,
-        keep_waters=found.decisions.keep_waters,
-        drop_waters=found.decisions.drop_waters,
-        altlocs=altlocs,
-        states=states,
-    )
+    return Decisions(repair=frozenset(repair) if repair is not None else None, states=states)

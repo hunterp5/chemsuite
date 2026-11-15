@@ -122,7 +122,12 @@ class InspectorPanel(ToolPanel):
         apply: Decide | None = None,
     ) -> None:
         super().__init__()
+        #: what is shown: after a re-survey, solved with the hand-made choices held
         self.survey = found
+        #: the survey run with nothing held — what the preparation proposed on its own. The
+        #: chemist's answers are read against it, Reset goes back to it, and the report's
+        #: "proposed" comes from it (never from a survey that already held their choice).
+        self.base = found
         self._select = select
         self._resurvey = resurvey
         self._apply = apply
@@ -180,9 +185,14 @@ class InspectorPanel(ToolPanel):
         found: Survey,
         skipped: tuple[str, ...] | set[str] = (),
         overrides: Mapping[str, str] | None = None,
+        base: Survey | None = None,
     ) -> None:
-        """Show *found*, with what was already decided about it (a re-survey keeps it)."""
+        """Show *found*, with what was already decided about it (a re-survey keeps it).
+
+        *base* is the survey with nothing held; without one, *found* is taken as it (a first
+        survey)."""
         self.survey = found
+        self.base = base if base is not None else found
         issue_ids = {issue.id for issue in found.issues}
         choice_ids = {choice.id for choice in found.choices}
         self.skipped = {id for id in skipped if id in issue_ids}
@@ -299,6 +309,11 @@ class InspectorPanel(ToolPanel):
                 return item
         return None
 
+    def proposed(self, id: str) -> str:
+        """What the preparation chose for the choice *id* on its own (from :attr:`base`)."""
+        choice = self.base.choice(id)
+        return choice.state.label if choice is not None and choice.state else ""
+
     def choice_at(self, index: QModelIndex) -> Choice | None:
         item = self.rows.itemFromIndex(index)
         found = item.data(0, LINE) if item is not None else None
@@ -318,7 +333,7 @@ class InspectorPanel(ToolPanel):
         choice = item.data(0, LINE) if item is not None else None
         if not isinstance(choice, Choice) or all(s.label != label for s in choice.states):
             return False
-        proposed = choice.state.label if choice.state else ""
+        proposed = self.proposed(id)
         if label == proposed:
             self.overrides.pop(id, None)
         else:
@@ -385,8 +400,8 @@ class InspectorPanel(ToolPanel):
         return tuple(sorted(self.skipped)), dict(self.overrides)
 
     def reset(self) -> None:
-        """Every line back as the survey proposed."""
-        self.fill(self.survey)
+        """Every line back as the survey proposed: the survey with nothing held."""
+        self.fill(self.base)
         self._changed()
 
     def resurvey(self) -> None:

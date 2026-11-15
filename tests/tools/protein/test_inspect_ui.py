@@ -180,3 +180,46 @@ def test_a_half_finished_review_comes_back_with_the_document(opened, qtbot, tmp_
     qtbot.waitUntil(back, timeout=120_000)
     again = ctx.find_panel(INSPECT_ID)
     assert again.decisions() == ((missing.id,), {})
+
+
+def _overruled_and_resurveyed(window, qtbot):
+    panel = surveyed(window, qtbot)
+    amide = next(c for c in panel.survey.choices if c.kind == sites.AMIDE)
+    proposed = amide.state.label
+    other = next(s.label for k, s in enumerate(amide.states) if k != amide.chosen)
+    panel.set_state(amide.id, other)
+    panel.resurvey()
+    qtbot.waitUntil(lambda: panel.apply_button.isEnabled(), timeout=120_000)
+    assert panel.survey.choice(amide.id).state.label == other  # shown held
+    return panel, amide, proposed, other
+
+
+def test_after_a_resurvey_the_report_still_says_what_was_proposed(opened, qtbot) -> None:
+    """The survey on screen already holds the choice; the report's "proposed" must come from
+    the survey with nothing held, or it records the chemist's choice as the program's."""
+    panel, amide, proposed, other = _overruled_and_resurveyed(opened, qtbot)
+    assert proposed != other
+    ctx = ToolContext(opened)
+    job = inspect_dialog.apply_review(ctx, panel, *panel.decisions())
+    qtbot.waitUntil(lambda: not job.running, timeout=120_000)
+    report = ctx.find_panel(PrepareReportPanel.tool_id)
+    lines = [row.text for row in report.report.rows if row.text.startswith("Chosen by hand")]
+    assert lines == [f"Chosen by hand: Amide flip {other} (proposed: {proposed})"]
+
+
+def test_reset_after_a_resurvey_applies_exactly_what_prepare_would(opened, qtbot) -> None:
+    """Reset must drop a held choice for good, not leave it riding on the shown survey."""
+    before = structure(opened)
+    panel, _amide, _proposed, _other = _overruled_and_resurveyed(opened, qtbot)
+    panel.reset()
+    assert panel.decisions() == ((), {})
+    ctx = ToolContext(opened)
+    job = inspect_dialog.apply_review(ctx, panel, *panel.decisions())
+    qtbot.waitUntil(lambda: not job.running, timeout=120_000)
+    plain = pipeline.prepare(before, pipeline.Options())
+    applied = structure(opened)
+    assert applied.n_atoms == plain.structure.n_atoms
+    assert np.array_equal(applied.uid, plain.structure.uid)
+    assert np.allclose(applied.coords, plain.structure.coords)
+    report = ctx.find_panel(PrepareReportPanel.tool_id)
+    assert not any("by hand" in row.text for row in report.report.rows)
