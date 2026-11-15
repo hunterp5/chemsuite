@@ -144,3 +144,14 @@ def test_waters_can_be_kept_or_dropped_one_by_one(kinase) -> None:
     drop_one = pipeline.Decisions(drop_waters=frozenset({second}))
     dropped = pipeline.keep_waters(kinase, pipeline.ALL, drop_one)
     assert (dropped.res_name == "HOH").sum() == len(water) - 1
+
+
+def test_a_review_warns_exactly_where_the_report_does(kinase) -> None:
+    """One ⚠ rule: a line the report does not flag is not flagged for review either, so
+    waters and free rotors (near ties that mean nothing) stay out of "⚠ Only"."""
+    found = review.survey("PKA", kinase, pipeline.Options(waters=pipeline.NEAR_LIGANDS))
+    waters = [c for c in found.choices if c.kind == sites.WATER]
+    assert waters and not any(c.warn for c in waters)
+    flagged = {row.residue for row in found.prepared.report if row.warn}
+    warned = {c.residue for c in found.choices if c.warn}
+    assert warned and warned <= flagged

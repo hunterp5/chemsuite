@@ -99,15 +99,12 @@ class Choice:
     gap: float  # to the next best state
     pka: float | None = None  # with titration
     population: float | None = None
+    #: worth a look (⚠), by the same rule as the preparation report (``pipeline.warns``)
+    warn: bool = False
 
     @property
     def what(self) -> str:
         return KINDS.get(self.kind, self.kind.title())
-
-    @property
-    def warn(self) -> bool:
-        """A near tie: the next best state was nearly as good, so it is worth a look."""
-        return self.gap < pipeline.AMBIGUOUS
 
     @property
     def state(self) -> State | None:
@@ -193,6 +190,7 @@ def _choices(prepared: Prepared) -> tuple[Choice, ...]:
                 choice.gap,
                 prepared.pka.get(site.residue),
                 prepared.population.get(site.residue),
+                pipeline.warns(choice, pipeline.site_fraction(choice, prepared.population)),
             )
         )
     return tuple(out)

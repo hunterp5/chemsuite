@@ -308,6 +308,34 @@ def keep_waters(s: Structure, which: str, chosen: Decisions | None = None) -> St
     return s.subset(~drop)
 
 
+def warns(c: solve.Choice, fraction: float | None = None) -> bool:
+    """Whether a choice is worth the chemist's eye (⚠), the one rule the report and a review
+    (:mod:`.review`) both use. *fraction* is a titrating site's protonated share (a ligand's:
+    the share of the form it takes).
+
+    - A water never: its free hydrogen nearly always has a second orientation as good.
+    - A titrating site, or a ligand, when both its forms are present at this pH.
+    - A rotor not when it is free to spin (no hydrogen bond) or its next best makes the same
+      bonds (:data:`BONDED`, :data:`DEGENERATE`): either answer is the same answer.
+    - Anything else when the next best state is within :data:`AMBIGUOUS`.
+    """
+    kind = c.site.kind
+    if kind == sites.WATER:
+        return False
+    if kind == sites.LIGAND:
+        return fraction is not None and fraction < 1 - MIXED
+    if fraction is not None:
+        return MIXED < fraction < 1 - MIXED
+    if kind == sites.ROTOR and (c.energy > BONDED or c.gap <= DEGENERATE):
+        return False
+    return c.gap < AMBIGUOUS
+
+
+def site_fraction(c: solve.Choice, share: Mapping[int, float]) -> float | None:
+    """A site's protonated share, if it titrated (its rotors do not)."""
+    return share.get(c.site.residue) if c.site.titrating else None
+
+
 def _site_findings(
     s: Structure, choices: list[solve.Choice], share: dict[int, float] | None = None
 ) -> list[Finding]:
@@ -317,14 +345,14 @@ def _site_findings(
     found = []
     for c in choices:
         state = c.site.states[c.state]
-        fraction = share.get(c.site.residue) if c.site.titrating else None  # not its rotors
+        fraction = site_fraction(c, share)
         if c.site.kind == sites.LIGAND:
             found += _ligand_finding(s, c, fraction)
             continue
         if c.site.kind == sites.WATER:
             continue  # one row for them all (_water_finding)
         if fraction is not None and c.site.kind != sites.HIS:  # titration decides, not the gap
-            mixed = MIXED < fraction < 1 - MIXED
+            mixed = warns(c, fraction)
             if state.form not in UNCOMMON and not mixed:
                 continue
             what = UNCOMMON.get(state.form) or state.form.title()
@@ -338,12 +366,11 @@ def _site_findings(
             continue
         if c.site.kind == sites.AMIDE and not state.flipped and c.gap >= AMBIGUOUS:
             continue
-        close = c.gap < AMBIGUOUS
+        close = warns(c, fraction)
         what = {sites.AMIDE: "Amide", sites.HIS: "His", sites.ROTOR: "Rotor",
                 sites.ACID: "Acid"}[c.site.kind]  # fmt: skip
         text = f"{what}: {state.label}" + (f" (next best within {c.gap:.1f})" if close else "")
         if fraction is not None:
-            close = MIXED < fraction < 1 - MIXED
             text = f"{what}: {state.label}, {fraction:.0%} protonated"
         found.append(Finding(SITE, s.residue_label(c.site.residue), text, warn=close,
                              residue=c.site.residue))  # fmt: skip
@@ -353,7 +380,7 @@ def _site_findings(
 def _ligand_finding(s: Structure, c: solve.Choice, fraction: float | None) -> list[Finding]:
     """A row for a ligand not as drawn, or whose forms are mixed."""
     state = c.site.states[c.state]
-    mixed = fraction is not None and fraction < 1 - MIXED
+    mixed = warns(c, fraction)
     if state.form == ligand_sites.AS_DRAWN and not mixed:
         return []
     text = f"Ligand: {state.form}"
