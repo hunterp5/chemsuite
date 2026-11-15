@@ -1638,8 +1638,16 @@ or not, with the rows you chose.
 - **Interactions** draws dashed lines from the ligands (or the selection) to what they touch:
   hydrogen bonds (blue), salt bridges (magenta), π-stacking (green), cation–π (orange),
   hydrophobic contacts (grey), halogen bonds (cyan), metal contacts (purple) and water bridges
-  (light blue). Point at an atom to read its interactions in the status line. Structures from
-  the PDB rarely carry hydrogens, so these are judged from heavy atoms.
+  (light blue). Point at an atom to read its interactions in the status line.
+- **Hydrogen bonds use the hydrogen where the structure has one** — a protein you have
+  prepared, an NMR model, a ligand drawn with hydrogens: the H···A distance (up to 2.5 Å) and
+  the D–H···A angle (at least 100°) decide, and the dashed line starts at the hydrogen, which
+  is where the bond is. A residue that carries hydrogens and has none on a polar atom does not
+  donate there, so a prepared His donates from the nitrogen its tautomer protonated and not
+  from the other. Structures from the PDB rarely carry hydrogens; without them the donor and
+  acceptor heavy atoms are judged on their distance (2.5–3.5 Å) and on whether a hydrogen or
+  lone pair could point the right way, and the line runs heavy atom to heavy atom. Either way
+  the distance reported is the donor–acceptor one.
 - **Focus ▸** a ligand shows its pocket (residues within 5 Å as sticks, the waters and ions
   touching it) with its interactions and a see-through skin over the pocket coloured by
   hydrophobicity, fades the rest of the protein and hides other small molecules. A slice of

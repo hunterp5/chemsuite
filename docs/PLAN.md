@@ -142,8 +142,11 @@ The core is one Qt-free `Table` object. Everything else goes through its public 
   ```python
   # tools/descriptors/tool.py
   TOOL = Tool(
-      id="descriptors", menu=("Chemistry", "Calculate"), title="Descriptors…",
-      requires=("rdkit",), needs_selection=False,
+      id="descriptors",
+      menu=("Chemistry", "Calculate"),
+      title="Descriptors…",
+      requires=("rdkit",),
+      needs_selection=False,
       open=lambda ctx: DescriptorDialog(ctx).show(),
   )
   ```

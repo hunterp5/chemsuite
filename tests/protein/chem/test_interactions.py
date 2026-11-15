@@ -97,6 +97,8 @@ def test_a_hydrophobic_pocket(lysozyme) -> None:
 def test_lines_start_at_the_query(kinase) -> None:
     query = it.ligand_query(kinase, _ligand(kinase, "ATP"))
     found = it.find(kinase, query)
+    # 1ATP carries no hydrogens, so every line starts at the query's own atom
+    assert not (kinase.element == 1).any()
     assert np.allclose(found.start, kinase.xyz(0)[found.a], atol=1e-4)
     direct = found.kind != it.WATER_BRIDGE
     assert query[found.a[direct]].all() and not query[found.b[direct]].any()
@@ -164,3 +166,45 @@ def test_a_display_shows_and_saves_its_interactions(kinase) -> None:
     assert np.array_equal(again.query, shown.query)
     shown.show_interactions(None)
     assert len(compose([shown]).lines) == 0
+
+
+def test_a_hydrogen_bond_uses_the_hydrogen_where_the_structure_has_one(nmr) -> None:
+    """Ubiquitin's NMR models carry their hydrogens, so the real D–H···A geometry is used and
+    the line is drawn from the hydrogen, not from the heavy atom behind it."""
+    backbone = (nmr.atom_chain == 0) & np.isin(nmr.name, ["N", "O"])
+    found = it.find(nmr, backbone)
+    hbonds = np.flatnonzero(found.kind == it.HBOND)
+    assert len(hbonds) >= 5
+    drawn = found.start[hbonds]
+    donors = nmr.xyz(0)[found.a[hbonds]]
+    from_hydrogen = ~np.isclose(np.linalg.norm(drawn - donors, axis=1), 0.0, atol=1e-4)
+    assert from_hydrogen.any(), "a bond the query donates starts at its hydrogen"
+    # where it does, the hydrogen is on the donor and within reach of the acceptor
+    for k in np.flatnonzero(from_hydrogen).tolist():
+        line = found.start[hbonds][k]
+        donor = nmr.xyz(0)[found.a[hbonds][k]]
+        acceptor = nmr.xyz(0)[found.b[hbonds][k]]
+        assert np.linalg.norm(line - donor) < 1.2  # an X–H bond length
+        assert np.linalg.norm(line - acceptor) <= it.HBOND_H_MAX + 1e-4
+        angle = it._angle(donor, line, acceptor)
+        assert angle >= it.HBOND_DHA_MIN
+    # the distance stays the donor–acceptor one, whatever the line is drawn between
+    assert all(it.HBOND_MIN <= d <= it.HBOND_MAX for d in found.distance[hbonds])
+
+
+def test_a_protonated_residue_donates_only_where_it_has_a_hydrogen(nmr) -> None:
+    """A His (or any residue) carrying hydrogens is not a donor on a nitrogen that has none:
+    its tautomer decides, instead of the heavy-atom guess accepting both."""
+    hydrogens = it._Hydrogens(nmr, nmr.active())
+    nitrogen = np.flatnonzero((nmr.element == 7) & (nmr.atom_chain == 0))
+    bare = [i for i in nitrogen.tolist() if not hydrogens.on(i)]
+    assert bare, "ubiquitin has a polar nitrogen with no hydrogen on it"
+    assert all(hydrogens.protonated(i) for i in bare)  # their residues do carry hydrogens
+    found = it.find(nmr, np.isin(np.arange(nmr.n_atoms), bare))
+    donated = [
+        int(found.a[k])
+        for k in np.flatnonzero(found.kind == it.HBOND).tolist()
+        if int(found.a[k]) in set(bare)
+    ]
+    for i in donated:  # each one is the acceptor's partner, never the donor
+        assert not hydrogens.on(i)

@@ -17,14 +17,21 @@
 around it: hydrogen bonds, salt bridges, π-stacking, cation–π, hydrophobic contacts, halogen
 bonds, metal contacts and water bridges.
 
-Structures from the PDB rarely carry hydrogens, so everything is judged from heavy atoms.
-Amino acids get their features from atom names; ligands and other small molecules from their
-RDKit molecule with bond orders (:func:`.ligands.to_mol`); waters are donors and acceptors.
+Structures from the PDB rarely carry hydrogens, so everything is judged from heavy atoms where
+there are none. Amino acids get their features from atom names; ligands and other small
+molecules from their RDKit molecule with bond orders (:func:`.ligands.to_mol`); waters are
+donors and acceptors.
+
 A hydrogen bond needs the donor–acceptor distance and, at both ends, the partner where a
-hydrogen or lone pair can point (:func:`_points_at`); one to a water is shown as part of a
-water bridge, one between salt-bridge atoms as the salt bridge. Cut-offs follow PLIP (Salentin
-et al. 2015). Hydrophobic contacts and charged pairs keep only the closest pair per residue
-pair, so a pocket does not fill with lines.
+hydrogen or lone pair can point (:func:`_points_at`). **Where the donor carries its hydrogen**
+— a prepared structure (Protein ▸ Prepare…), an NMR model, a ligand drawn with hydrogens — the
+real geometry is used instead of that proxy: the H···A distance and the D–H···A angle
+(:func:`_donor_hydrogen`), and the dashed line is drawn from the hydrogen, which is where the
+bond is. A residue that carries hydrogens and still has none on a polar atom is not a donor
+there, so a prepared His donates from the nitrogen its tautomer protonated and not the other.
+One bond to a water is shown as part of a water bridge, one between salt-bridge atoms as the
+salt bridge. Cut-offs follow PLIP (Salentin et al. 2015). Hydrophobic contacts and charged
+pairs keep only the closest pair per residue pair, so a pocket does not fill with lines.
 """
 
 from __future__ import annotations
@@ -72,6 +79,9 @@ COLOURS = {
 HBOND_MIN, HBOND_MAX = 2.5, 3.5
 HBOND_NEIGHBOUR_ANGLE = 90.0
 HBOND_BISECTOR_ANGLE = 50.0
+#: with the donor's hydrogen present: H···A at most this, and D–H···A at least this (PLIP)
+HBOND_H_MAX = 2.5
+HBOND_DHA_MIN = 100.0
 SALT_BRIDGE_MAX = 4.0
 PI_STACK_MAX = 5.5
 PI_OFFSET_MAX = 2.0
@@ -146,9 +156,13 @@ class Interactions:
     kind: np.ndarray  # int8 (m,)
     a: np.ndarray  # int64 (m,)
     b: np.ndarray  # int64 (m,)
-    start: np.ndarray  # float32 (m, 3): the query end (an atom or a ring centre)
+    #: float32 (m, 3): where the line is drawn from — the query's atom, a ring's centre, or
+    #: the hydrogen of a hydrogen bond the query donates
+    start: np.ndarray
     end: np.ndarray  # float32 (m, 3)
-    distance: np.ndarray  # float32 (m,)
+    #: float32 (m,): what the interaction measures — the length of the line, except that a
+    #: hydrogen bond's is the donor–acceptor distance its cut-offs bound, not H···A
+    distance: np.ndarray
 
     @classmethod
     def empty(cls) -> Interactions:
@@ -283,6 +297,33 @@ def _heavy_neighbours(s: Structure) -> dict[int, list[int]]:
     return out
 
 
+class _Hydrogens:
+    """Which heavy atoms carry hydrogens, where a structure has any.
+
+    ``on(atom)`` gives an atom's hydrogens, and ``protonated(atom)`` whether its residue
+    carries hydrogens at all: a residue that does, with none on this atom, is not a donor
+    there. Deciding per residue rather than per structure keeps a prepared protein with an
+    unprepared ligand (or the other way about) honest on each side.
+    """
+
+    def __init__(self, s: Structure, active: np.ndarray) -> None:
+        hydrogen = (s.element == 1) & active
+        self._on: dict[int, list[int]] = {}
+        for a, b in s.bonds.tolist():
+            for heavy, light in ((a, b), (b, a)):
+                if hydrogen[light] and not hydrogen[heavy]:
+                    self._on.setdefault(heavy, []).append(light)
+        self._residues = np.zeros(s.n_residues, bool)
+        self._residues[s.residue_of[hydrogen]] = True
+        self._residue_of = s.residue_of
+
+    def on(self, atom: int) -> list[int]:
+        return self._on.get(atom, [])
+
+    def protonated(self, atom: int) -> bool:
+        return bool(self._residues[self._residue_of[atom]])
+
+
 # -- interactions -------------------------------------------------------------------------------
 
 
@@ -310,10 +351,11 @@ def find(
     p = features(s, near, active, model, smiles)
     bonded = {tuple(sorted(pair)) for pair in s.bonds.tolist()}
     neighbours = _heavy_neighbours(s)
+    hydrogens = _Hydrogens(s, active)
     found = _Found(s, xyz)
     _charged(found, q.positive, p.negative, SALT_BRIDGE)
     _charged(found, q.negative, p.positive, SALT_BRIDGE)
-    _hbonds(found, q, p, neighbours, bonded)
+    _hbonds(found, q, p, neighbours, bonded, hydrogens)
     _stacking(found, q.rings, p.rings)
     _cation_pi(found, q.positive, p.rings, query_is_cation=True)
     _cation_pi(found, p.positive, q.rings, query_is_cation=False)
@@ -329,21 +371,24 @@ class _Found:
     def __init__(self, structure: Structure, xyz: np.ndarray) -> None:
         self.s = structure
         self.xyz = xyz
-        self.rows: list[tuple[int, int, int, np.ndarray, np.ndarray]] = []
+        self.rows: list[tuple[int, int, int, np.ndarray, np.ndarray, float]] = []
 
-    def add(self, kind: int, a: int, b: int, start=None, end=None) -> None:
+    def add(self, kind: int, a: int, b: int, start=None, end=None, distance=None) -> None:
+        """*start* and *end* move where the line is drawn (a ring's centre, a hydrogen bond's
+        hydrogen); *distance* is what it measures, the length of the line by default."""
         start = self.xyz[a] if start is None else start
         end = self.xyz[b] if end is None else end
-        self.rows.append((kind, a, b, start, end))
+        length = float(np.linalg.norm(end - start)) if distance is None else float(distance)
+        self.rows.append((kind, a, b, start, end, length))
 
     def result(self) -> Interactions:
         if not self.rows:
             return Interactions.empty()
-        kind, a, b, start, end = zip(*self.rows, strict=True)
+        kind, a, b, start, end, distance = zip(*self.rows, strict=True)
         start, end = np.array(start, np.float32), np.array(end, np.float32)
         return Interactions(np.array(kind, np.int8), np.array(a, np.int64),
                             np.array(b, np.int64), start, end,
-                            np.linalg.norm(end - start, axis=1).astype(np.float32))  # fmt: skip
+                            np.array(distance, np.float32))  # fmt: skip
 
 
 def _pairs(xyz, first, second, cutoff: float):
@@ -382,15 +427,43 @@ def _points_at(xyz, neighbours, atom: int, partner: int) -> bool:
     return _angle(xyz[atom] + direction, xyz[atom], xyz[partner]) <= HBOND_BISECTOR_ANGLE
 
 
-def _hbonds(found: _Found, q: Features, p: Features, neighbours, bonded) -> None:
+def _donor_hydrogen(xyz, hydrogens: _Hydrogens, donor: int, acceptor: int) -> int | None:
+    """The donor's hydrogen pointing at *acceptor*: the one with the straightest D–H···A
+    within reach, or None when it has none close enough."""
+    best, straightest = None, HBOND_DHA_MIN
+    for h in hydrogens.on(donor):
+        if np.linalg.norm(xyz[h] - xyz[acceptor]) > HBOND_H_MAX:
+            continue
+        angle = _angle(xyz[donor], xyz[h], xyz[acceptor])
+        if angle >= straightest:
+            best, straightest = h, angle
+    return best
+
+
+def _hbonds(found: _Found, q: Features, p: Features, neighbours, bonded, hydrogens) -> None:
     xyz = found.xyz
-    seen = {(a, b) for kind, a, b, _s, _e in found.rows if kind == SALT_BRIDGE}
+    seen = {(a, b) for kind, a, b, *_rest in found.rows if kind == SALT_BRIDGE}
     for donors, acceptors in ((q.donors, p.acceptors), (q.acceptors, p.donors)):
+        query_donates = donors is q.donors
         for i, j, d in _pairs(xyz, donors, acceptors, HBOND_MAX):
             if (d < HBOND_MIN or (min(i, j), max(i, j)) in bonded or (i, j) in seen
                     or found.s.res_kind[found.s.residue_of[j]] == WATER):  # fmt: skip
                 continue
-            if _points_at(xyz, neighbours, i, j) and _points_at(xyz, neighbours, j, i):
+            donor, acceptor = (i, j) if query_donates else (j, i)
+            if not _points_at(xyz, neighbours, acceptor, donor):
+                continue  # no lone pair to offer
+            if hydrogens.on(donor):
+                h = _donor_hydrogen(xyz, hydrogens, donor, acceptor)
+                if h is None:
+                    continue
+                # the line starts where the bond does: at the hydrogen
+                start, end = (xyz[h], xyz[j]) if query_donates else (xyz[i], xyz[h])
+                seen.add((i, j))
+                found.add(HBOND, i, j, start, end, distance=d)
+                continue
+            if hydrogens.protonated(donor):
+                continue  # its residue has hydrogens and this atom none: not a donor here
+            if _points_at(xyz, neighbours, donor, acceptor):
                 seen.add((i, j))
                 found.add(HBOND, i, j)
 
