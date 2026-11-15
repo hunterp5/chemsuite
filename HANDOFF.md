@@ -226,6 +226,29 @@ other machine can pick it up. Update it at the end of a session that leaves work
   Recombine Fragments); Standardize keeps stripped salts in a `Salts` column and can form
   salts (`analysis/salts.py`). The Structure Viewer is now Data ▸ Browser (bottom section,
   Ctrl+Shift+B); Ctrl+Shift+3 is gone. Merged to `main` 2026-11-14 (full suite green).
+- **Prepare Reagents, and R-groups from a file** (done 2026-11-15, at the user's request; the
+  plan is in Claude's plan file on the Windows PC). Chemistry ▸ Enumerate ▸ **Prepare
+  Reagents…** turns reagents into substituents: `chemsuite/analysis/reagents.py` holds 13 kinds
+  (acyl chloride, carboxylic acid, sulfonyl chloride, chloroformate, isocyanate, aryl halide,
+  boronic, alkyl halide, aldehyde, alkyne, amine, alcohol, thiol), each a one-reactant
+  transform whose product carries a plain `*`, in **tiers** so an aryl halide loses iodide
+  before bromide before triflate before chloride. Output is a new window (one row per
+  fragment: `Fragment`, `Reagent`, `Sites Found`) or columns. **R-Groups on a Core** gained
+  **From a File…** per position (`tools/fragments/rgroups_library.py`), reading the file in the
+  job, so the count is unknown until the run.
+  - **The user's choice:** *every* matching site is prepared (identical fragments collapse, so
+    a symmetric diacid gives one). A fragment from a bifunctional reagent therefore carries the
+    other group live, which `Sites Found` is there to expose; the design review would have
+    skipped those instead.
+  - Found and fixed on the way: a **delimited file's structure column is recognised by its
+    header**, so a saved `Fragment` column loads as text and `load_blocks` saw no structure
+    column — it now takes a predicate and looks past structure columns, which also lets it pick
+    the fragments out of a set that lists reagents beside them. And the **Core field's Draw…**
+    ran every drawing through `drawn_query_text` (right for a search, wrong for a core), so a
+    drawn R1 lost its number; `rgroup_library.core_from_drawing` fixes it and `ReactionText`
+    takes the converter from the field.
+  - **Still to do:** the by-hand run in the app (prepare a reagent column, save it, build
+    amides from a drawn core with it). Not yet tried outside the tests.
 
 ## Next
 

@@ -205,7 +205,7 @@ modified.
 | Potency standardisation | IC50, Ki or EC50 in any units to pIC50 / pKi, with unit detection. |
 | Structure preparation | RDKit MolStandardize: salt strip, largest fragment, neutralise, canonical tautomer, add or remove Hs. "Fast Prepare" uses sensible defaults. |
 | Scaffolds | Bemis–Murcko and generic scaffolds as columns, plus a scaffold tree or count view. |
-| Decomposition and enumeration | **Done 2026-11-14:** Chemistry ▸ Decompose (R-Group Decomposition, Fragments by BRICS or RECAP, Central Ring) and Chemistry ▸ Enumerate (Reaction Products with 28 named templates, R-Groups on a Core, Recombine Fragments). |
+| Decomposition and enumeration | **Done 2026-11-14:** Chemistry ▸ Decompose (R-Group Decomposition, Fragments by BRICS or RECAP, Central Ring) and Chemistry ▸ Enumerate (Reaction Products with 28 named templates, R-Groups on a Core, Recombine Fragments). **2026-11-15:** Prepare Reagents turns reagents into substituents (13 kinds, the leaving group replaced by an attachment point), and R-Groups on a Core takes a position's substituents From a File…, so a prepared set is reused across cores. |
 | Documents | Duplicate document, send selected rows to a new document, and Notes (a notepad saved in the `.csd`). |
 | Macros | Record and replay sequences of commands with their settings. The new command registry is the base for this. |
 | Random utilities | Random numbers and a random molecule sample. Low priority. |
