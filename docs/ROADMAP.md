@@ -298,7 +298,7 @@ bioactive conformation**: the pose of a ligand crystallised in its protein.
   (AMR-R 0.837 / 0.582 Å at 10 / 250 conformers, against 0.985 / 0.725 Å for the ETKDG
   default). The default's energy window and MMFF clean-up make ETKDG worse at 50 and 250;
   plain ETKDG gives 0.747 / 0.623 Å there. CONFORGE is now the default Generator, with
-  `cdpkit` in the base install where it has wheels. Open: ETKDG's own defaults.
+  `cdpkit` in the base install where it has wheels. Where ETKDG is the default (no cdpkit), its energy window starts off.
 - **Ship.** The new generator becomes the default behind the same tool, and ETKDG stays
   available. It keeps partial results on cancel and runs in the process pool. The user guide
   states the benchmark numbers.

@@ -97,6 +97,17 @@ def test_conforge_choice(window, monkeypatch) -> None:
     dialog.reject()
 
 
+def test_defaults(monkeypatch) -> None:
+    from chemsuite.conformers import conforge
+    from chemsuite.tools.conformers.dialog import default_settings
+
+    monkeypatch.setattr(conforge, "available", lambda: True)
+    assert default_settings().method == "conforge" and default_settings().energy_window == 10.0
+    # ETKDG keeps more of its conformers: its energy window only lost poses in the bench
+    monkeypatch.setattr(conforge, "available", lambda: False)
+    assert default_settings().method == "etkdg" and default_settings().energy_window is None
+
+
 def test_export_conformers(window, qtbot, tmp_path) -> None:
     from chemsuite.tools.conformers.dialog import output_name
 

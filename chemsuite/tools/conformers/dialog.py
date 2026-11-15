@@ -44,7 +44,15 @@ SPAN_COLUMN = "Conformer Energy Range"
 FORCE_FIELDS = {"mmff": "MMFF94 (UFF where MMFF lacks parameters)", "uff": "UFF", None: "None"}
 METHODS = {"etkdg": "ETKDG (RDKit)", "conforge": "CONFORGE (CDPKit)"}
 
-_last = ConformerSettings(method="conforge")  # remembered for the session; ETKDG without cdpkit
+_last: ConformerSettings | None = None  # remembered for the session
+
+
+def default_settings() -> ConformerSettings:
+    """CONFORGE where cdpkit is installed, else ETKDG without the energy window: the closest to
+    crystal poses in the bench (docs/conformers/bench.md)."""
+    if conforge.available():
+        return ConformerSettings(method="conforge")
+    return ConformerSettings(energy_window=None)
 
 
 def output_name(structure: str) -> str:
@@ -125,7 +133,7 @@ class ConformerDialog(ToolDialog):
             "does).",
         )
 
-        self.set_settings(_last)
+        self.set_settings(_last or default_settings())
         for signal in (
             self.structure.currentIndexChanged,
             self.method.currentIndexChanged,

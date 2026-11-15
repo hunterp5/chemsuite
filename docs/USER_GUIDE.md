@@ -1383,7 +1383,8 @@ Generates 3D conformers with one of two **Generators**:
   - Macrocycles are sampled with 200 trial conformers each, which takes several seconds per
     molecule (an 18-membered lactam: about 7 s).
 - **ETKDG (RDKit)**: distance geometry, then optimisation with MMFF94 (UFF where MMFF has no
-  parameters).
+  parameters). Where it is the default (no CONFORGE), the **Energy window** starts unticked:
+  in the same benchmark the window only dropped conformers close to the crystal pose.
 
 - **Input:** the structure column and **All**, **Shown** or **Selected** rows.
 - **Method:** the **Generator**, **Conformers** per molecule, **Distinct above** (the RMSD for
