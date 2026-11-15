@@ -68,6 +68,17 @@ def test_uff_fallback_and_rigid_molecules() -> None:
     assert generate(Chem.MolFromSmiles("c1ccccc1"), ConformerSettings(count=10)).count == 1
 
 
+def test_failed_embedding_ids_are_a_failure_not_a_crash(monkeypatch: pytest.MonkeyPatch) -> None:
+    """RDKit 2026.09 can answer a failed random-coordinates embedding (platensimycin's cage,
+    PDB 3I8P) with ``[-1]`` and no conformers; that is "could not embed", not an IndexError."""
+    from chemsuite.conformers import etkdg
+
+    monkeypatch.setattr(etkdg.rdDistGeom, "EmbedMultipleConfs", lambda mol, count, params: [-1])
+    for optimize in ("mmff", None):
+        result = generate(Chem.MolFromSmiles(FLEXIBLE), ConformerSettings(optimize=optimize))
+        assert result.mol is None and result.error == "could not embed in 3D"
+
+
 def test_settings_validate() -> None:
     with pytest.raises(ValueError):
         ConformerSettings(count=0)

@@ -191,11 +191,12 @@ other machine can pick it up. Update it at the end of a session that leaves work
   Generator choice in Generate Conformers (`conformers/conforge.py`), ETKDG still the default.
   Benchmark: `scripts/review/conformer_bench.py` on Wang et al.'s 3,354 crystal ligands
   (`samples/conformers/wang`, fetched; ids from their SI xlsx). CONFORGE's two variants are done
-  (3,354 ligands each). The ETKDG run crashed on 2026-11-14 after 339 `etkdg-raw` ligands
-  (`IndexError: End of sequence hit` in `etkdg._etkdg`, a bug in the generator itself); the
-  other three ETKDG variants (`etkdg`, `etkdg-prune`, `etkdg-mmff`) have not started. Fix it,
-  re-run them (they resume; log `samples/conformers/wang/out/bench.log`), then `score` →
-  `docs/conformers/bench.md` decides the default.
+  (3,354 ligands each). The ETKDG run crashed on 2026-11-14 after 339 `etkdg-raw` ligands:
+  RDKit 2026.09 answers a failed random-coordinates embedding with id `-1` and no conformer
+  (platensimycin, 3i8p_840), now dropped in `etkdg._embed` ("could not embed in 3D"). The
+  four ETKDG variants were restarted after the fix (they resume; log
+  `samples/conformers/wang/out/bench.log`); then `score` → `docs/conformers/bench.md` decides
+  the default.
   CONFORGE's macrocycle sampling is capped at 200 (provisional). Committed and merged.
 - **Decomposition and enumeration** (done 2026-11-14, ROADMAP §6): Chemistry ▸ Decompose
   (R-Group Decomposition, Fragments, Central Ring), Chemistry ▸ Enumerate (Reaction

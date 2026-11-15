@@ -95,6 +95,13 @@ def _params(settings: ConformerSettings, random_coords: bool) -> rdDistGeom.Embe
     return params
 
 
+def _embed(mol: Chem.Mol, settings: ConformerSettings, random_coords: bool) -> list[int]:
+    """The ids of the conformers embedded into *mol*. RDKit can report a failure as ``-1``
+    with no conformer added (platensimycin's cage from random coordinates), so those go."""
+    ids = rdDistGeom.EmbedMultipleConfs(mol, settings.count, _params(settings, random_coords))
+    return [i for i in ids if i >= 0]
+
+
 def _optimize(mol: Chem.Mol, settings: ConformerSettings) -> tuple[list[float], str]:
     """Optimise every conformer in place; ``(energies, force field name)``."""
     if settings.optimize is None:
@@ -147,13 +154,9 @@ def _etkdg(mol: Chem.Mol, settings: ConformerSettings) -> Conformers:
         try:
             work = Chem.AddHs(Chem.Mol(mol))
             work.RemoveAllConformers()
-            ids = list(
-                rdDistGeom.EmbedMultipleConfs(work, settings.count, _params(settings, False))
-            )
+            ids = _embed(work, settings, random_coords=False)
             if not ids:  # hard cases (big rings, cages) often embed from random coordinates
-                ids = list(
-                    rdDistGeom.EmbedMultipleConfs(work, settings.count, _params(settings, True))
-                )
+                ids = _embed(work, settings, random_coords=True)
             if not ids:
                 return Conformers(None, error="could not embed in 3D")
             energies, force_field = _optimize(work, settings)
