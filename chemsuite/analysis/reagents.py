@@ -54,7 +54,7 @@ from chemsuite.analysis.reactions import TemplateError, apply_template, parse_te
 from chemsuite.analysis.standardize import Options, standardize
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
-from chemsuite.core.mols import mol_from_blob, mol_from_text
+from chemsuite.core.mols import mol_from_blob, mol_from_text, smiles_of
 
 #: A structure cell: its RDKit blob, or its text when not parsed yet (None: blank).
 Cell = bytes | str | None
@@ -282,10 +282,14 @@ def any_fits(reagent_id: str, mols: Sequence[Chem.Mol | None], *, clean: bool = 
 @dataclass(frozen=True)
 class Prepared:
     """What one reagent gave: a fragment per site (identical ones collapsed), and how many
-    sites were found. No fragment and no site: not this kind of reagent."""
+    sites were found. No fragment and no site: not this kind of reagent.
+
+    *reagent* is the reagent itself, so a prepared set records what each fragment came from.
+    """
 
     fragments: tuple[str, ...] = ()
     sites: int = 0
+    reagent: str = ""
 
     @property
     def fragment(self) -> str:
@@ -333,11 +337,13 @@ def prepare(reagent_id: str, mol: Chem.Mol, *, clean: bool = True) -> Prepared:
     With *clean*, the reagent is cleaned up, its salts stripped and its charges neutralised
     first, so a hydrochloride is prepared like its free base.
     """
+    text = smiles_of(mol)
     work = _cleaned(mol, clean)
     tier, count = sites(reagent_id, work)
     if not count:
-        return Prepared()
-    return Prepared(tuple(apply_template(_tiers(reagent_id)[tier], [work])), count)
+        return Prepared(reagent=text)
+    fragments = tuple(apply_template(_tiers(reagent_id)[tier], [work]))
+    return Prepared(fragments, count, text)
 
 
 def prepare_chunk(args: tuple[str, bool, Sequence[Cell]]) -> PreparedRows:

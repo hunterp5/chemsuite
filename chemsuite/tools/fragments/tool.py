@@ -43,6 +43,12 @@ def _central_ring(ctx: ToolContext):
     return ctx.show_dialog(CentralRingDialog(ctx))
 
 
+def _prepare_reagents(ctx: ToolContext):
+    from .prepare_reagents import PrepareReagentsDialog
+
+    return ctx.show_dialog(PrepareReagentsDialog(ctx))
+
+
 def _rgroup_library(ctx: ToolContext):
     from .rgroups_library import RGroupLibraryDialog
 
@@ -75,6 +81,16 @@ TOOLS = (
         requires=("rdkit",),
         needs_structures=True,
         tip="R-groups around each compound's own most central ring system, with no core to enter.",
+    ),
+    Tool(
+        id="prepare-reagents",
+        title="Prepare Reagents…",
+        menu=BUILD,
+        open=_prepare_reagents,
+        requires=("rdkit",),
+        needs_structures=True,
+        tip="Turn reagents into substituents: the leaving group goes and an attachment point "
+        "stays, ready for R-Groups on a Core.",
     ),
     Tool(
         id="rgroup-library",

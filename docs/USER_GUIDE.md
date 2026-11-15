@@ -458,6 +458,42 @@ Chemistry ▸ Enumerate ▸ Reaction Products… applies a reaction template to 
 - Every named reaction is checked against hand-worked products, including that stereocentres
   away from the reaction are kept.
 
+### Prepare Reagents
+
+Chemistry ▸ Enumerate ▸ Prepare Reagents… turns reagents into substituents. A reagent as a
+catalogue lists it is not a substituent: an acyl chloride carries a chloride that leaves when
+it acylates, so what joins a core is the acyl fragment. This writes that fragment with an
+attachment point, ready for [R-Groups on a Core](#r-groups-on-a-core): acetyl chloride
+`CC(=O)Cl` becomes `*C(C)=O`, which on the core `C1CCN([*:1])CC1` gives the amide
+`CC(=O)N1CCCCC1`.
+
+- **Reagents** is a structure column of the open table, so open a supplier's file with File ▸
+  Open first.
+- **Reagent** is what kind they are, grouped by the bond each makes:
+  - *Acylation*: acyl chloride, carboxylic acid, sulfonyl chloride, chloroformate, isocyanate.
+  - *Arylation and Alkylation*: aryl halide or triflate, boronic acid or ester, alkyl halide or
+    sulfonate, aldehyde, terminal alkyne.
+  - *Nucleophile*: amine (N-H), alcohol or phenol, thiol.
+
+  Each kind's tooltip says what leaves and what attaches. An aryl halide loses iodide before
+  bromide before triflate before chloride, so a bromo-chloroarene loses only its bromide.
+- **Output**:
+  - **New Window** (the default) holds one row per fragment — `Fragment`, `Reagent` and
+    `Sites Found` — to save as a reagent file and hand back to R-Groups on a Core.
+  - **Columns** writes the first fragment of each row into the table, beside the reagent it
+    came from.
+- **More Options ▸ Clean up** (on) strips salts and neutralises first, so a hydrochloride is
+  prepared like its free base.
+- **Every matching site is prepared**, and identical fragments collapse: a symmetric diacid
+  gives one fragment, an unsymmetric diol gives two. `Sites Found` counts them, which matters
+  because **a fragment from a bifunctional reagent still carries the other group, live** —
+  preparing terephthaloyl dichloride gives `*C(=O)c1ccc(C(=O)Cl)cc1`, with the second acyl
+  chloride intact. Sort or filter on `Sites Found` to check those before building a library.
+- Reagents of another kind are counted in the message rather than quietly skipped, and
+  **cancelling** keeps the rows already prepared.
+- When no reaction template fits the bond you want, this is the way to build the library;
+  when one does, [Reaction Products](#reaction-products) needs no preparation step at all.
+
 ### R-Groups on a Core
 
 Chemistry ▸ Enumerate ▸ R-Groups on a Core… makes every combination of the substituents you

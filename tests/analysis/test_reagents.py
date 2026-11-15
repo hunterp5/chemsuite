@@ -99,7 +99,8 @@ def test_a_reagent_of_another_kind_gives_nothing() -> None:
     assert fragments("acyl-chloride", "c1ccccc1") == ()
     assert fragments("amine", "CC(=O)NC") == ()  # an amide N is not an amine
     assert fragments("aldehyde", "CC(C)=O") == ()  # a ketone is not an aldehyde
-    assert prepare("acyl-chloride", Chem.MolFromSmiles("c1ccccc1")) == Prepared()
+    missed = prepare("acyl-chloride", Chem.MolFromSmiles("c1ccccc1"))
+    assert missed == Prepared(reagent="c1ccccc1")  # the reagent is kept, so it can be listed
 
 
 def test_the_first_matching_tier_wins() -> None:

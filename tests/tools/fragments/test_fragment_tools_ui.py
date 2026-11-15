@@ -287,3 +287,76 @@ def test_a_range_upside_down_is_refused(chem, qtbot) -> None:
     high.setValue(300.0)
     assert "MW" in dialog.status.text()
     assert not dialog.primary.isEnabled()
+
+
+# -- Chemistry ▸ Enumerate ▸ Prepare Reagents ---------------------------------------------------
+REAGENTS = [
+    "CC(=O)Cl",  # acetyl chloride
+    "CCC(=O)Cl",  # propionyl chloride
+    "ClC(=O)c1ccc(C(=O)Cl)cc1",  # two sites, symmetric
+    "c1ccccc1",  # not an acyl chloride
+    "",
+]
+
+
+@pytest.fixture
+def reagents(window):
+    from chemsuite.app.document.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    table = Table()
+    table.add_rows(
+        {"ID": [f"R{i}" for i in range(len(REAGENTS))], "Reagents": REAGENTS}, undoable=False
+    )
+    table.convert_column("Reagents", "structure")
+    table.history.mark_clean()
+    window._install(Workspace(table))
+    return window
+
+
+def test_prepare_reagents_writes_a_fragment_column(reagents, qtbot) -> None:
+    table = reagents.workspace.table
+    dialog = reagents.open_tool("prepare-reagents")
+    assert dialog.primary.text() == "Prepare 5 Reagents"
+    dialog.output.set_value("columns")
+    dialog.run()
+    qtbot.waitUntil(lambda: "Fragment" in table.column_names, timeout=20_000)
+    acetyl, _propionyl, diacid, benzene, blank = (int(o) for o in table.oids)
+    assert table.cell("Fragment", acetyl) == "*C(C)=O"
+    assert table.cell("Sites Found", acetyl) == "1"
+    assert table.cell("Fragment", diacid) == "*C(=O)c1ccc(C(=O)Cl)cc1"  # the other site is live
+    assert table.cell("Sites Found", diacid) == "2"
+    assert table.cell("Fragment", benzene) == ""
+    assert table.cell("Fragment", blank) == ""
+    message = reagents.statusBar().currentMessage()
+    assert "2 reagents did not match" in message  # the benzene and the blank
+    assert "1 reagent had more than one site" in message
+
+
+def test_prepare_reagents_opens_a_new_window_of_fragments(reagents, qtbot) -> None:
+    dialog = reagents.open_tool("prepare-reagents")
+    opened: list = []
+    reagents.open_table = lambda table, message="": opened.append((table, message))
+    dialog.run()
+    qtbot.waitUntil(lambda: bool(opened), timeout=20_000)
+    prepared, message = opened[0]
+    # Fragment first, so handing the saved file back reads the fragments, not the reagents
+    assert prepared.column_names == ["Fragment", "Reagent", "Sites Found"]
+    assert len(prepared) == 3  # the three acyl chlorides; the symmetric diacid gives one
+    assert "3 fragments from 5 reagents" in message
+
+
+def test_prepare_reagents_reports_a_column_that_does_not_fit(reagents) -> None:
+    dialog = reagents.open_tool("prepare-reagents")
+    dialog.choice.set_reagent("boronic")  # changing the kind refreshes the dialog
+    assert "is a boronic acid or ester" in dialog.status.text()
+    assert not dialog.primary.isEnabled()
+
+
+def test_prepare_reagents_groups_its_kinds_and_describes_them(reagents) -> None:
+    from PySide6.QtCore import Qt
+
+    dialog = reagents.open_tool("prepare-reagents")
+    assert dialog.choice.itemData(0) is None  # a group heading, not a kind
+    assert dialog.choice.reagent().id == "acyl-chloride"  # the first kind is current
+    assert "chloride leaves" in dialog.choice.itemData(1, Qt.ItemDataRole.ToolTipRole)
