@@ -241,19 +241,48 @@ def layout(
     edge_label = labels[a]
     edge_order = np.argsort(edge_label, kind="stable")
     edge_bounds = np.searchsorted(edge_label[edge_order], np.arange(count + 1))
+    sizes = np.diff(bounds)
     local = np.empty(n, dtype=np.int64)
-    for c in range(count):
+    for c in np.flatnonzero(sizes > COARSEST):  # large components one by one
         check(cancel)
         nodes = order[bounds[c] : bounds[c + 1]]
-        if len(nodes) > 1:
-            edges = edge_order[edge_bounds[c] : edge_bounds[c + 1]]
-            local[nodes] = np.arange(len(nodes))
-            pos[nodes] = multilevel(
-                len(nodes), local[a[edges]], local[b[edges]], seed=seed + c, cancel=cancel
-            )
+        edges = edge_order[edge_bounds[c] : edge_bounds[c + 1]]
+        local[nodes] = np.arange(len(nodes))
+        pos[nodes] = multilevel(
+            len(nodes), local[a[edges]], local[b[edges]], seed=seed + int(c), cancel=cancel
+        )
         if progress is not None:
             progress(int(bounds[c + 1]), n)
+    small = (sizes[labels] > 1) & (sizes[labels] <= COARSEST)
+    if small.any():
+        pos[small] = _small_components(a, b, labels, small, seed, cancel)
+    if progress is not None:
+        progress(n, n)
     return pack(pos, labels)
+
+
+def _small_components(
+    a: np.ndarray,
+    b: np.ndarray,
+    labels: np.ndarray,
+    small: np.ndarray,
+    seed: int,
+    cancel: CancelToken | None,
+) -> np.ndarray:
+    """Positions of the nodes in *small* components, laid out together in one force run: each
+    component starts in a cell of its own, farther from the others than repulsion reaches."""
+    rows = np.flatnonzero(small)
+    local = np.full(len(labels), -1, dtype=np.int64)
+    local[rows] = np.arange(len(rows))
+    keep = small[a]  # an edge lies within one component
+    ea, eb = local[a[keep]], local[b[keep]]
+    _, cell = np.unique(labels[rows], return_inverse=True)
+    side = math.ceil(math.sqrt(int(cell.max()) + 1))
+    spacing = 4 * math.sqrt(COARSEST) + CUTOFF * 4
+    centre = np.column_stack([cell % side, cell // side]) * spacing
+    rng = np.random.default_rng(seed)
+    pos = centre + rng.normal(scale=1.0, size=(len(rows), 2))
+    return force(pos, ea, eb, steps=FIRST_STEPS, temperature=math.sqrt(COARSEST) / 2, cancel=cancel)
 
 
 def pack(pos: np.ndarray, labels: np.ndarray, gap: float = GAP) -> np.ndarray:

@@ -165,6 +165,21 @@ def run_tmap(n: int, k: int) -> None:
     draw(DATA / f"tmap_{len(fps)}.png", coords, ta, tb)
 
 
+def run_csn(n: int, threshold: float) -> None:
+    from chemsuite.analysis.graphs.csn import network, similarity_edges
+
+    fps = fingerprints(max(n, 10_000)).take(np.arange(n))
+    start = time.perf_counter()
+    a, b, s = _timed(f"edges at {threshold}", lambda: similarity_edges(fps, threshold))
+    net = _timed("layout", lambda: network(n, a, b, s, valid=fps.valid))
+    sizes = np.bincount(net.component[net.component >= 0])
+    print(
+        f"{len(a):,} edges; {len(sizes):,} parts; largest {sizes.max():,}; "
+        f"singletons {(sizes == 1).sum():,}; total {time.perf_counter() - start:.1f} s"
+    )
+    draw(DATA / f"csn_{n}.png", net.coords, net.a, net.b)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="step", required=True)
@@ -180,6 +195,9 @@ def main() -> None:
     p = sub.add_parser("tmap")
     p.add_argument("--n", type=int, default=50_000)
     p.add_argument("--k", type=int, default=10)
+    p = sub.add_parser("csn")
+    p.add_argument("--n", type=int, default=5000)
+    p.add_argument("--threshold", type=float, default=0.65)
     args = parser.parse_args()
     if args.step == "smiles":
         print(f"{len(smiles()):,} SMILES")
@@ -187,6 +205,8 @@ def main() -> None:
         run_knn(args.n, args.k, args.sample, args.trees, args.window, args.perms, args.refine)
     elif args.step == "tmap":
         run_tmap(args.n, args.k)
+    elif args.step == "csn":
+        run_csn(args.n, args.threshold)
 
 
 if __name__ == "__main__":

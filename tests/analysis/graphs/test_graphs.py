@@ -22,7 +22,14 @@ import pytest
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import minimum_spanning_tree
 
-from chemsuite.analysis.fingerprints import KINDS, Fingerprints, compute_fingerprints, pack
+from chemsuite.analysis.fingerprints import (
+    KINDS,
+    Fingerprints,
+    TooManyPairs,
+    compute_fingerprints,
+    pack,
+)
+from chemsuite.analysis.graphs.csn import mmp_edges, network, similarity_edges
 from chemsuite.analysis.graphs.knn import knn, knn_edges, lsh_neighbours, minhash
 from chemsuite.analysis.graphs.layout import force, layout, multilevel
 from chemsuite.analysis.graphs.layout import pack as pack_layout
@@ -184,3 +191,54 @@ def test_tmap_of_molecules() -> None:
     assert tree.component[6] == -1
     assert len(tree.a) == 6 - (tree.component.max() + 1)
     assert ((tree.similarity > 0) & (tree.similarity <= 1)).all()
+
+
+# -- Chemical Space Networks ----------------------------------------------------------------------
+def test_similarity_edges_are_the_pairs_above_the_threshold() -> None:
+    fps = clustered(200, clusters=8)
+    a, b, s = similarity_edges(fps, 0.6)
+    sim = brute(fps)
+    i, j = np.nonzero(np.triu(sim >= 0.6, 1))
+    assert sorted(zip(a.tolist(), b.tolist(), strict=True)) == sorted(
+        zip(i.tolist(), j.tolist(), strict=True)
+    )
+    assert np.allclose(s, sim[a, b])
+
+
+def test_too_many_edges_stop_the_search() -> None:
+    with pytest.raises(TooManyPairs):
+        similarity_edges(clustered(300, clusters=2), 0.3, max_edges=100)
+
+
+def test_mmp_edges_are_the_matched_pairs() -> None:
+    from chemsuite.sar.mmp import find_pairs
+
+    smiles = ["c1ccccc1Cl", "c1ccccc1Br", "c1ccccc1F", "CCCCCCO", "CCN"]
+    a, b = mmp_edges(smiles)
+    expected = find_pairs(smiles, np.zeros(len(smiles)))
+    assert list(zip(a.tolist(), b.tolist(), strict=True)) == [(p.a, p.b) for p in expected]
+    assert len(a) >= 3
+
+
+def test_network_hides_singletons_and_invalid_rows() -> None:
+    a, b = np.array([0, 1]), np.array([1, 2])
+    valid = np.array([True, True, True, True, False])
+    shown = network(5, a, b, valid=valid)
+    assert shown.placed.tolist() == [True, True, True, True, False]
+    hidden = network(5, a, b, valid=valid, singletons=False)
+    assert hidden.placed.tolist() == [True, True, True, False, False]
+    assert hidden.degree().tolist() == [1, 2, 1, 0, 0]
+
+
+def test_a_network_of_many_small_parts_does_not_overlap() -> None:
+    a = np.arange(0, 300, 3)
+    b = a + 1
+    c = a + 2
+    edges_a, edges_b = np.concatenate([a, b]), np.concatenate([b, c])
+    net = network(300, edges_a, edges_b)
+    labels = net.component
+    for part in range(0, labels.max() + 1, 7):
+        inside = net.coords[labels == part]
+        others = net.coords[labels != part]
+        lo, hi = inside.min(axis=0), inside.max(axis=0)
+        assert not ((others >= lo) & (others <= hi)).all(axis=1).any()

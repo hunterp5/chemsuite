@@ -385,18 +385,28 @@ def _best(fps: Fingerprints, best: np.ndarray, which: np.ndarray) -> tuple[np.nd
     return np.where(fps.valid, best, np.nan), np.where(fps.valid & (which >= 0), which, -1)
 
 
+class TooManyPairs(ValueError):
+    """More neighbour pairs than asked for (at least :attr:`count`)."""
+
+    def __init__(self, count: int) -> None:
+        super().__init__(f"at least {count:,} pairs")
+        self.count = count
+
+
 def neighbours(
     fps: Fingerprints,
     threshold: float,
     metric: str = "tanimoto",
     *,
+    max_pairs: int | None = None,
     progress: Callable[[int, int], None] | None = None,
     cancel: CancelToken | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Every pair with similarity ≥ *threshold* as CSR ``(indptr, indices)``, self excluded.
 
     Invalid rows have no neighbours. Time grows with the square of the rows (about 6 s for
-    50k Morgan fingerprints on a laptop); memory with the number of neighbour pairs.
+    50k Morgan fingerprints on a laptop); memory with the number of neighbour pairs, so past
+    *max_pairs* pairs it stops with :class:`TooManyPairs`.
     """
     n = len(fps)
     tiles = _tiles(n)
@@ -404,7 +414,7 @@ def neighbours(
     rows_out: list[np.ndarray] = []
     cols_out: list[np.ndarray] = []
     steps = len(tiles) * (len(tiles) + 1) // 2
-    step = 0
+    step = found = 0
     unpacked_cache: dict[int, np.ndarray] = {}
     for i, (a0, a1) in enumerate(tiles):
         block_a = fps.unpacked(a0, a1)
@@ -423,6 +433,9 @@ def neighbours(
             keep = r < c  # each pair once (upper triangle), mirrored below
             rows_out.append(r[keep])
             cols_out.append(c[keep])
+            found += int(keep.sum())
+            if max_pairs is not None and found > max_pairs:
+                raise TooManyPairs(found)
             step += 1
             if progress is not None:
                 progress(step, steps)
