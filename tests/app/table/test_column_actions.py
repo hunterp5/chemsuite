@@ -204,3 +204,23 @@ def test_clicking_an_unsortable_header_keeps_the_indicator(qtbot, window) -> Non
     header.setSortIndicator(0, Qt.SortOrder.AscendingOrder)  # what a click does
     qtbot.waitUntil(lambda: header.sortIndicatorSection() == 1, timeout=2000)
     assert table.sort_keys == (("ID", True),)
+
+
+@pytest.mark.parametrize("what", ["columns", "cells", "rows"])
+def test_clear_selection_clears_any_selection(window, what) -> None:
+    view = window.view
+    model = view.table_model
+    last_row, last_col = model.rowCount() - 1, model.columnCount() - 1
+    selection = QItemSelection()
+    if what == "columns":
+        view.start_column_selection()
+        selection.select(model.index(0, 1), model.index(last_row, 1))
+    elif what == "cells":
+        selection.select(model.index(0, 0), model.index(0, 1))
+    else:
+        selection.select(model.index(0, 0), model.index(1, last_col))
+    view.selectionModel().select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+    assert view.selectionModel().hasSelection()
+    window.command_action("edit.clear_selection").trigger()
+    assert not view.selectionModel().hasSelection()
+    assert not window.workspace.selection.oids

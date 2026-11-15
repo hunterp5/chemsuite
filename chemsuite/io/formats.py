@@ -40,6 +40,12 @@ XLSX = "xlsx"
 RDF = "rdf"
 RXN = "rxn"
 MOL2 = "mol2"
+CDXML = "cdxml"
+CDX = "cdx"
+MRV = "mrv"
+MAE = "mae"
+XYZ = "xyz"
+INCHI = "inchi"
 
 _SUFFIXES = {
     ".sdf": SDF,
@@ -56,7 +62,39 @@ _SUFFIXES = {
     ".rd": RDF,
     ".rxn": RXN,
     ".mol2": MOL2,
+    ".cdxml": CDXML,
+    ".cdx": CDX,
+    ".mrv": MRV,
+    ".mae": MAE,
+    ".xyz": XYZ,
+    ".inchi": INCHI,
 }
+#: Suffixes that name a compressed file on their own (Maestro's ``.maegz``).
+_GZIP_SUFFIXES = {".maegz": MAE}
+
+#: The compound files chemsuite opens, for file dialogs: ``(label, patterns)``.
+READ_TYPES = (
+    ("SD files and molfiles", "*.sdf *.sd *.mol *.sdf.gz"),
+    ("Mol2 files", "*.mol2 *.mol2.gz"),
+    ("CSV/TSV", "*.csv *.tsv *.txt *.csv.gz *.tsv.gz"),
+    ("SMILES", "*.smi *.smiles"),
+    ("Excel", "*.xlsx"),
+    ("ChemDraw", "*.cdxml *.cdx"),
+    ("Marvin", "*.mrv"),
+    ("Maestro", "*.mae *.maegz"),
+    ("XYZ", "*.xyz"),
+    ("InChI", "*.inchi"),
+    ("Reactions: RD and RXN files", "*.rdf *.rd *.rxn *.rdf.gz"),
+)
+
+
+def read_filter(*, extra: Sequence[tuple[str, str]] = (), reactions: bool = True) -> str:
+    """A Qt file-dialog filter: "All supported", then each type (*extra* first)."""
+    types = [*extra, *(t for t in READ_TYPES if reactions or not t[0].startswith("Reactions"))]
+    patterns = dict.fromkeys(p for _, ps in types for p in ps.split() if not p.endswith(".gz"))
+    everything = " ".join([*patterns, "*.gz"])
+    return ";;".join([f"All supported ({everything})", *(f"{n} ({p})" for n, p in types)])
+
 
 #: Header names (case-insensitive) that mark a column of structures in tabular files.
 STRUCTURE_HEADERS = frozenset(
@@ -71,15 +109,26 @@ class UnsupportedFormat(ValueError):
 def split_suffix(path: str | Path) -> tuple[str, bool]:
     """``(format, gzipped)`` for *path*: ``compounds.sdf.gz`` -> ``("sdf", True)``."""
     suffixes = [s.lower() for s in Path(path).suffixes]
+    if suffixes and suffixes[-1] in _GZIP_SUFFIXES:
+        return _GZIP_SUFFIXES[suffixes[-1]], True
     gzipped = bool(suffixes) and suffixes[-1] == ".gz"
     if gzipped:
         suffixes.pop()
     fmt = _SUFFIXES.get(suffixes[-1] if suffixes else "")
     if fmt is None:
         raise UnsupportedFormat(f"unsupported file type: {Path(path).name}")
-    if gzipped and fmt == XLSX:
-        raise UnsupportedFormat("compressed Excel files are not supported")
+    if gzipped and fmt in (XLSX, CDX):
+        raise UnsupportedFormat(f"compressed {fmt.upper()} files are not supported")
     return fmt, gzipped
+
+
+def readable(path: str | Path) -> bool:
+    """Whether chemsuite can open *path* as a compound file (judged by its name)."""
+    try:
+        split_suffix(path)
+    except UnsupportedFormat:
+        return False
+    return True
 
 
 def guess_structure_column(headers: Sequence[str]) -> str | None:
