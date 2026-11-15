@@ -53,13 +53,6 @@ TOOLS: tuple[ExternalTool, ...] = (
         version_args=("-V",),
     ),
     ExternalTool(
-        "confgen",
-        "CONFORGE",
-        "CDPKit's confgen, for CONFORGE conformers.",
-        ("confgen",),
-        version_args=("-V",),
-    ),
-    ExternalTool(
         "gnina", "Gnina", "Gnina docking; on Windows the Linux binary run through WSL.", ("gnina",)
     ),
     ExternalTool(

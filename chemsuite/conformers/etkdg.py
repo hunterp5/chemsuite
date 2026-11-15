@@ -13,7 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Conformers with RDKit's ETKDG, optimised with MMFF94 (or UFF where MMFF has no parameters).
+"""Conformers with RDKit's ETKDG, optimised with MMFF94 (or UFF where MMFF has no parameters),
+or with CONFORGE (:mod:`.conforge`) when the settings ask for it.
 
 Each molecule's conformers are stored together in one RDKit molecule, explicit hydrogens
 included, lowest energy first, so a structure cell holds a whole conformer ensemble. Energies
@@ -41,13 +42,16 @@ Cell = bytes | str | None
 #: cancel is quick (a busy worker finishes its task first) and progress counts each molecule.
 CHUNK_ROWS = 1
 FORCE_FIELDS = ("mmff", "uff")
+#: "etkdg" (RDKit, here) or "conforge" (CDPKit, :mod:`.conforge`, optional)
+METHODS = ("etkdg", "conforge")
 _FAILURES = (ValueError, RuntimeError, ArithmeticError)
 
 
 @dataclass(frozen=True)
 class ConformerSettings:
     """How to generate conformers. *energy_window* (kcal/mol above the lowest) drops strained
-    conformers; ``None`` keeps them all. *optimize* is ``"mmff"``, ``"uff"`` or ``None``."""
+    conformers; ``None`` keeps them all. *optimize* is ``"mmff"``, ``"uff"`` or ``None``;
+    *optimize*, *max_iters* and *seed* apply to ETKDG only."""
 
     count: int = 10
     prune_rms: float = 0.5
@@ -55,13 +59,16 @@ class ConformerSettings:
     max_iters: int = 500
     energy_window: float | None = 10.0
     seed: int = 42
-    timeout: int = 60  # seconds of embedding per molecule before giving up
+    timeout: int = 60  # seconds per molecule before giving up
+    method: str = "etkdg"
 
     def __post_init__(self) -> None:
         if self.count < 1:
             raise ValueError("count must be at least 1")
         if self.optimize not in (*FORCE_FIELDS, None):
             raise ValueError(f"unknown force field: {self.optimize!r}")
+        if self.method not in METHODS:
+            raise ValueError(f"unknown conformer method: {self.method!r}")
 
 
 @dataclass
@@ -120,8 +127,22 @@ def _distinct(mol: Chem.Mol, order: list[int], prune_rms: float) -> list[int]:
 
 
 def generate(mol: Chem.Mol, settings: ConformerSettings | None = None) -> Conformers:
-    """Conformers of *mol* (which is not changed). Failures come back with ``mol=None``."""
+    """Conformers of *mol* (which is not changed) by *settings.method*. Failures come back with
+    ``mol=None``."""
     settings = settings or ConformerSettings()
+    if settings.method == "conforge":
+        from chemsuite.conformers import conforge  # it imports this module's types
+
+        if not conforge.available():
+            return Conformers(None, error="CONFORGE needs the cdpkit package")
+        try:
+            return conforge.generate(mol, settings)
+        except _FAILURES as err:
+            return Conformers(None, error=str(err) or type(err).__name__)
+    return _etkdg(mol, settings)
+
+
+def _etkdg(mol: Chem.Mol, settings: ConformerSettings) -> Conformers:
     with rdBase.BlockLogs():
         try:
             work = Chem.AddHs(Chem.Mol(mol))

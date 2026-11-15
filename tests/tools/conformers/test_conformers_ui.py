@@ -72,6 +72,28 @@ def test_window_needs_optimisation(window) -> None:
     dialog.reject()
 
 
+def test_conforge_choice(window, monkeypatch) -> None:
+    from chemsuite.conformers import conforge
+
+    chem = _chem(window)
+    dialog = chem.open_tool("conformers")
+    index = dialog.method.findData("conforge")
+    dialog.method.setCurrentIndex(index)
+    dialog.force_field.setCurrentIndex(dialog.force_field.findData(None))
+    # CONFORGE has its own force field and no seed; its energy window still applies
+    assert not dialog.force_field.isEnabled() and not dialog.seed.isEnabled()
+    assert dialog.use_window.isEnabled()
+    settings = dialog.settings()
+    assert settings.method == "conforge" and settings.energy_window is not None
+    dialog.reject()
+    # without cdpkit the choice is there but disabled
+    monkeypatch.setattr(conforge, "available", lambda: False)
+    dialog = chem.open_tool("conformers")
+    assert not dialog.method.model().item(index).isEnabled()
+    assert dialog.method.currentData() == "etkdg"
+    dialog.reject()
+
+
 def test_export_conformers(window, qtbot, tmp_path) -> None:
     from chemsuite.tools.conformers.dialog import output_name
 

@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, inline
+from chemsuite.conformers import conforge
 from chemsuite.conformers.etkdg import ConformerSettings, generate_conformers
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 from chemsuite.core.wording import plural
@@ -41,6 +42,7 @@ SUFFIX = " 3D"
 COUNT_COLUMN = "Conformers"
 SPAN_COLUMN = "Conformer Energy Range"
 FORCE_FIELDS = {"mmff": "MMFF94 (UFF where MMFF lacks parameters)", "uff": "UFF", None: "None"}
+METHODS = {"etkdg": "ETKDG (RDKit)", "conforge": "CONFORGE (CDPKit)"}
 
 _last = ConformerSettings()  # remembered for the session
 
@@ -68,6 +70,19 @@ class ConformerDialog(ToolDialog):
         self.rows = inputs.row("Rows", RowsChoice(ctx))
 
         method = self.section("Method")
+        self.method = QComboBox()
+        for key, title in METHODS.items():
+            self.method.addItem(title, key)
+        if not conforge.available():
+            item = self.method.model().item(self.method.findData("conforge"))
+            item.setEnabled(False)
+            item.setToolTip("CONFORGE needs the cdpkit package.")
+        method.row(
+            "Generator",
+            self.method,
+            help="ETKDG: RDKit's distance geometry, then a force field. CONFORGE: CDPKit's "
+            "fragment and torsion libraries with MMFF94s (Seidel et al., JCIM 2023).",
+        )
         self.count = QSpinBox()
         self.count.setRange(1, 300)
         method.row(
@@ -96,18 +111,24 @@ class ConformerDialog(ToolDialog):
             "Energy window",
             inline(self.use_window, self.window),
             help="Drop conformers more than this above the molecule's lowest energy "
-            "(needs a force field).",
+            "(needs a force field; CONFORGE always has one).",
         )
 
         more = self.section("More Options", collapsed=True)
         self.seed = QSpinBox()
         self.seed.setRange(-1, 2**31 - 1)
         self.seed.setSpecialValueText("Random")
-        more.row("Seed", self.seed, help="The same seed gives the same conformers every time.")
+        more.row(
+            "Seed",
+            self.seed,
+            help="The same seed gives the same conformers every time (ETKDG; CONFORGE always "
+            "does).",
+        )
 
         self.set_settings(_last)
         for signal in (
             self.structure.currentIndexChanged,
+            self.method.currentIndexChanged,
             self.count.valueChanged,
             self.rows.changed,
             self.force_field.currentIndexChanged,
@@ -118,6 +139,8 @@ class ConformerDialog(ToolDialog):
 
     # -- settings -----------------------------------------------------------------------------
     def set_settings(self, settings: ConformerSettings) -> None:
+        method = settings.method if conforge.available() else "etkdg"
+        self.method.setCurrentIndex(max(0, self.method.findData(method)))
         self.count.setValue(settings.count)
         self.prune.setValue(settings.prune_rms)
         self.force_field.setCurrentIndex(max(0, self.force_field.findData(settings.optimize)))
@@ -125,20 +148,28 @@ class ConformerDialog(ToolDialog):
         self.window.setValue(settings.energy_window or 10.0)
         self.seed.setValue(settings.seed)
 
+    def _conforge(self) -> bool:
+        return self.method.currentData() == "conforge"
+
     def settings(self) -> ConformerSettings:
         optimize = self.force_field.currentData()
+        energies = optimize is not None or self._conforge()
         return ConformerSettings(
             count=self.count.value(),
             prune_rms=self.prune.value(),
             optimize=optimize,
-            energy_window=self.window.value() if self.use_window.isChecked() and optimize else None,
+            energy_window=self.window.value() if self.use_window.isChecked() and energies else None,
             seed=self.seed.value(),
+            method=self.method.currentData(),
         )
 
     def _update(self) -> None:
-        optimize = self.force_field.currentData() is not None
-        self.use_window.setEnabled(optimize)
-        self.window.setEnabled(optimize and self.use_window.isChecked())
+        etkdg = not self._conforge()
+        energies = self.force_field.currentData() is not None or not etkdg
+        self.force_field.setEnabled(etkdg)
+        self.seed.setEnabled(etkdg)
+        self.use_window.setEnabled(energies)
+        self.window.setEnabled(energies and self.use_window.isChecked())
         self.refresh()
 
     def problem(self) -> str:
@@ -179,7 +210,7 @@ class ConformerDialog(ToolDialog):
                 target: (done_oids, StructureColumn.from_parsed(batch.blobs, batch.displays)),
                 COUNT_COLUMN: (done_oids, NumberColumn.from_floats(batch.counts, 0)),
             }
-            if settings.optimize:
+            if settings.optimize or settings.method == "conforge":
                 span = SPAN_COLUMN + " (kcal/mol)"
                 results[span] = (done_oids, NumberColumn.from_floats(batch.spans, 2))
             names = ctx.apply_results(results, label="Generate conformers")
