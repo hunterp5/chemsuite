@@ -38,6 +38,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import shiboken6
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
@@ -214,7 +215,7 @@ class HeaderTabs(QWidget):
     def __init__(self, dock: QDockWidget) -> None:
         super().__init__()
         self.dock = dock
-        self.docks: list[QDockWidget] = []
+        self._docks: list[QDockWidget] = []
         self._rects: list[QRectF] = []
         self._hover = -1
         #: double-clicking the current tab renames the pane
@@ -223,8 +224,17 @@ class HeaderTabs(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.setMinimumWidth(self.MIN_TAB)
 
+    @property
+    def docks(self) -> list[QDockWidget]:
+        """The panes tabbed here, leaving out any already deleted: a pane can be closed and
+        deleted before the headers' next refresh drops it, and a resize or paint in between
+        must not reach it (seen on macOS)."""
+        if not all(shiboken6.isValid(d) for d in self._docks):
+            self._docks = [d for d in self._docks if shiboken6.isValid(d)]
+        return self._docks
+
     def set_docks(self, docks: list[QDockWidget]) -> None:
-        self.docks = list(docks)
+        self._docks = list(docks)
         self._hover = -1
         self._layout_tabs()
         self.update()

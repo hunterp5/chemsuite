@@ -46,3 +46,21 @@ def test_a_closed_tab_leaves_its_neighbours_header_at_once(qtbot) -> None:
     assert second not in tabs.docks
     tabs.resize(tabs.width() + 10, tabs.height())  # lays the tabs out again: no dead dock
     assert tabs.titles() == [] or tabs.titles() == ["Report"]
+
+
+def test_a_deleted_pane_never_reaches_a_header_however_it_got_there(qtbot) -> None:
+    """Whatever route puts a closing pane back in a header's tabs before it is deleted (a
+    refresh between the close and the deletion), laying the tabs out after must skip it."""
+    window = PanelWindow(QWidget(), "Viewer", name=lambda: "Viewer")
+    qtbot.addWidget(window)
+    window.resize(900, 600)
+    window.show()
+    first = window.add_panel(ToolPanel(), "Report")
+    second = window.add_panel(ToolPanel(), "Inspect")
+    tabs = first.titleBarWidget().tabs
+    second.close()
+    tabs.set_docks([first, second])  # a refresh that still saw it
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    tabs.resize(tabs.width() + 10, tabs.height())
+    tabs.repaint()
+    assert tabs.titles() == ["Report"]
