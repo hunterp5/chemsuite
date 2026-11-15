@@ -21,14 +21,17 @@ chemist asks for them (Poses to Table). Before this they went straight into the 
 put a pocket's results in another window and filled the table with rows nobody had asked for.
 
 Each :class:`Pose` holds its own 3D molblock, so a pose can be drawn, scored again or copied
-to the table without the docking run. :class:`DockedPoses` is one run against one protein. The
-saved form is plain JSON (as :mod:`.reports` is), under ``poses`` of the protein workspace's
-state; a run whose protein has gone is dropped on the way out.
+to the table without the docking run. :class:`DockedPoses` is one run against one protein,
+numbered in the order it was made and recording how it was scored. Every run is kept, a
+rescore included, so a dock and its rescore can be compared; the chemist removes the runs they
+no longer want. The saved form is plain JSON (as :mod:`.reports` is), under ``poses`` of the
+protein workspace's state: each protein's runs, oldest first. A run whose protein has gone is
+dropped on the way out.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 #: what a run was: a dock, or a rescore of poses that already existed
@@ -77,6 +80,17 @@ class DockedPoses:
     #: the ligands that could not be docked, and the rows that held no structure
     failed: int = 0
     skipped: int = 0
+    #: the scoring function (``vina.Options.scoring``), "" when not recorded
+    scoring: str = ""
+    #: the run's number among its protein's runs, from 1 (0: not yet kept)
+    number: int = 0
+
+    @property
+    def label(self) -> str:
+        """What the run is called: "Run 2 · Rescored (vinardo)"."""
+        what = "Rescored" if self.kind == RESCORED else "Docked"
+        how = f" ({self.scoring})" if self.scoring else ""
+        return f"Run {self.number} · {what}{how}"
 
     @property
     def ligands(self) -> tuple[str, ...]:
@@ -94,6 +108,8 @@ class DockedPoses:
             "kind": self.kind,
             "failed": self.failed,
             "skipped": self.skipped,
+            "scoring": self.scoring,
+            "number": self.number,
             "poses": [pose.to_json() for pose in self.poses],
         }
 
@@ -109,13 +125,31 @@ class DockedPoses:
         if any(pose is None for pose in made):
             return None
         kind = saved.get("kind")
-        counts = [saved.get("failed"), saved.get("skipped")]
-        failed, skipped = (int(n) if isinstance(n, int) and not isinstance(n, bool) else 0
-                           for n in counts)  # fmt: skip
+        scoring = saved.get("scoring")
+        counts = [saved.get("failed"), saved.get("skipped"), saved.get("number")]
+        failed, skipped, number = (max(n, 0) if isinstance(n, int) and not isinstance(n, bool)
+                                   else 0 for n in counts)  # fmt: skip
         return cls(
             saved["protein"],
             tuple(pose for pose in made if pose is not None),
             kind if kind in (DOCKED, RESCORED) else DOCKED,
             failed,
             skipped,
+            scoring if isinstance(scoring, str) else "",
+            number,
         )
+
+
+def runs_from_json(saved: Any) -> list[DockedPoses]:
+    """A protein's saved runs, oldest first, each with a number (a document from before runs
+    were kept side by side saved one run, not a list)."""
+    found = [DockedPoses.from_json(run) for run in (saved if isinstance(saved, list) else [saved])]
+    runs: list[DockedPoses] = []
+    for run in found:
+        if run is None:
+            continue
+        taken = {kept.number for kept in runs}
+        if run.number <= 0 or run.number in taken:
+            run = replace(run, number=max(taken, default=0) + 1)
+        runs.append(run)
+    return runs

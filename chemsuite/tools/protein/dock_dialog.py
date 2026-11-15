@@ -247,13 +247,15 @@ class RescoreDialog(ToolDialog):
         if chosen is not None and self.protein.findData(chosen) >= 0:
             self.protein.setCurrentIndex(self.protein.findData(chosen))
         inputs.row("Protein", self.protein)
-        self.source = Segmented(POSE_SOURCE, KEPT if self._kept() else TABLE)
+        self.source = Segmented(POSE_SOURCE, KEPT if self._runs() else TABLE)
         inputs.row(
             "Poses",
             self.source,
-            help="The poses of the last docking run, kept with the protein, or a structure "
-            "column of the table.",
+            help="The poses of a docking run kept with the protein, or a structure column of "
+            "the table.",
         )
+        self.run_choice = QComboBox()
+        inputs.row("Run", self.run_choice, help="Which of the protein's runs to score again.")
         self.structure = QComboBox()
         self.structure.addItems(ctx.structure_columns())
         default = ctx.default_structure_column()
@@ -266,18 +268,44 @@ class RescoreDialog(ToolDialog):
         method = self.section("Method")
         self.scoring = Segmented(SCORING, vina.VINA)
         method.row("Scoring", self.scoring)
-        self.protein.currentIndexChanged.connect(lambda *_: self._source_changed())
+        self.protein.currentIndexChanged.connect(lambda *_: self._protein_changed())
         self.source.changed.connect(lambda *_: self._source_changed())
+        self.run_choice.currentIndexChanged.connect(lambda *_: self.refresh())
         self.rows.changed.connect(lambda *_: self.refresh())
+        self._protein_changed()
+
+    def _protein_changed(self) -> None:
+        self._fill_runs()
         self._source_changed()
 
-    def _kept(self) -> list:
-        """The poses kept with the chosen protein (the last run's), if any."""
+    def _runs(self) -> tuple:
+        """The chosen protein's docking runs, oldest first."""
         protein = self.protein.currentData()
         if not isinstance(protein, str):
-            return []
-        run_poses = protein_workspace(self.ctx).docked(protein)
-        return list(run_poses.poses) if run_poses is not None else []
+            return ()
+        return protein_workspace(self.ctx).runs(protein)
+
+    def _fill_runs(self) -> None:
+        """List the protein's runs, newest first, the one in the Poses panel chosen."""
+        from chemsuite.protein.ui.poses import PosesPanel
+
+        shown = self.ctx.find_panel(PosesPanel.tool_id)
+        runs = self._runs()
+        chosen = runs[-1].number if runs else None
+        if isinstance(shown, PosesPanel) and shown.run in runs:
+            chosen = shown.run.number
+        self.run_choice.blockSignals(True)
+        self.run_choice.clear()
+        for run in reversed(runs):
+            self.run_choice.addItem(f"{run.label} · {len(run.poses)} poses", run.number)
+        self.run_choice.setCurrentIndex(max(self.run_choice.findData(chosen), 0))
+        self.run_choice.blockSignals(False)
+
+    def _kept(self) -> list:
+        """The poses of the chosen run, if any."""
+        number = self.run_choice.currentData()
+        run = next((run for run in self._runs() if run.number == number), None)
+        return list(run.poses) if run is not None else []
 
     def _from_table(self) -> bool:
         return self.source.value() == TABLE
@@ -287,6 +315,7 @@ class RescoreDialog(ToolDialog):
         table = self._from_table()
         for field in (self.structure, self.rows):
             self.inputs.set_row_visible(field, table)
+        self.inputs.set_row_visible(self.run_choice, not table)
         self.refresh()
 
     def problem(self) -> str:

@@ -274,7 +274,7 @@ def test_the_poses_come_back_with_the_document(opened, qtbot, no_vina, tmp_path)
     ctx = ToolContext(opened)
     assert tool.protein_workspace(ctx).docked("1CRN") == kept
     again = ctx.find_panel(PosesPanel.tool_id)
-    assert isinstance(again, PosesPanel) and again.run == kept
+    assert isinstance(again, PosesPanel) and again.run == kept and kept.number == 1
 
 
 def test_rescore_offers_the_docked_poses_first(opened, qtbot, no_vina) -> None:
@@ -292,10 +292,43 @@ def test_rescore_offers_the_docked_poses_first(opened, qtbot, no_vina) -> None:
     job = dialog.run()
     qtbot.waitUntil(lambda: not job.running, timeout=60_000)
     dialog.close()
-    # the scores replace the run in place, and the table is still untouched
+    # the rescore is a run of its own, beside the dock it scored; the table is untouched
     assert {pose.affinity for pose in panel.run.poses} == {-6.75}
-    assert panel.run.kind == "rescored"
-    assert dock.AFFINITY_COLUMN not in opened.workspace.table
+    assert panel.run.kind == "rescored" and panel.run.scoring == "vina"
+    assert panel.run.label == "Run 2 · Rescored (vina)"
+    runs = tool.protein_workspace(ctx).runs("1CRN")
+    assert [run.kind for run in runs] == ["docked", "rescored"]
+    assert [pose.affinity for pose in runs[0].poses] == [-8.5, -7.25]  # the dock kept as it was
+    assert panel.choice.count() == 2 and dock.AFFINITY_COLUMN not in opened.workspace.table
+
+
+def test_rescore_scores_the_run_shown_in_the_poses_panel(opened, qtbot, no_vina) -> None:
+    ctx = ToolContext(opened)
+    panel = _dock(opened, qtbot)
+    first = panel.run
+    _dock(opened, qtbot)  # a second run, now shown
+    panel.choice.setCurrentIndex(panel.choice.findData(first.number))
+    assert panel.run == first
+    dialog = dock_dialog.RescoreDialog(ctx)
+    assert dialog.run_choice.currentData() == first.number and dialog.run_choice.count() == 2
+    dialog.close()
+
+
+def test_a_run_can_be_removed_and_the_last_one_closes_the_panel(opened, qtbot, no_vina) -> None:
+    from chemsuite.protein.ui.poses import PosesPanel
+
+    ctx = ToolContext(opened)
+    panel = _dock(opened, qtbot)
+    _dock(opened, qtbot)
+    workspace = tool.protein_workspace(ctx)
+    assert [run.number for run in workspace.runs("1CRN")] == [1, 2]
+    assert panel.run.number == 2 and "2 runs" in panel.title()
+    assert panel.remove_run().number == 2
+    assert [run.number for run in workspace.runs("1CRN")] == [1]
+    assert panel.run.number == 1 and panel.choice.count() == 1
+    panel.remove_run()
+    assert workspace.runs("1CRN") == ()
+    qtbot.waitUntil(lambda: ctx.find_panel(PosesPanel.tool_id) is None, timeout=5_000)
 
 
 def test_rescore_says_so_when_a_protein_has_no_docked_poses(opened) -> None:

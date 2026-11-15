@@ -27,7 +27,7 @@ There is one per document, whether or not the viewer's window is open:
 The saved form (:meth:`capture`) is versioned: ``{"version": 1, "session": …, "view": …,
 "reports": …, "poses": …, "reviews": …}``, ``view`` holding the background, depth cue and
 camera, ``reports`` each protein's last preparation report (:mod:`.reports`), ``poses`` each
-protein's docked poses (:mod:`.poses`) and ``reviews`` each preparation still being reviewed
+protein's docking runs (:mod:`.poses`) and ``reviews`` each preparation still being reviewed
 (:mod:`.reviews`; the last three were added later, so each is optional and an older chemsuite
 simply ignores it). A state from a newer chemsuite is kept as it was and saved back
 unchanged rather than half read.
@@ -37,11 +37,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
 from chemsuite.core.assets import AssetHost
 
-from .poses import DockedPoses
+from .poses import DockedPoses, runs_from_json
 from .reports import PrepareReport
 from .reviews import Review
 from .session import WorkbenchSession
@@ -74,8 +75,8 @@ class ProteinWorkspace:
         self.view: dict = {}
         #: each protein's last preparation report, by protein id
         self.reports: dict[str, PrepareReport] = {}
-        #: each protein's docked poses, by protein id
-        self.poses: dict[str, DockedPoses] = {}
+        #: each protein's docking runs, oldest first, by protein id
+        self.poses: dict[str, list[DockedPoses]] = {}
         #: each preparation being reviewed and not yet applied, by protein id
         self.reviews: dict[str, Review] = {}
         #: while the viewer is open: its view settings now
@@ -104,10 +105,10 @@ class ProteinWorkspace:
             made = PrepareReport.from_json(report)
             if made is not None and isinstance(protein, str):
                 self.reports[protein] = made
-        for protein, run in dict(saved.get("poses") or {}).items():
-            docked = DockedPoses.from_json(run)
-            if docked is not None and isinstance(protein, str):
-                self.poses[protein] = docked
+        for protein, runs in dict(saved.get("poses") or {}).items():
+            made = runs_from_json(runs)
+            if made and isinstance(protein, str):
+                self.poses[protein] = made
         for protein, pending in dict(saved.get("reviews") or {}).items():
             review = Review.from_json(pending)
             if review is not None and isinstance(protein, str):
@@ -167,19 +168,35 @@ class ProteinWorkspace:
         return True
 
     # -- docked poses -------------------------------------------------------------------------
-    def docked(self, protein: str) -> DockedPoses | None:
-        """The poses docked into *protein*, if it has been docked into."""
-        return self.poses.get(protein)
+    def runs(self, protein: str) -> tuple[DockedPoses, ...]:
+        """*protein*'s docking runs, oldest first."""
+        return tuple(self.poses.get(protein, ()))
 
-    def set_docked(self, run: DockedPoses) -> None:
-        """Keep a docking run's poses (replacing that protein's last run)."""
-        self.poses[run.protein] = run
+    def docked(self, protein: str, number: int | None = None) -> DockedPoses | None:
+        """*protein*'s run numbered *number* (None: its latest), if there is one."""
+        runs = self.poses.get(protein, [])
+        if number is None:
+            return runs[-1] if runs else None
+        return next((run for run in runs if run.number == number), None)
+
+    def add_docked(self, run: DockedPoses) -> DockedPoses:
+        """Keep a docking run beside *run.protein*'s earlier ones; returns it numbered."""
+        runs = self.poses.setdefault(run.protein, [])
+        run = replace(run, number=max((kept.number for kept in runs), default=0) + 1)
+        runs.append(run)
         self._changes += 1
+        return run
 
-    def drop_docked(self, protein: str) -> bool:
-        """Forget *protein*'s poses (the protein went, or they were cleared)."""
-        if self.poses.pop(protein, None) is None:
+    def drop_docked(self, protein: str, number: int | None = None) -> bool:
+        """Forget *protein*'s run numbered *number* (None: all of its runs)."""
+        runs = self.poses.get(protein, [])
+        kept = [run for run in runs if number is not None and run.number != number]
+        if len(kept) == len(runs):
             return False
+        if kept:
+            self.poses[protein] = kept
+        else:
+            del self.poses[protein]
         self._changes += 1
         return True
 
@@ -239,7 +256,7 @@ class ProteinWorkspace:
         if kept:
             saved["reports"] = {id: report.to_json() for id, report in kept.items()}
         if docked:
-            saved["poses"] = {id: run.to_json() for id, run in docked.items()}
+            saved["poses"] = {id: [run.to_json() for run in runs] for id, runs in docked.items()}
         if pending:
             saved["reviews"] = {id: review.to_json() for id, review in pending.items()}
         return saved

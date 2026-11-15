@@ -1787,13 +1787,17 @@ is turned away with a line pointing at **Protein ▸ Prepare…**.
 The run is a background job with progress, and cancelling keeps the ligands that already
 finished.
 
-The **Poses** panel groups the poses by ligand, each ligand showing its best affinity and its
-poses under it: **Pose** (1 is Vina's best), **Affinity (kcal/mol)**, **RMSD l.b.** and
+Every run is kept, numbered in the order it was made and labelled with how it was scored
+("Run 2 · Rescored (vinardo)"), so a new run never overwrites an earlier one. The **Poses**
+panel shows one protein's runs, one at a time: the list at its top chooses which, newest
+first, and **Remove Run** forgets the one shown (rows already copied to the table stay). It
+groups that run's poses by ligand, each ligand showing its best affinity and its poses under
+it: **Pose** (1 is Vina's best), **Affinity (kcal/mol)**, **RMSD l.b.** and
 **RMSD u.b.** (Vina's own spread of that pose against the best one). Click a pose to see it in
 the pocket. Ctrl+C copies the scores as text, and **Copy to Table** writes the chosen poses as
 rows holding **Protein**, **Ligand** (the pose), **Pose**, **Affinity (kcal/mol)**,
 **RMSD l.b.**, **RMSD u.b.** and **Docked From** (the row it was docked from) — then run
-**Ligand ▸ Interactions to Table** on those rows to profile them. The poses are saved with the
+**Ligand ▸ Interactions to Table** on those rows to profile them. The runs are saved with the
 document and come back with it, panel and all.
 
 Only the parts of a receptor that AutoDock knows are used: the polymer, waters, ions and
@@ -1801,10 +1805,11 @@ glycans. Ligands, buffers and additives are left out — a ligand is what is bei
 the run says which residue names were left out.
 
 **Protein ▸ Rescore Poses…** scores poses that already exist exactly where they stand, with
-Vina or Vinardo. **Poses** chooses what to score: **Docked**, the poses kept with the protein
-from its last run, which the new scores replace in place; or a **Table Column** of structures
-over the rows you choose. Use it to compare the two functions, or to score a pose moved by hand
-in the sketcher.
+Vina or Vinardo. **Poses** chooses what to score: **Docked**, the poses of one of the
+protein's runs (**Run**, the one shown in the Poses panel to begin with); or a **Table
+Column** of structures over the rows you choose. The scores are a new run beside the one they
+came from, which is left as it was, so the two functions can be compared pose by pose. Use it
+too to score a pose moved by hand in the sketcher.
 
 Docking is not yet covalent, does not move side chains, and docks one receptor at a time.
 

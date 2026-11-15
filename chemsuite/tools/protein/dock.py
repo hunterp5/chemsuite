@@ -107,6 +107,7 @@ def docked_poses(
     *,
     rescore: bool = False,
     skipped: int = 0,
+    scoring: str = "",
 ) -> DockedPoses:
     """What a run produced, in the form the document keeps."""
     poses = [
@@ -122,7 +123,8 @@ def docked_poses(
         for pose in docked.poses
     ]
     failed = sum(1 for d in results if d.error)
-    return DockedPoses(protein, tuple(poses), RESCORED if rescore else DOCKED, failed, skipped)
+    kind = RESCORED if rescore else DOCKED
+    return DockedPoses(protein, tuple(poses), kind, failed, skipped, scoring)
 
 
 def pose_rows(protein: str, poses: Sequence[Pose]) -> dict[str, list[str]]:
@@ -223,7 +225,8 @@ def _dock_job(
         if result is None:
             return
         receptor, results, skipped = result
-        run_poses = docked_poses(protein, results, names, rescore=rescore, skipped=skipped)
+        run_poses = docked_poses(protein, results, names, rescore=rescore, skipped=skipped,
+                                 scoring=options.scoring)  # fmt: skip
         poses = len(run_poses.poses)
         if poses:
             show_poses(ctx, run_poses)
@@ -275,38 +278,66 @@ def cancelled_partial(err: Cancelled) -> list[run.Docked]:
 
 # -- the poses panel ----------------------------------------------------------------------------
 def show_poses(ctx: ToolContext, run_poses: DockedPoses):
-    """Keep *run_poses* with the document and open the Poses panel on them (or fill the open
-    one). The panel docks in the viewer's window, beside the pocket they were docked into."""
+    """Keep *run_poses* with the document, beside its protein's earlier runs, and show it in
+    the Poses panel."""
+    from .tool import protein_workspace
+
+    kept = protein_workspace(ctx).add_docked(run_poses)
+    return show_runs(ctx, kept.protein, kept.number)
+
+
+def show_runs(ctx: ToolContext, protein: str, number: int | None = None):
+    """Open the Poses panel on *protein*'s runs, run *number* shown (None: the newest), or
+    fill the open one. It docks in the viewer's window, beside the pocket. None when the
+    protein has no runs."""
     from chemsuite.protein.ui.poses import PosesPanel
 
     from .tool import TOOL_ID, protein_workspace
 
-    protein_workspace(ctx).set_docked(run_poses)
+    runs = protein_workspace(ctx).runs(protein)
+    if not runs:
+        return None
     panel = ctx.find_panel(PosesPanel.tool_id)
     if isinstance(panel, PosesPanel):
-        panel.fill(run_poses)
+        panel.fill(runs, number)
         return panel
     # the protein is read from the panel when asked, not captured now: a later run into
     # another protein fills this same panel
     panel = PosesPanel(
-        run_poses,
+        runs,
         show=lambda pose: show_pose(ctx, panel.run.protein, pose),
         to_table=lambda poses: poses_to_table(ctx, panel.run.protein, poses),
+        remove=lambda run: remove_run(ctx, panel, run),
     )
+    panel.fill(runs, number)
     ctx.add_panel(panel, panel.title(), beside=ctx.find_panel(TOOL_ID))
     return panel
 
 
-def open_poses(ctx: ToolContext, state: dict):
-    """Reopen the Poses panel with the document (the poses were saved with the protein
-    workspace)."""
+def remove_run(ctx: ToolContext, panel, run: DockedPoses) -> bool:
+    """Forget *run* (Remove Run): the panel shows the protein's next newest, or closes when
+    none are left."""
     from .tool import protein_workspace
 
+    if not protein_workspace(ctx).drop_docked(run.protein, run.number):
+        return False
+    if show_runs(ctx, run.protein) is None:
+        panel.close_panel()
+        dock = panel.parent()
+        if dock is not None:
+            dock.close()
+    ctx.show_message(f"Removed run {run.number} of {run.protein}")
+    return True
+
+
+def open_poses(ctx: ToolContext, state: dict):
+    """Reopen the Poses panel with the document (the runs were saved with the protein
+    workspace), on the run it showed."""
     protein = state.get("protein")
     if not isinstance(protein, str):
         return None
-    run_poses = protein_workspace(ctx).docked(protein)
-    return show_poses(ctx, run_poses) if run_poses is not None else None
+    number = state.get("run")
+    return show_runs(ctx, protein, number if isinstance(number, int) else None)
 
 
 def show_pose(ctx: ToolContext, protein: str, pose: Pose) -> bool:
