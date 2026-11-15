@@ -51,6 +51,11 @@ class PlotSpec:
     min_compounds: int = 2  # constellation: cores shared by fewer are left out
     core_percent: int = 67  # constellation: a core keeps at least this % of the heavy atoms
     labels: bool = True  # constellation: name each analog series
+    neighbours: int = 10  # TMAP: the nearest neighbours each compound is joined to
+    edges: str = "similarity"  # network: "similarity" or "mmp" (matched pairs)
+    threshold: float = 0.65  # network: the Tanimoto similarity an edge needs
+    edge_color: str = "plain"  # network: a key of graph.EDGE_COLORS
+    singletons: bool = True  # network: draw compounds with no edge
 
 
 @dataclass(frozen=True)

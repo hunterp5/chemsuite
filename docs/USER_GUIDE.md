@@ -986,6 +986,8 @@ Open a plot from the **Plot** menu. It opens to the right of the table.
 | **Radar** | Three or more number columns as spokes, each scaled to its own range (centre: lowest, rim: highest). Shows the mean of the plotted rows in grey, and each selected row (up to 12) in its own colour. |
 | **3D Scatter** | Three number columns in a cube you can turn, coloured and sized by others (see below). |
 | **Constellation Plot** | The cores that analog series share, placed in chemical space: each circle is a core, sized by its compounds and coloured by their activity (see below). |
+| **Chemical Space Network** | Compounds joined to those they resemble, or form a matched pair with; each cluster laid out by force (see below). For hundreds to a few thousand compounds. |
+| **TMAP** | A tree of nearest neighbours: each compound sits on a branch beside its closest relatives (see below). For sets of up to hundreds of thousands. |
 | **3D Landscape** | An activity landscape: a smooth surface of one column (the height, e.g. pIC50) over two others, usually a chemical-space map, with the compounds standing on it (see below). |
 
 **Switching plots.** The cog's **Plot** list holds every kind, 2D and 3D. Changing it redraws
@@ -1037,7 +1039,8 @@ A **radar plot** has **Axes**: tick the number columns to draw as spokes.
 | Size range | Size is a number column | The values given the smallest and the largest point. Values beyond an end take that end's size. A box left empty (**Auto**) follows the data. |
 | Point size | Size is a number column | The smallest and largest point, in pixels (1–60; 4 and 18 to start). |
 
-Each setting applies to Scatter, Line and 3D Scatter points, and to the cores of a
+Each setting applies to Scatter, Line, 3D Scatter, Chemical Space Network and TMAP points
+(Line takes no Size), and to the cores of a
 Constellation Plot (where **Compounds** takes the place of Size range). The colour map also
 applies to the Density counts and the 3D Landscape heights. A range end that is not a number goes back to
 Auto. These settings are saved with the plot.
@@ -1152,6 +1155,59 @@ The 3D plots use the same toolbar as the 2D ones:
   summary value.
 - The settings are saved with the plot, and the cores are found again when the document
   reopens.
+
+### Chemical Space Network
+
+**Data ▸ Plot ▸ Chemical Space Network** draws each compound as a point and joins the ones that
+are alike (Maggiora and Bajorath, *J. Comput.-Aided Mol. Des.* 2014, 28, 795; Zwierzyna et al.,
+*J. Comput.-Aided Mol. Des.* 2015, 29, 113).
+
+- **Edges.** **Similarity** joins every pair whose Tanimoto similarity (Morgan fingerprints,
+  radius 2) reaches the **Threshold**. **Matched Pairs** joins every matched molecular pair, as
+  in Data ▸ SAR ▸ Matched Pairs.
+- **Layout.** Each connected cluster is laid out by force, so tightly joined compounds sit
+  together, and the clusters are placed in rows, largest first. Compounds with no edge
+  (singletons) come after them, in rows; untick **Singletons** to leave them out.
+- **Color and Size** work as on a scatter plot. **Edge color** colours each edge by its
+  similarity, or by the difference in the two compounds' Color values: a large difference
+  between alike compounds is an activity cliff.
+- More than 50,000 pairs at the threshold make a network too dense to read, so the plot stops
+  and says so: raise the threshold.
+
+| Setting | What it does |
+|---|---|
+| Structure | The structure column. |
+| Edges | Similarity or Matched Pairs. |
+| Threshold | The similarity a pair needs (0.65 to start). Similarity edges only. |
+| Edge color | Plain, Similarity or Activity Difference (of the Color column). |
+| Singletons | Draws compounds with no edge. |
+
+### TMAP
+
+**Data ▸ Plot ▸ TMAP** lays a large set out as a tree (Probst and Reymond, *J. Cheminf.* 2020,
+12, 12). Each compound is joined to its most similar compounds (**Neighbours**, by Tanimoto on
+Morgan fingerprints, radius 2); the tree keeps the shortest of those links that join every
+compound once, and is laid out so that each compound sits on a branch beside its closest
+relatives. Series show as branches; distances between far branches mean little.
+
+- Up to 10,000 compounds the neighbours are exact. Larger sets find them with MinHash and a
+  forest of sorted prefixes, as TMAP does, then check them with the exact similarity: about nine
+  in ten of the true ten nearest are found. 50,000 compounds take about 15 seconds.
+- If some compounds share no neighbour with the rest, there are several trees, placed side by
+  side.
+
+| Setting | What it does |
+|---|---|
+| Structure | The structure column. |
+| Neighbours | How many most similar compounds each is first joined to (10 to start). |
+
+Both plots:
+
+- are built in the background for the rows the table shows, saying "Finding neighbours…" until
+  they are ready, and are built again when a filter changes;
+- select rows as a scatter plot does (click, box, lasso), and the table scrolls to them; hover
+  shows the row's card and how many edges it has;
+- are drawn the same way every time, so a reopened document shows the same picture.
 
 ### MedChem plots
 

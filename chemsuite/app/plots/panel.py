@@ -67,8 +67,10 @@ from .cards import (
     PinnedCards,
     pinned_size,
 )
-from .constellation import ConstellationRenderer, CoreFinder, Runner, core_image
+from .constellation import ConstellationRenderer, CoreFinder, core_image
 from .controls import CONSTELLATION, KINDS, KINDS_3D, STATE_KEYS, PlotControls
+from .finder import Finder, Runner
+from .graph import GRAPH_KINDS, NETWORK, TMAP, GraphFinder, GraphRenderer
 from .renderers import RENDERERS
 from .spec import Hover, PlotSpec
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
@@ -88,7 +90,11 @@ AXIS_MARGINS = (6, 6, 10, 6)
 
 
 #: what draws each 2D kind
-DRAWN_BY = {**RENDERERS, CONSTELLATION: ConstellationRenderer}
+DRAWN_BY = {**RENDERERS, CONSTELLATION: ConstellationRenderer, TMAP: GraphRenderer}
+DRAWN_BY[NETWORK] = GraphRenderer
+#: what finds the data of the kinds that are computed before they draw
+FOUND_BY: dict[str, type[Finder]] = {CONSTELLATION: CoreFinder, TMAP: GraphFinder}
+FOUND_BY[NETWORK] = GraphFinder
 PlotOptions = OptionsPopup  # the plot's options popup
 
 
@@ -112,9 +118,9 @@ class PlotPanel(ToolPanel):
         self._images = images
         self._origin = f"plot:{id(self)}"
         self._last_axes: tuple | None = None
-        #: finds a constellation's cores (in the background with *run*)
-        self.cores = CoreFinder(table, run, workers, self)
-        self.cores.ready.connect(self.rebuild)
+        self._run, self._workers = run, workers
+        #: what computes each computed kind's data (in the background with *run*), made on use
+        self.finders: dict[type[Finder], Finder] = {}
 
         #: Settings button on the dock title bar opens this (``PanelDock`` looks for ``options``)
         self.options = PlotOptions(self)
@@ -280,16 +286,17 @@ class PlotPanel(ToolPanel):
                     self.renderer.clear()
                 self.renderer = renderer_type(self.plot)
             oids = shown_oids(self.table)
-            if isinstance(self.renderer, ConstellationRenderer):
-                self.renderer.data = self.cores.result(spec, oids)
-                self.renderer.waiting = self.cores.message
+            if isinstance(self.renderer, ConstellationRenderer | GraphRenderer):
+                finder = self.finder(spec.kind)
+                self.renderer.data = finder.result(spec, oids)
+                self.renderer.waiting = finder.message
             self.summary.setText(self.renderer.build(self.table, spec, oids))
         for control in (self.fit, self.curve):
             control.setToolTip(self.summary.text())
         self._active().show_selection(self.selection.oids)
         self.update_pinned()
         axes = (spec.kind, spec.x, spec.y, spec.bins, spec.aggregate, spec.columns)
-        if isinstance(self.renderer, ConstellationRenderer) and spec.kind == CONSTELLATION:
+        if isinstance(self.renderer, ConstellationRenderer | GraphRenderer):
             axes += (id(self.renderer.data),)  # a new map fits the view to it
         if axes != self._last_axes:
             # a new 2D layout fits the view to it; turning a 3D plot's columns keeps the camera
@@ -298,6 +305,15 @@ class PlotPanel(ToolPanel):
             if not moved_in_3d:
                 self.reset_view()
         self.titleChanged.emit(self.title())
+
+    def finder(self, kind: str) -> Finder:
+        """What finds *kind*'s data (one per finder type, made on first use)."""
+        kind_type = FOUND_BY[kind]
+        finder = self.finders.get(kind_type)
+        if finder is None:
+            finder = self.finders[kind_type] = kind_type(self.table, self._run, self._workers, self)
+            finder.ready.connect(self.rebuild)
+        return finder
 
     def _active(self):
         """What draws the current kind: a 2D renderer or the 3D scene."""
@@ -411,6 +427,9 @@ class PlotPanel(ToolPanel):
             if spec.y:
                 return f"{AGGREGATES[spec.aggregate]} {spec.y} by {spec.x}"
             return f"Rows by {spec.x}"
+        if spec.kind in GRAPH_KINDS and spec.structure:
+            what = "TMAP" if spec.kind == TMAP else "Network"
+            return f"{what}: {spec.color}" if spec.color else f"{what}: {spec.structure}"
         if spec.kind == CONSTELLATION and spec.structure:
             if spec.color:
                 return f"Constellation: {SUMMARIES[spec.summary]} {spec.color}"
@@ -642,7 +661,8 @@ class PlotPanel(ToolPanel):
         exporter(self.plot).export(str(path))
 
     def close_panel(self) -> None:
-        self.cores.close()
+        for finder in self.finders.values():
+            finder.close()
         self._unsubscribe_table()
         self._unsubscribe_selection()
         self._rebuild_timer.stop()

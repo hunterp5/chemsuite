@@ -319,6 +319,16 @@ conformer quality; this item is about scale.
 
 ### 7.0d High priority: TMAP and Chemical Space Networks (added 2026-11-11)
 
+**Done 2026-11-14:**
+- both plots are built (Data ▸ Plot ▸ Chemical Space Network and TMAP), on chemsuite's own
+  engine in `chemsuite/analysis/graphs` (no `tmap` dependency);
+- the user guide has a section for each.
+
+Still open:
+- TMAP checked against `tmap-silicon` side by side;
+- TMAP above 49k compounds;
+- MHFP6 as a fingerprint choice.
+
 Two more chemical-space plots, next to the Constellation Plot. Both are big new features, so
 each starts in plan mode. Their graph layout and drawing code may be shared, so plan them
 together.

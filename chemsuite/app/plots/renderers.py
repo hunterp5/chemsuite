@@ -128,6 +128,20 @@ class ScatterRenderer:
             return "Choose number columns for X and Y."
         data = xy(table, spec.x, spec.y, oids)
         self.oids, self.x, self.y = data.oids, data.x, data.y
+        self._draw_guide(spec.guide)
+        self._draw_points(table, spec)
+        self.plot.setLabel("bottom", spec.x)
+        self.plot.setLabel("left", spec.y)
+        parts = [f"{len(self.oids):,} points"]
+        if data.missing:
+            parts.append(f"{data.missing:,} rows without both values")
+        if spec.fit:
+            parts.extend(self._draw_fits())
+        return " · ".join(parts)
+
+    def _draw_points(self, table: Table, spec: PlotSpec) -> None:
+        """The points at :attr:`x`, :attr:`y` (of :attr:`oids`), coloured and sized by *spec*,
+        then the selection overlay."""
         n = len(self.oids)
         self.sizes = (
             marker_sizes(numbers(table, spec.size, self.oids), *spec.point_sizes, *spec.size_range)
@@ -137,7 +151,6 @@ class ScatterRenderer:
         self._color_values = None
         self._color_labels = None
         self._color_codes = None
-        self._draw_guide(spec.guide)
         groups = self._groups(table, spec)
         for mask, rgb, label in groups:
             if not mask.any():
@@ -155,14 +168,6 @@ class ScatterRenderer:
             self.plot.addItem(layer)  # a named layer joins the legend by itself
             self._layers.append(layer)
         self.plot.addItem(self._overlay)
-        self.plot.setLabel("bottom", spec.x)
-        self.plot.setLabel("left", spec.y)
-        parts = [f"{n:,} points"]
-        if data.missing:
-            parts.append(f"{data.missing:,} rows without both values")
-        if spec.fit:
-            parts.extend(self._draw_fits())
-        return " · ".join(parts)
 
     def _draw_guide(self, key: str | None) -> None:
         """Regions and reference lines behind the points, in data coordinates."""

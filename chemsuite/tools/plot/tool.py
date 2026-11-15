@@ -136,4 +136,23 @@ TOOLS = [
         tip="The cores analog series share, placed in chemical space: sized by their "
         "compounds, coloured by activity (Naveja and Medina-Franco, 2019).",
     ),
+    Tool(
+        id="network",
+        title="Chemical Space Network",
+        menu=("Data", "Plot"),
+        open=lambda ctx: _open(ctx, "network"),
+        needs_structures=True,
+        tip="Compounds joined to those they resemble (or form a matched pair with), clusters "
+        "laid out by force: for hundreds to a few thousand compounds (Maggiora and Bajorath, "
+        "2014).",
+    ),
+    Tool(
+        id="tmap",
+        title="TMAP",
+        menu=("Data", "Plot"),
+        open=lambda ctx: _open(ctx, "tmap"),
+        needs_structures=True,
+        tip="A tree of nearest neighbours: every compound a point on the branches beside its "
+        "closest relatives, for sets of up to hundreds of thousands (Probst and Reymond, 2020).",
+    ),
 ]

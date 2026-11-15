@@ -31,7 +31,7 @@ from functools import lru_cache
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject
 from PySide6.QtGui import QImage
 from rdkit import Chem
 
@@ -56,6 +56,7 @@ from chemsuite.sar.constellation import (
     summarise,
 )
 
+from .finder import Finder, Outcome, Runner
 from .spec import Hover, PlotSpec
 
 SCALE_STEPS = 24
@@ -65,9 +66,6 @@ MAX_LABELS = 400  # more cores than this: no series labels (they would bury the 
 HIT_PADDING = 3.0  # pixels round a circle that still hit it
 DIMMED = 0.35  # opacity of the cores while some are selected
 WAITING = "Finding cores…"
-
-#: a job runner: ``run(label, work(job), on_done(result))``
-Runner = Callable[[str, Callable, Callable], object]
 
 
 @dataclass
@@ -79,11 +77,11 @@ class Placed:
     coords: np.ndarray  # k × 2
 
 
-class CoreFinder(QObject):
-    """Finds the constellation of the rows a plot shows, in the background when it can run
-    jobs (without a runner, at once)."""
+class CoreFinder(Finder):
+    """Finds the constellation of the rows a plot shows, keeping each structure's cores so a
+    filter change only regroups and maps them again."""
 
-    ready = Signal()
+    waiting = WAITING
 
     def __init__(
         self,
@@ -92,42 +90,36 @@ class CoreFinder(QObject):
         workers: Callable[[int], Executor | None] | None = None,
         parent: QObject | None = None,
     ) -> None:
-        super().__init__(parent)
-        self.table = table
-        self._run = run
-        self._workers = workers
+        super().__init__(table, run, workers, parent)
         self._cores: dict[tuple[float, object], tuple[str, ...]] = {}  # (fraction, cell) → cores
-        self._key: tuple | None = None
-        self._result: Placed | None = None
-        self.message = WAITING
+        self._cells: list = []
 
-    def result(self, spec: PlotSpec, oids: np.ndarray) -> Placed | None:
-        """The constellation for *spec* over *oids*; None while it is being found (then
-        :attr:`ready` says when) or when it cannot be, :attr:`message` saying why."""
+    def key(self, spec: PlotSpec, oids: np.ndarray) -> tuple | None:
         column = spec.structure
         table = self.table
         if not column or column not in table:
             self.message = "Choose a structure column."
             return None
-        cells = table.column(column).worker_inputs(table.slots_of(oids))
+        self._cells = table.column(column).worker_inputs(table.slots_of(oids))
         fraction = spec.core_percent / 100.0
-        key = (fraction, spec.min_compounds, spec.layout, oids.tobytes(), hash(tuple(cells)))
-        if key == self._key:
-            return self._result
-        self._key, self._result, self.message = key, None, WAITING
+        return (fraction, spec.min_compounds, spec.layout, oids.tobytes(), hash(tuple(self._cells)))
+
+    def work(self, spec: PlotSpec, oids: np.ndarray) -> Callable[[object], Outcome]:
+        cells = self._cells
+        fraction = spec.core_percent / 100.0
         cache = self._cores
         known = {i: cache[(fraction, c)] for i, c in enumerate(cells) if (fraction, c) in cache}
         missing = [i for i in range(len(cells)) if i not in known]
-        executor = self._workers(len(missing)) if self._workers is not None else None
+        executor = self.executor(len(missing))
         oids = oids.copy()
 
-        def work(job=None) -> tuple:
-            cancel = job.cancel_token if job is not None else None
+        def job(handle=None) -> Outcome:
+            cancel = handle.cancel_token if handle is not None else None
             found = find_cores(
                 [cells[i] for i in missing],
                 fraction=fraction,
                 executor=executor,
-                progress=job.report if job is not None else None,
+                progress=handle.report if handle is not None else None,
                 cancel=cancel,
             )
             learned = {(fraction, cells[i]): cores for i, cores in zip(missing, found, strict=True)}
@@ -138,28 +130,13 @@ class CoreFinder(QObject):
                 cancel=cancel,
             )
             try:
-                return key, learned, Placed(oids, con, place(con, spec.layout, cancel=cancel)), ""
+                placed = Placed(oids, con, place(con, spec.layout, cancel=cancel))
+                problem = ""
             except ValueError as error:  # a map the cores cannot make
-                return key, learned, None, str(error)
+                placed, problem = None, str(error)
+            return placed, problem, lambda: cache.update(learned)
 
-        if self._run is None:
-            self._done(work())
-        else:
-            self._run(WAITING, work, self._done)
-        return self._result
-
-    def close(self) -> None:
-        """The plot closed: a job still running finishes unheard."""
-        self._key = None
-
-    def _done(self, outcome: tuple) -> None:
-        key, learned, placed, problem = outcome
-        self._cores.update(learned)
-        if key != self._key:
-            return  # a newer request is under way
-        self._result = placed
-        self.message = f"⚠ {problem}" if problem else ""
-        self.ready.emit()
+        return job
 
 
 @lru_cache(maxsize=256)

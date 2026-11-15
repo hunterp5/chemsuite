@@ -28,6 +28,7 @@ from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -47,6 +48,7 @@ from chemsuite.plotting.style import COLOR_MAPS, DEFAULT_MAP, parse_range
 from chemsuite.sar.constellation import MAPS, SUMMARIES
 
 from ..widgets.flow_layout import compact
+from .graph import EDGE_COLORS, EDGES, GRAPH_KINDS, NETWORK, TMAP
 from .spec import PlotSpec, Range
 
 NONE = "(none)"
@@ -59,6 +61,8 @@ KINDS = {
     "density": "Density",
     "radar": "Radar",
     "constellation": "Constellation",
+    "tmap": "TMAP",
+    "network": "Chemical Space Network",
     "scatter3d": "3D Scatter",
     "landscape": "3D Landscape",
 }
@@ -66,11 +70,13 @@ KINDS = {
 KINDS_3D = ("scatter3d", "landscape")
 #: kinds plotting one number column against another
 XY_KINDS = ("scatter", "line", "density", *KINDS_3D)
-#: kinds colouring their points by a column
-COLORED = ("scatter", "line", "scatter3d")
-#: kinds sizing their points by a column
-SIZED = ("scatter", "scatter3d")
 CONSTELLATION = "constellation"
+#: kinds colouring their points by a column
+COLORED = ("scatter", "line", "scatter3d", *GRAPH_KINDS)
+#: kinds sizing their points by a column
+SIZED = ("scatter", "scatter3d", *GRAPH_KINDS)
+#: kinds drawn from a structure column
+STRUCTURED = (CONSTELLATION, *GRAPH_KINDS)
 #: kinds always coloured along a colour map (counts, heights)
 MAPPED = ("density", "landscape")
 POINT_SIZES = (4, 18)
@@ -101,6 +107,11 @@ STATE_KEYS = (
     "min_compounds",
     "core_percent",
     "labels",
+    "neighbours",
+    "edges",
+    "threshold",
+    "edge_color",
+    "singletons",
 )
 
 
@@ -216,6 +227,7 @@ class PlotControls(QObject):
         self.axes_button.setStyleSheet("text-align: left; padding: 3px 8px;")
         self._make_scale_controls()
         self._make_constellation_controls()
+        self._make_graph_controls()
         compact(
             self.x,
             self.y,
@@ -245,6 +257,10 @@ class PlotControls(QObject):
             ("Map", self.layout),
             ("Min compounds", self.min_compounds),
             ("Core size", self.core_percent),
+            ("Neighbours", self.neighbours),
+            ("Edges", self.edges),
+            ("Threshold", self.threshold),
+            ("Edge color", self.edge_color),
             ("Colors", self.colors),
             ("Color range", self.color_range),
             ("Size range", self.size_range),
@@ -257,12 +273,17 @@ class PlotControls(QObject):
         form.addRow("", self.errors)
         form.addRow("", self.drop)
         form.addRow("", self.series_labels)
+        form.addRow("", self.singletons)
         self.fill_columns(initial=True)
         self.kind.currentIndexChanged.connect(self._kind_changed)
         for combo in (self.x, self.y, self.z, self.curve, self.guide, self.aggregate, self.cmap):
             combo.currentIndexChanged.connect(self.changed)
-        for combo in (self.structure, self.core_summary, self.layout):
+        for combo in (self.structure, self.core_summary, self.layout, self.edge_color):
             combo.currentIndexChanged.connect(self.changed)
+        self.edges.currentIndexChanged.connect(self._column_changed)  # Threshold shows or hides
+        for spin in (self.neighbours, self.threshold):
+            spin.valueChanged.connect(self.changed)
+        self.singletons.toggled.connect(self.changed)
         for combo in (self.color, self.size):
             combo.currentIndexChanged.connect(self._column_changed)
         for spin in (self.bins, self.small, self.large, self.min_compounds, self.core_percent):
@@ -324,6 +345,39 @@ class PlotControls(QObject):
         self.series_labels.setToolTip("Number each analog series beside its largest core")
         compact(self.structure, self.core_summary, self.layout, chars=16)
 
+    def _make_graph_controls(self) -> None:
+        self.neighbours = QSpinBox()
+        self.neighbours.setRange(2, 50)
+        self.neighbours.setValue(10)
+        self.neighbours.setToolTip(
+            "Each compound is first joined to this many of its most similar compounds; the tree "
+            "keeps the closest links (more: fewer separate trees, slower)"
+        )
+        self.edges = QComboBox()
+        for key, title in EDGES.items():
+            self.edges.addItem(title, key)
+        self.edges.setToolTip(
+            "Join compounds alike by Tanimoto (Morgan, radius 2), or those forming a matched "
+            "molecular pair"
+        )
+        self.threshold = QDoubleSpinBox()
+        self.threshold.setRange(0.3, 1.0)
+        self.threshold.setSingleStep(0.05)
+        self.threshold.setDecimals(2)
+        self.threshold.setValue(0.65)
+        self.threshold.setToolTip("The Tanimoto similarity two compounds need to be joined")
+        self.edge_color = QComboBox()
+        for key, title in EDGE_COLORS.items():
+            self.edge_color.addItem(title, key)
+        self.edge_color.setToolTip(
+            "Colour edges by the pair's similarity, or by the difference in their Color values "
+            "(a large difference between alike compounds is an activity cliff)"
+        )
+        self.singletons = QCheckBox("Singletons")
+        self.singletons.setChecked(True)
+        self.singletons.setToolTip("Draw compounds with no edge, in rows after the clusters")
+        compact(self.edges, self.edge_color, chars=16)
+
     @property
     def controls(self) -> tuple[QObject, ...]:
         """Everything that says when it changed (blocked while settings are put back)."""
@@ -353,6 +407,11 @@ class PlotControls(QObject):
             self.min_compounds,
             self.core_percent,
             self.series_labels,
+            self.neighbours,
+            self.edges,
+            self.threshold,
+            self.edge_color,
+            self.singletons,
         )
 
     # -- the spec -------------------------------------------------------------------------------
@@ -364,7 +423,7 @@ class PlotControls(QObject):
         kind = self.kind.currentData()
         return PlotSpec(
             kind=kind,
-            x=name(self.x) if kind not in ("radar", CONSTELLATION) else None,
+            x=name(self.x) if kind not in ("radar", *STRUCTURED) else None,
             y=name(self.y) if kind in (*XY_KINDS, "box", "bar") else None,
             color=name(self.color) if kind in (*COLORED, CONSTELLATION) else None,
             size=name(self.size) if kind in SIZED else None,
@@ -390,7 +449,16 @@ class PlotControls(QObject):
             min_compounds=self.min_compounds.value(),
             core_percent=self.core_percent.value(),
             labels=self.series_labels.isChecked(),
+            neighbours=self.neighbours.value(),
+            edges=self.edges.currentData(),
+            threshold=round(self.threshold.value(), 2),
+            edge_color=self.edge_color.currentData(),
+            singletons=self.singletons.isChecked(),
         )
+
+    def _set_threshold(self, value: object) -> None:
+        number = isinstance(value, int | float) and not isinstance(value, bool)
+        self.threshold.setValue(float(value) if number else 0.65)
 
     def _point_sizes(self) -> tuple[float, float]:
         small, large = self.small.value(), self.large.value()
@@ -425,6 +493,11 @@ class PlotControls(QObject):
             "min_compounds": spec.min_compounds,
             "core_percent": spec.core_percent,
             "labels": spec.labels,
+            "neighbours": spec.neighbours,
+            "edges": spec.edges,
+            "threshold": spec.threshold,
+            "edge_color": spec.edge_color,
+            "singletons": spec.singletons,
         }
 
     def set_values(self, values: Mapping[str, object]) -> None:
@@ -439,9 +512,12 @@ class PlotControls(QObject):
             combos["size"], combos["structure"] = self.size, self.structure
             pick = {"curve": self.curve, "guide": self.guide, "aggregate": self.aggregate}
             pick["summary"], pick["layout"] = self.core_summary, self.layout
+            pick["edges"], pick["edge_color"] = self.edges, self.edge_color
             checks = {"fit": self.fit, "errors": self.errors, "drop": self.drop}
             checks["reverse"], checks["labels"] = self.reverse, self.series_labels
+            checks["singletons"] = self.singletons
             spins = {"min_compounds": self.min_compounds, "core_percent": self.core_percent}
+            spins["neighbours"] = self.neighbours
             setters = {
                 "bins": lambda v: self.bins.setValue(v if isinstance(v, int) else 0),
                 "columns": self.set_axes,
@@ -451,6 +527,7 @@ class PlotControls(QObject):
                 "color_range": self.color_range.set_value,
                 "size_range": self.size_range.set_value,
                 "point_sizes": self._set_point_sizes,
+                "threshold": self._set_threshold,
             }
             for key, value in values.items():
                 if key in combos:
@@ -495,6 +572,8 @@ class PlotControls(QObject):
             "scatter3d": numbers,
             "landscape": numbers,
             CONSTELLATION: [],
+            TMAP: [],
+            NETWORK: [],
         }[kind]
         lists = {
             self.x: x_choices,
@@ -549,6 +628,10 @@ class PlotControls(QObject):
                 self.size_range,
                 self.point_sizes,
             ),
+            TMAP: (self.structure, self.neighbours, self.color, self.size),
+            NETWORK: (self.structure, self.edges, self.edge_color, self.singletons)
+            + ((self.threshold,) if self.edges.currentData() == "similarity" else ())
+            + (self.color, self.size),
         }[kind]
         numbered = self._is_number(self.color) and kind in (*COLORED, CONSTELLATION)
         sized = self._is_number(self.size) and kind in SIZED
@@ -558,7 +641,7 @@ class PlotControls(QObject):
         shown += (self.core_summary,) if numbered and kind == CONSTELLATION else ()
         for widget in self.labels:
             self.form.setRowVisible(widget, widget in shown)
-        for widget in (self.fit, self.errors, self.drop, self.series_labels):
+        for widget in (self.fit, self.errors, self.drop, self.series_labels, self.singletons):
             self.form.setRowVisible(widget, widget in shown)
         self.labels[self.x].setText("Group by:" if kind in ("box", "bar") else "X:")
         self.labels[self.y].setText("Values:" if kind in ("box", "bar") else "Y:")

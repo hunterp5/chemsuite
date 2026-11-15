@@ -37,6 +37,28 @@ other machine can pick it up. Update it at the end of a session that leaves work
   options (`app/plots/controls.py` holds the controls, `spec.py` the `PlotSpec`); the
   Constellation Plot (`sar/constellation.py`, the CCR method with a pruned RECAP search;
   `app/plots/constellation.py`, the renderer and the background `CoreFinder`).
+- **Plots, 2026-11-14:** a selection made in a plot scrolls the table to its first new row
+  (`app/table/snap.py`). **TMAP and Chemical Space Networks** (ROADMAP §7.0d, plan approved
+  2026-11-14) are done:
+  - The Qt-free `analysis/graphs` package holds:
+    - `knn.py`: exact neighbours up to 10k rows; above that, MinHash over the Morgan bits, a
+      prefix forest and one neighbour-of-neighbour pass, reranked by exact Tanimoto;
+    - `trees.py`;
+    - `layout.py`: a seeded multilevel force layout (Walshaw), with packing;
+    - `tmap.py` and `csn.py`.
+  - `app/plots/finder.py` is the shared background `Finder`, and `CoreFinder` now builds on it.
+  - `app/plots/graph.py` holds `GraphFinder` and `GraphRenderer`; `GraphRenderer` is a
+    `ScatterRenderer` whose points come from the layout.
+  - Bench: `scripts/review/chemspace_bench.py` (`smiles`, `knn`, `tmap`, `csn`; it caches under
+    `samples/chemspace`).
+    - Measured on 49k BindingDB compounds: recall@10 0.89; TMAP in 15 s.
+    - A 5k-compound network at 0.65: 1.6 s.
+  - Not done from the plan:
+    - `tmap-silicon` as a side-by-side reference (no bench venv yet);
+    - TMAP above 49k rows (no larger set in `samples/`);
+    - the redraw benchmark at 100k points.
+  - Open: a few branch crossings in big TMAPs (more fine force steps may help); MHFP6 as a
+    fingerprint choice.
 - **Protein editing and the Sequence window** (2026-11-11/12, before Phase C, at the user's
   request): a click selects an atom (double-click the residue, Alt-click the chain); Edit ▸
   Delete, Element, Charge, Rename Residue/Chain, Renumber, Undo/Redo, each one table step
