@@ -1637,7 +1637,7 @@ or not, with the rows you chose.
   a residue as sticks shows its hydrogens too.
 - **Interactions** draws dashed lines from the ligands (or the selection) to what they touch:
   hydrogen bonds (blue), salt bridges (magenta), π-stacking (green), cation–π (orange),
-  hydrophobic contacts (grey), halogen bonds (cyan), metal contacts (purple) and water bridges
+  hydrophobic contacts (grey), halogen bonds (cyan), metal contacts (light gold) and water bridges
   (light blue). Point at an atom to read its interactions in the status line.
 - **Hydrogen bonds use the hydrogen where the structure has one** — a protein you have
   prepared, an NMR model, a ligand drawn with hydrogens: the H···A distance (up to 2.5 Å, after

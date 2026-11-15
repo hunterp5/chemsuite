@@ -74,7 +74,7 @@ COLOURS = {
     CATION_PI: (1.00, 0.55, 0.10),
     HYDROPHOBIC: (0.60, 0.60, 0.60),
     HALOGEN: (0.10, 0.75, 0.80),
-    METAL: (0.55, 0.35, 0.85),
+    METAL: (0.95, 0.85, 0.35),  # light gold: purple is the ligand's carbon
     WATER_BRIDGE: (0.45, 0.75, 1.00),
 }
 
