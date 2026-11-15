@@ -18,7 +18,7 @@
 """chemsuite pKa weights on the held-out test sets, against MolGpKa (docs/UNIPKA_PLAN.md, U2).
 
     python scripts/unipka/evaluate.py <weights.npz> <tests folder> <cache.pkl>
-        [--workers N] [--enumerated] [--sets novartis_acid,sampl6,...]
+        [--workers N] [--enumerated] [--sets novartis_acid,sampl6,...] [--sites <tsv>]
 
 Each test row is a transition, "acid microstates>>base microstates", and its measured pKa.
 Every microstate's free energy is computed once per fold and conformer (upstream's ten 3D
@@ -27,7 +27,9 @@ conformers and folds cost without running the network again.
 
 - **given:** the pKa between the row's own microstates, as Uni-pKa's paper scores it;
 - **enumerated** (``--enumerated``): from the molecule alone, as the app will: every microstate
-  from chemsuite's enumerator, the macro pKa between the transition's two charges;
+  from chemsuite's enumerator, the macro pKa between the transition's two charges (with the
+  bundled site templates, or ``--sites``; give each template set its own cache, since the
+  cache keeps each molecule's microstates);
 - **MolGpKa:** its site closest to the measured value, among sites of the transition's kind
   (an optimistic bound: the app cannot know which site is meant).
 """
@@ -202,8 +204,10 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--enumerated", action="store_true")
     parser.add_argument("--sets", default=",".join(SETS))
+    parser.add_argument("--sites", type=Path, help="site templates to enumerate with (TSV)")
     args = parser.parse_args()
     RDLogger.DisableLog("rdApp.*")
+    microstates.use_sites(args.sites)
 
     rows = read_rows(args.tests, args.sets.split(","))
     with np.load(args.weights) as archive:
@@ -235,10 +239,12 @@ def main() -> None:
             label = f"given, {n_3d} 3D + 2D, {folds} fold{'s' * (folds > 1)}"
             methods[label] = lambda r, n=n_3d, f=folds: given(r, cache, mean, n, f)
     if args.enumerated:
-        for n_3d in (1, conformers.N_3D):
-            methods[f"enumerated, {n_3d} 3D + 2D, {n_folds} folds"] = lambda r, n=n_3d: enumerated(
-                r, states[r.acid[0]], cache, mean, n, n_folds
-            )
+        for folds in sorted({1, n_folds}):
+            for n_3d in (1, 3, conformers.N_3D):
+                label = f"enumerated, {n_3d} 3D + 2D, {folds} fold{'s' * (folds > 1)}"
+                methods[label] = lambda r, n=n_3d, f=folds: enumerated(
+                    r, states[r.acid[0]], cache, mean, n, f
+                )
     print(f"\n{args.weights.name}: mean pKa {mean:.4f}, {n_folds} folds\n")
     print(table(rows, methods))
 

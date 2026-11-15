@@ -44,7 +44,7 @@ CC BY-SA 3.0 requires).
 | Part | Source | Licence | Use |
 |---|---|---|---|
 | Model and training code | dptech-corp/Uni-pKa | Apache-2.0 | Trained with, in WSL; the forward pass ported to numpy |
-| Microstate templates | Uni-pKa's `simple_smarts_pattern.tsv`, from MolGpKa's | Apache-2.0, MIT | Vendored (`chemsuite/ionisation/unipka/data`) |
+| Microstate templates | Uni-pKa's `smarts_pattern.tsv` (full; the simple one kept for tests), from MolGpKa's | Apache-2.0, MIT | Vendored (`chemsuite/ionisation/unipka/data`) |
 | Pretrained backbone | Uni-Mol `mol_pre_all_h_220816.pt` (v0.1 release) | MIT | Initial weights |
 | Training data (shipped model) | pKaHub (Sipos-Szabó et al., JCIM 2026, doi:10.1021/acs.jcim.6c00107; keserulab/pkahub): Baltruschat's ChEMBL set; the Hunt, Yu, Settimo, Manchester, Caine and Jensen sets; OCHEM; QSARToolbox; with pKaHub's Epik assignments | MIT (the compilation); ChEMBL CC BY-SA 3.0 | The shipped weights cite pKaHub and ChEMBL |
 | **Not used** from pKaHub | IUPAC digitised (CC BY-NC), DataWarrior (unknown), the AttenGpKa set (may repeat both) | – | – |
@@ -78,8 +78,26 @@ CC BY-SA 3.0 requires).
     20-microstate ligand.
   - So U2 measures how much accuracy fewer conformers and folds cost, or distils a smaller
     model.
+  - **Results, 2026-11-14** (shipped weights, `scripts/unipka/evaluate.py --enumerated`; the
+    356 test molecules; RMSE):
+
+    | microstates | templates | 3 conformers + 2D, 1 fold | 3 + 2D, 5 folds | 10 + 2D, 5 folds | failed |
+    |---|---|---|---|---|---|
+    | given (the transition's own) | – | 0.85 | 0.84 | 0.83 | 0 |
+    | enumerated | simple | 0.85 | 0.83 | 0.82 | 24 |
+    | enumerated | full | 0.84 | 0.82 | 0.80 | 2 |
+
+    Uni-pKa's paper (its own weights, ChEMBL pretraining): 0.83 on the same sets. The simple
+    templates had no site for 24 weak N–H acids (imides, hydantoins, acylated aminothiazoles,
+    rhodanines); the full set finds 22 of them, and Novartis acids improve (1.15 → 1.08), so it
+    is the bundled default. The full set costs about 21% more microstates.
+  - Errors by acid group (`novartis_acid`, SAMPL7): ring N–H acids (RMSE 1.66) and
+    sulfonamides (SAMPL7 0.88 too acidic on average) are worst; the training set has about
+    590 sulfonamide and 570 ring N–H transitions against 11,900 bases. More data in those
+    classes, not label cleaning, is the likely fix.
 - **U3:** `chemsuite/ionisation/unipka/`:
-  - `microstates.py`: upstream's enumerator, identical on SAMPL6, with atom maps kept;
+  - `microstates.py`: upstream's enumerator, identical on SAMPL6 (with the simple templates),
+    with atom maps kept;
   - `conformers.py`: upstream's recipe;
   - `model.py`: matches torch to 1.2e-4 with fp16 weights;
   - `thermo.py`;

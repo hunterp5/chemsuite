@@ -18,9 +18,14 @@
 
 A port of Uni-pKa's enumerator (``enumerator/main.py``,
 https://github.com/dptech-corp/Uni-pKa, Apache-2.0; see ``data/LICENSE-Uni-pKa.txt``). Its
-templates (``data/unipka_sites.tsv``, upstream's ``simple_smarts_pattern.tsv``) extend
-MolGpKa's (MIT, ``data/LICENSE-MolGpKa.txt``). Each acid template names the atom that loses a
-proton, each base template the atom that gains one. From the input, every acid site is
+templates (``data/unipka_sites.tsv``, upstream's full ``smarts_pattern.tsv``) extend
+MolGpKa's (MIT, ``data/LICENSE-MolGpKa.txt``). Upstream's ``simple_smarts_pattern.tsv`` is kept
+as ``data/unipka_sites_simple.tsv`` (:data:`SIMPLE_SITES`): with it, 24 of the 356 test
+molecules (imides, hydantoins, acylated aminothiazoles…) had no acid site; the full set leaves
+2, and scores as well or better (docs/UNIPKA_PLAN.md).
+
+Each acid template names the atom that loses a proton, each base template the atom that gains
+one. From the input, every acid site is
 deprotonated (and every base site protonated), the results are filtered, and the pools grow
 until they stop changing; one macrostate (total charge) leads to the next.
 
@@ -36,12 +41,15 @@ import csv
 from dataclasses import dataclass
 from functools import cache
 from importlib import resources
+from pathlib import Path
 
 from rdkit import Chem, RDLogger
 
 ACID, BASE = "A", "B"
 MAX_ITER = 10  # upstream's command-line default
 LOWER, UPPER = -2, 2  # total charges enumerated, as upstream's defaults
+#: upstream's simple templates, for :func:`use_sites` (the bundled default is the full set)
+SIMPLE_SITES = Path(__file__).parent / "data" / "unipka_sites_simple.tsv"
 
 #: structures upstream filters out as unreasonable
 _FILTERS = (
@@ -79,9 +87,25 @@ class Microstate:
         return sum(self.charges)
 
 
+class _Sites:
+    """The site-template file in use: the bundled one unless :func:`use_sites` changed it."""
+
+    path: Path | None = None
+
+
+def use_sites(path: Path | None) -> None:
+    """Enumerate with the templates in *path* (upstream's TSV format), or the bundled ones for
+    ``None``. For benchmarks comparing template sets."""
+    _Sites.path = path
+    _templates.cache_clear()
+
+
 @cache
 def _templates() -> dict[str, tuple[tuple[Chem.Mol, int], ...]]:
-    text = resources.files(__package__).joinpath("data/unipka_sites.tsv").read_text("utf-8")
+    if _Sites.path is None:
+        text = resources.files(__package__).joinpath("data/unipka_sites.tsv").read_text("utf-8")
+    else:
+        text = _Sites.path.read_text("utf-8")
     rows = list(csv.reader(text.splitlines(), delimiter="\t"))[1:]
     out: dict[str, list[tuple[Chem.Mol, int]]] = {ACID: [], BASE: []}
     for _name, smarts, index, kind in rows:

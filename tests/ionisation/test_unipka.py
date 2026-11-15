@@ -40,12 +40,28 @@ def test_microstates_match_upstream_on_sampl6() -> None:
     rows = list(csv.reader((DATA / "unipka_sampl6_ensemble.tsv").open(encoding="utf-8"),
                            delimiter="\t"))  # fmt: skip
     head = rows[0]
-    for row in rows[1:]:
-        want = {int(q): {_canon(s) for s in cell.split(",")}
-                for q, cell in zip(head[1:-1], row[1:-1], strict=True) if cell}  # fmt: skip
-        found = microstates.ensemble(Chem.MolFromSmiles(row[-1]))
-        got = {q: {_canon(m.smiles) for m in pool} for q, pool in found.items()}
-        assert got == want, row[-1]
+    microstates.use_sites(microstates.SIMPLE_SITES)
+    try:
+        for row in rows[1:]:
+            want = {int(q): {_canon(s) for s in cell.split(",")}
+                    for q, cell in zip(head[1:-1], row[1:-1], strict=True) if cell}  # fmt: skip
+            found = microstates.ensemble(Chem.MolFromSmiles(row[-1]))
+            got = {q: {_canon(m.smiles) for m in pool} for q, pool in found.items()}
+            assert got == want, row[-1]
+    finally:
+        microstates.use_sites(None)
+
+
+def test_full_templates_find_weak_nh_acids() -> None:
+    """A hydantoin and a dibenzamide (Novartis acids, pKa 8.3 and 9.9) have no acid site in the
+    simple templates; the bundled full set deprotonates their imide N–H."""
+    for smiles in ("O=C1CN(c2ccccc2)C(=O)N1", "O=C(NC(=O)c1ccccc1)c1ccccc1"):
+        assert -1 in microstates.ensemble(Chem.MolFromSmiles(smiles)), smiles
+    microstates.use_sites(microstates.SIMPLE_SITES)
+    try:
+        assert -1 not in microstates.ensemble(Chem.MolFromSmiles("O=C1CN(c2ccccc2)C(=O)N1"))
+    finally:
+        microstates.use_sites(None)
 
 
 def test_microstates_map_onto_the_input_atoms() -> None:
