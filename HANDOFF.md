@@ -209,16 +209,16 @@ other machine can pick it up. Update it at the end of a session that leaves work
   20 epochs, same data; compare against shipped fold 0's "1 fold" rows after
   `convert_weights.py`). Start it only when nothing else heavy runs (the PC hard-reset before).
   Then: pick the app's conformer/fold count (3 + 2D, 1 fold looks right), U4.
-- **CONFORGE conformers** (§7.0b, plan approved 2026-11-14; `cdpkit` wheel, optional): the
-  Generator choice in Generate Conformers (`conformers/conforge.py`), ETKDG still the default.
+- **CONFORGE conformers** (§7.0b, plan approved 2026-11-14): the default Generator in Generate
+  Conformers since 2026-11-15 (`conformers/conforge.py`); `cdpkit` is a base dependency with
+  platform markers (no wheel on Windows 3.11/3.13 or Intel Macs: ETKDG there).
   Benchmark: `scripts/review/conformer_bench.py` on Wang et al.'s 3,354 crystal ligands
   (`samples/conformers/wang`, fetched; ids from their SI xlsx). CONFORGE's two variants are done
   (3,354 ligands each). The ETKDG run crashed on 2026-11-14 after 339 `etkdg-raw` ligands:
   RDKit 2026.09 answers a failed random-coordinates embedding with id `-1` and no conformer
   (platensimycin, 3i8p_840), now dropped in `etkdg._embed` ("could not embed in 3D"). The
   four ETKDG variants were restarted after the fix (they resume; log
-  `samples/conformers/wang/out/bench.log`); then `score` → `docs/conformers/bench.md` decides
-  the default.
+  `samples/conformers/wang/out/bench.log`); scored in `docs/conformers/bench.md` (2026-11-15).
   CONFORGE's macrocycle sampling is capped at 200 (provisional). Committed and merged.
 - **Decomposition and enumeration** (done 2026-11-14, ROADMAP §6): Chemistry ▸ Decompose
   (R-Group Decomposition, Fragments, Central Ring), Chemistry ▸ Enumerate (Reaction

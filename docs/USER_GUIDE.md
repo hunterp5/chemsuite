@@ -1369,17 +1369,21 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 
 Generates 3D conformers with one of two **Generators**:
 
-- **ETKDG (RDKit)**, the default: distance geometry, then optimisation with MMFF94 (UFF where
-  MMFF has no parameters).
-- **CONFORGE (CDPKit)**: builds conformers from fragment and torsion libraries and scores them
-  with MMFF94s (Seidel et al., *J. Chem. Inf. Model.* 2023, 63, 5549). It needs the optional
-  `cdpkit` package (LGPL-2.1); without it the choice is greyed out. Install it with
-  `pip install chemsuite[conforge]`; on a Mac older than macOS 26, add
-  `--only-binary cdpkit`. On Windows there are wheels for Python 3.12 only (of 3.11–3.13).
+- **CONFORGE (CDPKit)**, the default: builds conformers from fragment and torsion libraries
+  and scores them with MMFF94s (Seidel et al., *J. Chem. Inf. Model.* 2023, 63, 5549). It
+  comes from the `cdpkit` package (LGPL-2.1), which installs with chemsuite wherever CDPKit
+  ships one: Windows with Python 3.12, Linux on x86-64, and Macs with Apple silicon. Elsewhere
+  (Windows with Python 3.11 or 3.13, Intel Macs) the choice is greyed out and ETKDG is used.
+  - It reproduced crystal poses best of the generators tested: on 3,354 drug-like PDB
+    ligands (Wang et al., *J. Chem. Inf. Model.* 2023, 63, 6525), the closest of 10
+    conformers was 0.84 Å from the crystal pose on average, against 0.99 Å for ETKDG with
+    its default settings.
   - CONFORGE gives the same conformers every run, uses its own force field (**Optimise with**
     and **Seed** are greyed out), and always applies the energy window if it is ticked.
   - Macrocycles are sampled with 200 trial conformers each, which takes several seconds per
     molecule (an 18-membered lactam: about 7 s).
+- **ETKDG (RDKit)**: distance geometry, then optimisation with MMFF94 (UFF where MMFF has no
+  parameters).
 
 - **Input:** the structure column and **All**, **Shown** or **Selected** rows.
 - **Method:** the **Generator**, **Conformers** per molecule, **Distinct above** (the RMSD for

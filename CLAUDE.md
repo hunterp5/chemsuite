@@ -117,9 +117,9 @@ changes.
 ## Two machines
 
 - Setup: `py -3.12 -m venv .venv` (macOS: `python3.12 -m venv .venv`), then
-  `pip install -e .[dev]` and `git config core.hooksPath .githooks`. For CONFORGE add
-  `pip install --only-binary cdpkit -e .[conforge]` (Windows wheels: Python 3.12 only; macOS
-  before 26 gets cdpkit 1.2.3).
+  `pip install -e .[dev]` and `git config core.hooksPath .githooks`. CDPKit (CONFORGE, the
+  default conformer generator) installs with it where it has wheels: Windows on Python 3.12
+  only, Linux x86-64, Apple silicon (1.2.3 before macOS 26); elsewhere ETKDG is used.
 - Keep the repo and venv out of OneDrive/iCloud-synced folders (sync hid `.venv` files and Qt
   could not find its plugins).
 - 3D draws with Direct3D 11 on Windows (WARP software fallback), Metal on macOS.

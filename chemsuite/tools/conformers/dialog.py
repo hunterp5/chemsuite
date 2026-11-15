@@ -44,7 +44,7 @@ SPAN_COLUMN = "Conformer Energy Range"
 FORCE_FIELDS = {"mmff": "MMFF94 (UFF where MMFF lacks parameters)", "uff": "UFF", None: "None"}
 METHODS = {"etkdg": "ETKDG (RDKit)", "conforge": "CONFORGE (CDPKit)"}
 
-_last = ConformerSettings()  # remembered for the session
+_last = ConformerSettings(method="conforge")  # remembered for the session; ETKDG without cdpkit
 
 
 def output_name(structure: str) -> str:

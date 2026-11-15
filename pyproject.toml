@@ -23,6 +23,13 @@ dependencies = [
     "umap-learn>=0.5.7",        # base install by decision (docs/PLAN.md §5); imported lazily
     "pacmap>=0.9",              # PaCMAP maps (Apache-2.0; pulls faiss-cpu, MIT); imported lazily
     "openpyxl>=3.1",            # Excel (.xlsx) read/write; base install by decision
+    # CONFORGE, the default conformer generator (LGPL-2.1), wherever CDPKit ships a wheel:
+    # Windows on Python 3.12 only, Linux x86-64, Apple silicon (macOS 26+: 1.3; older: 1.2.3).
+    # Elsewhere pip would try its source build (Boost, CMake), so ETKDG is used instead.
+    "cdpkit>=1.3; sys_platform == 'win32' and python_version == '3.12'",
+    "cdpkit>=1.3; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "cdpkit>=1.3; sys_platform == 'darwin' and platform_machine == 'arm64' and platform_release >= '25'",
+    "cdpkit==1.2.3; sys_platform == 'darwin' and platform_machine == 'arm64' and platform_release < '25'",
 ]
 
 [project.gui-scripts]
@@ -30,9 +37,6 @@ chemsuite = "chemsuite.app.shell.main:main"
 
 [project.optional-dependencies]
 confab = ["openbabel>=3.2.0"]
-# cdpkit ships Windows wheels only for Python 3.10/3.12/3.14; elsewhere pip would try its
-# source build (Boost, CMake). macOS before 26: pip install --only-binary cdpkit (takes 1.2.3).
-conforge = ["cdpkit>=1.2.3; sys_platform != 'win32' or python_version == '3.12'"]
 dev = [
     "pytest>=8",
     "pytest-qt>=4.4",

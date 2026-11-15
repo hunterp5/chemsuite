@@ -36,7 +36,7 @@ tests. Rebuild the table core, the application wiring, plotting and packaging.
 | Dimensionality reduction | umap-learn (**base install**; pulls in numba/llvmlite) | Required by the team. Imported only when a UMAP run starts, so it costs nothing at startup. |
 | Dropped | QtWebEngine, plotly, pandas, sqlalchemy, orjson, psutil, cryptography, PubChem/ChEMBL client libraries | Size, attack surface, or replaceable with the standard library. |
 | Excel | openpyxl (**base install**, decided 2026-11-04) | Excel is how most collaborators exchange data. Imported only when an .xlsx file is opened or saved. |
-| Optional plugins | openbabel (Confab), cdpkit (CONFORGE) | Each tool says which packages it needs. If one is missing, its menu item is disabled and the tooltip says why. |
+| Optional plugins | openbabel (Confab); cdpkit (CONFORGE) where it has wheels | Each tool says which packages it needs. If one is missing, its menu item is disabled and the tooltip says why. |
 | Storage | SQLite from the standard library (molecule store and document files) | One file per document, works the same on every OS. |
 | Packaging | PyInstaller one-folder build, Inno Setup (Windows), `.app` + DMG (macOS), AppImage (Linux) | MolManager's per-user install, SBOM, hashed lockfile and signing hooks carry over. |
 
@@ -259,7 +259,7 @@ Every phase ends with tests passing on Windows, macOS and Linux in CI.
 4. **Jobs and the tool registry.** Port **Descriptors** end to end as the template every later tool
    follows.
 5. **Plotting.** pyqtgraph widgets, the lasso, selection linking, hover structures, the Plotter tool.
-6. **Conformers.** ETKDG in the core build; Confab and CONFORGE as optional plugins.
+6. **Conformers.** CONFORGE (the default, where cdpkit has wheels) and ETKDG in the core build; Confab as an optional plugin.
 7. **The rest of the Data menu,** in batches:
    - (a) Statistics, MPO, Binning, Selectivity Ratio;
    - (b) Fingerprint Similarity, Diverse Subset, Cluster;
@@ -276,7 +276,7 @@ Every phase ends with tests passing on Windows, macOS and Linux in CI.
 1. **Licence:** GPLv3, the same as MolManager. Each source file carries a GPL header, checked in CI.
 2. **Data size:** 100k–200k rows. All performance targets are set at 200k.
 3. **Structure editing:** the lightweight editor (§3).
-4. **UMAP and Excel (.xlsx):** in the base install. Confab and CONFORGE stay optional.
+4. **UMAP and Excel (.xlsx):** in the base install. Confab stays optional; CONFORGE joined the base install (2026-11-15, after the conformer benchmark) wherever cdpkit has wheels.
 
 ## 6. Verification
 

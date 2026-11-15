@@ -66,6 +66,7 @@ def test_generate_dialog_end_to_end(window, qtbot) -> None:
 def test_window_needs_optimisation(window) -> None:
     chem = _chem(window)
     dialog = chem.open_tool("conformers")
+    dialog.method.setCurrentIndex(dialog.method.findData("etkdg"))
     dialog.force_field.setCurrentIndex(dialog.force_field.findData(None))
     assert not dialog.use_window.isEnabled()
     assert dialog.settings().energy_window is None and dialog.settings().optimize is None
@@ -77,6 +78,8 @@ def test_conforge_choice(window, monkeypatch) -> None:
 
     chem = _chem(window)
     dialog = chem.open_tool("conformers")
+    if conforge.available():  # the default wherever cdpkit is installed
+        assert dialog.method.currentData() == "conforge"
     index = dialog.method.findData("conforge")
     dialog.method.setCurrentIndex(index)
     dialog.force_field.setCurrentIndex(dialog.force_field.findData(None))
