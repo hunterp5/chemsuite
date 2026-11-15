@@ -1391,6 +1391,9 @@ Generates 3D conformers with one of two **Generators**:
   - Energies compare conformers of the same molecule only.
   - Running again writes new columns ("SMILES 3D (2)"); earlier conformers are kept.
 - **Cancelling** keeps the molecules already done.
+- A structure ETKDG cannot embed, or not within a minute (it tries twice: from its own
+  geometry, then from random coordinates), gets no conformers; the message at the end says
+  how many structures could not be embedded.
 
 ### Export conformers (SDF)
 
