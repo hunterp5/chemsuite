@@ -22,6 +22,7 @@ here (and in the right-click menu), not in toolbar buttons.
 - Select: everything, kinds, chains, around the selection, saved selections.
 - Display: Show, Hide, Colour, Label (on the selection); Hydrogens, Surface Transparency.
 - Ligand: focus a ligand in its pocket, interactions, measurements, ligands to the table.
+- Tools: what a tool of the app does to a protein (Prepare), each in its own dialog.
 - View: the camera, which areas show, full screen.
 - Window: minimise, the table's window.
 - Sequence (last, at the far right): the Sequence window, and which of its kind rows show.
@@ -62,10 +63,13 @@ EXTRACT = "extract"
 LIGAND = "ligand"  # add one ligand's row: (protein id, residue)
 PROFILE = "profile"  # each ligand row's interactions, as columns
 REMOVE = "remove"  # remove a protein: (protein id)
+PREPARE = "prepare"  # hydrogens, flips and protonation states (Tools ▸ Prepare…)
+DOCK = "dock"  # dock the table's ligands into a pocket (Tools ▸ Dock…)
+RESCORE = "rescore"  # score poses that already exist (Tools ▸ Rescore Poses…)
 SHOW_TABLE = "show_table"  # bring the document's table window forward
 Commands = Mapping[str, Callable[..., object]]
 #: the Sequence menu sits last, at the far right of the bar
-MENUS = ("File", "Edit", "Select", "Display", "Ligand", "View", "Window", "Sequence")
+MENUS = ("File", "Edit", "Select", "Display", "Ligand", "Tools", "View", "Window", "Sequence")
 
 
 def build(panel: ProteinPanel, commands: Commands) -> QMenuBar:
@@ -78,6 +82,7 @@ def build(panel: ProteinPanel, commands: Commands) -> QMenuBar:
         lambda m: _select(m, panel),
         lambda m: _display(m, panel),
         lambda m: _ligand(m, panel, commands),
+        lambda m: _tools(m, panel, commands),
         lambda m: _view(m, panel),
         lambda m: _window(m, panel, commands),
         lambda m: _sequence(m, panel),
@@ -245,6 +250,22 @@ def _view(menu: QMenu, panel: ProteinPanel) -> None:
     full.setShortcut(QKeySequence.StandardKey.FullScreen)
     full.setCheckable(True)
     full.setChecked(panel.window().isFullScreen())
+
+
+def _tools(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
+    """What the app's tools do to a protein. Each opens a dialog of the tool's own, so the
+    workbench only says the command's name."""
+    prepare = _command(menu, "Prepare…", commands, PREPARE)
+    prepare.setEnabled(PREPARE in commands and bool(panel.session.displays))
+    prepare.setToolTip("Hydrogens, missing side chains, flips, His states and protonation")
+    menu.addSeparator()
+    dock = _command(menu, "Dock…", commands, DOCK)
+    dock.setEnabled(DOCK in commands and bool(panel.session.displays))
+    dock.setToolTip("Dock the table's ligands into a pocket with AutoDock Vina; each pose "
+                    "becomes a row")  # fmt: skip
+    rescore = _command(menu, "Rescore Poses…", commands, RESCORE)
+    rescore.setEnabled(RESCORE in commands and bool(panel.session.displays))
+    rescore.setToolTip("Score poses that already exist where they stand")
 
 
 def _window(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:

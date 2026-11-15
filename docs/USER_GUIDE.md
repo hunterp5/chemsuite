@@ -1287,14 +1287,25 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 
 ### Generate Conformers
 
-Generates 3D conformers with RDKit's ETKDG and optimises them with MMFF94 (UFF where MMFF has no
-parameters).
+Generates 3D conformers with one of two **Generators**:
+
+- **ETKDG (RDKit)**, the default: distance geometry, then optimisation with MMFF94 (UFF where
+  MMFF has no parameters).
+- **CONFORGE (CDPKit)**: builds conformers from fragment and torsion libraries and scores them
+  with MMFF94s (Seidel et al., *J. Chem. Inf. Model.* 2023, 63, 5549). It needs the optional
+  `cdpkit` package (LGPL-2.1); without it the choice is greyed out. Install it with
+  `pip install chemsuite[conforge]`; on a Mac older than macOS 26, add
+  `--only-binary cdpkit`. On Windows there are wheels for Python 3.12 only (of 3.11–3.13).
+  - CONFORGE gives the same conformers every run, uses its own force field (**Optimise with**
+    and **Seed** are greyed out), and always applies the energy window if it is ticked.
+  - Macrocycles are sampled with 200 trial conformers each, which takes several seconds per
+    molecule (an 18-membered lactam: about 7 s).
 
 - **Input:** the structure column and **All**, **Shown** or **Selected** rows.
-- **Method:** **Conformers** per molecule, **Distinct above** (the RMSD for two conformers to
-  count as distinct), the force field (**Optimise with**), and an **Energy window** (tick it to
-  drop conformers more than that many kcal/mol above the lowest). The random **Seed** is under
-  **More Options**.
+- **Method:** the **Generator**, **Conformers** per molecule, **Distinct above** (the RMSD for
+  two conformers to count as distinct), the force field (**Optimise with**), and an **Energy
+  window** (tick it to drop conformers more than that many kcal/mol above the lowest). The
+  random **Seed** is under **More Options**.
 - **Output.** The conformers go into a new 3D structure column, lowest energy first, with
   columns **Conformers** (the count) and **Conformer Energy Range (kcal/mol)**.
   - Energies compare conformers of the same molecule only.
@@ -1536,6 +1547,80 @@ previous one stays on screen.
 
 Everything shown, selected, focused and measured is saved with the document. Fetch from PDB
 only sends the ID, over HTTPS; when IT turns downloads off it says so instead.
+
+### Prepare
+
+**Protein ▸ Prepare…** gives a structure the hydrogens, side chains and protonation states it
+needs before anything is measured or docked. Crystal structures carry almost no hydrogens, and
+X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked out here.
+
+- **Protein** is the one to prepare (the one the viewer is looking at, by default).
+- **pH** decides which form each acid, base and ligand takes.
+- **Waters:** keep them all, only those within 5 Å of a ligand, or none.
+- **Repair** builds side-chain atoms and terminal oxygens the file is missing, from the
+  component templates. No loops are built: a chain break is reported and its ends are left as
+  charged termini.
+- **Optimise** chooses each Asn/Gln flip, each His tautomer (HID, HIE or HIP) and each
+  hydroxyl, thiol and amine orientation by the hydrogen bonds they make, the choices solved
+  together rather than one at a time.
+- **More Options ▸ Titrate** works out each group's pKa in its surroundings and takes the form
+  it mostly holds at that pH, for the groups near a ligand (Pocket) or for all of them. It is
+  off by default: on the benchmark the textbook forms at pH 7 are right more often.
+
+The work runs in the background and can be cancelled. What comes back replaces the protein in
+**one** step: Undo (Ctrl+Z, in the table or the viewer) puts the structure back as it was.
+Everything else about the protein — how it is shown, coloured, selected and labelled — stays.
+
+The **report** opens beside the table, one line per thing found or decided: alternate
+locations, chain breaks and missing atoms, covalent links, disulfides and metal sites, each
+flip, His state and uncommon protonation state. A line marked ⚠ is worth your eye: a chain
+break, a residue with no template, or a choice whose next best was nearly as good. Click a
+line to select its residue in the viewer. Hydroxyl and amine hydrogens with nothing to bind to
+are free to spin, so they are counted in one line rather than listed. The foot of the panel
+gives the pH and the structure's net charge. The report is saved with the document and comes
+back with it.
+
+Accuracy, against 262 neutron structures: Asn flips 86%, Gln flips 80%, His orientation 90%,
+His tautomer 64% (Reduce: 85/79/88/62).
+
+### Dock
+
+**Protein ▸ Dock…** docks the document's ligands into a pocket with
+[AutoDock Vina](https://github.com/ccsb-scripps/AutoDock-Vina) 1.2.7, which ships with
+chemsuite (Apache-2.0; no download and nothing to install). Every pose becomes a row linked to
+its protein, so it draws in its pocket when its row is current, and plots, filters and SAR
+work on poses as on anything else.
+
+Prepare the protein first: Vina types an atom by the hydrogens on it, so a structure with none
+is turned away with a line pointing at **Protein ▸ Prepare…**.
+
+- **Protein** is the receptor; **Ligands** the structure column to dock, over the rows you
+  choose (All, Shown or Selected). A row whose structure has no 3D coordinates gets one
+  conformer first; a row with no structure at all is skipped and counted.
+- **Box ▸ Around** is where the search box comes from: the **Focused Ligand** in the viewer,
+  the **Selection** there, the **Whole Protein**, or **Typed** numbers of your own.
+  **Padding** is the room left around those atoms. The centre and size are shown either way,
+  in ångströms.
+- **Scoring** is Vina's own function or **Vinardo**; **Exhaustiveness** how hard the search
+  tries (doubling it roughly doubles the time); **Poses** how many to keep per ligand, best
+  first. **More Options** holds the **Energy range** (how far above the best pose to keep) and
+  the **Seed** (the same seed docks the same way every time).
+
+The run is a background job with progress, and cancelling keeps the ligands that already
+finished. Each pose row holds **Protein**, **Ligand** (the pose), **Pose** (1 is the best),
+**Affinity (kcal/mol)**, **RMSD l.b.**, **RMSD u.b.** (Vina's own spread of that pose against
+the best one) and **Docked From** (the row it came from). Run **Ligand ▸ Interactions to
+Table** on the pose rows to profile them.
+
+Only the parts of a receptor that AutoDock knows are used: the polymer, waters, ions and
+glycans. Ligands, buffers and additives are left out — a ligand is what is being docked — and
+the run says which residue names were left out.
+
+**Protein ▸ Rescore Poses…** scores poses that already exist exactly where they stand, with
+Vina or Vinardo, and writes them as rows the same way. Use it to compare the two functions, or
+to score a pose moved by hand in the sketcher.
+
+Docking is not yet covalent, does not move side chains, and docks one receptor at a time.
 
 ### Retrosynthesis
 
@@ -2017,7 +2102,7 @@ keeps them and **Cancel** puts everything back.
 |---|---|
 | Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colourful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
 | Keyboard | Change any command's shortcut. |
-| External Tools | Paths to optional programs (Open Babel, CONFORGE, Gnina, AmberTools, MAFFT, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
+| External Tools | Paths to optional programs (Open Babel, Gnina, AmberTools, MAFFT, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
 | General | Processor cores to use (0 = automatic: all but one, so the window stays responsive), 3D graphics (Automatic, Software on Windows and Linux, or Off; takes effect after a restart), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
 
 Your IT department can fix some settings for everyone. Those are shown greyed out with a

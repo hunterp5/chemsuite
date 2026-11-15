@@ -52,6 +52,12 @@ from .rows import PROTEIN_COLUMN, ligand_rows
 from .rows import guessed as guessed_ligands
 
 TOOL_ID = "protein"
+#: Protein ▸ Prepare…, which also reopens its report panel
+#: (``chemsuite.protein.ui.report.TOOL_ID``, kept in step by the tests)
+PREPARE_ID = "protein-prepare"
+#: Protein ▸ Dock… and Rescore Poses… (the viewer's Tools menu holds them too)
+DOCK_ID = "protein-dock"
+RESCORE_ID = "protein-rescore"
 #: the document part holding the protein workspace
 WORKSPACE_KEY = "protein_workspace"
 KIND = "protein"
@@ -64,12 +70,15 @@ FILE_FILTER = "Protein files (*.pdb *.ent *.cif *.mmcif *.pdb.gz *.ent.gz *.cif.
 def open_viewer(ctx: ToolContext, state: dict | None = None):
     """Bring the open Protein Viewer forward, or open one (with *state* when reopening)."""
     from chemsuite.protein.ui.panel import (  # the workbench loads when first opened
+        DOCK,
         EXTRACT,
         FETCH,
         LIGAND,
         OPEN,
+        PREPARE,
         PROFILE,
         REMOVE,
+        RESCORE,
         SHOW_TABLE,
         ProteinPanel,
     )
@@ -90,6 +99,9 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         LIGAND: lambda protein, residue: add_ligand(ctx, protein, residue),
         PROFILE: lambda: interactions_to_table(ctx),
         REMOVE: lambda protein: remove_protein(ctx, protein),
+        PREPARE: lambda: open_prepare(ctx),
+        DOCK: lambda: open_dock(ctx),
+        RESCORE: lambda: open_rescore(ctx),
         SHOW_TABLE: lambda: show_table(ctx),
     }
 
@@ -309,6 +321,30 @@ def _ask_rows(ctx: ToolContext, name: str, count: int) -> str | None:
     return DELETE_ROWS if clicked is delete else KEEP_ROWS if clicked is keep else None
 
 
+def open_prepare(ctx: ToolContext):
+    from .prepare_dialog import open_prepare as show
+
+    return show(ctx)
+
+
+def open_dock(ctx: ToolContext):
+    from .dock_dialog import open_dock as show
+
+    return show(ctx)
+
+
+def open_rescore(ctx: ToolContext):
+    from .dock_dialog import open_rescore as show
+
+    return show(ctx)
+
+
+def restore_report(ctx: ToolContext, state: dict):
+    from .prepare_dialog import open_report
+
+    return open_report(ctx, state)
+
+
 TOOLS = [
     Tool(
         id=TOOL_ID,
@@ -320,5 +356,32 @@ TOOLS = [
         shortcut="Ctrl+Shift+R",
         tip="A workspace for proteins: open or fetch structures, cartoon and surface, "
         "selections, interactions and ligand pockets",
+    ),
+    Tool(
+        id=PREPARE_ID,
+        title="Prepare…",
+        menu=(),  # the viewer's own Tools menu holds it; this entry reopens its report panel
+        open=open_prepare,
+        restore=restore_report,
+        requires=("gemmi",),
+        tip="Hydrogens, missing side chains, Asn/Gln/His flips, His tautomers and protonation "
+        "states, applied as one undoable edit with a report of what was decided",
+    ),
+    Tool(
+        id=DOCK_ID,
+        title="Dock…",
+        menu=MENU,
+        open=open_dock,
+        requires=("gemmi",),
+        tip="Dock the document's ligands into a pocket with AutoDock Vina: every pose becomes "
+        "a row linked to its protein",
+    ),
+    Tool(
+        id=RESCORE_ID,
+        title="Rescore Poses…",
+        menu=MENU,
+        open=open_rescore,
+        requires=("gemmi",),
+        tip="Score poses that already exist where they stand, with Vina or Vinardo",
     ),
 ]

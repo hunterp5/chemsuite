@@ -82,6 +82,7 @@ POCKET = "pocket"
 #: the commands a tool gives the viewer (see :mod:`.menubar`)
 OPEN, FETCH, EXTRACT, LIGAND = menubar.OPEN, menubar.FETCH, menubar.EXTRACT, menubar.LIGAND
 PROFILE, REMOVE, SHOW_TABLE = menubar.PROFILE, menubar.REMOVE, menubar.SHOW_TABLE
+PREPARE, DOCK, RESCORE = menubar.PREPARE, menubar.DOCK, menubar.RESCORE
 THEME, BACKGROUNDS = menubar.THEME, menubar.BACKGROUNDS
 #: what a click in the view selects
 ATOM, RESIDUE, CHAIN = "atom", "residue", "chain"

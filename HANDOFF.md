@@ -127,10 +127,37 @@ other machine can pick it up. Update it at the end of a session that leaves work
     His and Asp/Glu marks drop, so it is **off by default**. P1 reproduces byte for byte with it
     off. Data: `samples/prepare/pkad` (PKAD-R CSV saved by hand; `pkad_review.py fetch`,
     `propka`, `tables`, `fit`, `chemsuite`, `score`).
-  - **Next:** P3 (ligand states, waters, metals), then P4 (the Prepare dialog and report
-    panel, applied as one undoable edit), each in plan mode. A second titration round
-    (PROPKA-style H-bond determinants, His titrated for charge only) is listed in
-    p2-review.md §4.
+  - **P3 done 2026-11-13**: ligand protomers and tautomers (`ligand_sites.py`), pocket waters
+    (`waters.py`), metal coordination; the named cases in `tests/protein/prepare/test_named_cases.py`.
+  - **P4 done 2026-11-14** (the docking plan's Stage A): **Protein ▸ Prepare…**
+    (`tools/protein/prepare_dialog.py`) — protein, pH, waters, repair, optimise, and Titrate
+    (Off / Pocket / All) folded away — run as a background job and applied with
+    `session.edit` as one undo step; the report panel (`protein/ui/report.py`), whose lines
+    select their residue, kept with the document (`protein/workspace/reports.py`, saved under
+    the protein workspace's `reports`; older documents load unchanged). On the way: `titrate=POCKET`
+    now actually titrates the pocket (`pipeline._pocket`), and rotor rows are reported only when
+    the orientation makes a hydrogen bond *and* a different one was nearly as good
+    (`pipeline.BONDED`, `DEGENERATE`), the free ones counted in one line as the waters are —
+    crambin's report went from 14 ⚠ of 17 rows to 7 of 11.
+  - **Stage B of the docking plan, 2026-11-14 (not committed, not yet tried by hand):** the
+    bundled Vina 1.2.7 binaries with their licence, NOTICE and pinned hashes
+    (`protein/dock/bin`, `scripts/fetch_vina.py`); the Qt-free engine `protein/dock/`
+    (`box.py`, `pdbqt.py` the Meeko boundary, `vina.py` the binary, `run.py` many ligands with
+    progress, cancel and finished ligands kept); the bridge `tools/protein/dock.py` and
+    `dock_dialog.py` (Protein ▸ Dock… and Rescore Poses…, also in the viewer's Tools menu);
+    `meeko>=0.8` a core dependency; package data and `.gitattributes` for the binaries.
+    Tests: `tests/protein/dock/` (27, one real dock at exhaustiveness 1 ≈ 11 s, the redocking
+    accuracy check behind `-m bench` ≈ 75 s) and `tests/tools/protein/test_dock_ui.py` (7).
+    Found on the way: **Meeko downloads a CCD component for any residue name it does not
+    know**, so `pdbqt.receptor` keeps only `known_residues()` (polymer, waters, ions, glycans)
+    and names the rest in `Receptor.dropped`; `--score_only` still needs a box, so
+    `score_only` passes `--autobox` when given none. Redocking 80U into 5GNK puts the top pose
+    1.13 Å from the crystal one.
+    **Still to do:** `docs/USER_GUIDE.md` has the new ### Dock section; ROADMAP §7a phase 2
+    and PREPARE_PLAN are not updated yet, the by-hand run in the app (plan's step 4) is not
+    done, and nothing is committed.
+  - **Next:** finish those docs, try it by hand in the app, commit; a second titration round (PROPKA-style H-bond determinants, His titrated
+    for charge only) is listed in p2-review.md §4.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 
@@ -154,8 +181,23 @@ other machine can pick it up. Update it at the end of a session that leaves work
   converted to `samples/unipka/weights/shipped.npz` (440 MB, not committed). External tests
   (`samples/unipka/shipped.eval.txt`): 10 conformers, 5 folds RMSE 0.83 overall, MolGpKa 1.02;
   3 conformers 0.84, 2D only 0.98. The training report and the novice's guide are Claude Docs,
-  exported to `samples/*.docx`. Next: `evaluate.py --enumerated` with the cache, pick the
-  app's conformer/fold count (3 conformers looks right), then U4 (protein ligand states).
+  exported to `samples/*.docx`.
+  **2026-11-14, later:** enumerated evaluation done (results table in `docs/UNIPKA_PLAN.md`
+  U2): the full Uni-pKa site templates are now bundled (failures 24 → 2 of 356; RMSE 0.82 with
+  3 conformers × 5 folds, 0.84 with 1 fold; Uni-pKa's paper 0.83). pKaHub is aqueous (its
+  paper), now a CLAUDE.md rule. Ready, not started: `~/bench/unipka/e20_fold0.sh` (fold 0 at
+  20 epochs, same data; compare against shipped fold 0's "1 fold" rows after
+  `convert_weights.py`). Start it only when nothing else heavy runs (the PC hard-reset before).
+  Then: pick the app's conformer/fold count (3 + 2D, 1 fold looks right), U4.
+- **CONFORGE conformers** (§7.0b, plan approved 2026-11-14; `cdpkit` wheel, optional): the
+  Generator choice in Generate Conformers (`conformers/conforge.py`), ETKDG still the default.
+  Benchmark: `scripts/review/conformer_bench.py` on Wang et al.'s 3,354 crystal ligands
+  (`samples/conformers/wang`, fetched; ids from their SI xlsx). CONFORGE's two variants are done
+  (3,354 ligands each); the four ETKDG variants were restarted 2026-11-14 in the background
+  (`etkdg-raw`, `etkdg`, `etkdg-prune`, `etkdg-mmff`, 8 workers, resuming what is done, log
+  `samples/conformers/wang/out/bench.log`) and may still be running. Then `score` →
+  `docs/conformers/bench.md` decides the default.
+  CONFORGE's macrocycle sampling is capped at 200 (provisional). Not committed yet.
 - **Decomposition and enumeration** (done 2026-11-14, ROADMAP §6): Chemistry ▸ Decompose
   (R-Group Decomposition, Fragments, Central Ring), Chemistry ▸ Enumerate (Reaction
   Products with 28 named templates in `analysis/reaction_templates.py`, R-Groups on a Core,

@@ -86,9 +86,17 @@ def menu_of(panel, title: str):
     return menu
 
 
-def test_only_the_viewer_is_in_the_main_menus(window) -> None:
+def test_the_proteins_tools_are_the_viewer_prepare_and_docking(window) -> None:
     assert window.tool_action("protein").isEnabled()
-    assert [t.id for t in tool.TOOLS] == ["protein"]  # files open from the viewer itself
+    # files open from the viewer itself; Prepare, Dock and Rescore have dialogs of their own
+    assert [t.id for t in tool.TOOLS] == [
+        "protein",
+        tool.PREPARE_ID,
+        tool.DOCK_ID,
+        tool.RESCORE_ID,
+    ]
+    # Prepare reopens its report panel, so it is not in the Protein menu; docking is
+    assert [t.id for t in tool.TOOLS if t.menu] == ["protein", tool.DOCK_ID, tool.RESCORE_ID]
 
 
 def test_the_viewer_has_a_menu_of_its_own(window) -> None:

@@ -16,6 +16,7 @@ dependencies = [
     "pyqtgraph>=0.13.7",
     "rdkit>=2025.9.1",          # official PyPI name; never install rdkit-pypi alongside it
     "gemmi>=0.7",               # proteins: PDB/mmCIF, residues, alignment
+    "meeko>=0.8",               # docking: the PDBQT files AutoDock Vina reads and writes
     "numpy>=2.0",
     "scipy>=1.13",
     "scikit-learn>=1.5",
@@ -29,7 +30,9 @@ chemsuite = "chemsuite.app.shell.main:main"
 
 [project.optional-dependencies]
 confab = ["openbabel>=3.2.0"]
-conforge = ["cdpkit"]
+# cdpkit ships Windows wheels only for Python 3.10/3.12/3.14; elsewhere pip would try its
+# source build (Boost, CMake). macOS before 26: pip install --only-binary cdpkit (takes 1.2.3).
+conforge = ["cdpkit>=1.2.3; sys_platform != 'win32' or python_version == '3.12'"]
 dev = [
     "pytest>=8",
     "pytest-qt>=4.4",
@@ -47,6 +50,7 @@ include = ["chemsuite*"]
 "chemsuite.sketch" = ["data/*"]  # Ketcher licence and notice; templates from P2
 "chemsuite.protein.structure" = ["data/*"]  # residue templates from the wwPDB CCD (public domain)
 "chemsuite.protein.prepare" = ["data/*"]  # ideal residue geometry from the wwPDB CCD (public domain)
+"chemsuite.protein.dock" = ["bin/*", "bin/*/*"]  # the AutoDock Vina binaries, their licence and notice
 "chemsuite.app.render3d" = ["shaders/*"]  # 3D Viewer shaders: sources and compiled .qsb
 "chemsuite.protein.ui" = ["shaders/*"]  # Protein Viewer shaders
 

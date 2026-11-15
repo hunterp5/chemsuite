@@ -24,9 +24,11 @@ There is one per document, whether or not the viewer's window is open:
 - :attr:`ProteinWorkspace.revision` changes with whatever is worth saving, so the document
   knows it needs saving.
 
-The saved form (:meth:`capture`) is versioned: ``{"version": 1, "session": …, "view": …}``,
-``view`` holding the background, depth cue and camera. A state from a newer chemsuite is kept
-as it was and saved back unchanged rather than half read.
+The saved form (:meth:`capture`) is versioned: ``{"version": 1, "session": …, "view": …,
+"reports": …}``, ``view`` holding the background, depth cue and camera and ``reports`` each
+protein's last preparation report (:mod:`.reports`; added later, so it is optional and an older
+chemsuite simply ignores it). A state from a newer chemsuite is kept as it was and saved back
+unchanged rather than half read.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from typing import Any
 
 from chemsuite.core.assets import AssetHost
 
+from .reports import PrepareReport
 from .session import WorkbenchSession
 
 log = logging.getLogger(__name__)
@@ -65,6 +68,8 @@ class ProteinWorkspace:
         self._pending: dict = {}  # the session's saved state, until the session is made
         #: background, depth cue and camera, as the viewer left them
         self.view: dict = {}
+        #: each protein's last preparation report, by protein id
+        self.reports: dict[str, PrepareReport] = {}
         #: while the viewer is open: its view settings now
         self.view_source: Callable[[], dict] | None = None
         self._newer: Any = None  # a state from a newer chemsuite, kept as it was
@@ -87,6 +92,10 @@ class ProteinWorkspace:
         self._pending = dict(session) if isinstance(session, dict) else {}
         view = saved.get("view")
         self.view = {k: view[k] for k in VIEW_KEYS if isinstance(view, dict) and k in view}
+        for protein, report in dict(saved.get("reports") or {}).items():
+            made = PrepareReport.from_json(report)
+            if made is not None and isinstance(protein, str):
+                self.reports[protein] = made
 
     # -- the session --------------------------------------------------------------------------
     @property
@@ -124,6 +133,23 @@ class ProteinWorkspace:
         self.fresh = False
         return True
 
+    # -- preparation reports ------------------------------------------------------------------
+    def report(self, protein: str) -> PrepareReport | None:
+        """What the last preparation of *protein* did, if it was prepared."""
+        return self.reports.get(protein)
+
+    def set_report(self, report: PrepareReport) -> None:
+        """Keep what a preparation did (replacing that protein's last report)."""
+        self.reports[report.protein] = report
+        self._changes += 1
+
+    def drop_report(self, protein: str) -> bool:
+        """Forget *protein*'s report (its preparation was undone, or the protein went)."""
+        if self.reports.pop(protein, None) is None:
+            return False
+        self._changes += 1
+        return True
+
     def set_view(self, view: Mapping) -> None:
         """The viewer's view settings now (when it closes)."""
         new = {k: view[k] for k in VIEW_KEYS if k in view}
@@ -151,9 +177,13 @@ class ProteinWorkspace:
             return self._newer
         session = self._session.state() if self._session is not None else self._pending
         view = self._live_view()
-        if not session and not view:
+        kept = {id: report for id, report in self.reports.items() if id in self.store.assets}
+        if not session and not view and not kept:
             return None
-        return {"version": VERSION, "session": session, "view": view}
+        saved = {"version": VERSION, "session": session, "view": view}
+        if kept:
+            saved["reports"] = {id: report.to_json() for id, report in kept.items()}
+        return saved
 
     def close(self) -> None:
         """The document is closing."""

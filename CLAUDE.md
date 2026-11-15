@@ -102,7 +102,10 @@ changes.
 
 - pKa: chemsuite's own model of Uni-pKa's design, trained on pKaHub's data in WSL and run in numpy
   (`chemsuite/ionisation/unipka/`, `docs/UNIPKA_PLAN.md`); MolGpKa (numpy) stays until it is
-  replaced. Never add torch to the app. Uni-pKa's published weights, and the iBonD, DataWarrior
+  replaced. Every pKa used to train or test it is measured in water (no cosolvent,
+  non-aqueous or extrapolated values). pKaHub is an aqueous compilation (Sipos-Szabó et al.,
+  JCIM 2026: cosolvent over 5% excluded), so its shipped sources qualify; any new source must
+  be checked. Never add torch to the app. Uni-pKa's published weights, and the iBonD, DataWarrior
   and IUPAC pKa data, never ship (licences).
 - The sketcher is original code that uses Ketcher (Apache-2.0) only as a reference for its
   rules. Never use MolManager's `iupac_*` modules. Every rule reused from MolManager needs a
@@ -114,7 +117,9 @@ changes.
 ## Two machines
 
 - Setup: `py -3.12 -m venv .venv` (macOS: `python3.12 -m venv .venv`), then
-  `pip install -e .[dev]` and `git config core.hooksPath .githooks`.
+  `pip install -e .[dev]` and `git config core.hooksPath .githooks`. For CONFORGE add
+  `pip install --only-binary cdpkit -e .[conforge]` (Windows wheels: Python 3.12 only; macOS
+  before 26 gets cdpkit 1.2.3).
 - Keep the repo and venv out of OneDrive/iCloud-synced folders (sync hid `.venv` files and Qt
   could not find its plugins).
 - 3D draws with Direct3D 11 on Windows (WARP software fallback), Metal on macOS.

@@ -48,6 +48,9 @@ class Choice:
     site: sites.Site
     state: int
     gap: float  # kcal/mol-like units, to the next best state of this site (inf when none)
+    #: the chosen state's energy where it sits (the other sites as they were picked): a
+    #: hydrogen bond makes it negative, a hydrogen with nothing to bind leaves it at zero
+    energy: float = 0.0
 
     @property
     def label(self) -> str:
@@ -230,7 +233,7 @@ def choices(
                 e += m[:, picked[j]]
         others = np.delete(e, picked[i])
         gap = float(others.min() - e[picked[i]]) if len(others) else float("inf")
-        out.append(Choice(site, picked[i], gap))
+        out.append(Choice(site, picked[i], gap, float(e[picked[i]])))
     return out
 
 

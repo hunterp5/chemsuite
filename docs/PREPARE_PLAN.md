@@ -167,7 +167,18 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
   null model and keeps the neutron marks
   ([`prepare/p2-review.md`](prepare/p2-review.md)).
 - **P3**: ligand sites, waters and metals in the graph. The named cases pass. Populations and ⚠.
-- **P4**: UI, report and docking export (ensemble for ambiguous sites, Meeko PDBQT).
+  Done 2026-11-13 (`ligand_sites.py`, `waters.py`, the named cases in
+  `tests/protein/prepare/test_named_cases.py`).
+- **P4**: the UI. Done 2026-11-14: **Protein ▸ Prepare…** (`tools/protein/prepare_dialog.py`)
+  with Input (protein), Method (pH, waters, repair, optimise) and a folded Titrate
+  (Off / Pocket / All), run as a background job and applied as one undoable edit; the report
+  panel (`protein/ui/report.py`), whose lines select their residue and which is saved with the
+  document (`protein/workspace/reports.py`, under the protein workspace's `reports`). Titrating
+  the pocket alone now works (`pipeline._pocket`), and a rotor is reported only when its
+  orientation makes a hydrogen bond and a different one was nearly as good: the free ones are
+  counted in a line of their own, as the waters are.
+  The **docking export** (Meeko PDBQT, an ensemble for ambiguous sites) moved to the docking
+  plan, where the receptor is written.
 - **P5**: restrained relax (now ROADMAP §7a 3, "Relax after preparation": optional, an in-app
   MMFF pocket tier and an OpenMM tier, planned on its own) and MD hand-off through the OpenMM
   worker. Per-site alternate states for MD.

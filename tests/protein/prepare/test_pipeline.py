@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
 from chemsuite.protein.prepare import inspect, pipeline, repair, sites, templates
@@ -126,3 +128,34 @@ def test_titration_in_one_call(lysozyme) -> None:
     mixed = [f for f in done.report if f.kind == pipeline.SITE and "protonated" in f.text]
     assert all(f.warn == (pipeline.MIXED < done.population[f.residue] < 1 - pipeline.MIXED)
                for f in mixed)  # fmt: skip
+
+
+def test_titrating_the_pocket_titrates_only_the_residues_near_a_ligand(lysozyme) -> None:
+    options = pipeline.Options(waters=pipeline.NONE, titrate=sites.POCKET)
+    done = pipeline.prepare(lysozyme, options)
+    near = pipeline._pocket(done.structure)
+    assert 0 < int(near.sum()) < done.structure.n_residues
+    titrated = {c.site.residue for c in done.choices if c.site.titrating}
+    assert done.pka and set(done.pka) <= titrated
+    # every titrated protein group is in the pocket; the rest keep their textbook form
+    protein_groups = {c.site.residue for c in done.choices
+                      if c.site.titrating and c.site.kind != sites.LIGAND}  # fmt: skip
+    assert protein_groups and all(near[r] for r in protein_groups)
+    everywhere = pipeline.prepare(lysozyme, replace(options, titrate=sites.ALL))
+    assert len(everywhere.pka) > len(done.pka)
+
+
+def test_only_rotors_with_something_to_decide_are_reported(lysozyme) -> None:
+    done = pipeline.prepare(lysozyme, pipeline.Options(waters=pipeline.NONE))
+    rotors = [c for c in done.choices if c.site.kind == sites.ROTOR]
+    assert rotors
+    rows = [f for f in done.report if f.kind == pipeline.SITE and f.text.startswith("Rotor:")]
+    assert rows and len(rows) < len(rotors)
+    for f in rows:  # each one chose between orientations that differ, and it bonds either way
+        here = [c for c in rotors if c.site.residue == f.residue]
+        assert any(c.energy <= pipeline.BONDED
+                   and pipeline.DEGENERATE < c.gap < pipeline.AMBIGUOUS for c in here)  # fmt: skip
+        assert f.warn
+    free = sum(1 for c in rotors if c.energy > pipeline.BONDED)
+    (line,) = [f for f in done.report if f.label == "Rotors"]
+    assert line.text.endswith(f": {free}") and not line.warn  # free to spin: nothing to check

@@ -44,7 +44,17 @@ from .templates import Library
 
 ALL, NEAR_LIGANDS, NONE = "all", "near ligands", "none"
 WATER_REACH = 5.0  # Å from a ligand atom, for NEAR_LIGANDS
+POCKET_REACH = 6.0  # Å from a ligand atom: the residues that titrate with titrate=POCKET
 AMBIGUOUS = 1.0  # a site whose next best state is closer than this is marked ⚠
+#: a rotor whose chosen orientation scores better than this makes a hydrogen bond; one that
+#: does not is free to spin, so its near ties say nothing (as a water's do not) and it is
+#: counted in one line instead of a row of its own
+BONDED = -0.1
+#: a rotor whose next best orientation is this close makes the same bonds (an ammonium's three
+#: hydrogens, a hydroxyl stepping past its acceptor): either answer is the same answer, so it is
+#: not reported. Between this and :data:`AMBIGUOUS` the orientations differ and the user's eye
+#: is worth having; an amide or His tie is reported however small, the flip being a real question
+DEGENERATE = 0.05
 MIXED = 0.1  # a titrating group with more than this share of each form is marked ⚠
 #: the forms a report names (the others are the textbook ones at pH 7)
 UNCOMMON = {"ASH": "Asp", "GLH": "Glu", "LYN": "Lys", "TYM": "Tyr", "CYM": "Cys",
@@ -124,6 +134,7 @@ def prepare(
         choices = solve.choices(table, weights, picked)
         protonated = solve.apply(protonated, found, picked)
         report += _site_findings(protonated.structure, choices, share)
+        report += _rotor_finding(choices)
         report += _water_finding(choices)
     return Prepared(protonated.structure, dict(protonated.states), tuple(report), tuple(choices),
                     pka, share)  # fmt: skip
@@ -149,7 +160,21 @@ def _sites(
         taken[site.moving] = True
     if options.orient_waters:
         found += waters.find(protonated)
-    return sites.find_sites(protonated, options.titrate, taken=taken) + found
+    pocket = _pocket(s) if options.titrate == sites.POCKET else None
+    return sites.find_sites(protonated, options.titrate, pocket=pocket, taken=taken) + found
+
+
+def _pocket(s: Structure) -> np.ndarray:
+    """The residues with an atom within :data:`POCKET_REACH` of a ligand's (the ones that
+    titrate with :attr:`Options.titrate` ``POCKET``)."""
+    near = np.zeros(s.n_residues, dtype=bool)
+    ligand = s.atom_kind == LIGAND
+    if not ligand.any():
+        return near
+    x = s.xyz()
+    distance = cKDTree(x[ligand]).query(x, distance_upper_bound=POCKET_REACH)[0]
+    near[s.residue_of[np.isfinite(distance) & ~ligand]] = True
+    return near
 
 
 def _majority(
@@ -219,6 +244,8 @@ def _site_findings(
             found.append(Finding(SITE, s.residue_label(c.site.residue), text, warn=mixed,
                                  residue=c.site.residue))  # fmt: skip
             continue
+        if c.site.kind == sites.ROTOR and (c.energy > BONDED or c.gap <= DEGENERATE):
+            continue  # free to spin, or the same bonds either way (_rotor_finding counts them)
         if c.site.kind in (sites.ROTOR, sites.ACID) and c.gap >= AMBIGUOUS:
             continue
         if c.site.kind == sites.AMIDE and not state.flipped and c.gap >= AMBIGUOUS:
@@ -248,6 +275,17 @@ def _ligand_finding(s: Structure, c: solve.Choice, fraction: float | None) -> li
         text += f", {fraction:.0%} of it"
     return [Finding(SITE, s.residue_label(c.site.residue), text, warn=mixed,
                     residue=c.site.residue)]  # fmt: skip
+
+
+def _rotor_finding(choices: list[solve.Choice]) -> list[Finding]:
+    """One row for the hydroxyl and amine hydrogens with nothing to bind to. No ⚠: they are
+    free to spin, so the orientation they were given means nothing (as a water's does not)."""
+    free = sum(1 for c in choices
+               if c.site.kind == sites.ROTOR and c.energy > BONDED)  # fmt: skip
+    if not free:
+        return []
+    text = f"Hydroxyl and amine hydrogens with no hydrogen bond: {free}"
+    return [Finding(SITE, "Rotors", text)]
 
 
 def _water_finding(choices: list[solve.Choice]) -> list[Finding]:

@@ -1,0 +1,17 @@
+AutoDock Vina
+Copyright 2021 Diogo Santos-Martins, Jerome Eberhardt, Stefano Forli and others
+Copyright 2006-2010 Oleg Trott, The Scripps Research Institute
+
+Licensed under the Apache License, Version 2.0 (see LICENSE-AutoDock-Vina.txt).
+
+The binaries in this folder are the unmodified releases of AutoDock Vina 1.2.7, from
+https://github.com/ccsb-scripps/AutoDock-Vina/releases/tag/v1.2.7. chemsuite itself is
+GPL-3.0-or-later and does not link against Vina: it runs these programs and reads their output.
+
+If you use docking results from chemsuite, cite:
+
+  J. Eberhardt, D. Santos-Martins, A. F. Tillack, S. Forli. AutoDock Vina 1.2.0: New Docking
+  Methods, Expanded Force Field, and Python Bindings. J. Chem. Inf. Model. 2021, 61, 3891-3898.
+
+  O. Trott, A. J. Olson. AutoDock Vina: improving the speed and accuracy of docking with a new
+  scoring function, efficient optimization and multithreading. J. Comput. Chem. 2010, 31, 455-461.

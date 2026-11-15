@@ -1,0 +1,8 @@
+{
+  "version": "1.2.7",
+  "files": {
+    "win_amd64/vina.exe": "e0c4b2715e0c1a74f6e92d0f3be0328ac97542eafbc111e6b1efad897a73cce5",
+    "macos_arm64/vina": "823c2bbacf26d72183861322345f0a89736aca66c8e81054c66f93af5ad623f1",
+    "linux_x86_64/vina": "f31f774f723bba7bbe6e9d1c47577020eea9a8da16424284c043d22593570644"
+  }
+}

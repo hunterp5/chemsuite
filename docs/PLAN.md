@@ -215,7 +215,7 @@ The core is one Qt-free `Table` object. Everything else goes through its public 
 - `analysis/`: statistics, QSAR, Quick QSAR, CoMSIA, MPO, SALI, selectivity, MMP, Free-Wilson, Hansch, SAR
   matrix, medchem space, dimensionality reduction, linear fit.
 - `descriptors/`: drop the import from `medchem_descriptors.py` to `ionization`, because it pulls in torch.
-- `conformers/`: the Confab, CONFORGE and storage codecs.
+- `conformers/`: the Confab and storage codecs. (CONFORGE is chemsuite's own wrapper of the `cdpkit` package, `conformers/conforge.py`.)
 - `chem/`: `rdkit_fingerprints.py`, `smarts_macropatterns.py`, `structural_alerts.py`, the depiction
   modules and `ingest_records.py`.
 - `table/`: `column_split.py`, `column_join.py`, `column_binning.py`.

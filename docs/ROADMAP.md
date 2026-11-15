@@ -214,7 +214,7 @@ modified.
 
 | Feature | Notes |
 |---|---|
-| Confab and CONFORGE conformers | Through the external-tool paths now in Settings. |
+| Confab conformers | Through the Open Babel path in Settings. (CONFORGE is in: a Generator choice in Generate Conformers, from the optional `cdpkit` package.) |
 | Superpose conformers, pharmacophore screen | RDKit only. The Browser's 3D view (Data ▸ Browser) is done and aligns a molecule's conformers; superposing different molecules is next. |
 | PubChem, ChEMBL, vendor, patent and SQL queries | Network access, off by default under policy. Plain HTTPS REST calls, not MolManager's client libraries. SQL through the standard library or an optional driver. |
 | Retrosynthesis | AiZynthFinder through its own Python interpreter (path in Settings). |
@@ -288,6 +288,12 @@ bioactive conformation**: the pose of a ligand crystallised in its protein.
     size.
 
   Compare against open generators (CONFORGE, OMEGA-like settings) where licences allow.
+- **Status (2026-11-14):** CONFORGE is wired in as an optional Generator (`conformers/conforge.py`,
+  the `cdpkit` wheel; plan approved 2026-11-14). ETKDG stays the default until the benchmark
+  (`scripts/review/conformer_bench.py`, `docs/conformers/bench.md`) is built and run. Wang et
+  al. (JCIM 2023, 63, 6525) found ETKDG within 0.03–0.07 Å of OMEGA and ConfGenX at 1–250
+  conformers, and force-field clean-up no help for bioactive poses, so the benchmark also scores
+  ETKDG without MMFF, without the energy window, and at larger counts.
 - **Ship.** The new generator becomes the default behind the same tool, and ETKDG stays
   available. It keeps partial results on cancel and runs in the process pool. The user guide
   states the benchmark numbers.
@@ -401,9 +407,11 @@ pip extra.
      `pipeline.prepare`) done 2026-11-12, at Reduce's accuracy or better
      (`docs/prepare/p1-review.md`). P2 (titration: Asp/Glu/His/Lys/Tyr/Cys/N-terminus states
      at a pH, pKa values and populations) done 2026-11-12 at PROPKA's accuracy on PKAD-R, off
-     by default (`docs/prepare/p2-review.md`). No UI yet (P4). Next: P3 (ligand states, waters,
-     metals); a second titration round (PROPKA-style H-bond determinants) to beat the null
-     model and turn titration on.
+     by default (`docs/prepare/p2-review.md`). P3 (ligand protomers and tautomers, pocket
+     waters, metal coordination) done 2026-11-13. **P4, the UI, done 2026-11-14: Protein ▸
+     Prepare… and its report panel**, applied as one undoable edit and saved with the document.
+     Next: a second titration round (PROPKA-style H-bond determinants) to beat the null model
+     and turn titration on, and the receptor export for docking (phase 2).
    - **Repair:** missing heavy atoms and caps from the CCD templates; short loops closed, longer
      gaps capped and marked ⚠.
    - **Hydrogens and states, protein and ligand together:** one coupled site graph covers His
