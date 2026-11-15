@@ -148,20 +148,28 @@ way, top to bottom:
 
 ### Opening
 
-Use File ▸ Open (Ctrl+O) or File ▸ Open Recent.
+Use File ▸ Open (Ctrl+O) or File ▸ Open Recent, or drag files from your file manager onto an
+empty window. Dropping several opens the first in that window and each of the others in a
+window of its own; a window that already holds a table does not take dropped files.
 
 | Format | Extensions | Notes |
 |---|---|---|
-| SD file | `.sdf`, `.sd`, `.mol` | Data fields become columns. A record whose structure does not parse is **kept**: its other fields still load, and the structure cell is marked invalid. Nothing in your file disappears silently. |
+| SD file or molfile | `.sdf`, `.sd`, `.mol` | A molfile (V2000 or V3000) opens as a one-row table. Data fields become columns. A record whose structure does not parse is **kept**: its other fields still load, and the structure cell is marked invalid. Nothing in your file disappears silently. |
 | Mol2 file | `.mol2` | Tripos mol2, as docking and modelling programs write it: each molecule becomes a row with its 3D coordinates, and its name goes in a **Title** column. As with SD files, a record that does not parse is kept and marked invalid. A mol2 file without hydrogens may read with the wrong charges, since the format leaves them to be worked out from the hydrogens. |
 | CSV / TSV | `.csv`, `.tsv`, `.tab`, `.txt` | A column headed SMILES, Structure, Mol, Molecule, Canonical_SMILES or Isomeric_SMILES becomes a structure column. A column whose first 20 filled cells are all reaction SMILES (such as USPTO's `rxn_smiles`) becomes a [reaction column](#reactions-in-the-table), even if its name ends in "smiles". |
 | SMILES list | `.smi`, `.smiles` | One SMILES per line, with an optional name. |
+| InChI list | `.inchi` | One InChI per line, with an optional name after a space or tab (it goes in a **Title** column). A line that does not parse is kept and marked invalid. |
+| ChemDraw | `.cdxml`, `.cdx` | Each molecule in the drawing becomes a row. Text, arrows and other drawing objects are left out. |
+| Marvin | `.mrv` | One molecule, as a one-row table. |
+| Maestro | `.mae`, `.maegz` | Schrödinger's format: each structure becomes a row, its title goes in a **Title** column and its other properties become columns. |
+| XYZ | `.xyz` | Each frame becomes a row, its comment line the **Title**. XYZ has no bonds, so they are worked out from the 3D coordinates, assuming a neutral molecule; a frame where that fails is kept and marked invalid. |
 | Excel | `.xlsx` | The first sheet. Structure and reaction columns are found as for CSV. |
 | RD file | `.rdf`, `.rd` | Reactions with their data: a **Reaction** column, and one column per data field (`$DTYPE`). Registry numbers go in an **ID** column. As with SD files, a record whose reaction does not parse is kept and marked invalid. Molecule records (`$MFMT`) go in a **Structure** column. |
 | RXN file | `.rxn` | One reaction, as a one-row table. |
 | chemsuite document | `.csd` | Everything exactly as it was saved (see below). |
 
-Any of these can also be gzip-compressed (`compounds.sdf.gz`). The text encoding is detected
+Any of these except Excel and binary ChemDraw (`.cdx`) can also be gzip-compressed
+(`compounds.sdf.gz`). The text encoding is detected
 automatically.
 
 Large files open quickly. The text loads first and the table appears; structures are then parsed
@@ -190,7 +198,8 @@ in the background, using every processor core. You can scroll and work while tha
   its filters or search are hiding rows (the status bar still says how many rows are shown).
 - Saving is safe. The new file is written next to the old one and swapped in only once it is
   complete, so a crash or a full disk never damages your previous version.
-- **File ▸ Export ▸ Table…** writes SDF, mol2, CSV/TSV, SMILES, Excel, an RD file or an RXN file.
+- **File ▸ Export ▸ Table…** writes SDF, mol2, CSV/TSV, SMILES, Excel, Maestro, XYZ, an InChI
+  list, ChemDraw (CDXML), Marvin (MRV), an RD file or an RXN file.
   **File ▸ Export ▸ Selected Rows…** writes only the selected rows.
   - An **RD file** holds the first reaction column as RXN blocks and every other column as
     data. Reactions read from SMILES have no drawing, so they are laid out as the sketcher lays
@@ -201,6 +210,12 @@ in the background, using every processor core. You can scroll and work while tha
     structures are left out), with every hydrogen, SYBYL atom types and Gasteiger partial
     charges. Molecules with 3D coordinates keep them; others get 2D ones. Only the **Title**
     column is written (as each molecule's name): mol2 has no data fields.
+  - **Maestro, XYZ and InChI** files hold the first structure column, one molecule per row
+    (blank and invalid structures are left out), named by the **Title** column. In a Maestro
+    file every other column is kept as a property (numbers as numbers). XYZ needs 3D
+    coordinates, so generate conformers first; every hydrogen is written.
+  - A **ChemDraw (CDXML)** or **Marvin (MRV)** file holds one molecule: export a single
+    selected row.
 
 ### New and close
 
@@ -710,9 +725,11 @@ structure.
   with a selected cell counts as selected; a selection of cells stays a selection of cells
   when the table is sorted or filtered.
   - **Select All (Ctrl+A)**, **Invert Selection (Ctrl+I)**, **Clear Selection
-    (Ctrl+Shift+A)**.
+    (Ctrl+Shift+A)**. Clear Selection clears every kind of selection: cells, whole columns
+    and rows, including selected rows a filter hides.
 - The selection is shared by the table, the plots and the tools:
-  - selecting points in a plot selects the rows;
+  - selecting points in a plot selects the rows, and the table scrolls to the first new one
+    unless one of them is already in view;
   - selecting rows highlights their points.
 - Many tools can run on all rows, the shown rows or just the selected rows.
 
@@ -2008,7 +2025,9 @@ Data ▸ SAR ▸ Hansch… regresses activity on substituent constants:
       smiles,pi,sigma_m,sigma_p,f,r,es,mr,upsilon,sigma_star
 
   `smiles` is `H` or an attachment SMILES such as `*Cl`. A blank means the constant is unknown,
-  and rows needing it are left out.
+  and rows needing it are left out. The header needs `smiles` and at least one of the constant
+  names above (in any case and order); other columns, such as a name or a source, are ignored.
+  A file whose header names no constant is refused rather than read as empty.
 - **Terms.** Choose the hydrophobic (π, π²), electronic (Hammett σ, which positions are meta)
   and steric terms.
 - **Coefficients** are either **Summed** over positions (classical Hansch) or fitted **Per

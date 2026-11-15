@@ -89,3 +89,40 @@ def test_a_document_holding_only_a_protein_asks_to_save_and_is_not_reused(
     monkeypatch.setattr(QMessageBox, "question", question)
     assert not window.close()
     assert asked == ["Save changes before closing?"]
+
+
+def _drop(window, *paths: Path, enter: bool = False):
+    """Drag *paths* onto *window*: just entering it, or dropping them."""
+    from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
+    from PySide6.QtGui import QDragEnterEvent, QDropEvent
+
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(p)) for p in paths])
+    args = (Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton)
+    if enter:
+        event = QDragEnterEvent(QPoint(10, 10), *args, Qt.KeyboardModifier.NoModifier)
+        event.ignore()  # as Qt delivers it: a widget must accept it to take the drop
+        window.dragEnterEvent(event)
+    else:
+        event = QDropEvent(QPointF(10, 10), *args, Qt.KeyboardModifier.NoModifier)
+        event.ignore()
+        window.dropEvent(event)
+    return event
+
+
+def test_files_dropped_on_an_empty_window_open_in_it(qtbot, window, tmp_path: Path) -> None:
+    from chemsuite.app.document.main_window import Workspace
+
+    smi = tmp_path / "mols.smi"
+    smi.write_text("CCO a\nc1ccccc1 b\n")
+    notes = tmp_path / "notes.docx"
+    notes.write_text("not a compound file")
+    assert window.acceptDrops()
+    assert not _drop(window, smi, enter=True).isAccepted()  # the window holds a table already
+    assert not _drop(window, smi).isAccepted()
+    window.workspace.table.history.mark_clean()
+    window._install(Workspace(Table()))
+    assert not _drop(window, notes, enter=True).isAccepted()
+    assert _drop(window, notes, smi, enter=True).isAccepted()
+    assert _drop(window, notes, smi).isAccepted()
+    qtbot.waitUntil(lambda: len(window.workspace.table) == 2, timeout=10_000)

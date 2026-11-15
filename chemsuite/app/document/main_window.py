@@ -57,6 +57,7 @@ from chemsuite.core.table import Changed, Table
 from chemsuite.core.table import events as ev
 from chemsuite.core.table.columns import REACTION, STRUCTURE
 from chemsuite.core.wording import plural
+from chemsuite.io.formats import read_filter, readable
 from chemsuite.io.load import (
     apply_parsed,
     load_table,
@@ -96,17 +97,11 @@ from .workspace import Workspace
 
 log = logging.getLogger(__name__)
 
-OPEN_FILTER = (
-    "All supported (*.csd *.sdf *.sd *.mol *.mol2 *.csv *.tsv *.txt *.smi *.smiles *.xlsx"
-    " *.rdf *.rd *.rxn *.gz);;"
-    "chemsuite documents (*.csd);;SD files (*.sdf *.sd *.mol *.sdf.gz);;"
-    "Mol2 files (*.mol2 *.mol2.gz);;"
-    "CSV/TSV (*.csv *.tsv *.txt *.csv.gz *.tsv.gz);;SMILES (*.smi *.smiles);;Excel (*.xlsx);;"
-    "Reactions: RD and RXN files (*.rdf *.rd *.rxn *.rdf.gz)"
-)
+OPEN_FILTER = read_filter(extra=[("chemsuite documents", "*.csd")])
 EXPORT_FILTER = (
     "SD file (*.sdf);;Mol2 file (*.mol2);;CSV (*.csv);;TSV (*.tsv);;SMILES (*.smi);;"
-    "Excel (*.xlsx);;"
+    "Excel (*.xlsx);;Maestro (*.mae);;XYZ, 3D (*.xyz);;InChI list (*.inchi);;"
+    "ChemDraw, one molecule (*.cdxml);;Marvin, one molecule (*.mrv);;"
     "RD file, reactions (*.rdf);;RXN file, one reaction (*.rxn)"
 )
 
@@ -267,6 +262,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._search)
         layout.addWidget(self._view, 1)
         self.setCentralWidget(central)
+        self.setAcceptDrops(True)  # files dropped on an empty window open in it
         self._filters = FilterPanel(workspace.table, searcher=self._searcher)
         self.filter_dock.setWidget(self._filters)
         self.filter_dock.titleBarWidget().add_tools(self._filters.toolbar)
@@ -620,7 +616,7 @@ class MainWindow(QMainWindow):
             A(
                 "edit.clear_selection",
                 "Clear Selection",
-                lambda: self.workspace.selection.clear("menu"),
+                self.clear_selection,
                 "Ctrl+Shift+A",
             )
         )
@@ -984,6 +980,12 @@ class MainWindow(QMainWindow):
     def paste(self) -> None:
         self.statusBar().showMessage(self.view.paste(), 4000)
 
+    def clear_selection(self) -> None:
+        """Clear every selection: cells, whole columns, and rows (including rows that are
+        filtered out, which the view does not show)."""
+        self.view.clearSelection()
+        self.workspace.selection.clear("menu")
+
     def delete_rows(self) -> None:
         oids = self.view.selected_oids()
         if len(oids):
@@ -1342,6 +1344,24 @@ class MainWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(self, "Open", self._start_folder(), OPEN_FILTER)
         for path in paths:
             self.open_path(Path(path))
+
+    def _dropped_files(self, mime) -> list[Path]:
+        """Files dragged onto an empty window that chemsuite can open."""
+        if not self.workspace.is_empty or not mime.hasUrls():
+            return []
+        paths = [Path(url.toLocalFile()) for url in mime.urls() if url.isLocalFile()]
+        return [p for p in paths if p.suffix.lower() == DOCUMENT_SUFFIX or readable(p)]
+
+    def dragEnterEvent(self, event) -> None:
+        if self._dropped_files(event.mimeData()):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        paths = self._dropped_files(event.mimeData())
+        if paths:
+            event.acceptProposedAction()
+            for path in paths:  # the first opens here, the rest in new windows
+                self.open_path(path)
 
     def open_path(self, path: Path) -> None:
         """Open *path* here if this window is empty and unmodified, else in a new window."""

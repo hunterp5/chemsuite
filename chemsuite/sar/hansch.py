@@ -75,7 +75,8 @@ def load_constants(path: str | Path) -> dict[str, dict[str, float]]:
     with open(path, newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(line for line in handle if not line.lstrip().startswith("#"))
         names = {(n or "").strip().lower() for n in reader.fieldnames or ()}
-        if "smiles" not in names:
+        if "smiles" not in names or not names & set(FIELDS):
+            # without a recognised constant column every substituent would load empty
             raise ValueError(f"The constants file needs a header like: {HEADER}")
         for number, row in enumerate(reader, start=2):
             row = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}

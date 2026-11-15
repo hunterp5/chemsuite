@@ -249,6 +249,10 @@ def test_hansch(tmp_path) -> None:
     bad.write_text("name,pi\nx,1\n")
     with pytest.raises(ValueError, match="header"):
         load_constants(bad)
+    # a SMILES column but no constant this program knows: it would load as empty constants
+    bad.write_text("Substituent,SMILES,Hansch_Pi,Hammett_Sigma_Para\n-Cl,[*]Cl,0.71,0.23\n")
+    with pytest.raises(ValueError, match="header"):
+        load_constants(bad)
 
 
 def test_cancel_keeps_the_rows_decomposed(monkeypatch) -> None:

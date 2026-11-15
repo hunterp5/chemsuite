@@ -41,6 +41,7 @@ from chemsuite.core.mols import mol_from_text, parse_structure
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import StructureColumn
 from chemsuite.core.wording import plural
+from chemsuite.io.formats import read_filter
 
 from .common import ReactionText, TemplateChoice, ask_structure, cells, current_reaction
 
@@ -53,9 +54,7 @@ SINGLE = "\x00single"  # the combo item that asks for one typed or drawn structu
 FIT_SAMPLE = 100
 PRODUCT = "Product"
 FOUND = "Products Found"
-FILE_FILTER = (
-    "Structure files (*.sdf *.sd *.mol *.csv *.tsv *.txt *.smi *.smiles *.xlsx *.gz);;All files (*)"
-)
+FILE_FILTER = read_filter(reactions=False) + ";;All files (*)"
 
 
 class EnumerateDialog(ToolDialog):
