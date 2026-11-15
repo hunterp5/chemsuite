@@ -233,8 +233,11 @@ other machine can pick it up. Update it at the end of a session that leaves work
   against 0.84 (enumerated, 3 conformers + 2D), as good as the five 10-epoch folds (results in
   `docs/UNIPKA_PLAN.md` U2; archives `samples/unipka/weights/e20_f0.npz`, `s10_f0.npz`).
   Folds 1–4 at 20 epochs are training (`~/bench/unipka/e20_rest.sh`, log `logs/e20_rest.log`,
-  about 8.5 h; nothing else heavy meanwhile). Then: `convert_weights.py e20 …` to all five
-  folds, evaluate, pick the app's conformer/fold count, U4.
+  about 8.5 h; nothing else heavy meanwhile). `~/bench/unipka/e20_after.sh` waits for it, then
+  converts all five folds to `samples/unipka/weights/e20.npz` and writes
+  `samples/unipka/e20.eval.txt` and `e20.enum.eval.txt` (log `logs/e20_after.log`, ends
+  `E20_AFTER_DONE`). Both run detached from Claude Code. Then: pick the app's conformer/fold
+  count, U4.
 - **CONFORGE conformers** (§7.0b, plan approved 2026-11-14): the default Generator in Generate
   Conformers since 2026-11-15 (`conformers/conforge.py`); `cdpkit` is a base dependency with
   platform markers (no wheel on Windows 3.11/3.13 or Intel Macs: ETKDG there).
