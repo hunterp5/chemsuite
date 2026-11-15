@@ -21,8 +21,10 @@ The panel shows a :class:`~chemsuite.protein.prepare.review.Survey` as a tree:
   missing side chain) has a box to tick: unticked, it is left as the file has it. The rest (a
   chain break, a residue with no template) are there to be seen.
 - **Choices**, grouped by kind: every flip, His state, protonation, rotor, ligand form and
-  water, the state chosen, and what the next best would cost. Double-click the state to choose
-  another; each is listed with its cost against the best. A choice made by hand is in bold.
+  water orientation, the state chosen, and what the next best would cost; and each residue's
+  alternate location (with its occupancies) and whether each crystal water is kept.
+  Double-click the state to choose another; each is listed with its cost against the best (an
+  alternate location with its occupancy). A choice made by hand is in bold.
 
 **Re-survey** solves again with the hand-made choices held, so their effect on the
 neighbouring sites shows before anything is applied. **Apply** prepares the structure as
@@ -93,8 +95,12 @@ class _StateDelegate(QStyledItemDelegate):
             return None
         box = QComboBox(parent)
         for state in choice.states:
-            cost = "best" if state.cost <= 1e-6 else f"+{state.cost:.1f}"
-            box.addItem(f"{state.label} ({cost})", state.label)
+            if not choice.scored:  # chosen, not solved for: no costs to show
+                text = f"{state.label} ({state.note})" if state.note else state.label
+            else:
+                cost = "best" if state.cost <= 1e-6 else f"+{state.cost:.1f}"
+                text = f"{state.label} ({cost})"
+            box.addItem(text, state.label)
         return box
 
     def setEditorData(self, editor: QWidget, index: QModelIndex) -> None:

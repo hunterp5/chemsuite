@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 
 from chemsuite.protein.prepare import inspect, pipeline, review, sites
+from chemsuite.protein.structure.model import WATER
 from tests.protein.prepare.test_hydrogens import _residue
 from tests.protein.prepare.test_pipeline import _without
 
@@ -65,6 +66,7 @@ def test_the_survey_lists_issues_and_every_state_of_every_choice(lysozyme) -> No
     for choice in found.choices:
         assert len(choice.states) >= 1 and choice.state is not None and choice.state.chosen
         assert sum(state.chosen for state in choice.states) == 1
+    for choice in (c for c in found.choices if c.scored):
         # the chosen state is the cheapest one, and the gap is to the next
         costs = [state.cost for state in choice.states]
         assert min(costs) == pytest.approx(0.0, abs=1e-6)
@@ -180,3 +182,53 @@ def test_decisions_still_mean_their_residues_after_an_edit_elsewhere(cut) -> Non
     assert "CZ" not in {str(s.name[i]) for i in range(span.start, span.stop)}  # left alone
     span = s.atoms_of(_residue(s, "A/TYR 29"))
     assert "OH" in {str(s.name[i]) for i in range(span.start, span.stop)}  # still built
+
+
+def test_each_alternate_location_is_a_choice_of_letters(lysozyme) -> None:
+    found = review.survey("LYZ", lysozyme, NO_WATERS)
+    altlocs = [c for c in found.choices if c.kind == review.ALTLOC]
+    assert len(altlocs) == len(lysozyme.default_altlocs)
+    choice = altlocs[0]
+    r = choice.residue
+    assert choice.label == lysozyme.residue_label(r) and not choice.scored and not choice.warn
+    assert choice.state.label == lysozyme.default_altlocs[r]  # the highest occupancy
+    assert all(state.note.startswith("occupancy ") for state in choice.states)
+    other = next(s.label for k, s in enumerate(choice.states) if k != choice.chosen)
+    decisions = review.decisions_from(found, overrides={choice.id: other})
+    assert decisions.altlocs == {choice.label: other} and decisions.states == {}
+    again = review.survey("LYZ", lysozyme, NO_WATERS, decisions=decisions)
+    assert again.choice(choice.id).state.label == other
+
+    def placed(s):
+        span = s.atoms_of(_residue(s, choice.label))
+        return {str(s.name[i]): s.xyz()[i] for i in range(span.start, span.stop)}
+
+    before, after = placed(found.prepared.structure), placed(again.prepared.structure)
+    moved = [name for name in before if name in after
+             and not np.allclose(before[name], after[name], atol=0.01)]  # fmt: skip
+    assert moved  # the other location's atoms were kept
+
+
+def test_without_repair_the_file_keeps_its_locations_and_offers_no_choice(lysozyme) -> None:
+    found = review.survey("LYZ", lysozyme, pipeline.Options(waters=pipeline.NONE, repair=False))
+    assert not any(c.kind == review.ALTLOC for c in found.choices)
+
+
+def test_each_crystal_water_can_be_kept_or_dropped(kinase) -> None:
+    near = pipeline.Options(waters=pipeline.NEAR_LIGANDS)
+    found = review.survey("PKA", kinase, near)
+    lines = [c for c in found.choices if c.kind == review.KEEP]
+    assert len(lines) == len(np.unique(kinase.residue_of[kinase.atom_kind == WATER]))
+    kept = [c for c in lines if c.state.label == review.KEPT]
+    dropped = [c for c in lines if c.state.label == review.DROPPED]
+    assert kept and dropped  # near the ligands, and not
+    decisions = review.decisions_from(
+        found, overrides={kept[0].id: review.DROPPED, dropped[0].id: review.KEPT}
+    )
+    assert decisions.drop_waters == {kept[0].label} and decisions.keep_waters == {dropped[0].label}
+    again = review.survey("PKA", kinase, near, decisions=decisions)
+    assert again.choice(kept[0].id).state.label == review.DROPPED
+    assert again.choice(dropped[0].id).state.label == review.KEPT
+    s = again.prepared.structure
+    waters = {s.residue_label(int(r)) for r in np.unique(s.residue_of[s.atom_kind == WATER])}
+    assert dropped[0].label in waters and kept[0].label not in waters

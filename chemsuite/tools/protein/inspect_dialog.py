@@ -230,7 +230,7 @@ def apply_review(ctx: ToolContext, panel, skipped, overrides):
         workspace = protein_workspace(ctx)
         workspace.session().edit(f"Prepare {protein} (reviewed)", {protein: prepared.structure})
         report = _with_provenance(summary(protein, prepared, options.ph), found, skipped,
-                                  overrides)  # fmt: skip
+                                  overrides, prepared.structure)  # fmt: skip
         workspace.set_report(report)
         workspace.drop_review(protein)
         show_report(ctx, report)
@@ -249,20 +249,28 @@ def apply_review(ctx: ToolContext, panel, skipped, overrides):
 
 
 def _with_provenance(
-    report: PrepareReport, found: review.Survey, skipped, overrides: Mapping[str, str]
+    report: PrepareReport,
+    found: review.Survey,
+    skipped,
+    overrides: Mapping[str, str],
+    made: Structure,
 ) -> PrepareReport:
-    """*report*, led by what was decided by hand: the record of how this structure was made."""
+    """*report*, led by what was decided by hand: the record of how this structure was made.
+    Each row points at its residue in *made*, the structure applied (a dropped water is not
+    in it, and moves the residues after it)."""
+    where = {made.residue_label(r): r for r in range(made.n_residues)}
     rows: list[Row] = []
     for issue in found.issues:
         if issue.id in skipped:
             rows.append(Row(issue.label, f"Left as in the file, by hand: {issue.text}",
-                            False, issue.residue))  # fmt: skip
+                            False, where.get(issue.label, -1)))  # fmt: skip
     for id, label in overrides.items():
         choice = found.choice(id)
         if choice is not None:
             proposed = choice.state.label if choice.state else "?"
             rows.append(Row(choice.label, f"Chosen by hand: {choice.what} {label} "
-                            f"(proposed: {proposed})", False, choice.residue))  # fmt: skip
+                            f"(proposed: {proposed})", False,
+                            where.get(choice.label, -1)))  # fmt: skip
     return PrepareReport(report.protein, (*rows, *report.rows), report.ph, report.net_charge)
 
 

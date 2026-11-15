@@ -1737,16 +1737,24 @@ in the **Inspect** panel beside the structure, for you to go through first.
 
 - **Issues** are what the file is missing or carries twice, grouped by kind: alternate
   locations, missing atoms, chain breaks, gaps in the sequence, residues with no template,
-  covalent links, disulfides and metal sites. Those preparation can act on have a box: untick
-  a missing side chain and it is left as the file has it, a gap rather than a modelled guess.
-  The others are there to be seen.
-- **Choices** are every decision, grouped by kind: amide flips, His states, protonation
-  states, rotors, ligand forms and waters. Each line gives the state chosen and how much worse
-  the next best would be. Double-click the state to choose another: each state is listed with
-  its cost against the best, so you can see how close the call was. A choice made by hand is
-  in bold. Rotors and waters come folded, as there are many.
-- **⚠ Only** shows just the lines worth a look: near ties, chain breaks, residues with no
-  template.
+  covalent links, disulfides and metal sites. A missing side chain has a box: untick it and it
+  is left as the file has it, a gap rather than a modelled guess. The others are there to be
+  seen.
+- **Choices** are every decision, grouped by kind: alternate locations, amide flips, His
+  states, protonation states, rotors, ligand forms, crystal waters and water orientations.
+  Each line gives the state chosen and how much worse the next best would be. Double-click the
+  state to choose another: each state is listed with its cost against the best, so you can see
+  how close the call was. A choice made by hand is in bold. Long groups (rotors, waters) come
+  folded.
+- **Alternate locations** has a line for each residue the file models more than once, with
+  the location kept (the highest occupancy, as Prepare… keeps); choose another letter to keep
+  that one instead. Each letter is listed with its mean occupancy. With **Repair** off the
+  file's locations are left as they are, so there are no such lines.
+- **Crystal waters** has a line for each water in the file, **Kept** or **Dropped** as the
+  **Waters** setting left it; overrule any one either way.
+- **⚠ Only** shows just the lines worth a look, by the same rule as the preparation report:
+  near ties, mixed protonation, chain breaks, residues with no template. A water's orientation
+  and a hydroxyl with nothing to bind to are never flagged (any answer is as good).
 - **Re-survey** solves again with your choices held. Choices are not independent — the
   hydrogen-bond network couples neighbouring sites — so holding one flip can change what the
   residues around it should do, and this shows you before anything is applied.
@@ -1757,7 +1765,8 @@ in the **Inspect** panel beside the structure, for you to go through first.
 
 What you have decided so far is saved with the document until you apply it. Reopening the
 document surveys the structure again and puts your decisions back, so the costs shown are
-always worked out from the structure as it is.
+always worked out from the structure as it is. Decisions name their residues by chain, name
+and number, so an edit elsewhere in the structure in the meantime does not move them.
 
 ### Dock
 
