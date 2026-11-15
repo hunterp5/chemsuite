@@ -379,6 +379,16 @@ the same polish as the table and the dockable plots and tools.
   window grows as the phases land (align, dock, prepare, simulate), each opening or driving the
   viewer.
 
+### 7.0g High priority, parked: minimise after Prepare on an OpenMM worker (added 2026-11-15)
+
+Prepared complexes should be simulation-ready: Prepare's last step becomes a restrained
+minimisation in OpenMM's own interpreter, and that worker and its `SystemSpec` are the base for
+MD, MM-GBSA/PBSA, solvent analysis and free energy (§7a 3, 5, 6). Plan approved 2026-11-15 in
+[SIMULATE_PLAN.md](SIMULATE_PLAN.md): ff14SB + OpenFF Sage 2.3 (AshGC charges, no AmberTools) +
+TIP3P by default, ff19SB + OPC offered; no in-app MMFF tier; the minimised coordinates are a new
+model beside the prepared one; on by default when the worker is set; a native env with an
+optional WSL interpreter. Parked at M0 (the feasibility gates); see HANDOFF.
+
 ### 7.0e High priority: our own Uni-pKa (revised 2026-11-12)
 
 Uni-pKa gives the free energy of each protonation microstate, so linked sites and tautomers

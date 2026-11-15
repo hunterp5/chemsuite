@@ -220,17 +220,29 @@ class _Cluster:
         return found[0]
 
 
-def choices(
+def energies_of(
     table: Tables, weights: Weights, picked: list[int], ph: float | None = None
-) -> list[Choice]:
+) -> list[np.ndarray]:
+    """Every state's energy at each site, the other sites as *picked* left them: what the
+    chosen state was chosen against, which a review of the choices shows."""
     single, pairs = table.energies(weights, ph)
     out = []
-    for i, site in enumerate(table.sites):
+    for i in range(len(single)):
         e = single[i].copy()
         for j in range(len(single)):
             m = _pair(pairs, i, j)
             if m is not None:
                 e += m[:, picked[j]]
+        out.append(e)
+    return out
+
+
+def choices(
+    table: Tables, weights: Weights, picked: list[int], ph: float | None = None
+) -> list[Choice]:
+    out = []
+    for i, (site, e) in enumerate(zip(table.sites, energies_of(table, weights, picked, ph),
+                                      strict=True)):  # fmt: skip
         others = np.delete(e, picked[i])
         gap = float(others.min() - e[picked[i]]) if len(others) else float("inf")
         out.append(Choice(site, picked[i], gap, float(e[picked[i]])))

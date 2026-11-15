@@ -1,0 +1,207 @@
+# Simulation plan: restrained minimisation after Prepare, on a worker built for MD, MM-GBSA and FEP (approved 2026-11-15)
+
+
+## Context
+
+Protein ▸ Prepare (ROADMAP §7a phase 3, `docs/PREPARE_PLAN.md` P0–P4) repairs the structure,
+places hydrogens and picks protein, ligand, water and metal states with the coupled site graph.
+It never moves a heavy atom and never assigns force-field parameters, so new hydrogens and
+rebuilt side chains sit at ideal geometry, strained against their neighbours, and nothing tells
+the chemist whether the complex would survive a simulation.
+
+This adds the last step: a **restrained energy minimisation** of the prepared complex, run in
+OpenMM's own interpreter, which is also the first use of the **simulation worker** that phases 5
+and 6 (MD, MM-GBSA/PBSA, free energy) will drive. The point of the design is that
+parameterisation happens once, is recorded with the document, and is reused unchanged by every
+later method — a minimised complex, its MD and its MM-GBSA score all come from the same system.
+
+Decided by the user in planning:
+- The worker runs on a **native env where one exists, with an optional WSL interpreter** as a
+  second configured path (needed later for openfe, MM-PBSA and AmberTools-only methods).
+- **No in-app MMFF tier.** MMFF94 is not validated for proteins and is gas-phase; without the
+  worker, Prepare behaves as today and the report says minimisation was skipped.
+- The minimised coordinates become a **new model beside the prepared one**, not a replacement.
+- Default force field: **ff14SB + OpenFF Sage 2.3 + TIP3P** (openfe's benchmark combination;
+  Sage was fitted against TIP3P; GBn2 is validated with ff14SB). ff19SB + OPC is offered too.
+- Minimisation is **on by default when the worker is configured**, with a checkbox to turn it off.
+- Hardware: NVIDIA GPU on the Windows PC, Apple silicon Mac, a Linux cluster later.
+- The environment is a **pinned env file per platform plus a USER_GUIDE section**; Settings ▸
+  Test reports the versions it finds. No app-managed install for now.
+
+## What exists, and the gaps this plan must close
+
+- `prepare()` (`protein/prepare/pipeline.py:93`) returns
+  `Prepared(structure, states, report, choices, pka, population)`. `states` holds Amber-style
+  labels (HID/HIE/HIP, ASH, GLH, LYN, TYM, CYM, "NH2") **but `res_name` is never changed**, and
+  `prepare_dialog.py:168-176` throws `states`, `pka`, `population` and `choices` away: only the
+  structure and the report rows survive. The worker must therefore be told the states
+  explicitly, and must cross-check them against the hydrogens actually present.
+- `Structure` (`structure/model.py:79`) holds `coords` as `(k, n, 3)`, so a minimised model fits
+  beside the prepared one; `with_coords` (`model.py:226`) replaces coordinates in bulk, and uids
+  give a one-to-one atom mapping.
+- `io.to_text` writes **no CONECT, SSBOND or LINK records and no bond orders**
+  (`structure/io.py:320`), so the topology must travel as data, not as PDB text.
+- `ligands.to_mol` (`chem/ligands.py:77`) returns heavy atoms only, with the CCD's charges, not
+  the chosen protomer. `ligand_sites._drawn` (`ligand_sites.py:132`) is the code that applies the
+  structure's own H counts and charges; a public helper is missing.
+- `retro/runner.py` and `retro/worker.py` are the worker pattern to generalise: `Worker`,
+  `worker_for`, `child_environment`, `probe`, and the `os.dup2(2, 1)` trick that keeps a
+  library's prints out of the reply stream. Its protocol has **one reply per request and no
+  in-flight progress**, which MD needs.
+- Ratchet budgets (`tests/test_architecture.py:156`) are **exactly full**: `getattr`/`hasattr`
+  54/54, `except Exception` 16/16, `type: ignore` 29/29. The regexes scan file text, so tokens
+  inside an embedded worker script count. The worker is written with narrow excepts and
+  `isinstance` checks; no budget is raised.
+
+### Prepare bugs and gaps found while planning (fixed in M1, each with its own test)
+
+1. **A chain end before a gap has no OXT** (`inspect.py:116-124` only builds OXT for
+   `last_in_chain`), so the residue ends at a bare carbonyl carbon that matches no Amber
+   template. Gaps get neutral **ACE/NME caps**, which is also what the GAP finding promises.
+2. **A truncated chain end is treated as a real terminus.** Compare against SEQRES
+   (`seqres`, `entity_seq`) and cap an end that is merely the last observed residue.
+3. **Waters outside 5 Å of a ligand have no hydrogens** (`waters.py:146`); every kept water
+   needs them for MM.
+4. **Ion charges come from the file** (`io.py:110`), which is often 0 while `energy.py` assumes
+   +2. Assign from a table by element and oxidation state, and refuse an unknown metal.
+5. **`"NH2"` as the label for a neutral N-terminus collides with the NH2 cap residue name** —
+   rename the state label.
+6. **A public ligand-form helper** (`chem/ligands.py`): the chosen protomer/tautomer as an RDKit
+   mol with explicit hydrogens at the Structure's own coordinates, with `uid` props on every
+   atom. Built from `to_mol` + the `_drawn` logic + `sites.bond_graph`; never `AddHs`.
+7. The docking export (`dock/pdbqt.py:92`) must keep the new caps, or name them in
+   `Receptor.dropped`.
+
+## M0 — feasibility gates (no app code; a spike script and a written result)
+
+Each gate can change the design, so none of M1–M5 starts until M0 is written up in
+`docs/simulate/m0-review.md`.
+
+1. **Native Windows env.** Build a win-64 env with `openmm`, `openmmforcefields`,
+   `openff-toolkit`, `openff-nagl`, `openff-nagl-models` (RDKit backend, no AmberTools), and
+   confirm which OpenMM platforms appear (CUDA on the NVIDIA PC). Same for osx-arm64.
+2. **Ligand charges without AmberTools.** Sage 2.3 uses AshGC/NAGL charges; openmmforcefields'
+   support for that is unconfirmed. The design does not depend on it: the worker computes the
+   charges itself (NAGL), then hands the template generator a `Molecule` that already carries
+   nonzero charges, which it uses as given. **The charges are stored in the document** so MD and
+   MM-GBSA reuse exactly the same ones.
+3. **Implicit solvent with a Sage ligand.** Check whether `implicit/gbn2.xml` assigns GB
+   parameters to SMIRNOFF/GAFF atom types through `SystemGenerator`. If it does not, the
+   fallback is a **restrained explicit TIP3P shell, stripped after minimisation** — arguably the
+   more honest route to "simulation-ready" anyway. Decide here, and record the reason.
+4. **Template coverage.** Enumerate what ff14SB and ff19SB in OpenMM provide for every state
+   Prepare can pick (TYM, CYM, CYX, neutral termini, ACE/NME, HIP…). Any state with no template
+   **blocks with a ⚠ problem** and is never silently substituted.
+5. **Massless atoms vs restraints.** Confirm whether `LocalEnergyMinimizer` leaves zero-mass
+   particles fixed. If not, the hydrogen-only stage uses stiff positional restraints instead.
+6. **WSL mechanics.** Path translation (`/mnt/c`), and whether a Job Object kill of `wsl.exe`
+   stops the Linux process — the worker also exits when stdin closes, so it cannot be orphaned.
+
+## M1 — the system spec (Qt-free, `chemsuite/simulate/`)
+
+A new Qt-free top-level package, registered in `tests/test_import_boundaries.py:37` `QT_FREE`.
+It imports `protein.structure`, `protein.chem` and `core.jobs`; never Qt, `core.table` or OpenMM.
+
+- `spec.py`: frozen dataclasses, JSON in and out — `SystemSpec` (atoms: element, name, residue,
+  chain, uid; the explicit bond list; per-residue state labels; ligand molblocks with explicit H
+  and `uid` atom props; per-ligand charges once computed; ions with assigned charges; disulfides;
+  caps), `ForceFieldSpec` (protein FF, small-molecule FF, water model, solvent treatment),
+  `MinimiseSpec` (restraint constant, tolerance, max iterations, the stage schedule).
+- `build.py`: `system_spec(structure, states, ...) -> SystemSpec` — the Prepared → spec
+  translation, including the states cross-check against the hydrogens present (a disagreement is
+  a hard error, not a warning).
+- `result.py`: `MinimiseResult` (new coordinates by uid, energy before/after, heavy-atom and
+  ligand RMSD, worst remaining clash, per-atom max force, the charges used, FF versions, the
+  platform and timings).
+- Prepare's own `relax.py` is **not** created; `docs/PREPARE_PLAN.md:143` and ROADMAP §7a 3 are
+  rewritten to point here.
+
+## M2 — the worker and its runner (`chemsuite/simulate/`)
+
+- Extract the JSON-lines client from `retro/runner.py` into a shared
+  `core/jobs/lines.py` (`LineWorker`, `worker_for`, `child_environment`, `probe` helpers) and
+  **move retro onto it**, so there is one implementation, not two. Protocol additions needed by
+  MD: **event lines** (progress, energies, frames) interleaved before a request's reply, and a
+  **cooperative stop** message so a run can end at a checkpoint instead of being killed.
+- `worker.py`: the script run with `python -I -c`, keeping stdout clean via `os.dup2(2, 1)`.
+  Ops: `hello` (versions, platforms, GPU), `build` (spec → System, cached), `minimise`,
+  later `md`, `mmgbsa`. No `except Exception`, no `hasattr`.
+- `runner.py`: the app-side client; one warm worker per interpreter, closed from
+  `app/shell/main.py` beside `retro.close_workers()`; `children.start`/`stop` as the rule
+  requires (`test_external_programs_start_through_the_registry`).
+- `config.py`: two new external tools — `openmm_python` and an optional `openmm_wsl_python` —
+  registered in `core/external_tools.py:47`, with a `probe` behind Settings ▸ Test reporting
+  OpenMM, OpenFF and force-field versions and the available platforms. `ready_problem`-style
+  functions give the dialog its blocking ⚠ text.
+- Tests: a **Python fake worker** (the shell-script fake in `tests/retro/fake.py` skips on
+  win32, so protocol tests never run on the Windows PC), plus a marker for the few tests that
+  need a real OpenMM env.
+
+## M3 — the minimisation protocol
+
+Staged, so that nothing moves before its neighbours are sane:
+
+1. Hydrogens only (heavy atoms fixed or stiffly restrained — M0 gate 5).
+2. Rebuilt and flipped side chains and kept waters, protein backbone restrained.
+3. The whole complex with harmonic positional restraints on heavy atoms resolved from the
+   deposited coordinates, tightened until heavy-atom RMSD ≤ 0.3 Å; the ligand restrained more
+   weakly so it can settle in the pocket.
+
+Reported: energy before and after, RMSD overall / pocket / ligand, the worst clash before and
+after, residues that moved most, and every force-field and charge version used. A run that ends
+above the RMSD limit, or with a remaining clash, is marked ⚠ rather than quietly accepted.
+
+## M4 — UI, storage and invalidation
+
+- `tools/protein/prepare_dialog.py`: a **Minimise** checkbox in Method (on when the worker is
+  configured; its ⚠ problem text when not), and the force-field choice under More Options
+  (ff14SB+Sage+TIP3P or ff19SB+OPC). No helper text — explanations go in `help=` tooltips.
+- A separate **Protein ▸ Minimise…** command for an already-prepared structure, registered in
+  `TOOLS` (`tools/protein/tool.py:358`) and the viewer's command map.
+- Run through `ctx.run(..., keep_partial=False)` (a whole-structure result): `job.report` for
+  progress, `job.emit_partial` for live energy.
+- Applied as **one undoable edit** via `WorkbenchSession.edit` (`workspace/session.py:332`),
+  adding the minimised model to `coords`; the models bar names it, and the new model is shown.
+- The report extends `PrepareReport`/`Row` (`workspace/reports.py:33`) with the minimisation
+  rows, saved under the protein workspace. `Prepared.states`, `pka` and `population` are
+  **persisted too** (they are currently dropped), since MD and MM-GBSA need them.
+- **Invalidation:** re-running Prepare or editing the structure drops or flags the minimised
+  model and its stored system; multi-model (NMR) input minimises the shown model only.
+
+## M5 — benchmark and acceptance (`-m bench`, not the regular suite)
+
+On the P0 neutron and named-case sets (`tests/protein/test_bench_prepare.py` alongside):
+heavy-atom RMSD to the deposit, clash score, hydrogen-position accuracy before and after
+(minimisation must not spoil the states Prepare chose), and ligand RMSD. Plus the real test of
+"simulation-ready": a **short explicit-solvent MD (100 ps–1 ns)** on each benchmark complex runs
+without instability and keeps the ligand in the pocket. It becomes Prepare's default step only
+if the clash score improves, the RMSD limit holds, the neutron marks do not regress, and the MD
+runs clean.
+
+## Later phases this design carries (ROADMAP §7a 5–7, stated here so nothing is painted into a corner)
+
+The `SystemSpec` + worker pair is the single entry point for all of it:
+- **MD** (phase 5): solvation and ions, restraints from any selection, minimise/heat/equilibrate/
+  produce, checkpoints, GPU; trajectories beside the document (needs a narrow `ToolContext`
+  method for the document's folder — `Workspace.path` is not exposed and is `None` when unsaved).
+- **MM-GBSA** runs in the same worker with GBn2 and needs no AmberTools; **MM-PBSA**, GIST/3D-RISM
+  solvent analysis and **openfe** RBFE are the pieces that need the WSL (or Linux) interpreter.
+- Also reachable with this stack, worth considering in that order: **GCMC water placement** and
+  WaterMap-style hydration-site thermodynamics from GIST for solvent analysis; **ATM**
+  (`ATMForce`, OpenMM ≥ 8.2) for absolute binding free energies without atom mapping;
+  **metadynamics** for residence time and cryptic pockets; **hybrid ML/MM** ligand potentials
+  (MACE-OFF via `openmm-ml`) where Sage is not good enough; and **constant-pH MD** for the sites
+  Prepare marks ambiguous.
+
+## Verification
+
+- `pytest tests/simulate tests/protein/prepare tests/tools/protein tests/test_architecture.py
+  tests/test_import_boundaries.py`; the full suite once before the release merge.
+- `pytest -m bench tests/simulate/test_bench_minimise.py` against the M5 thresholds.
+- `ruff check` / `ruff format` on the touched paths.
+- By hand: prepare and minimise 5GNK and a DHFR–MTX complex in the workbench — check the report,
+  the model in the models bar, undo as one step, save, reopen; then with the worker unconfigured,
+  confirm Prepare still runs and says minimisation was skipped.
+- `docs/USER_GUIDE.md` (Prepare, the new command, External Tools at :2240 and the env setup
+  section), `docs/ROADMAP.md` §7a 3 and 5, `docs/PREPARE_PLAN.md` P5, and a new
+  `docs/SIMULATE_PLAN.md` holding this plan, updated in the same commits.

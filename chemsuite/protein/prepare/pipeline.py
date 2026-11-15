@@ -20,6 +20,13 @@ The result is a new structure (old atoms keep their uids, so the workbench can a
 undoable edit) and a report: what inspection found, what each site chose and how sure it is
 (:data:`AMBIGUOUS`), and what could not be done.
 
+:class:`Options` is how the preparation is run; :class:`Decisions` is the chemist overruling
+it case by case — which residues to repair, which waters to keep, which location of an
+alternate, and which state a given site must take. A pinned site is held to that state and
+**the rest of the network is solved around it** (``solve.solve``'s ``allowed``), so the
+coupling between sites is kept rather than one answer being edited in afterwards. Reviewing
+and overruling is :mod:`.review`.
+
 Every titrating group (:attr:`Options.titrate`) takes its protonation state at the pH from
 :mod:`.populations`: the structure carries each group's most populated form (the best state
 within it), and the result each group's pKa and protonated share. A group between
@@ -28,6 +35,7 @@ within it), and the result each group's pKa and protonated share. A group betwee
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -64,6 +72,43 @@ NOTE = "note"
 
 
 @dataclass(frozen=True)
+class Decisions:
+    """What the chemist chose, against what the preparation would have done on its own.
+
+    Everything is optional: the default decides nothing, so ``prepare`` runs as it always has.
+    """
+
+    #: residues whose missing atoms are built; None for every one that can be
+    repair: frozenset[int] | None = None
+    #: waters kept whatever :attr:`Options.waters` says, and waters dropped whatever it says
+    keep_waters: frozenset[int] = frozenset()
+    drop_waters: frozenset[int] = frozenset()
+    #: residue → which alternate location to keep (the highest occupancy by default)
+    altlocs: Mapping[int, str] = field(default_factory=dict)
+    #: a site's key (:func:`site_key`) → the state that site must take, by its label
+    states: Mapping[str, str] = field(default_factory=dict)
+
+    def pinned(self, key: str, site: sites.Site) -> int | None:
+        """Which state the site *key* is held to, if any (None: it chooses for itself)."""
+        label = self.states.get(key)
+        if label is None:
+            return None
+        for i, state in enumerate(site.states):
+            if state.label == label:
+                return i
+        return None
+
+
+def site_key(s: Structure, site: sites.Site) -> str:
+    """A name for *site* that survives a second preparation of the same structure: its kind,
+    its residue, and the atoms it hangs from and moves (a phosphate has three rotors, one
+    residue)."""
+    anchor = str(s.name[site.anchors[0]]) if len(site.anchors) else ""
+    moving = str(s.name[site.moving[0]]) if len(site.moving) else ""
+    return f"{site.kind}:{site.residue}:{anchor}/{moving}"
+
+
+@dataclass(frozen=True)
 class Options:
     ph: float = 7.0
     waters: str = ALL
@@ -84,6 +129,11 @@ class Prepared:
     pka: dict[int, float] = field(default_factory=dict)  # residue → pKa (with titration)
     #: residue → protonated share; a ligand's: the share of the form it takes
     population: dict[int, float] = field(default_factory=dict)
+    #: with ``detail``: every state's energy at each site of :attr:`choices`, in its order, so
+    #: a review can show what the chosen state was chosen against (:mod:`.review`)
+    energies: tuple[np.ndarray, ...] = ()
+    #: each choice's :func:`site_key`, in the order of :attr:`choices`
+    keys: tuple[str, ...] = ()
 
     @property
     def net_charge(self) -> int:
@@ -95,19 +145,28 @@ def prepare(
     options: Options | None = None,
     ccd: CcdCache | None = None,
     cancel: CancelToken | None = None,
+    decisions: Decisions | None = None,
+    detail: bool = False,
 ) -> Prepared:
+    """*s* prepared. With *decisions*, the chemist's choices overrule what it would do on its
+    own, case by case (:class:`Decisions`); with *detail*, every state's energy is kept as
+    well, for a review of the choices (:mod:`.review`)."""
     options = options or Options()
+    chosen = decisions or Decisions()
     library = Library(ccd)
     report = inspect(s, library, cancel)
     if options.repair:
-        s = repair.build_missing(repair.one_location(s), library, cancel)
+        s = repair.build_missing(repair.one_location(s, dict(chosen.altlocs) or None),
+                                 library, cancel, only=chosen.repair)  # fmt: skip
     check(cancel)
-    s = keep_waters(s, options.waters)
+    s = keep_waters(s, options.waters, chosen)
     protonated = hydrogens.add_hydrogens(s, library, ccd, cancel)
     kept = frozenset(n.residue for n in protonated.notes if n.text == hydrogens.KEPT)
     report += [Finding(NOTE, s.residue_label(n.residue), n.text, warn=True, residue=n.residue)
                for n in protonated.notes if n.text != hydrogens.KEPT]  # fmt: skip
     choices: list[solve.Choice] = []
+    energies: tuple[np.ndarray, ...] = ()
+    keys: tuple[str, ...] = ()
     pka: dict[int, float] = {}
     share: dict[int, float] = {}
     if options.optimise:
@@ -116,7 +175,9 @@ def prepare(
         check(cancel)
         table = energy.tables(protonated.structure, found, options.ph)
         check(cancel)
-        picked = solve.solve(table, weights)
+        keys = tuple(site_key(protonated.structure, site) for site in found)
+        held = _held(found, keys, chosen)
+        picked = solve.solve(table, weights, allowed=held or None)
         if any(site.titrating for site in found):
             done = populations.titration(table, weights, cancel=cancel)
             at = done.at(options.ph)
@@ -132,12 +193,14 @@ def prepare(
                 elif site.titrating:
                     pka[site.residue], share[site.residue] = k, fraction
         choices = solve.choices(table, weights, picked)
+        if detail:
+            energies = tuple(solve.energies_of(table, weights, picked))
         protonated = solve.apply(protonated, found, picked)
         report += _site_findings(protonated.structure, choices, share)
         report += _rotor_finding(choices)
         report += _water_finding(choices)
     return Prepared(protonated.structure, dict(protonated.states), tuple(report), tuple(choices),
-                    pka, share)  # fmt: skip
+                    pka, share, energies, keys)  # fmt: skip
 
 
 def _sites(
@@ -203,13 +266,34 @@ def _majority(
     return solve.solve(table, weights, allowed=allowed)
 
 
-def keep_waters(s: Structure, which: str) -> Structure:
-    """*s* with all its waters, none, or those within :data:`WATER_REACH` of a ligand."""
+def _held(
+    found: list[sites.Site], keys: tuple[str, ...], chosen: Decisions
+) -> dict[int, np.ndarray]:
+    """Each pinned site held to its one state (a mask for ``solve.solve``), so the others are
+    solved around it."""
+    held: dict[int, np.ndarray] = {}
+    for i, (site, key) in enumerate(zip(found, keys, strict=True)):
+        state = chosen.pinned(key, site)
+        if state is not None:
+            mask = np.zeros(len(site.states), dtype=bool)
+            mask[state] = True
+            held[i] = mask
+    return held
+
+
+def keep_waters(s: Structure, which: str, chosen: Decisions | None = None) -> Structure:
+    """*s* with all its waters, none, or those within :data:`WATER_REACH` of a ligand; the
+    chemist's own keeps and drops (:class:`Decisions`) overrule that either way."""
+    chosen = chosen or Decisions()
     water = s.atom_kind == WATER
-    if which == ALL or not water.any():
+    if which == ALL and not chosen.drop_waters:
+        return s
+    if not water.any():
         return s
     drop = water.copy()
-    if which == NEAR_LIGANDS:
+    if which == ALL:
+        drop[:] = False
+    elif which == NEAR_LIGANDS:
         ligand = np.flatnonzero(s.atom_kind == LIGAND)
         if len(ligand):
             x = s.xyz()
@@ -217,6 +301,10 @@ def keep_waters(s: Structure, which: str) -> Structure:
             keep = np.flatnonzero(water)[np.isfinite(near)]
             residues = np.unique(s.residue_of[keep])
             drop &= ~np.isin(s.residue_of, residues)
+    if chosen.keep_waters:
+        drop &= ~np.isin(s.residue_of, list(chosen.keep_waters))
+    if chosen.drop_waters:
+        drop |= water & np.isin(s.residue_of, list(chosen.drop_waters))
     return s.subset(~drop)
 
 

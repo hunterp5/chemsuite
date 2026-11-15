@@ -259,6 +259,24 @@ other machine can pick it up. Update it at the end of a session that leaves work
   built in, PostgreSQL/MySQL/Oracle/SQL Server through optional extras). The plan was approved
   2026-11-12 and is in [`docs/DATABASE_PLAN.md`](docs/DATABASE_PLAN.md). No code yet.
 
+- **Parked, high priority: minimise after Prepare** (ROADMAP §7.0g, plan approved 2026-11-15
+  in [`docs/SIMULATE_PLAN.md`](docs/SIMULATE_PLAN.md)). Stopped in M0 (feasibility gates, no
+  app code yet). State on the Windows PC:
+  - Miniforge 26.9.4-2 is installed per user at `C:\Users\hunte\miniforge3` (not on PATH, not
+    the registered Python; installer SHA-256 checked).
+  - The spike env (`cs-sim-m0`: python 3.12, openmm, cuda-version=12, openmmforcefields,
+    openff-toolkit-base, openff-interchange-base, openff-nagl, openff-nagl-models, rdkit,
+    numpy; conda-forge with nodefaults) failed both ways and must be rebuilt:
+    - native Windows: `conda env create` crashed with "An unexpected error has occurred"
+      before the traceback was captured; rerun with output saved to a file and try
+      `--no-plugins`;
+    - WSL Ubuntu (`~/miniconda3`): packages downloaded, but no env was created (the failure
+      was hidden behind `| tail`); rerun without the pipe.
+  - Hardware: RTX 4070 (driver 560.94), seen from WSL too.
+  - Then: gates 2-6 (NAGL charges handed in pre-computed, GBn2 with a Sage ligand, template
+    coverage for every Prepare state, massless atoms in the minimiser, WSL kill/stdin) and the
+    write-up in `docs/simulate/m0-review.md`.
+
 1. TMAP and Chemical Space Networks (ROADMAP §7.0d, high priority): plan them together in plan
    mode.
 2. Graceful exit (ROADMAP §7.0).

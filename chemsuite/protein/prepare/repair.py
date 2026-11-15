@@ -49,15 +49,21 @@ def one_location(s: Structure, altlocs: dict[int, str] | None = None) -> Structu
                    occupancy=np.ones(kept.n_atoms, dtype=kept.occupancy.dtype))  # fmt: skip
 
 
-def build_missing(s: Structure, library: Library, cancel: CancelToken | None = None) -> Structure:
+def build_missing(
+    s: Structure,
+    library: Library,
+    cancel: CancelToken | None = None,
+    only: frozenset[int] | None = None,
+) -> Structure:
     """*s* with the missing heavy atoms of its polymer residues built (uids of the old atoms
-    kept)."""
+    kept). With *only*, just those residues are built: the rest are left as the file has
+    them, for a chemist who would rather see a gap than a modelled side chain."""
     ends = last_in_chain(s)
     x = s.coords.astype(np.float64)
     residues, names, elements, coords, bonds, orders = [], [], [], [], [], []
     n = s.n_atoms
     for r in range(s.n_residues):
-        if s.res_kind[r] not in POLYMER:
+        if s.res_kind[r] not in POLYMER or (only is not None and r not in only):
             continue
         check(cancel)
         lacking = missing_atoms(s, r, library, ends, cancel)
