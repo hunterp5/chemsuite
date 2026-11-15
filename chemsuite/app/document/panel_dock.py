@@ -229,6 +229,12 @@ class HeaderTabs(QWidget):
         self._layout_tabs()
         self.update()
 
+    def forget(self, dock: QDockWidget) -> None:
+        """*dock* is closing: drop its tab now, not when the headers next refresh (it may be
+        deleted, and this header resized, before then)."""
+        if dock in self.docks:
+            self.set_docks([d for d in self.docks if d is not dock])
+
     def titles(self) -> list[str]:
         return [d.windowTitle() for d in self.docks]
 
@@ -569,4 +575,8 @@ class PanelDock(QDockWidget):
         if isinstance(widget, ToolPanel):
             widget.close_panel()
         super().closeEvent(event)
+        window = self.parentWidget()
+        if window is not None:  # the other panes' tabs let go of this one before it is deleted
+            for tabs in window.findChildren(HeaderTabs):
+                tabs.forget(self)
         self.deleteLater()
