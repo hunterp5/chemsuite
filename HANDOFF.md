@@ -139,7 +139,7 @@ other machine can pick it up. Update it at the end of a session that leaves work
     the orientation makes a hydrogen bond *and* a different one was nearly as good
     (`pipeline.BONDED`, `DEGENERATE`), the free ones counted in one line as the waters are —
     crambin's report went from 14 ⚠ of 17 rows to 7 of 11.
-  - **Stage B of the docking plan, 2026-11-14 (not committed, not yet tried by hand):** the
+  - **Stage B of the docking plan, 2026-11-14 (committed and merged, not yet tried by hand):** the
     bundled Vina 1.2.7 binaries with their licence, NOTICE and pinned hashes
     (`protein/dock/bin`, `scripts/fetch_vina.py`); the Qt-free engine `protein/dock/`
     (`box.py`, `pdbqt.py` the Meeko boundary, `vina.py` the binary, `run.py` many ligands with
@@ -153,10 +153,8 @@ other machine can pick it up. Update it at the end of a session that leaves work
     and names the rest in `Receptor.dropped`; `--score_only` still needs a box, so
     `score_only` passes `--autobox` when given none. Redocking 80U into 5GNK puts the top pose
     1.13 Å from the crystal one.
-    **Still to do:** `docs/USER_GUIDE.md` has the new ### Dock section; ROADMAP §7a phase 2
-    and PREPARE_PLAN are not updated yet, the by-hand run in the app (plan's step 4) is not
-    done, and nothing is committed.
-  - **Next:** finish those docs, try it by hand in the app, commit; a second titration round (PROPKA-style H-bond determinants, His titrated
+    **Still to do:** the by-hand run in the app (plan's step 4).
+  - **Next:** try docking by hand in the app; a second titration round (PROPKA-style H-bond determinants, His titrated
     for charge only) is listed in p2-review.md §4.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
@@ -193,17 +191,18 @@ other machine can pick it up. Update it at the end of a session that leaves work
   Generator choice in Generate Conformers (`conformers/conforge.py`), ETKDG still the default.
   Benchmark: `scripts/review/conformer_bench.py` on Wang et al.'s 3,354 crystal ligands
   (`samples/conformers/wang`, fetched; ids from their SI xlsx). CONFORGE's two variants are done
-  (3,354 ligands each); the four ETKDG variants were restarted 2026-11-14 in the background
-  (`etkdg-raw`, `etkdg`, `etkdg-prune`, `etkdg-mmff`, 8 workers, resuming what is done, log
-  `samples/conformers/wang/out/bench.log`) and may still be running. Then `score` →
+  (3,354 ligands each). The ETKDG run crashed on 2026-11-14 after 339 `etkdg-raw` ligands
+  (`IndexError: End of sequence hit` in `etkdg._etkdg`, a bug in the generator itself); the
+  other three ETKDG variants (`etkdg`, `etkdg-prune`, `etkdg-mmff`) have not started. Fix it,
+  re-run them (they resume; log `samples/conformers/wang/out/bench.log`), then `score` →
   `docs/conformers/bench.md` decides the default.
-  CONFORGE's macrocycle sampling is capped at 200 (provisional). Not committed yet.
+  CONFORGE's macrocycle sampling is capped at 200 (provisional). Committed and merged.
 - **Decomposition and enumeration** (done 2026-11-14, ROADMAP §6): Chemistry ▸ Decompose
   (R-Group Decomposition, Fragments, Central Ring), Chemistry ▸ Enumerate (Reaction
   Products with 28 named templates in `analysis/reaction_templates.py`, R-Groups on a Core,
   Recombine Fragments); Standardize keeps stripped salts in a `Salts` column and can form
   salts (`analysis/salts.py`). The Structure Viewer is now Data ▸ Browser (bottom section,
-  Ctrl+Shift+B); Ctrl+Shift+3 is gone. Not yet merged to `main`: run the full suite first.
+  Ctrl+Shift+B); Ctrl+Shift+3 is gone. Merged to `main` 2026-11-14 (full suite green).
 
 ## Next
 
