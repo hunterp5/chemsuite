@@ -294,6 +294,11 @@ bioactive conformation**: the pose of a ligand crystallised in its protein.
   al. (JCIM 2023, 63, 6525) found ETKDG within 0.03–0.07 Å of OMEGA and ConfGenX at 1–250
   conformers, and force-field clean-up no help for bioactive poses, so the benchmark also scores
   ETKDG without MMFF, without the energy window, and at larger counts.
+- **Bench run (2026-11-15, `docs/conformers/bench.md`):** CONFORGE is the most accurate
+  (AMR-R 0.837 / 0.582 Å at 10 / 250 conformers, against 0.985 / 0.725 Å for the ETKDG
+  default). The default's energy window and MMFF clean-up make ETKDG worse at 50 and 250;
+  plain ETKDG gives 0.747 / 0.623 Å there. Next: decide the default generator and ETKDG's
+  defaults.
 - **Ship.** The new generator becomes the default behind the same tool, and ETKDG stays
   available. It keeps partial results on cancel and runs in the process pool. The user guide
   states the benchmark numbers.
