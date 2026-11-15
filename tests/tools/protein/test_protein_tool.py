@@ -92,11 +92,13 @@ def test_the_proteins_tools_are_the_viewer_prepare_and_docking(window) -> None:
     assert [t.id for t in tool.TOOLS] == [
         "protein",
         tool.PREPARE_ID,
+        tool.INSPECT_ID,
         tool.DOCK_ID,
         tool.POSES_ID,
         tool.RESCORE_ID,
     ]
-    # Prepare and Poses reopen their panels, so they are not in the Protein menu; docking is
+    # Prepare, Inspect and Poses reopen their panels, so they are not in the Protein menu
+    # (the viewer's Tools menu holds the first two); docking is
     assert [t.id for t in tool.TOOLS if t.menu] == ["protein", tool.DOCK_ID, tool.RESCORE_ID]
     from chemsuite.protein.ui.poses import PosesPanel
 

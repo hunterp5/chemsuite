@@ -64,6 +64,7 @@ LIGAND = "ligand"  # add one ligand's row: (protein id, residue)
 PROFILE = "profile"  # each ligand row's interactions, as columns
 REMOVE = "remove"  # remove a protein: (protein id)
 PREPARE = "prepare"  # hydrogens, flips and protonation states (Tools ▸ Prepare…)
+INSPECT = "inspect"  # every issue and choice, to tick and overrule (Tools ▸ Inspect…)
 DOCK = "dock"  # dock the table's ligands into a pocket (Tools ▸ Dock…)
 RESCORE = "rescore"  # score poses that already exist (Tools ▸ Rescore Poses…)
 SHOW_TABLE = "show_table"  # bring the document's table window forward
@@ -260,11 +261,15 @@ def _tools(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
     prepare = _command(menu, "Prepare…", commands, PREPARE)
     prepare.setEnabled(PREPARE in commands and bool(panel.session.displays))
     prepare.setToolTip("Hydrogens, missing side chains, flips, His states and protonation")
+    inspect = _command(menu, "Inspect…", commands, INSPECT)
+    inspect.setEnabled(INSPECT in commands and bool(panel.session.displays))
+    inspect.setToolTip("Everything a preparation would find and decide, to tick and overrule "
+                       "before it is applied")  # fmt: skip
     menu.addSeparator()
     dock = _command(menu, "Dock…", commands, DOCK)
     dock.setEnabled(DOCK in commands and bool(panel.session.displays))
-    dock.setToolTip("Dock the table's ligands into a pocket with AutoDock Vina; each pose "
-                    "becomes a row")  # fmt: skip
+    dock.setToolTip("Dock the table's ligands into a pocket with AutoDock Vina; the poses "
+                    "are listed beside the pocket")  # fmt: skip
     rescore = _command(menu, "Rescore Poses…", commands, RESCORE)
     rescore.setEnabled(RESCORE in commands and bool(panel.session.displays))
     rescore.setToolTip("Score poses that already exist where they stand")

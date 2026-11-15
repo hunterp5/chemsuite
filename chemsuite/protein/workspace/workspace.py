@@ -25,10 +25,11 @@ There is one per document, whether or not the viewer's window is open:
   knows it needs saving.
 
 The saved form (:meth:`capture`) is versioned: ``{"version": 1, "session": …, "view": …,
-"reports": …, "poses": …}``, ``view`` holding the background, depth cue and camera, ``reports``
-each protein's last preparation report (:mod:`.reports`) and ``poses`` each protein's docked
-poses (:mod:`.poses`; both were added later, so each is optional and an older chemsuite simply
-ignores it). A state from a newer chemsuite is kept as it was and saved back
+"reports": …, "poses": …, "reviews": …}``, ``view`` holding the background, depth cue and
+camera, ``reports`` each protein's last preparation report (:mod:`.reports`), ``poses`` each
+protein's docked poses (:mod:`.poses`) and ``reviews`` each preparation still being reviewed
+(:mod:`.reviews`; the last three were added later, so each is optional and an older chemsuite
+simply ignores it). A state from a newer chemsuite is kept as it was and saved back
 unchanged rather than half read.
 """
 
@@ -42,6 +43,7 @@ from chemsuite.core.assets import AssetHost
 
 from .poses import DockedPoses
 from .reports import PrepareReport
+from .reviews import Review
 from .session import WorkbenchSession
 
 log = logging.getLogger(__name__)
@@ -74,6 +76,8 @@ class ProteinWorkspace:
         self.reports: dict[str, PrepareReport] = {}
         #: each protein's docked poses, by protein id
         self.poses: dict[str, DockedPoses] = {}
+        #: each preparation being reviewed and not yet applied, by protein id
+        self.reviews: dict[str, Review] = {}
         #: while the viewer is open: its view settings now
         self.view_source: Callable[[], dict] | None = None
         self._newer: Any = None  # a state from a newer chemsuite, kept as it was
@@ -104,6 +108,10 @@ class ProteinWorkspace:
             docked = DockedPoses.from_json(run)
             if docked is not None and isinstance(protein, str):
                 self.poses[protein] = docked
+        for protein, pending in dict(saved.get("reviews") or {}).items():
+            review = Review.from_json(pending)
+            if review is not None and isinstance(protein, str):
+                self.reviews[protein] = review
 
     # -- the session --------------------------------------------------------------------------
     @property
@@ -175,6 +183,25 @@ class ProteinWorkspace:
         self._changes += 1
         return True
 
+    # -- preparations being reviewed ----------------------------------------------------------
+    def review(self, protein: str) -> Review | None:
+        """The review of *protein*'s preparation still open, if there is one."""
+        return self.reviews.get(protein)
+
+    def set_review(self, review: Review) -> None:
+        """Keep what has been decided so far (it is saved with the document)."""
+        if self.reviews.get(review.protein) == review:
+            return
+        self.reviews[review.protein] = review
+        self._changes += 1
+
+    def drop_review(self, protein: str) -> bool:
+        """Forget *protein*'s review (applied, or abandoned)."""
+        if self.reviews.pop(protein, None) is None:
+            return False
+        self._changes += 1
+        return True
+
     def set_view(self, view: Mapping) -> None:
         """The viewer's view settings now (when it closes)."""
         new = {k: view[k] for k in VIEW_KEYS if k in view}
@@ -205,13 +232,16 @@ class ProteinWorkspace:
         here = self.store.assets
         kept = {id: report for id, report in self.reports.items() if id in here}
         docked = {id: run for id, run in self.poses.items() if id in here}
-        if not session and not view and not kept and not docked:
+        pending = {id: review for id, review in self.reviews.items() if id in here}
+        if not session and not view and not kept and not docked and not pending:
             return None
         saved = {"version": VERSION, "session": session, "view": view}
         if kept:
             saved["reports"] = {id: report.to_json() for id, report in kept.items()}
         if docked:
             saved["poses"] = {id: run.to_json() for id, run in docked.items()}
+        if pending:
+            saved["reviews"] = {id: review.to_json() for id, review in pending.items()}
         return saved
 
     def close(self) -> None:

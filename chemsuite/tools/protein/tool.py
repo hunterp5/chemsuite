@@ -59,6 +59,8 @@ PREPARE_ID = "protein-prepare"
 DOCK_ID = "protein-dock"
 #: the Poses panel (``chemsuite.protein.ui.poses.TOOL_ID``, kept in step by the tests)
 POSES_ID = "protein-poses"
+#: Protein ▸ Inspect… and its panel (``chemsuite.protein.ui.inspector.TOOL_ID``)
+INSPECT_ID = "protein-inspect"
 RESCORE_ID = "protein-rescore"
 #: the document part holding the protein workspace
 WORKSPACE_KEY = "protein_workspace"
@@ -75,6 +77,7 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         DOCK,
         EXTRACT,
         FETCH,
+        INSPECT,
         LIGAND,
         OPEN,
         PREPARE,
@@ -102,6 +105,7 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         PROFILE: lambda: interactions_to_table(ctx),
         REMOVE: lambda protein: remove_protein(ctx, protein),
         PREPARE: lambda: open_prepare(ctx),
+        INSPECT: lambda: open_inspect(ctx),
         DOCK: lambda: open_dock(ctx),
         RESCORE: lambda: open_rescore(ctx),
         SHOW_TABLE: lambda: show_table(ctx),
@@ -355,6 +359,18 @@ def restore_poses(ctx: ToolContext, state: dict):
     return open_poses(ctx, state)
 
 
+def open_inspect(ctx: ToolContext):
+    from .inspect_dialog import open_inspect as show
+
+    return show(ctx)
+
+
+def restore_inspect(ctx: ToolContext, state: dict):
+    from .inspect_dialog import open_saved
+
+    return open_saved(ctx, state)
+
+
 TOOLS = [
     Tool(
         id=TOOL_ID,
@@ -376,6 +392,16 @@ TOOLS = [
         requires=("gemmi",),
         tip="Hydrogens, missing side chains, Asn/Gln/His flips, His tautomers and protonation "
         "states, applied as one undoable edit with a report of what was decided",
+    ),
+    Tool(
+        id=INSPECT_ID,
+        title="Inspect…",
+        menu=(),  # the viewer's own Tools menu holds it; this entry reopens its panel
+        open=open_inspect,
+        restore=restore_inspect,
+        requires=("gemmi",),
+        tip="Everything a preparation would find and decide, each issue to fix or leave and "
+        "each choice to overrule, applied as one undoable edit",
     ),
     Tool(
         id=DOCK_ID,

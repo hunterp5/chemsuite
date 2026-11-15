@@ -1729,6 +1729,36 @@ report is saved with the document and comes back with it.
 Accuracy, against 262 neutron structures: Asn flips 86%, Gln flips 80%, His orientation 90%,
 His tautomer 64% (Reduce: 85/79/88/62).
 
+### Inspect
+
+**Protein ▸ Inspect…** (in the viewer's **Tools** menu) runs the same preparation as Prepare…,
+with the same settings, but applies nothing: it lays out everything it found and would decide
+in the **Inspect** panel beside the structure, for you to go through first.
+
+- **Issues** are what the file is missing or carries twice, grouped by kind: alternate
+  locations, missing atoms, chain breaks, gaps in the sequence, residues with no template,
+  covalent links, disulfides and metal sites. Those preparation can act on have a box: untick
+  a missing side chain and it is left as the file has it, a gap rather than a modelled guess.
+  The others are there to be seen.
+- **Choices** are every decision, grouped by kind: amide flips, His states, protonation
+  states, rotors, ligand forms and waters. Each line gives the state chosen and how much worse
+  the next best would be. Double-click the state to choose another: each state is listed with
+  its cost against the best, so you can see how close the call was. A choice made by hand is
+  in bold. Rotors and waters come folded, as there are many.
+- **⚠ Only** shows just the lines worth a look: near ties, chain breaks, residues with no
+  template.
+- **Re-survey** solves again with your choices held. Choices are not independent — the
+  hydrogen-bond network couples neighbouring sites — so holding one flip can change what the
+  residues around it should do, and this shows you before anything is applied.
+- **Apply** prepares the structure as reviewed, in **one** undoable step, and the review
+  becomes the protein's preparation report, led by what you decided by hand ("Left as in the
+  file, by hand", "Chosen by hand: … (proposed: …)") so the document records how its structure
+  was made. **Reset** puts every line back as the survey proposed.
+
+What you have decided so far is saved with the document until you apply it. Reopening the
+document surveys the structure again and puts your decisions back, so the costs shown are
+always worked out from the structure as it is.
+
 ### Dock
 
 **Protein ▸ Dock…** docks the document's ligands into a pocket with
