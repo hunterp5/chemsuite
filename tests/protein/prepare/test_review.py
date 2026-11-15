@@ -123,7 +123,7 @@ def test_an_unticked_repair_leaves_that_residue_as_the_file_has_it(cut) -> None:
     missing = {issue.label: issue for issue in found.issues if issue.kind == inspect.MISSING}
     assert set(missing) == {"A/ARG 10", "A/TYR 29"} and all(i.fixable for i in missing.values())
     decisions = review.decisions_from(found, skip_issues={missing["A/ARG 10"].id: True})
-    assert decisions.repair == frozenset({missing["A/TYR 29"].residue})
+    assert decisions.repair == frozenset({"A/TYR 29"})
     done = pipeline.prepare(cut, NO_WATERS, decisions=decisions)
     s = done.structure
 
@@ -137,7 +137,7 @@ def test_an_unticked_repair_leaves_that_residue_as_the_file_has_it(cut) -> None:
 
 def test_waters_can_be_kept_or_dropped_one_by_one(kinase) -> None:
     water = np.flatnonzero(kinase.res_name == "HOH")
-    first, second = int(water[0]), int(water[1])
+    first, second = (kinase.residue_label(int(r)) for r in water[:2])
     keep_one = pipeline.Decisions(keep_waters=frozenset({first}))
     kept = pipeline.keep_waters(kinase, pipeline.NONE, keep_one)
     assert (kept.res_name == "HOH").sum() == 1
@@ -155,3 +155,28 @@ def test_a_review_warns_exactly_where_the_report_does(kinase) -> None:
     flagged = {row.residue for row in found.prepared.report if row.warn}
     warned = {c.residue for c in found.choices if c.warn}
     assert warned and warned <= flagged
+
+
+def test_decisions_still_mean_their_residues_after_an_edit_elsewhere(cut) -> None:
+    """Decisions are kept with the document and applied later: deleting a residue before the
+    ones they name must not move them onto its neighbours."""
+    found = review.survey("CRN", cut, NO_WATERS)
+    missing = next(i for i in found.issues if i.label == "A/ARG 10")
+    amide = next(c for c in found.choices if c.kind == sites.AMIDE)
+    other = next(s.label for k, s in enumerate(amide.states) if k != amide.chosen)
+    decisions = review.decisions_from(found, skip_issues={missing.id: True},
+                                      overrides={amide.id: other})  # fmt: skip
+    first = _residue(cut, "A/THR 1")
+    span = cut.atoms_of(first)
+    keep = np.ones(cut.n_atoms, dtype=bool)
+    keep[span.start : span.stop] = False
+    shorter = cut.subset(keep)  # every residue index after it moves down by one
+    again = review.survey("CRN", shorter, NO_WATERS, decisions=decisions)
+    assert {i.id for i in again.issues if i.kind == inspect.MISSING} >= {missing.id}
+    held = again.choice(amide.id)
+    assert held is not None and held.state.label == other
+    s = again.prepared.structure
+    span = s.atoms_of(_residue(s, "A/ARG 10"))
+    assert "CZ" not in {str(s.name[i]) for i in range(span.start, span.stop)}  # left alone
+    span = s.atoms_of(_residue(s, "A/TYR 29"))
+    assert "OH" in {str(s.name[i]) for i in range(span.start, span.stop)}  # still built

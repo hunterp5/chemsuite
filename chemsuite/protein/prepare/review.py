@@ -156,8 +156,10 @@ def survey(
 
 
 def _issue_id(finding: inspection.Finding) -> str:
+    """A name for the issue that still means it when the document reopens, or after an edit
+    elsewhere in the structure: its kind, its residue's label and its atoms."""
     atoms = ",".join(finding.atoms)
-    return f"{finding.kind}:{finding.residue}:{atoms}"
+    return f"{finding.kind}:{finding.label}:{atoms}"
 
 
 def _choices(prepared: Prepared) -> tuple[Choice, ...]:
@@ -181,7 +183,7 @@ def _choices(prepared: Prepared) -> tuple[Choice, ...]:
         )
         out.append(
             Choice(
-                keys[i] if i < len(keys) else f"{site.kind}:{site.residue}",
+                keys[i] if i < len(keys) else pipeline.site_key(prepared.structure, site),
                 site.kind,
                 prepared.structure.residue_label(site.residue),
                 site.residue,
@@ -214,7 +216,7 @@ def decisions_from(
     repair: set[int] | None = None
     if any(i.kind == inspection.MISSING and i.id in skipped for i in found.issues):
         repair = {
-            i.residue
+            i.label
             for i in found.issues
             if i.kind == inspection.MISSING and i.residue >= 0 and i.id not in skipped
         }

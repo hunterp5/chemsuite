@@ -35,7 +35,7 @@ within it), and the result each group's pKa and protonated share. A group betwee
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -76,15 +76,18 @@ class Decisions:
     """What the chemist chose, against what the preparation would have done on its own.
 
     Everything is optional: the default decides nothing, so ``prepare`` runs as it always has.
+    Residues are named by their labels (``A/ARG 10``, :meth:`Structure.residue_label`), not
+    their indices: an index moves when a residue before it is deleted or a water dropped, and a
+    decision kept with the document must still mean the same residue when it is applied.
     """
 
     #: residues whose missing atoms are built; None for every one that can be
-    repair: frozenset[int] | None = None
+    repair: frozenset[str] | None = None
     #: waters kept whatever :attr:`Options.waters` says, and waters dropped whatever it says
-    keep_waters: frozenset[int] = frozenset()
-    drop_waters: frozenset[int] = frozenset()
+    keep_waters: frozenset[str] = frozenset()
+    drop_waters: frozenset[str] = frozenset()
     #: residue → which alternate location to keep (the highest occupancy by default)
-    altlocs: Mapping[int, str] = field(default_factory=dict)
+    altlocs: Mapping[str, str] = field(default_factory=dict)
     #: a site's key (:func:`site_key`) → the state that site must take, by its label
     states: Mapping[str, str] = field(default_factory=dict)
 
@@ -100,12 +103,20 @@ class Decisions:
 
 
 def site_key(s: Structure, site: sites.Site) -> str:
-    """A name for *site* that survives a second preparation of the same structure: its kind,
-    its residue, and the atoms it hangs from and moves (a phosphate has three rotors, one
-    residue)."""
+    """A name for *site* that survives a second preparation of the same structure, and an
+    edit elsewhere in it: its kind, its residue's label, and the atoms it hangs from and moves
+    (a phosphate has three rotors, one residue)."""
     anchor = str(s.name[site.anchors[0]]) if len(site.anchors) else ""
     moving = str(s.name[site.moving[0]]) if len(site.moving) else ""
-    return f"{site.kind}:{site.residue}:{anchor}/{moving}"
+    return f"{site.kind}:{s.residue_label(site.residue)}:{anchor}/{moving}"
+
+
+def residues_named(s: Structure, labels: Iterable[str]) -> list[int]:
+    """The residues of *s* with these labels (a label *s* does not have is passed over)."""
+    wanted = set(labels)
+    if not wanted:
+        return []
+    return [r for r in range(s.n_residues) if s.residue_label(r) in wanted]
 
 
 @dataclass(frozen=True)
@@ -156,8 +167,9 @@ def prepare(
     library = Library(ccd)
     report = inspect(s, library, cancel)
     if options.repair:
-        s = repair.build_missing(repair.one_location(s, dict(chosen.altlocs) or None),
-                                 library, cancel, only=chosen.repair)  # fmt: skip
+        located = repair.one_location(s, _altlocs(s, chosen.altlocs))
+        only = None if chosen.repair is None else frozenset(residues_named(located, chosen.repair))
+        s = repair.build_missing(located, library, cancel, only=only)
     check(cancel)
     s = keep_waters(s, options.waters, chosen)
     protonated = hydrogens.add_hydrogens(s, library, ccd, cancel)
@@ -302,10 +314,17 @@ def keep_waters(s: Structure, which: str, chosen: Decisions | None = None) -> St
             residues = np.unique(s.residue_of[keep])
             drop &= ~np.isin(s.residue_of, residues)
     if chosen.keep_waters:
-        drop &= ~np.isin(s.residue_of, list(chosen.keep_waters))
+        drop &= ~np.isin(s.residue_of, residues_named(s, chosen.keep_waters))
     if chosen.drop_waters:
-        drop |= water & np.isin(s.residue_of, list(chosen.drop_waters))
+        drop |= water & np.isin(s.residue_of, residues_named(s, chosen.drop_waters))
     return s.subset(~drop)
+
+
+def _altlocs(s: Structure, chosen: Mapping[str, str]) -> dict[int, str] | None:
+    """The chemist's alternate locations, by residue index (None: the defaults)."""
+    if not chosen:
+        return None
+    return {r: chosen[s.residue_label(r)] for r in residues_named(s, chosen)}
 
 
 def warns(c: solve.Choice, fraction: float | None = None) -> bool:
