@@ -34,7 +34,6 @@ from chemsuite.core.wording import plural
 from chemsuite.protein.prepare import pipeline, sites
 from chemsuite.protein.structure import store
 from chemsuite.protein.structure.model import Structure
-from chemsuite.protein.ui.report import TOOL_ID as REPORT_ID
 from chemsuite.protein.workspace.reports import PrepareReport, Row
 
 from .tool import KIND, ccd, dialog_parent, protein_workspace
@@ -199,7 +198,7 @@ def show_report(ctx: ToolContext, report: PrepareReport):
     """Open the report panel on *report*, or fill the open one."""
     from chemsuite.protein.ui.report import PrepareReportPanel
 
-    panel = ctx.find_panel(REPORT_ID)
+    panel = ctx.find_panel(PrepareReportPanel.tool_id)
     if isinstance(panel, PrepareReportPanel):
         panel.fill(report)
         return panel

@@ -178,7 +178,10 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
   orientation makes a hydrogen bond and a different one was nearly as good: the free ones are
   counted in a line of their own, as the waters are.
   The **docking export** (Meeko PDBQT, an ensemble for ambiguous sites) moved to the docking
-  plan, where the receptor is written.
+  plan, where the receptor is written. Done 2026-11-14 for a single receptor
+  (`protein/dock/pdbqt.py`; residues Meeko does not know are left out and named in
+  `Receptor.dropped`, since Meeko would otherwise download them from the CCD); the ensemble
+  for ambiguous sites is still to do.
 - **P5**: restrained relax (now ROADMAP §7a 3, "Relax after preparation": optional, an in-app
   MMFF pocket tier and an OpenMM tier, planned on its own) and MD hand-off through the OpenMM
   worker. Per-site alternate states for MD.

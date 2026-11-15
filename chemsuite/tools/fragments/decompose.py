@@ -240,13 +240,15 @@ def restore(ctx: ToolContext, state: dict):
     """Reopen a saved panel: fragment the rows it covered again."""
     from chemsuite.tools.sar.common import RerunPanel, saved_rows
 
+    from .panel import FragmentPanel
+
     structure = state["structure"]
     method = state.get("method", "brics")
     activity = state.get("activity", NO_ACTIVITY)
     oids = np.asarray(saved_rows(ctx, state, structure), dtype=np.int64)
     min_size, plain = int(state.get("min_size", MIN_SIZE)), bool(state.get("plain", False))
     recipe = {"structure": structure, "min_size": min_size, "plain": plain}
-    holder = RerunPanel("fragments", f"{method.upper()} Fragments", state)
+    holder = RerunPanel(FragmentPanel.tool_id, f"{method.upper()} Fragments", state)
     ctx.add_panel(holder, holder.title())
     cells = structure_cells(ctx, structure, oids)
 

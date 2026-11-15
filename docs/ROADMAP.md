@@ -411,6 +411,14 @@ pip extra.
    flexible-side-chain docking; ensemble and consensus scoring; pocket detection and
    druggability; interaction fingerprints across poses, building on Interactions to Table. The
    receptor is prepared by `protein/prepare` (phase 3's P1 is enough for docking).
+   - **Progress (2026-11-14):** Stage A is Prepare (phase 3's P4). Stage B: AutoDock Vina 1.2.7
+     bundled for Windows, macOS and Linux with its licence and pinned hashes
+     (`protein/dock/bin`, `scripts/fetch_vina.py`); the Qt-free engine `protein/dock/` (box,
+     Meeko PDBQT, the Vina binary, many ligands with progress, cancel and finished ligands
+     kept); **Protein ▸ Dock…** and **Rescore Poses…** (`tools/protein/dock.py`,
+     `dock_dialog.py`). Redocking 80U into 5GNK puts the top pose 1.13 Å from the crystal's.
+     Not yet tried by hand in the app. Next: Gnina, ensembles, covalent and flexible docking,
+     pocket detection, PLIF across poses.
 3. **Native preparation** (base install, high priority; plan approved 2026-11-11 in
    `docs/PREPARE_PLAN.md`).
    - **Progress:** P0 (benchmark) and P1 (repair, hydrogens, flips, His states, rotors;
