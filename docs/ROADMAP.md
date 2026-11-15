@@ -400,9 +400,12 @@ pKa, standardise and the descriptors follow once it beats MolGpKa on the test se
 
 ### 7a. Proteins: from viewer to medicinal-chemistry workspace (revised 2026-11-11)
 
-Proteins are stored in the document; ligands, poses and scores are table rows linked to their
-protein by a `Protein` column, so plots, filters and SAR work on them. Each phase is usable on
-its own and starts in plan mode.
+Proteins are stored in the document; ligands are table rows linked to their protein by a
+`Protein` column, so plots, filters and SAR work on them. **Results worked out in the Protein
+Viewer stay in the viewer** (decided 2026-11-15, reversing "poses as table rows"): the
+preparation report, the Inspect review and the docking runs dock beside the pocket in the
+viewer's window and are kept with the document; poses reach the table only through **Copy to
+Table**. Each phase is usable on its own and starts in plan mode.
 
 **Dependencies, decided:** preparation is our own Qt-free code in the base install (hydrogens
 from CCD templates: the benchmark found gemmi's `prepare_topology` misses entries without CCP4
@@ -421,8 +424,9 @@ pip extra.
    across proteins, FEP mapping.
 2. **Docking and PLIF.** AutoDock Vina as an external program on every platform, Gnina optional
    (Linux, Windows through WSL); the box from a ligand or a selection; Meeko for PDBQT; one
-   process per ligand with progress, cancel and finished rows kept; poses as table rows (pose
-   rank, Vina score, CNN score, parent) shown in the pocket by the pose display; covalent and
+   process per ligand with progress, cancel and finished rows kept; poses kept in the viewer's
+   Poses panel, every run side by side (pose rank, Vina score, CNN score, parent), shown in the
+   pocket by the pose display and copied to table rows on request; covalent and
    flexible-side-chain docking; ensemble and consensus scoring; pocket detection and
    druggability; interaction fingerprints across poses, building on Interactions to Table. The
    receptor is prepared by `protein/prepare` (phase 3's P1 is enough for docking).
@@ -432,8 +436,10 @@ pip extra.
      Meeko PDBQT, the Vina binary, many ligands with progress, cancel and finished ligands
      kept); **Protein ▸ Dock…** and **Rescore Poses…** (`tools/protein/dock.py`,
      `dock_dialog.py`). Redocking 80U into 5GNK puts the top pose 1.13 Å from the crystal's.
-     Not yet tried by hand in the app. Next: Gnina, ensembles, covalent and flexible docking,
-     pocket detection, PLIF across poses.
+     **2026-11-15:** poses moved out of the table into the viewer's Poses panel (Copy to Table
+     on request); every run kept and numbered with its scoring function, a rescore a run
+     beside the dock it scored, runs removable. Not yet tried by hand in the app. Next: Gnina,
+     ensembles, covalent and flexible docking, pocket detection, PLIF across poses.
 3. **Native preparation** (base install, high priority; plan approved 2026-11-11 in
    `docs/PREPARE_PLAN.md`).
    - **Progress:** P0 (benchmark) and P1 (repair, hydrogens, flips, His states, rotors;
@@ -443,7 +449,12 @@ pip extra.
      by default (`docs/prepare/p2-review.md`). P3 (ligand protomers and tautomers, pocket
      waters, metal coordination) done 2026-11-13. **P4, the UI, done 2026-11-14: Protein ▸
      Prepare… and its report panel**, applied as one undoable edit and saved with the document.
-     Next: a second titration round (PROPKA-style H-bond determinants) to beat the null model
+     **2026-11-15: Protein ▸ Inspect…**, the same preparation laid out to review before it is
+     applied: each repair can be left undone, each site's state, alternate location and
+     crystal water overruled (`Decisions`, pinned states re-solved around), Re-survey, Apply as
+     one edit, and the report records what was chosen by hand. The ⚠ rule is one function
+     (`pipeline.warns`) for the report and the review. A one-click "use the other choice" on a
+     report line was planned and dropped: Inspect is the route. Next: a second titration round (PROPKA-style H-bond determinants) to beat the null model
      and turn titration on, and the receptor export for docking (phase 2).
    - **Repair:** missing heavy atoms and caps from the CCD templates; short loops closed, longer
      gaps capped and marked ⚠.

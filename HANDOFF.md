@@ -1,4 +1,4 @@
-# Handoff: state of play (updated 2026-11-14, on Windows)
+# Handoff: state of play (updated 2026-11-15, on Windows)
 
 The rules live in `CLAUDE.md`; this file is only what is in flight, so the next session on the
 other machine can pick it up. Update it at the end of a session that leaves work open.
@@ -176,8 +176,31 @@ other machine can pick it up. Update it at the end of a session that leaves work
     `score_only` passes `--autobox` when given none. Redocking 80U into 5GNK puts the top pose
     1.13 Å from the crystal one.
     **Still to do:** the by-hand run in the app (plan's step 4).
-  - **Next:** try docking by hand in the app; a second titration round (PROPKA-style H-bond determinants, His titrated
-    for charge only) is listed in p2-review.md §4.
+  - **Results in the viewer, Inspect, hydrogen-aware H-bonds (2026-11-15, on `dev`):**
+    - The viewer's window holds docks (`app/document/panel_window.py`: `PanelWindow`,
+      `WindowPanels`; `ToolContext.add_panel(..., beside=)`). The Prepare report, the Inspect
+      panel and the Poses panel dock there, falling back to the main window.
+    - Poses stay in the viewer (`protein/workspace/poses.py`, `protein/ui/poses.py`): every
+      run kept and numbered with its scoring function, a rescore a run of its own, Remove Run,
+      Copy to Table on request. Saved as a list per protein (an older single run reads as run 1).
+    - **Protein ▸ Inspect…** (`protein/prepare/review.py`, `protein/ui/inspector.py`,
+      `tools/protein/inspect_dialog.py`): `pipeline.Decisions` (repairs, waters, alternate
+      locations, pinned states; residues named by label so edits elsewhere cannot move them),
+      Re-survey, Apply as one edit, a report that records what was chosen by hand, the review
+      saved with the document. One ⚠ rule, `pipeline.warns`, for the report and the review.
+      ASH/GLH/LYN/CYM/TYM can be chosen only with titration on (documented; His can always
+      be HIP).
+    - H-bonds use the hydrogen where there is one (H···A ≤ 2.5 Å, D–H···A ≥ 100°), except a
+      hydroxyl/thiol/ammonium whose H points elsewhere, judged on heavy atoms.
+    - Ligands draw as purple sticks; ions amber; metal-contact lines light gold.
+    - Not done: the PanelWindow's dock arrangement is not saved; nothing tried by hand yet.
+  - **Next (protein):** surface options (kind vdW/SAS/SES with probe and quality, colour by any
+    scheme or flat, opacity per surface and pocket skin, solid/mesh/dots, carve, smoothing) —
+    asked for 2026-11-15, needs plan mode. Open questions for the user: the default kind
+    (SES vs today's Blob; saved documents load as Blob) and the charges for Coulombic
+    colouring. Then: try Prepare, Inspect and docking by hand in the app; a second titration
+    round (PROPKA-style H-bond determinants, His titrated for charge only) is listed in
+    p2-review.md §4.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 
@@ -277,8 +300,7 @@ other machine can pick it up. Update it at the end of a session that leaves work
     coverage for every Prepare state, massless atoms in the minimiser, WSL kill/stdin) and the
     write-up in `docs/simulate/m0-review.md`.
 
-1. TMAP and Chemical Space Networks (ROADMAP §7.0d, high priority): plan them together in plan
-   mode.
+1. Protein surface options (see In progress), in plan mode.
 2. Graceful exit (ROADMAP §7.0).
 3. Bioactive conformers (§7.0b) or protein Phase 1, Alignment (§7a), each starting in plan mode.
 
