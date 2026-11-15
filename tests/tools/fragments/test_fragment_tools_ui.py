@@ -360,3 +360,68 @@ def test_prepare_reagents_groups_its_kinds_and_describes_them(reagents) -> None:
     assert dialog.choice.itemData(0) is None  # a group heading, not a kind
     assert dialog.choice.reagent().id == "acyl-chloride"  # the first kind is current
     assert "chloride leaves" in dialog.choice.itemData(1, Qt.ItemDataRole.ToolTipRole)
+
+
+def _library(chem, qtbot, dialog) -> tuple:
+    opened: list = []
+    chem.open_table = lambda table, message="": opened.append((table, message))
+    dialog.run()
+    qtbot.waitUntil(lambda: bool(opened), timeout=20_000)
+    return opened[0]
+
+
+def test_rgroups_takes_a_position_from_a_prepared_file(chem, qtbot, tmp_path) -> None:
+    """The whole point of Prepare Reagents: a file of fragments fills an attachment point."""
+    path = tmp_path / "acyl.smi"
+    path.write_text("*C(C)=O\n*C(=O)CC\n", encoding="utf-8")
+    dialog = chem.open_tool("rgroup-library")
+    dialog.core.set_text("C1CCN([*:1])CC1")
+    dialog.set_file(0, path)
+    assert dialog.sources[0].currentText() == "File: acyl.smi"
+    assert dialog.combinations() is None  # not known until the file is read
+    assert dialog.primary.text() == "Enumerate"
+    assert dialog.primary.isEnabled()
+    library, message = _library(chem, qtbot, dialog)
+    assert library.column_names == ["R1", "Product"]
+    products = {library.cell("Product", int(o)) for o in library.oids}
+    assert products == {"CC(=O)N1CCCCC1", "CCC(=O)N1CCCCC1"}  # the amides
+    assert "2 products from 2 combinations" in message
+
+
+def test_rgroups_reads_the_fragments_of_a_prepared_set_not_its_reagents(
+    chem, qtbot, tmp_path
+) -> None:
+    """A saved set lists the reagent beside its fragment; only the fragment can be attached."""
+    path = tmp_path / "prepared.csv"
+    path.write_text("Reagent,Fragment\nCC(=O)Cl,*C(C)=O\n", encoding="utf-8")
+    dialog = chem.open_tool("rgroup-library")
+    dialog.core.set_text("C1CCN([*:1])CC1")
+    dialog.set_file(0, path)
+    library, _message = _library(chem, qtbot, dialog)
+    assert library.cell("Product", int(library.oids[0])) == "CC(=O)N1CCCCC1"
+    assert library.cell("R1", int(library.oids[0])) == "*C(C)=O"
+
+
+def test_rgroups_and_h_still_applies_to_a_file(chem, qtbot, tmp_path) -> None:
+    path = tmp_path / "acyl.smi"
+    path.write_text("*C(C)=O\n", encoding="utf-8")
+    dialog = chem.open_tool("rgroup-library")
+    dialog.core.set_text("C1CCN([*:1])CC1")
+    dialog.set_file(0, path)
+    dialog.hydrogens[0].setChecked(True)
+    library, _message = _library(chem, qtbot, dialog)
+    products = {library.cell("Product", int(o)) for o in library.oids}
+    assert products == {"CC(=O)N1CCCCC1", "C1CCNCC1"}  # the amide and the bare core
+
+
+def test_rgroups_reports_a_file_without_attachment_points(chem, qtbot, tmp_path) -> None:
+    path = tmp_path / "raw.smi"
+    path.write_text("CC(=O)Cl\nCCC(=O)Cl\n", encoding="utf-8")
+    dialog = chem.open_tool("rgroup-library")
+    dialog.core.set_text("C1CCN([*:1])CC1")
+    dialog.set_file(0, path)
+    dialog.run()
+    qtbot.waitUntil(
+        lambda: "as a substituent" in chem.statusBar().currentMessage(), timeout=20_000
+    )
+    assert "Prepare Reagents" in chem.statusBar().currentMessage()

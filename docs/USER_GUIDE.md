@@ -505,12 +505,20 @@ choose on one numbered core — the other direction from
   [Central Ring](#central-ring) write, so a decomposition feeds straight back in. **Draw…**
   opens the sketcher, where the **R** button places the attachment points. A row appears for
   each position, up to six.
-- **Substituents** for each position come from a column or a typed list.
+- **Substituents** for each position come from a column, a typed list or a file.
   - A **column** uses its distinct values over the chosen rows: point R1 at the `R1` column a
     decomposition wrote and you get the substituents the series already uses.
   - **Typed…** takes one substituent per line (or comma separated), written as `*Cl`, `*OC`,
     with `H` for an unsubstituted position.
+  - **From a File…** takes them from a file of prepared reagents — what
+    [Prepare Reagents](#prepare-reagents) saves — so a curated set of acyl chlorides or amines
+    can be pointed at one position and reused across cores. Any file chemsuite opens will do
+    (SDF, SMILES, CSV, TSV, Excel). The column holding the attachment points is the one used,
+    so a saved set's `Reagent` column is passed over in favour of its `Fragment` column,
+    whichever order they are in. The file is read when you press Enumerate, so until then the
+    button says just **Enumerate** and the number of combinations is unknown.
   - **and H** also leaves the position unsubstituted, without adding `H` to the list by hand.
+    It applies to a file as well.
 - **Output** is a virtual library in a new window: one product per row, with an `R1`, `R2`…
   column holding the substituent it came from. Up to 2,000,000 combinations.
 - A substituent that cannot be read, or cannot be attached, is counted in the message rather

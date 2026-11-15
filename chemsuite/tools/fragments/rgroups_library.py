@@ -18,31 +18,67 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QPlainTextEdit,
     QVBoxLayout,
 )
 
-from chemsuite.analysis.reactions import Library, combinations_count
+from chemsuite.analysis.reactions import Library, TemplateError, combinations_count
 from chemsuite.analysis.rgroup_library import (
     POOL_MIN_COMBINATIONS,
     CoreError,
     core_positions,
     enumerate_rgroups,
     is_hydrogen,
+    parse_group,
 )
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, inline
 from chemsuite.app.widgets.reaction_text import ReactionText
+from chemsuite.core.jobs import Cancelled
 from chemsuite.core.wording import plural
-from chemsuite.tools.reactions.enumerate import MAX_COMBINATIONS, finish_library
+from chemsuite.tools.reactions.enumerate import (
+    FILE,
+    FILE_FILTER,
+    MAX_COMBINATIONS,
+    finish_library,
+    load_blocks,
+)
 
 TYPED = "\x00typed"  # the combo item that asks for a typed list
 MAX_POSITIONS = 6
+
+
+def _from_file(path: Path, add_hydrogen: bool) -> list[str]:
+    """The substituents in *path*: its first column that holds attachment points."""
+    try:
+        found = load_blocks(path, prepared)
+    except TemplateError:
+        found = []
+    if not any(parse_group(text, 1) is not None for text in found):
+        raise CoreError(
+            f"Nothing in {path.name} can be used as a substituent: it needs an attachment "
+            "point, so prepare the reagents first (Prepare Reagents…)."
+        )
+    if add_hydrogen and not any(is_hydrogen(text) for text in found):
+        found = [*found, "H"]
+    return found
+
+
+def prepared(texts: list[str]) -> bool:
+    """Whether *texts* can be used as substituents: at least one has an attachment point.
+
+    A saved set of prepared reagents holds the reagents beside their fragments, so this is
+    what picks the fragments out of such a file.
+    """
+    return any(parse_group(text, 1) is not None or is_hydrogen(text) for text in texts)
 
 
 class GroupsDialog(QDialog):
@@ -77,6 +113,7 @@ class RGroupLibraryDialog(ToolDialog):
         super().__init__(ctx.parent, "R-Groups on a Core", guide="r-groups-on-a-core")
         self.ctx = ctx
         self.typed: dict[int, str] = {}  # position index -> typed list
+        self.files: dict[int, Path] = {}  # position index -> a file of prepared reagents
 
         core = self.section("Core")
         self.core = core.row(
@@ -96,6 +133,7 @@ class RGroupLibraryDialog(ToolDialog):
             for name in self.ctx.table.column_names:
                 combo.addItem(name, name)
             combo.addItem("Typed…", TYPED)
+            combo.addItem("From a File…", FILE)
             combo.activated.connect(lambda _index, slot=i: self._source_chosen(slot))
             combo.currentIndexChanged.connect(lambda _index: self.refresh())
             box = QCheckBox("and H")
@@ -106,8 +144,8 @@ class RGroupLibraryDialog(ToolDialog):
                 f"R{i + 1}",
                 inline(combo, box, stretch=0),
                 help="The substituents for this position: a column (an R1 column a "
-                "decomposition wrote), or a typed list. “and H” also leaves the position "
-                "unsubstituted.",
+                "decomposition wrote), a typed list, or a file of prepared reagents "
+                "(Prepare Reagents…). “and H” also leaves the position unsubstituted.",
             )
         self.rows = groups.row("Rows", RowsChoice(ctx))
 
@@ -124,19 +162,49 @@ class RGroupLibraryDialog(ToolDialog):
 
     def _source_chosen(self, slot: int) -> None:
         combo = self.sources[slot]
-        if combo.currentData() != TYPED:
-            self.typed.pop(slot, None)
-            self.refresh()
-            return
-        text = ask_groups(self, f"R{slot + 1}", self.typed.get(slot, ""))
-        if text.strip():
-            self.typed[slot] = text
-            count = len(self._split(text))
-            combo.setItemText(combo.count() - 1, f"Typed: {plural(count, 'group')}")
+        chosen = combo.currentData()
+        if chosen == TYPED:
+            text = ask_groups(self, f"R{slot + 1}", self.typed.get(slot, ""))
+            if text.strip():
+                self.files.pop(slot, None)
+                self.typed[slot] = text
+                self._relabel_source(slot)
+            else:
+                combo.setCurrentIndex(0)
+                self.typed.pop(slot, None)
+        elif chosen == FILE:
+            path, _ = QFileDialog.getOpenFileName(self, f"R{slot + 1}", "", FILE_FILTER)
+            if path:
+                self.typed.pop(slot, None)
+                self.set_file(slot, Path(path))
+            else:
+                combo.setCurrentIndex(0)
+                self.files.pop(slot, None)
         else:
-            combo.setCurrentIndex(0)
             self.typed.pop(slot, None)
+            self.files.pop(slot, None)
         self.refresh()
+
+    def _relabel_source(self, slot: int) -> None:
+        """Name the chosen file or typed list on its combo item."""
+        combo = self.sources[slot]
+        text = self.typed.get(slot, "")
+        count = len(self._split(text)) if text else 0
+        combo.setItemText(
+            combo.findData(TYPED), f"Typed: {plural(count, 'group')}" if count else "Typed…"
+        )
+        path = self.files.get(slot)
+        combo.setItemText(combo.findData(FILE), f"File: {path.name}" if path else "From a File…")
+
+    def set_file(self, slot: int, path: Path) -> None:
+        """Take position *slot*'s substituents from the structures in *path*."""
+        self.files[slot] = path
+        self._relabel_source(slot)
+        self.sources[slot].setCurrentIndex(self.sources[slot].findData(FILE))
+        self.refresh()
+
+    def uses_file(self, slot: int) -> bool:
+        return self.sources[slot].currentData() == FILE
 
     @staticmethod
     def _split(text: str) -> list[str]:
@@ -147,9 +215,15 @@ class RGroupLibraryDialog(ToolDialog):
         return list(seen)
 
     def groups_for(self, slot: int) -> list[str]:
-        """The substituents chosen for this position, with H last when it is wanted."""
+        """The substituents chosen for this position, with H last when it is wanted.
+
+        A file's substituents are not read here: they are loaded in the job, so the dialog
+        never blocks on a large file and the count is not known until the run.
+        """
         combo = self.sources[slot]
         chosen = combo.currentData()
+        if chosen == FILE:
+            return []
         if chosen == TYPED:
             found = self._split(self.typed.get(slot, ""))
         else:
@@ -163,7 +237,10 @@ class RGroupLibraryDialog(ToolDialog):
         found = self.ctx.distinct_values(name, self.rows.oids())
         return [text for text in found if not is_hydrogen(text)]
 
-    def combinations(self) -> int:
+    def combinations(self) -> int | None:
+        """How many products will be made, or None while a file's substituents are unknown."""
+        if any(self.uses_file(i) for i in self._slots()):
+            return None
         return combinations_count([len(self.groups_for(i)) for i in self._slots()])
 
     # -- ToolDialog -------------------------------------------------------------------------------
@@ -188,10 +265,10 @@ class RGroupLibraryDialog(ToolDialog):
         if len(positions) > MAX_POSITIONS:
             return f"Cores with more than {MAX_POSITIONS} attachment points are not supported."
         for slot in self._slots():
-            if not self.groups_for(slot):
+            if not self.uses_file(slot) and not self.groups_for(slot):
                 return f"Choose substituents for R{slot + 1}."
         count = self.combinations()
-        if count > MAX_COMBINATIONS:
+        if count is not None and count > MAX_COMBINATIONS:
             return (
                 f"{count:,} combinations is more than {MAX_COMBINATIONS:,}: use fewer substituents."
             )
@@ -205,20 +282,37 @@ class RGroupLibraryDialog(ToolDialog):
         ctx = self.ctx
         core = self.core.text().strip()
         slots = list(self._slots())
-        groups = [self.groups_for(i) for i in slots]
+        #: a file to read in the job, or the substituents already known
+        sources: list[list[str] | Path] = [
+            self.files[i] if self.uses_file(i) else self.groups_for(i) for i in slots
+        ]
+        extra_h = [self.hydrogens[i].isChecked() for i in slots]
         names = [f"R{i + 1}" for i in slots]
-        total = self.combinations()
 
         def work(job):
-            return enumerate_rgroups(
-                core,
-                groups,
-                executor=ctx.workers_for(total, POOL_MIN_COMBINATIONS),
-                progress=job.report,
-                cancel=job.cancel_token,
-            )
+            groups = [
+                _from_file(source, add_h) if isinstance(source, Path) else source
+                for source, add_h in zip(sources, extra_h, strict=True)
+            ]
+            count = combinations_count([len(column) for column in groups])
+            if count > MAX_COMBINATIONS:
+                raise CoreError(
+                    f"{count:,} combinations is more than {MAX_COMBINATIONS:,}: use fewer "
+                    "substituents."
+                )
+            try:
+                return groups, enumerate_rgroups(
+                    core,
+                    groups,
+                    executor=ctx.workers_for(count, POOL_MIN_COMBINATIONS),
+                    progress=job.report,
+                    cancel=job.cancel_token,
+                )
+            except Cancelled as stopped:  # keep the products already made
+                raise Cancelled((groups, stopped.partial) if stopped.partial else None) from None
 
-        def done(library: Library) -> None:
+        def done(result: tuple[list[list[str]], Library]) -> None:
+            groups, library = result
             finish_library(ctx, groups, library, names=names)
 
         return ctx.run("Enumerating a library…", work, done, keep_partial=True)

@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -368,21 +368,37 @@ class EnumerateDialog(ToolDialog):
         return ctx.run("Enumerating a library…", work, done, keep_partial=True)
 
 
-def load_blocks(path: Path) -> list[str]:
-    """The distinct structures of the first structure column in *path*, as text."""
+def load_blocks(path: Path, wanted: Callable[[list[str]], bool] | None = None) -> list[str]:
+    """The distinct structures of the first usable structure column in *path*, as text.
+
+    With *wanted*, a column whose values it refuses is passed over: a saved set of prepared
+    reagents holds the reagents beside their fragments, and only the fragments can be used as
+    substituents. Structure columns are tried first and then, since a delimited file's
+    structure column is recognised by its header (``SMILES``, ``Structure``…) and a saved
+    ``Fragment`` column is not, every other column.
+    """
     from chemsuite.io.load import load_table
 
     table = load_table(path)
-    name = next(
-        (n for n in table.column_names if isinstance(table.column(n), StructureColumn)), None
-    )
-    if name is None:
-        raise TemplateError(f"{path.name} has no structure column.")
-    seen: dict[str, None] = {}
-    for text in table.column(name).displays(np.arange(len(table))):
-        if text:
-            seen.setdefault(text, None)
-    return list(seen)
+    columns = [(name, table.column(name)) for name in table.column_names]
+    rows = np.arange(len(table))
+
+    def texts(data) -> list[str]:
+        return list(dict.fromkeys(t for t in data.displays(rows) if t))
+
+    structures = [(name, data) for name, data in columns if isinstance(data, StructureColumn)]
+    for _name, data in structures:
+        found = texts(data)
+        if found and (wanted is None or wanted(found)):
+            return found
+    if wanted is not None:  # a header the file readers do not know as structures
+        for name, data in columns:
+            if (name, data) in structures:
+                continue
+            found = texts(data)
+            if found and wanted(found):
+                return found
+    raise TemplateError(f"{path.name} has no structure column.")
 
 
 def finish_rows(ctx: ToolContext, oids: np.ndarray, products: list[list[str]]) -> dict[str, str]:
