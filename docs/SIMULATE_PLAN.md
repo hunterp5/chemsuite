@@ -176,6 +176,37 @@ It imports `protein.structure`, `protein.chem` and `core.jobs`; never Qt, `core.
 
 ## M3 — the minimisation protocol
 
+**Done 2026-11-15** (the app side, Qt-free; the UI is M4). As below, with:
+- `Prepared.built`: the uids of the heavy atoms Prepare built (filled residues, rebuilt side
+  chains, caps, OXT), to be kept with the document beside `states` in M4. They are never
+  restrained and are left out of every RMSD, since no deposited position says where they
+  belong. An explicit set, not a uid cutoff, so a later **Protein ▸ Minimise…** on a reopened
+  structure still knows them.
+- `spec.Stage` holds a restraint per class of heavy atom (`backbone`, `side_chains`,
+  `ligands`, `waters`, `ions`; `RESTRAINED`) and moves `hydrogens` (heavy atoms massless) or
+  `heavy atoms`. Stage 2 now holds ligands and ions at 10 kcal/mol/Å² and waters at 1, so
+  nothing unbonded drifts or collapses while the side chains settle. Restraints always pull
+  to the deposited start.
+- `MinimiseSpec.tighten` (3): while the held heavy atoms end further than `rmsd_limit`, the
+  last stage runs again from where it began with its restraints doubled (×2, ×4, ×8), each run
+  named in the stages. The worker measures the RMSD and returns it.
+- `tolerance` is OpenMM's: an RMS force, not the largest one. The largest left is reported.
+- `simulate/minimise.py`: `minimise(worker, structure, system, …, built=)` charges, runs and
+  measures (`measure`): RMSD overall / pocket (deposited heavy atoms within 5 Å of a small
+  molecule at the start) / ligand, the closest contact before and after (heavy atoms of
+  different residues, no ion, not bonded and sharing no bonded neighbour: an amide O and the
+  next N are 2.25 Å apart), the five residues that moved most, where the largest force is
+  left, the charges and versions. A cancelled run raises `Cancelled` with what it got to,
+  measured.
+- **Tuning, T4 lysozyme L99A with its ligand and crambin (GBn2, no waters kept, CUDA, under a
+  second a stage):** heavy-atom RMSD 0.22 / 0.17 Å, ligand 0.17 Å, pocket 0.18 Å. The surface
+  tips that swing up to 1 Å (Glu 108 OE1, Asn 116, Lys 124, Asp 127) move in stage 2. A
+  side-chain restraint there of 0 to 2 kcal/mol/Å² changes the largest move by only 0.06 Å:
+  exposed carboxylates relaxing in implicit solvent (Glu 108's moves off Gly 77's carbonyl O,
+  3.3 Å away in the crystal), not salt bridges forming. Holding them would mean freezing the
+  side chains, so stage 2 keeps 1 kcal/mol/Å². Whether kept crystal waters damp it is a
+  question for the M5 benchmark.
+
 Staged, so that nothing moves before its neighbours are sane:
 
 1. Hydrogens only (heavy atoms fixed or stiffly restrained — M0 gate 5).

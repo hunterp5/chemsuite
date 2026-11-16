@@ -35,9 +35,12 @@ Requests
         ``text``). Every protein residue and cap is given its template by name (never matched by
         graph alone), and every residue's charge in the system must be the spec's formal charge.
         Built systems are kept, by the whole request, charges included.
-    ``minimise`` ``{"system", "forcefield", "positions", "protocol", "platform"}``
-        the staged minimisation of :class:`~.spec.MinimiseSpec`; sends ``{"stage", "iteration",
-        "energy"}`` events as it goes and stops between iterations when asked.
+    ``minimise`` ``{"system", "forcefield", "positions", "protocol", "platform", "free"}``
+        the staged minimisation of :class:`~.spec.MinimiseSpec`, each class of heavy atom held to
+        where it started but those in ``free`` (atoms Prepare built); the last stage run again
+        with its restraints doubled while the held atoms end further than the limit. Sends
+        ``{"stage", "iteration", "energy"}`` events as it goes and stops between iterations when
+        asked; ``stages`` in the reply holds every run, and ``rmsd`` the held atoms' at the end.
 
 Replies go to a duplicate of the original stdout, and file descriptor 1 is pointed at stderr
 before anything is imported, so that a library's prints cannot corrupt the stream.
@@ -71,6 +74,9 @@ WATER_FILES = {"tip3p": "amber14/tip3p.xml", "opc": "amber19/opc.xml"}
 SOLVENT_FILES = {"gbn2": ["implicit/gbn2.xml"], "vacuum": []}
 PREFERRED = ("CUDA", "OpenCL", "CPU", "Reference")
 BACKBONE = frozenset(["N", "CA", "C", "O", "OXT"])
+#: the restraint classes, in the order of spec.RESTRAINED, by residue kind (protein: side chain)
+RESTRAINED = ("backbone", "side_chains", "ligands", "waters", "ions")
+CLASS_OF_KIND = {"protein": 1, "cap": 1, "molecule": 2, "water": 3, "ion": 4}
 EVENT_EVERY = 25  # minimiser iterations between energy events
 KEEP = 2  # built systems kept
 
@@ -227,14 +233,13 @@ def charges(request):
 
 # -- build --------------------------------------------------------------------------------------
 class Built:
-    def __init__(self, system, topology, labels, residue_of, heavy, backbone, small):
+    def __init__(self, system, topology, labels, residue_of, heavy, classes):
         self.system = system
         self.topology = topology
         self.labels = labels  # residue labels
         self.residue_of = residue_of  # residue of each atom
         self.heavy = heavy  # atom indices
-        self.backbone = backbone  # protein backbone heavy atoms
-        self.small = small  # small-molecule heavy atoms
+        self.classes = classes  # each heavy atom's restraint class (an index into RESTRAINED)
 
 
 _BUILT = {}
@@ -348,10 +353,9 @@ def _build(spec, ff):
 
     kinds = rows["kind"]
     heavy = [i for i, z in enumerate(atoms["element"]) if z != 1]
-    backbone = [i for i in heavy if kinds[residue_of[i]] == "protein"
-                and atoms["name"][i] in BACKBONE]
-    small = [i for i in heavy if kinds[residue_of[i]] == "molecule"]
-    return Built(system, topology, labels, residue_of, heavy, backbone, small)
+    classes = [0 if kinds[residue_of[i]] == "protein" and atoms["name"][i] in BACKBONE
+               else CLASS_OF_KIND[kinds[residue_of[i]]] for i in heavy]
+    return Built(system, topology, labels, residue_of, heavy, classes)
 
 
 # -- minimise -----------------------------------------------------------------------------------
@@ -371,6 +375,7 @@ def _platform(name):
 
 
 def minimise(request, inbox, ident):
+    import numpy
     import openmm
     from openmm import unit
 
@@ -381,49 +386,24 @@ def minimise(request, inbox, ident):
     n = made.system.getNumParticles()
     if len(flat) != 3 * n:
         raise ValueError(f"{len(flat) // 3} positions for {n} atoms")
-    start = [openmm.Vec3(flat[3 * i] / NM, flat[3 * i + 1] / NM, flat[3 * i + 2] / NM)
-             for i in range(n)]
+    start = numpy.asarray(flat, dtype=float).reshape(n, 3) / NM  # nm
+    free = {int(i) for i in request.get("free", [])}
+    held = [(i, c) for i, c in zip(made.heavy, made.classes) if i not in free]
+    run = Run(made, protocol, platform, properties, start, held, inbox, ident)
     positions = start
-    stages = []
-    first_energy = None
-    stopped = False
     for stage in protocol["stages"]:
-        system = copy.deepcopy(made.system)
-        for force in system.getForces():
-            force.setForceGroup(0)
-        if stage["moving"] == "hydrogens":
-            for i in made.heavy:
-                system.setParticleMass(i, 0.0)
-        else:
-            held = made.backbone if stage["moving"] == "side chains" else made.heavy
-            small = set(made.small) if stage["moving"] == "all" else set()
-            restraint = openmm.CustomExternalForce("0.5*k*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
-            for name in ("k", "x0", "y0", "z0"):
-                restraint.addPerParticleParameter(name)
-            for i in held:
-                k = stage["ligand_restraint"] if i in small else stage["restraint"]
-                if k > 0:
-                    restraint.addParticle(i, [k, start[i][0], start[i][1], start[i][2]])
-            restraint.setForceGroup(1)
-            system.addForce(restraint)
-        context = openmm.Context(system, openmm.VerletIntegrator(0.001), platform, properties)
-        context.setPositions(positions)
-        before = _energy(context)
-        if first_energy is None:
-            first_energy = before
-        reporter = _reporter(stage["name"], ident, inbox.stop)
-        began = time.perf_counter()
-        openmm.LocalEnergyMinimizer.minimize(context, protocol["tolerance"],
-                                             protocol["max_iterations"], reporter)
-        state = context.getState(getPositions=True)
-        positions = state.getPositions()
-        after = _energy(context)
-        stages.append({"name": stage["name"], "energy_before": before, "energy_after": after,
-                       "iterations": reporter.count, "seconds": time.perf_counter() - began})
-        del context
         if inbox.stop.is_set():
-            stopped = True
             break
+        positions = run.stage(stage, positions)
+    last = protocol["stages"][-1]
+    began = run.began_last
+    for attempt in range(protocol.get("tighten", 0)):
+        if (inbox.stop.is_set() or last["moving"] == "hydrogens"
+                or _rmsd(run.done, start, held) <= protocol["rmsd_limit"]):
+            break
+        scale = 2 ** (attempt + 1)
+        run.stage(last, began, scale=scale, name=f"{last['name']}, restraints x{scale}")
+    positions = run.done
     final = openmm.Context(copy.deepcopy(made.system), openmm.VerletIntegrator(0.001), platform,
                            properties)
     final.setPositions(positions)
@@ -431,12 +411,75 @@ def minimise(request, inbox, ident):
     forces = state.getForces(asNumpy=True).value_in_unit(unit.kilojoule_per_mole / unit.nanometer)
     norms = (forces ** 2).sum(axis=1) ** 0.5
     worst = int(norms.argmax())
-    xyz = [c * NM for p in positions for c in (p[0].value_in_unit(unit.nanometer),
-                                                p[1].value_in_unit(unit.nanometer),
-                                                p[2].value_in_unit(unit.nanometer))]
-    return {"positions": xyz, "stages": stages, "energy_before": first_energy,
+    xyz = (positions * NM).reshape(-1).tolist()
+    return {"positions": xyz, "stages": run.stages, "energy_before": run.first_energy,
             "energy_after": _energy(final), "max_force": float(norms[worst]),
-            "max_force_atom": worst, "platform": platform.getName(), "stopped": stopped}
+            "max_force_atom": worst, "platform": platform.getName(),
+            "stopped": inbox.stop.is_set(), "rmsd": _rmsd(positions, start, held)}
+
+
+class Run:
+    """The stages of one minimisation. :attr:`done` is where the latest stage left the atoms
+    (one stopped part-way counts: the minimiser leaves them no worse than it found them);
+    :attr:`began_last` where it began."""
+
+    def __init__(self, made, protocol, platform, properties, start, held, inbox, ident):
+        self.made, self.protocol = made, protocol
+        self.platform, self.properties = platform, properties
+        self.start, self.held = start, held
+        self.inbox, self.ident = inbox, ident
+        self.stages = []
+        self.first_energy = None
+        self.done = start
+        self.began_last = start
+
+    def stage(self, stage, positions, scale=1, name=None):
+        import openmm
+
+        name = name or stage["name"]
+        system = copy.deepcopy(self.made.system)
+        for force in system.getForces():
+            force.setForceGroup(0)
+        if stage["moving"] == "hydrogens":
+            for i in self.made.heavy:
+                system.setParticleMass(i, 0.0)
+        else:
+            restraint = openmm.CustomExternalForce("0.5*k*((x-x0)^2+(y-y0)^2+(z-z0)^2)")
+            for parameter in ("k", "x0", "y0", "z0"):
+                restraint.addPerParticleParameter(parameter)
+            constants = [float(stage.get(c, 0.0)) * scale for c in RESTRAINED]
+            for i, c in self.held:
+                if constants[c] > 0:  # always to the deposited start, whatever stage this is
+                    x, y, z = (float(v) for v in self.start[i])
+                    restraint.addParticle(i, [constants[c], x, y, z])
+            restraint.setForceGroup(1)
+            system.addForce(restraint)
+        context = openmm.Context(system, openmm.VerletIntegrator(0.001), self.platform,
+                                 self.properties)
+        context.setPositions(positions)
+        before = _energy(context)
+        if self.first_energy is None:
+            self.first_energy = before
+        reporter = _reporter(name, self.ident, self.inbox.stop)
+        began = time.perf_counter()
+        openmm.LocalEnergyMinimizer.minimize(context, self.protocol["tolerance"],
+                                             self.protocol["max_iterations"], reporter)
+        out = context.getState(getPositions=True).getPositions(asNumpy=True)
+        out = out.value_in_unit(openmm.unit.nanometer)
+        self.stages.append({"name": name, "energy_before": before,
+                            "energy_after": _energy(context), "iterations": reporter.count,
+                            "seconds": time.perf_counter() - began})
+        del context
+        self.began_last, self.done = positions, out
+        return out
+
+
+def _rmsd(positions, start, held):
+    """The RMSD (A) of the held heavy atoms from where they started (both in nm)."""
+    if not held:
+        return 0.0
+    at = [i for i, _c in held]
+    return float(((positions[at] - start[at]) ** 2).sum(axis=1).mean() ** 0.5 * NM)
 
 
 def _energy(context):

@@ -85,8 +85,15 @@ def test_force_fields_and_protocol_round_trip_and_refuse_nonsense() -> None:
     with pytest.raises(SpecError):
         ForceFieldSpec.from_json({"protein": "ff14SB"})
     protocol = MinimiseSpec()
-    assert [s.moving for s in protocol.stages] == [spec.HYDROGENS, spec.SIDE_CHAINS, spec.ALL]
+    assert [s.moving for s in protocol.stages] == [spec.HYDROGENS, spec.HEAVY, spec.HEAVY]
+    assert protocol.stages[0].restraints() == (0.0,) * len(spec.RESTRAINED)
+    side, whole = protocol.stages[1], protocol.stages[2]
+    assert side.backbone > side.side_chains > 0 and whole.ligands < whole.backbone
     assert MinimiseSpec.from_json(json.loads(json.dumps(protocol.to_json()))) == protocol
+    with pytest.raises(SpecError):
+        spec.Stage("x", spec.HEAVY, ions=-1.0)
+    with pytest.raises(SpecError):
+        MinimiseSpec(tighten=-1)
     with pytest.raises(SpecError):
         MinimiseSpec(stages=())
     with pytest.raises(SpecError):

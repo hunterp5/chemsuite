@@ -65,10 +65,11 @@ GBN2, EXPLICIT, VACUUM = "gbn2", "explicit", "vacuum"
 WATERS = {FF14SB: TIP3P, FF19SB: OPC}
 
 # what a minimisation stage lets move
-HYDROGENS = "hydrogens"  # heavy atoms massless, so held where they are
-SIDE_CHAINS = "side chains"  # the protein backbone's heavy atoms restrained, the rest free
-ALL = "all"  # every heavy atom restrained to where it started
-MOVING = (HYDROGENS, SIDE_CHAINS, ALL)
+HYDROGENS = "hydrogens"  # heavy atoms massless, so held exactly where they are
+HEAVY = "heavy atoms"  # everything, the heavy atoms held by restraints (none on those built)
+MOVING = (HYDROGENS, HEAVY)
+#: the classes of heavy atom a stage restrains, each with its own constant
+RESTRAINED = ("backbone", "side_chains", "ligands", "waters", "ions")
 KCAL_PER_A2 = 418.4  # kJ/mol/nm² in one kcal/mol/Å²
 
 
@@ -307,48 +308,74 @@ class ForceFieldSpec:
 
 @dataclass(frozen=True)
 class Stage:
-    """One minimisation stage: what moves, and how hard the rest is held (kJ/mol/nm²)."""
+    """One minimisation stage: what moves, and how hard each class of deposited heavy atom is
+    held where it started (kJ/mol/nm², harmonic; 0 leaves it free). Heavy atoms Prepare built
+    are never held: no deposited position says where they belong."""
 
     name: str
     moving: str  # one of MOVING
-    restraint: float = 0.0  # on the heavy atoms held, by harmonic positional restraints
-    ligand_restraint: float = 0.0  # on the small molecules' heavy atoms (ALL only)
+    backbone: float = 0.0  # protein N, CA, C, O, OXT
+    side_chains: float = 0.0  # the rest of the protein, and caps
+    ligands: float = 0.0  # small molecules
+    waters: float = 0.0
+    ions: float = 0.0
 
     def __post_init__(self) -> None:
         if self.moving not in MOVING:
-            raise SpecError(f"A stage moves {', '.join(MOVING)}, not '{self.moving}'")
-        if self.restraint < 0 or self.ligand_restraint < 0:
+            raise SpecError(f"A stage moves {' or '.join(MOVING)}, not '{self.moving}'")
+        if min(self.restraints()) < 0:
             raise SpecError("A restraint is not negative")
 
+    def restraints(self) -> tuple[float, ...]:
+        """The constants in the order of :data:`RESTRAINED`."""
+        return (self.backbone, self.side_chains, self.ligands, self.waters, self.ions)
 
-#: the staged protocol of the plan (M3): hydrogens alone, then side chains and waters with the
-#: backbone held, then everything held to where it started, the ligand more loosely
+    def to_json(self) -> dict[str, Any]:
+        return {"name": self.name, "moving": self.moving,
+                **dict(zip(RESTRAINED, self.restraints(), strict=True))}  # fmt: skip
+
+
+def _kcal(value: float) -> float:
+    return value * KCAL_PER_A2
+
+
+#: the staged protocol of the plan (M3). Hydrogens alone first. Then side chains and waters
+#: settle round them with the backbone, ligands and ions held firmly and side chains lightly
+#: (free side chains at a charged surface swing into each other a whole ångström). Last, the
+#: whole complex held to where it started, the ligand more loosely so it can settle in its pocket;
+#: tightened (MinimiseSpec.tighten) while the heavy atoms end further than the limit.
 STAGES = (
     Stage("Hydrogens", HYDROGENS),
-    Stage("Side chains and waters", SIDE_CHAINS, restraint=10 * KCAL_PER_A2),
-    Stage("Complex", ALL, restraint=1 * KCAL_PER_A2, ligand_restraint=0.25 * KCAL_PER_A2),
-)
+    Stage("Side chains and waters", HEAVY, backbone=_kcal(10), side_chains=_kcal(1),
+          ligands=_kcal(10), waters=_kcal(1), ions=_kcal(10)),
+    Stage("Complex", HEAVY, backbone=_kcal(1), side_chains=_kcal(1), ligands=_kcal(0.25),
+          waters=_kcal(1), ions=_kcal(10)),
+)  # fmt: skip
 
 
 @dataclass(frozen=True)
 class MinimiseSpec:
     stages: tuple[Stage, ...] = field(default=STAGES)
-    tolerance: float = 10.0  # kJ/mol/nm, the largest force left on any atom
+    tolerance: float = 10.0  # kJ/mol/nm: a stage ends once the RMS force is below this
     max_iterations: int = 5000  # per stage (0: until the tolerance is met)
-    rmsd_limit: float = 0.3  # Å: heavy atoms further from the deposit than this are marked ⚠
+    rmsd_limit: float = 0.3  # Å: deposited heavy atoms further than this are marked ⚠
+    #: times the last stage is run again from where it began, its restraints doubled each time,
+    #: while the deposited heavy atoms end further than the limit
+    tighten: int = 3
 
     def __post_init__(self) -> None:
         if not self.stages:
             raise SpecError("A minimisation has at least one stage")
         if self.tolerance <= 0 or self.max_iterations < 0 or self.rmsd_limit <= 0:
             raise SpecError("Tolerance and RMSD limit are positive, iterations not negative")
+        if self.tighten < 0:
+            raise SpecError("Tightening is not negative")
 
     def to_json(self) -> dict[str, Any]:
         return {
-            "stages": [{"name": s.name, "moving": s.moving, "restraint": s.restraint,
-                        "ligand_restraint": s.ligand_restraint} for s in self.stages],
+            "stages": [s.to_json() for s in self.stages],
             "tolerance": self.tolerance, "max_iterations": self.max_iterations,
-            "rmsd_limit": self.rmsd_limit,
+            "rmsd_limit": self.rmsd_limit, "tighten": self.tighten,
         }  # fmt: skip
 
     @classmethod
@@ -359,13 +386,15 @@ class MinimiseSpec:
         for s in _list(saved, "stages"):
             if (not isinstance(s, dict) or not isinstance(s.get("name"), str)
                     or not isinstance(s.get("moving"), str)
-                    or not _is(s.get("restraint", 0.0), float)
-                    or not _is(s.get("ligand_restraint", 0.0), float)):  # fmt: skip
+                    or not all(_is(s.get(k, 0.0), float) for k in RESTRAINED)):  # fmt: skip
                 raise SpecError("A stage has a name, what moves and its restraints")
-            stages.append(Stage(s["name"], s["moving"], float(s.get("restraint", 0.0)),
-                                float(s.get("ligand_restraint", 0.0))))  # fmt: skip
-        tolerance, iterations, limit = (saved.get(k) for k in
-                                        ("tolerance", "max_iterations", "rmsd_limit"))  # fmt: skip
-        if not (_is(tolerance, float) and _is(iterations, int) and _is(limit, float)):
-            raise SpecError("A minimisation has a tolerance, an iteration limit and an RMSD limit")
-        return cls(tuple(stages), float(tolerance), int(iterations), float(limit))
+            held = {k: float(s.get(k, 0.0)) for k in RESTRAINED}
+            stages.append(Stage(s["name"], s["moving"], **held))
+        tolerance, iterations, limit, tighten = (
+            saved.get(k) for k in ("tolerance", "max_iterations", "rmsd_limit", "tighten")
+        )
+        if not (_is(tolerance, float) and _is(iterations, int) and _is(limit, float)
+                and _is(tighten, int)):  # fmt: skip
+            raise SpecError("A minimisation has a tolerance, an iteration limit, an RMSD limit "
+                            "and a tightening count")  # fmt: skip
+        return cls(tuple(stages), float(tolerance), int(iterations), float(limit), int(tighten))

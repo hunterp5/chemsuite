@@ -145,6 +145,9 @@ class Prepared:
     energies: tuple[np.ndarray, ...] = ()
     #: each choice's :func:`site_key`, in the order of :attr:`choices`
     keys: tuple[str, ...] = ()
+    #: uids of the heavy atoms Prepare built (missing side chains and residues, caps, OXT): no
+    #: deposited position holds them, so a minimisation lets them move and measures the rest
+    built: frozenset[int] = frozenset()
 
     @property
     def net_charge(self) -> int:
@@ -227,8 +230,10 @@ def prepare(
         report += _rotor_finding(choices)
         report += _water_finding(choices)
     structure = waters.complete(protonated.structure)
+    heavy = structure.uid[structure.element != 1]
+    built = frozenset(int(u) for u in np.setdiff1d(heavy, original.uid))
     return Prepared(structure, dict(protonated.states), tuple(report), tuple(choices),
-                    pka, share, energies, keys)  # fmt: skip
+                    pka, share, energies, keys, built)  # fmt: skip
 
 
 def _sites(

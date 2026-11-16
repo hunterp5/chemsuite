@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import threading
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -31,6 +32,7 @@ import pytest
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.simulate import build, spec
 from chemsuite.simulate.config import Interpreter
+from chemsuite.simulate.minimise import free_atoms, measure
 from chemsuite.simulate.runner import Simulator
 from chemsuite.simulate.spec import ForceFieldSpec, MinimiseSpec, Stage
 
@@ -42,13 +44,7 @@ pytestmark = [
     pytest.mark.skipif(not PYTHON, reason="CHEMSUITE_OPENMM_PYTHON names no OpenMM interpreter"),
 ]
 #: a short protocol, so the tests are quick: the stages of the real one, few iterations each
-QUICK = MinimiseSpec(
-    stages=(Stage("Hydrogens", spec.HYDROGENS),
-            Stage("Side chains and waters", spec.SIDE_CHAINS, restraint=10 * spec.KCAL_PER_A2),
-            Stage("Complex", spec.ALL, restraint=spec.KCAL_PER_A2,
-                  ligand_restraint=0.25 * spec.KCAL_PER_A2)),
-    max_iterations=200,
-)  # fmt: skip
+QUICK = MinimiseSpec(max_iterations=200)
 
 
 @pytest.fixture(scope="module")
@@ -149,3 +145,29 @@ def test_a_cancelled_minimisation_stops_and_says_where_it_got(worker, complex_) 
     partial = raised.value.partial
     assert partial is not None and partial.stopped and len(partial.stages) == 1
     assert worker.hello().versions["openmm"]
+
+
+def test_built_atoms_go_free_and_the_worker_measures_as_the_app_does(worker, lysozyme) -> None:
+    s, states = _without(lysozyme, ("PO4", "BME"))
+    charged = worker.charges(build.system_spec(s, states), ForceFieldSpec())
+    xyz = build.positions(s, charged)
+    free = free_atoms(charged, lysozyme.built)
+    done = worker.minimise(charged, ForceFieldSpec(), xyz, QUICK, platform="CPU",
+                           free=np.flatnonzero(free).tolist())  # fmt: skip
+    found = measure(charged, xyz, done, free)
+    assert done.rmsd == pytest.approx(found.rmsd, abs=1e-3) and found.rmsd < 0.3
+    assert found.contact_after is not None and found.contact_after.distance > 2.2
+
+
+def test_the_last_stage_is_tightened_while_the_heavy_atoms_end_too_far(worker, complex_) -> None:
+    s, system = complex_
+    charged = worker.charges(system, ForceFieldSpec())
+    xyz = build.positions(s, charged)
+    once = worker.minimise(charged, ForceFieldSpec(), xyz,
+                           replace(QUICK, rmsd_limit=0.01, tighten=0), platform="CPU")  # fmt: skip
+    tight = worker.minimise(charged, ForceFieldSpec(), xyz,
+                            replace(QUICK, rmsd_limit=0.01, tighten=2), platform="CPU")  # fmt: skip
+    assert [r.name for r in tight.stages][-2:] == ["Complex, restraints x2",
+                                                   "Complex, restraints x4"]  # fmt: skip
+    assert tight.rmsd < once.rmsd
+    # (within the limit nothing is tightened: the default protocol above ran its three stages)

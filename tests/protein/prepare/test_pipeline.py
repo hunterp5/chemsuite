@@ -226,6 +226,10 @@ def test_preparation_in_one_call(lysozyme) -> None:
     # every heavy atom shown in the input is still there, with its uid
     shown = lysozyme.uid[lysozyme.active() & (lysozyme.res_name[lysozyme.residue_of] != "HOH")]
     assert set(shown.tolist()) <= set(s.uid.tolist())
+    # and the heavy atoms it built are named, the cap's among them, no deposited one
+    new = set(s.uid[s.element != 1].tolist()) - set(lysozyme.uid.tolist())
+    assert done.built == new and not done.built & set(lysozyme.uid.tolist())
+    assert set(s.uid[s.atoms_of(end + 1)][s.element[s.atoms_of(end + 1)] != 1].tolist()) <= new
 
 
 def test_waters_near_ligands(kinase) -> None:

@@ -23,7 +23,7 @@ minimisation is asked to stop between iterations and comes back with where it go
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -89,6 +89,7 @@ class Minimised:
     max_force_atom: int  # an index into the spec's atoms
     platform: str
     stopped: bool  # asked to stop before the last stage ended
+    rmsd: float = 0.0  # Å, the held heavy atoms from where they started
 
 
 class Simulator(LineWorker):
@@ -144,17 +145,21 @@ class Simulator(LineWorker):
         protocol: MinimiseSpec | None = None,
         *,
         platform: str = "",
+        free: Sequence[int] = (),
         progress: Progress | None = None,
         cancel: CancelToken | None = None,
     ) -> Minimised:
-        """Minimise *system* from *xyz* (Å, the spec's order), stage by stage. Cancelling stops
-        it between iterations: :class:`Cancelled` carries what it got to (or None)."""
+        """Minimise *system* from *xyz* (Å, the spec's order), stage by stage, every heavy atom
+        held to where it started but the *free* ones (indices: the atoms Prepare built).
+        Cancelling stops it between iterations: :class:`Cancelled` carries what it got to (or
+        None)."""
         body = {
             "system": system.to_json(),
             "forcefield": forcefield.to_json(),
             "positions": np.asarray(xyz, dtype=np.float64).reshape(-1).tolist(),
             "protocol": (protocol or MinimiseSpec()).to_json(),
             "platform": platform,
+            "free": sorted(int(i) for i in free),
         }
 
         def event(found: dict) -> None:
@@ -197,6 +202,7 @@ def _minimised(reply: dict) -> Minimised:
         max_force_atom=int(reply["max_force_atom"]),
         platform=str(reply["platform"]),
         stopped=bool(reply["stopped"]),
+        rmsd=float(reply.get("rmsd", 0.0)),
     )
 
 

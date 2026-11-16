@@ -21,6 +21,8 @@ interpreter (``docs/SIMULATE_PLAN.md``).
   it is minimised, as plain JSON the worker reads without chemsuite;
 - :mod:`.build`: a prepared structure → a :class:`~.spec.SystemSpec`, refusing what no force
   field here can describe;
+- :mod:`.runner` and :mod:`.worker`: the OpenMM worker, run in its own interpreter;
+- :mod:`.minimise`: a prepared structure minimised and measured;
 - :mod:`.result`: what a minimisation gives back.
 
 Qt-free; OpenMM and OpenFF are never imported here, only in the worker's interpreter.
