@@ -24,8 +24,23 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - Found: a style sheet on a menu-bar corner `QToolButton` keeps the palette it was polished
     with, so the table window's **Layout** and **Log** buttons draw white text after a switch
     to the Fusion light theme at run time (Preferences). Not fixed yet.
-  - Next: the ownership-hierarchy deep dive (chains, residues, what belongs to what), checked
-    against PyMOL and ChimeraX, both installed on the Windows PC.
+  - Hierarchy deep dive (2026-11-16, against PyMOL 2 and ChimeraX 1.12 on the Windows PC):
+    a chain is everything with that author chain id (polymer, ligands, ions, waters) in all
+    three; the list's chain entries are polymer-only, as ChimeraX's chains; NMR models are
+    PyMOL's states; sequence gaps come from the entity sequence (PyMOL adds coordinate-less
+    CA atoms instead). Fixed: chain names over four characters merged (`AA-10`/`AA-11` in
+    assembly files); a blank chain could not be selected (`chain ''` now, PyMOL's spelling);
+    two residues modelled at one place (1EJG PRO/SER 22) were both shown and both kept by
+    Prepare (now one group, one letter). Open, not fixed (the user's call):
+    - Segment ids are dropped: an MD PDB with blank chains and segids (PROA, PROB, MEMB)
+      becomes one chain with residue numbers repeated; PyMOL keeps `segi`. Matters for MD.
+    - A model whose atoms differ from the first is dropped with only a log line (PyMOL and
+      ChimeraX keep it).
+    - Kinds differ by design: a glycan-only chain (2RH1 B) is listed under Glycans, not as a
+      chain; PO4/SO4 are additives (PyMOL inorganic, ChimeraX ions or ligand); lipids
+      (CLR, PLM) are ligands.
+    - The Sequence Viewer shows the first residue at a shared place even when the other is
+      picked (ChimeraX does the same).
 - **Architecture refactor** (plan approved 2026-11-11; a copy is in Claude's plan file on the
   Windows PC, summarised here). The Protein Viewer becomes a subproject: a Qt-free engine and
   workspace (`chemsuite/macromolecule`, with its own `.cspx` session format), a Qt workbench UI
