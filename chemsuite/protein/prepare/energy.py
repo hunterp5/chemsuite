@@ -30,7 +30,7 @@ The energy is a weighted sum of terms (:data:`TERMS`), kept apart so the weights
   no hydrogens here, so they may donate);
 - ``coulomb``: charge-charge energy, 332·qᵢqⱼ/(εr) with ε = 4r, between a HIP ring (+½ on
   each N) and the charged groups within :data:`COULOMB_REACH` (a carboxylate's charge shared by
-  its two O, Arg's by its three N, metal ions +2), and between two HIP;
+  its two O, Arg's by its three N, metal ions by :mod:`.ions` or else +2), and between two HIP;
 - ``metal``: an acceptor without hydrogens within :data:`METAL_REACH` of a metal ion counts
   −1, a carbon there +1 (a His ring or an amide must point an N or O at the metal);
 - ``burial``: for HIP, the heavy atoms within :data:`BURIAL_REACH` of the ring per hundred:
@@ -82,6 +82,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from ..structure.model import ION, WATER, Structure
+from . import ions
 from .hydrogens import HYDROGEN
 from .sites import LIGAND, POLAR, RT_LN10, Site, State
 from .sites import WATER as WATER_SITE
@@ -103,7 +104,7 @@ BURIED_REACH, NMIN, NMAX = 15.5, 280, 560  # PROPKA 3's buried fraction
 #: groups whose charge is shared by their atoms, by residue and atom names
 SHARED = {"ASP": ("OD1", "OD2"), "GLU": ("OE1", "OE2"), "ARG": ("NE", "NH1", "NH2"),
           "HIS": ("ND1", "NE2")}  # fmt: skip
-ION_CHARGE = {3: 1, 11: 1, 19: 1, 37: 1, 55: 1}  # other metal ions count as +2
+UNKNOWN_METAL = 2  # the charge a metal of unknown charge counts with (Prepare reports it)
 HALIDES = (9, 17, 35, 53)
 
 
@@ -270,8 +271,14 @@ def group_charges(s: Structure) -> np.ndarray:
                 q[group] = q[group].sum() / len(group)
     ions = np.flatnonzero((s.atom_kind == ION) & (s.element > 2) & (q == 0)
                           & ~np.isin(s.element, HALIDES))  # fmt: skip
-    q[ions] = [ION_CHARGE.get(int(e), 2) for e in s.element[ions]]
+    names = s.res_name[s.residue_of[ions]]
+    q[ions] = [_ion_charge(str(n), int(e)) for n, e in zip(names, s.element[ions], strict=True)]
     return q
+
+
+def _ion_charge(name: str, element: int) -> int:
+    q = ions.charge(name, element)
+    return UNKNOWN_METAL if q is None else q
 
 
 def coulomb(a: Batch, b: Batch) -> np.ndarray:

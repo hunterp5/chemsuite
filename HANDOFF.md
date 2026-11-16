@@ -286,22 +286,35 @@ other machine can pick it up. Update it at the end of a session that leaves work
   2026-11-12 and is in [`docs/DATABASE_PLAN.md`](docs/DATABASE_PLAN.md). No code yet.
 
 - **Parked, high priority: minimise after Prepare** (ROADMAP §7.0g, plan approved 2026-11-15
-  in [`docs/SIMULATE_PLAN.md`](docs/SIMULATE_PLAN.md)). Stopped in M0 (feasibility gates, no
-  app code yet). State on the Windows PC:
+  in [`docs/SIMULATE_PLAN.md`](docs/SIMULATE_PLAN.md)). **M0 is done** (2026-11-15): all six
+  feasibility gates pass on the Windows PC, natively and in WSL; the result and the changes it
+  makes to the plan are in [`docs/simulate/m0-review.md`](docs/simulate/m0-review.md).
+  **M1 is done** (2026-11-15; what it changed is listed under M1 in the plan): Prepare caps cut ends (ACE/NME from SEQRES), builds a residue missing alone (the
+  user's choice over crowded caps), puts hydrogens on every kept water, charges ions by
+  component/element (`prepare/ions.py`, one table with `energy.py`), turns rebuilt side chains
+  clear, renames the neutral N-terminus state `N-neutral` (saved reviews migrate);
+  `ligands.prepared_form`; `edit.insert_residue`; the Qt-free `chemsuite/simulate`
+  (`spec.py`, `build.py`, `result.py`; tests in `tests/simulate`). **M2 (the worker and its
+  runner) is next.** The P1 neutron marks hold after M1 (Asn 86.2, Gln 80.3, His 89.6,
+  tautomer 63.8%; Reduce 85.4/78.9/88.3/62.5).
+  - **Open, found 2026-11-15, older than M1:** the P2 mark fails. PKAD-R's pickled tables were
+    from before P3 (20 energy terms, now 26) and `pkad_review.py chemsuite` crashed on them, so
+    `chemsuite.csv` was stale (1.32). Rebuilt (`tables --redo`): chemsuite 1.48 against PROPKA
+    1.33 (null 1.15). The same (1.475) with M1's ion charges, side-chain turning and
+    true-C-terminus OXT rule all switched off, so P3's terms or defaults moved it;
+    `pkad_review.py fit` against the new terms is the likely fix. `test_chemsuite_pka_values_match_propka` (`-m bench`) fails until then.
+  - `waters.complete` is pure Python, about 3 ms a water (linear): fine for crystal
+    structures, about a minute for 20,000 waters. Vectorise it if large cryo-EM boxes get slow.
+  State on the Windows PC:
   - Miniforge 26.9.4-2 is installed per user at `C:\Users\hunte\miniforge3` (not on PATH, not
-    the registered Python; installer SHA-256 checked).
-  - The spike env (`cs-sim-m0`: python 3.12, openmm, cuda-version=12, openmmforcefields,
-    openff-toolkit-base, openff-interchange-base, openff-nagl, openff-nagl-models, rdkit,
-    numpy; conda-forge with nodefaults) failed both ways and must be rebuilt:
-    - native Windows: `conda env create` crashed with "An unexpected error has occurred"
-      before the traceback was captured; rerun with output saved to a file and try
-      `--no-plugins`;
-    - WSL Ubuntu (`~/miniconda3`): packages downloaded, but no env was created (the failure
-      was hidden behind `| tail`); rerun without the pipe.
-  - Hardware: RTX 4070 (driver 560.94), seen from WSL too.
-  - Then: gates 2-6 (NAGL charges handed in pre-computed, GBn2 with a Sage ligand, template
-    coverage for every Prepare state, massless atoms in the minimiser, WSL kill/stdin) and the
-    write-up in `docs/simulate/m0-review.md`.
+    the registered Python). `~/.condarc` sets `solver: classic`, so pass `--solver libmamba`.
+  - The spike envs (openmm 8.4.0, openmmforcefields 0.15.1, CPU pytorch, `cuda-version=12.6`):
+    native at `D:\chemsuite-envs\cs-sim-m0` (package cache in `D:\chemsuite-envs\pkgs`; C: was
+    full, which was the earlier "unexpected error"), and WSL at
+    `~/miniconda3/envs/cs-sim-m0`. Recipes are in the review.
+  - Hardware: RTX 4070 (driver 560.94, CUDA 12.6 at most; OpenMM 8.6 needs a newer driver).
+  - Still owed: gate 1 on the Mac (osx-arm64 env and its platforms), and the choice between
+    OpenMM 8.4.0 with this driver and 8.6.1 with a newer one.
 
 1. Protein surface options (see In progress), in plan mode.
 2. Graceful exit (ROADMAP §7.0).

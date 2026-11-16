@@ -78,9 +78,9 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
 4. **Waters**: keep those within X Å of the ligand that are well ordered (B-factor, H-bonds
    to ≥2 partners) as candidate structural waters; others removed by choice.
 5. **Coupled state assignment** (the model above) at a chosen pH.
-6. **Relax**: H-only optimisation in the site-graph score in-process. Restrained heavy-atom
-   minimisation (amber14 + OpenFF for the ligand, harmonic restraints, ≤0.3 Å RMSD) runs in the
-   OpenMM worker when it is configured (phase 5's worker; skipped with a note otherwise).
+6. **Relax**: superseded by [SIMULATE_PLAN.md](SIMULATE_PLAN.md) (2026-11-15): a staged,
+   restrained minimisation in OpenMM's own interpreter (`chemsuite/simulate`), no in-app tier;
+   skipped with a note when the worker is not configured.
 7. **Report**: every decision with its evidence; flips; ambiguous sites; buried unsatisfied
    donors/acceptors; clashes; net charge. Shown in the workbench as rows and drawn in the view
    (H-bond partners of the selected site).
@@ -140,8 +140,9 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
   - `ligand_sites.py`: MolGpKa and tautomers to states;
   - `energy.py`: intrinsic, desolvation, Coulomb, H-bond, clash;
   - `solve.py`: clusters, DEE, branch-and-bound, MC populations;
-  - `relax.py`;
   - `report.py`.
+
+  (No `relax.py`: minimisation lives in `chemsuite/simulate`, SIMULATE_PLAN.md.)
 
   Each file stays under 1,000 lines.
 - `structure/edit.py`: add atoms and hydrogens as one undoable edit (`ProteinSession.edit`), so
@@ -182,9 +183,12 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
   (`protein/dock/pdbqt.py`; residues Meeko does not know are left out and named in
   `Receptor.dropped`, since Meeko would otherwise download them from the CCD); the ensemble
   for ambiguous sites is still to do.
-- **P5**: restrained relax (now ROADMAP §7a 3, "Relax after preparation": optional, an in-app
-  MMFF pocket tier and an OpenMM tier, planned on its own) and MD hand-off through the OpenMM
-  worker. Per-site alternate states for MD.
+- **P5**: restrained minimisation and the MD hand-off, planned on their own in
+  [SIMULATE_PLAN.md](SIMULATE_PLAN.md) (ROADMAP §7.0g; no in-app MMFF tier). Its M1 fixed
+  Prepare for force fields (2026-11-15): ACE/NME caps at gaps and cut chain ends (SEQRES), a
+  residue missing alone built, hydrogens on every kept water, ion charges by component and
+  element, rebuilt side chains turned clear of their neighbours, and the neutral N-terminus
+  state renamed `N-neutral`. Per-site alternate states for MD.
 
 ## Verification
 

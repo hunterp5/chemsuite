@@ -159,6 +159,50 @@ def test_added_atoms_go_into_their_residues_with_new_uids(crambin) -> None:
     assert store.unpack(store.pack(edited)).n_atoms == n + 3
 
 
+def test_a_residue_goes_into_its_chain_with_new_uids(kinase) -> None:
+    from chemsuite.protein.structure import store
+
+    chain = 0
+    first = int(kinase.chain_start[chain])
+    n = kinase.n_atoms
+    head_n = kinase.atoms_of(first).start  # the first residue's N
+    assert kinase.name[head_n] == "N"
+    xyz = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+    edited = edit.insert_residue(
+        kinase, first, chain, "ACE", int(kinase.res_seq[first]) - 1,
+        names=np.array(["C", "O", "CH3"]), elements=np.array([6, 8, 6]), xyz=xyz,
+        bonds=np.array([[n, head_n], [n, n + 1], [n, n + 2]]), order=np.array([1, 2, 1]),
+    )  # fmt: skip
+    assert edited.n_residues == kinase.n_residues + 1 and edited.n_chains == kinase.n_chains
+    assert (
+        edited.chain_start[chain + 1 :].tolist() == (kinase.chain_start[chain + 1 :] + 1).tolist()
+    )
+    cap = first
+    assert edited.res_name[cap] == "ACE" and edited.chain_of[cap] == chain
+    assert edited.res_kind[cap] == kinase.res_kind[first] and edited.seqres[cap] == -1
+    assert edited.name[edited.atoms_of(cap)].tolist() == ["C", "O", "CH3"]
+    assert np.allclose(edited.coords[0][edited.atoms_of(cap)], xyz)
+    # every other residue keeps its atoms, labels and uids
+    assert [edited.residue_label(r) for r in range(1, edited.n_residues)] == [
+        kinase.residue_label(r) for r in range(kinase.n_residues)
+    ]
+    assert edited.uid[np.isin(edited.uid, kinase.uid)].tolist() == kinase.uid.tolist()
+    c, o, ch3 = (int(u) for u in kinase.next_uid + np.arange(3))
+    old_pairs = {tuple(sorted(kinase.uid[b])) for b in kinase.bonds}
+    new_pairs = {tuple(sorted(edited.uid[b])) for b in edited.bonds}
+    assert new_pairs == old_pairs | {tuple(sorted((c, int(kinase.uid[head_n])))), (c, o), (c, ch3)}
+    assert edited.next_uid == kinase.next_uid + 3
+    assert store.unpack(store.pack(edited)).n_residues == edited.n_residues
+    # at the end of the last chain, and refused outside its chain
+    last = kinase.n_chains - 1
+    end = edit.insert_residue(kinase, kinase.n_residues, last, "NME", 9999,
+                              np.array(["N"]), np.array([7]), np.zeros((1, 3)))  # fmt: skip
+    assert end.res_name[-1] == "NME" and end.chain_of[-1] == last
+    with pytest.raises(edit.EditError):
+        edit.insert_residue(kinase, kinase.n_residues, 0, "NME", 1, np.array(["N"]),
+                            np.array([7]), np.zeros((1, 3)))  # fmt: skip
+
+
 def test_added_atoms_need_a_place_in_every_model(nmr) -> None:
     one = np.zeros((1, 3))
     grown = edit.add_atoms(nmr, np.array([0]), np.array(["X"]), np.array([1]), one)

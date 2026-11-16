@@ -64,7 +64,10 @@ def test_every_titratable_group_has_its_forms(titrating) -> None:
               for name, site in titrating.items()}  # fmt: skip
     assert counts["ASP"] == {"ASP": 1, "ASH": 4} and counts["GLU"] == {"GLU": 1, "GLH": 4}
     assert counts["HIS"] == {"HID": 2, "HIE": 2, "HIP": 2}
-    assert counts["LYS"] == {"LYS": 8, "LYN": 24} and counts["NTERM"] == {"NH3+": 8, "NH2": 24}
+    assert counts["LYS"] == {"LYS": 8, "LYN": 24} and counts["NTERM"] == {
+        "NH3+": 8,
+        sites.NEUTRAL_N: 24,
+    }
     assert counts["TYR"] == {"TYR": 2, "TYM": 1} and counts["CYS"] == {"CYS": 24, "CYM": 1}
     for site in titrating.values():
         for st in site.states:  # charges on the atoms, one proton between the forms

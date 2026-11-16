@@ -58,7 +58,7 @@ def test_with_no_decisions_the_survey_proposes_exactly_what_prepare_does(lysozym
 def test_the_survey_lists_issues_and_every_state_of_every_choice(lysozyme) -> None:
     found = review.survey("LYZ", lysozyme, NO_WATERS)
     kinds = {issue.kind for issue in found.issues}
-    assert {inspect.ALTLOCS, inspect.MISSING} <= kinds
+    assert {inspect.ALTLOCS, inspect.TRUNCATED, inspect.CAP} <= kinds
     assert all(issue.fixable == (issue.kind in review.FIXABLE) for issue in found.issues
                if issue.residue >= 0)  # fmt: skip
     assert len({issue.id for issue in found.issues}) == len(found.issues)  # ids are unique

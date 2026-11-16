@@ -95,6 +95,26 @@ def test_surveying_commits_nothing_and_docks_in_the_viewer(opened, qtbot) -> Non
     assert inspection.MISSING in kinds and sites.AMIDE in kinds
 
 
+def test_a_line_selects_its_residue_though_the_survey_put_in_a_cap(opened, qtbot) -> None:
+    """The survey's structure has an ACE before the cut first residue; the viewer's does not,
+    so every index after it differs by one. A line selects the residue it names."""
+    ctx = ToolContext(opened)
+    s = structure(opened)
+    gone = np.asarray(s.residue_of == 0, dtype=bool)
+    tool.protein_workspace(ctx).session().edit("Cut", {"1CRN": edit.delete(s, gone)})
+    panel = surveyed(opened, qtbot)
+    prepared = panel.survey.prepared.structure
+    assert prepared.res_name[0] == "ACE"
+    amide = next(c for c in panel.survey.choices if c.kind == sites.AMIDE)
+    item = next(line for line in panel.lines() if line.data(0, 0x0100) is amide)
+    panel.rows.setCurrentItem(item)
+    shown = structure(opened)
+    (r,) = [i for i in range(shown.n_residues) if shown.residue_label(i) == amide.label]
+    assert r != amide.residue  # the indices differ: a selection by index would miss
+    session = tool.protein_workspace(ctx).session()
+    assert session.selected_count() == int((shown.residue_of == r).sum())
+
+
 def test_an_unticked_repair_and_an_overruled_flip_are_applied_as_one_step(opened, qtbot) -> None:
     table = opened.workspace.table
     panel = surveyed(opened, qtbot)

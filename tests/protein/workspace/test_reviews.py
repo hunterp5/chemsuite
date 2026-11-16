@@ -51,6 +51,15 @@ def test_damaged_saved_reviews_are_ignored_rather_than_half_read() -> None:
     assert odd is not None and odd.skipped == ("a",) and odd.overrides == {}
 
 
+def test_a_neutral_n_terminus_chosen_under_its_old_name_reads_as_the_new_one() -> None:
+    from chemsuite.protein.prepare import sites
+
+    saved = {"protein": "1ATP", "overrides": {"nterm:1:N": "NH2 120°", "lys:7:NZ": "LYN 15°"}}
+    review = Review.from_json(saved)
+    assert review is not None
+    assert review.overrides == {"nterm:1:N": f"{sites.NEUTRAL_N} 120°", "lys:7:NZ": "LYN 15°"}
+
+
 def test_the_workspace_keeps_a_review_until_it_is_applied() -> None:
     store = AssetStore()
     _add(store)

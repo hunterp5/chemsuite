@@ -36,7 +36,7 @@ within it), and the result each group's pKa and protonated share. A group betwee
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -47,7 +47,7 @@ from ..structure.components import CcdCache
 from ..structure.model import LIGAND, WATER, Structure
 from . import energy, hydrogens, ligand_sites, populations, repair, sites, solve, waters
 from .energy import Weights
-from .inspect import Finding, inspect
+from .inspect import CAP, FILLED, Finding, inspect
 from .templates import Library
 
 ALL, NEAR_LIGANDS, NONE = "all", "near ligands", "none"
@@ -66,7 +66,7 @@ DEGENERATE = 0.05
 MIXED = 0.1  # a titrating group with more than this share of each form is marked ⚠
 #: the forms a report names (the others are the textbook ones at pH 7)
 UNCOMMON = {"ASH": "Asp", "GLH": "Glu", "LYN": "Lys", "TYM": "Tyr", "CYM": "Cys",
-            "NH2": "N-terminus", "HIP": "His"}  # fmt: skip
+            sites.NEUTRAL_N: "N-terminus", "HIP": "His"}  # fmt: skip
 SITE = "site"
 NOTE = "note"
 
@@ -165,15 +165,30 @@ def prepare(
     options = options or Options()
     chosen = decisions or Decisions()
     library = Library(ccd)
-    report = inspect(s, library, cancel)
+    found = inspect(s, library, cancel)
+    original = s
+    caps: list[repair.Cap] = []
+    filled: list[str] = []
     if options.repair:
         located = repair.one_location(s, _altlocs(s, chosen.altlocs))
-        only = None if chosen.repair is None else frozenset(residues_named(located, chosen.repair))
+        located, filled = repair.fill_single_gaps(located)
+        named = None if chosen.repair is None else {*chosen.repair, *filled}
+        only = None if named is None else frozenset(residues_named(located, frozenset(named)))
         s = repair.build_missing(located, library, cancel, only=only)
+        s, caps = repair.cap_ends(s)
     check(cancel)
     s = keep_waters(s, options.waters, chosen)
     protonated = hydrogens.add_hydrogens(s, library, ccd, cancel)
     kept = frozenset(n.residue for n in protonated.notes if n.text == hydrogens.KEPT)
+    # what was found on the file, its residues renumbered for the structure that comes out
+    # (caps put in, waters left out)
+    where = {s.residue_label(r): r for r in range(s.n_residues)}
+    report = [replace(f, residue=where.get(original.residue_label(f.residue), -1))
+              if f.residue >= 0 else f for f in found]  # fmt: skip
+    report += [Finding(FILLED, label, "The missing residue built", warn=True, residue=where[label])
+               for label in filled]  # fmt: skip
+    report += [Finding(CAP, cap.residue, f"Capped with {cap.name}", residue=where[cap.residue])
+               for cap in caps]  # fmt: skip
     report += [Finding(NOTE, s.residue_label(n.residue), n.text, warn=True, residue=n.residue)
                for n in protonated.notes if n.text != hydrogens.KEPT]  # fmt: skip
     choices: list[solve.Choice] = []
@@ -211,7 +226,8 @@ def prepare(
         report += _site_findings(protonated.structure, choices, share)
         report += _rotor_finding(choices)
         report += _water_finding(choices)
-    return Prepared(protonated.structure, dict(protonated.states), tuple(report), tuple(choices),
+    structure = waters.complete(protonated.structure)
+    return Prepared(structure, dict(protonated.states), tuple(report), tuple(choices),
                     pka, share, energies, keys)  # fmt: skip
 
 

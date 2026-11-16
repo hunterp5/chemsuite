@@ -40,7 +40,7 @@ from .ligand_sites import AS_DRAWN
 NODE_LIMIT = 200_000
 FORBIDDEN = 1e6  # the energy of a state a site is held away from
 #: forms recorded in :attr:`.hydrogens.Protonated.states` (the textbook ones are not)
-RECORDED = frozenset(["HID", "HIE", "HIP", "ASH", "GLH", "LYN", "CYM", "TYM", "NH2"])
+RECORDED = frozenset(["HID", "HIE", "HIP", "ASH", "GLH", "LYN", "CYM", "TYM", sites.NEUTRAL_N])
 
 
 @dataclass(frozen=True)

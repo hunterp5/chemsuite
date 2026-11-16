@@ -177,6 +177,86 @@ def add_atoms(
     )
 
 
+def insert_residue(
+    s: Structure,
+    at: int,
+    chain: int,
+    name: str,
+    seq: int,
+    names: np.ndarray,
+    elements: np.ndarray,
+    xyz: np.ndarray,
+    bonds: np.ndarray | None = None,
+    order: np.ndarray | None = None,
+    icode: str = "",
+    seqres: int = -1,
+    entity: int = -1,
+) -> Structure:
+    """A new residue *name* numbered *seq* (*icode*) put before residue *at* (an index;
+    ``n_residues`` for the very end), in chain *chain*, which must hold residue *at* or end
+    there. Its atoms are *names*, *elements* and *xyz* as for :func:`add_atoms`, as are *bonds*
+    (``n_atoms + j`` is new atom *j*) and *order*. Its kind follows from its name as in a
+    polymer; it is at *seqres* in *entity*'s sequence (-1: in none). The new atoms take uids
+    from ``next_uid`` up."""
+    first, last = int(s.chain_start[chain]), int(s.chain_start[chain + 1])
+    if not first <= at <= last:
+        raise EditError("A residue goes inside its chain")
+    if not _NAME.fullmatch(name):
+        raise EditError("A residue name is 1 to 5 letters or digits")
+    m = len(names)
+    xyz = np.asarray(xyz, dtype=np.float32)
+    if xyz.ndim == 2:
+        xyz = np.broadcast_to(xyz, (s.n_models, m, 3))
+    if m == 0 or xyz.shape != (s.n_models, m, 3):
+        raise EditError("The new atoms need a position in every model")
+    p = int(s.res_start[at])  # where the new atoms go
+    n = s.n_atoms
+    old_to_new = np.arange(n) + (np.arange(n) >= p) * m
+    where = np.concatenate([old_to_new, p + np.arange(m)])
+    links = np.asarray(bonds if bonds is not None else np.zeros((0, 2)), dtype=np.int64)
+    links = where[links.reshape(-1, 2)]
+    kinds = np.asarray(order if order is not None else np.ones(len(links)), dtype=np.int8)
+    old_bonds = old_to_new[s.bonds.astype(np.int64)] if len(s.bonds) else np.zeros((0, 2))
+    all_bonds = np.sort(np.concatenate([old_bonds, links]), axis=1).astype(np.int32)
+    heavy = tuple(gemmi.Element(int(z)).name.upper() for z in elements if z not in (0, 1))
+    kind = residue_kind(name, gemmi.EntityType.Polymer, heavy)
+    neighbour = at if at < last else at - 1  # a residue of the chain, for its subchain
+    res_start = np.concatenate([s.res_start[: at + 1], s.res_start[at:] + m]).astype(np.int32)
+    chain_start = s.chain_start.copy()
+    chain_start[chain + 1 :] += 1
+
+    def put(values: np.ndarray, new: object) -> np.ndarray:
+        return np.insert(values, at, np.asarray(new, dtype=values.dtype))
+
+    def atoms(values: np.ndarray, new: object, axis: int = 0) -> np.ndarray:
+        return np.insert(values, [p] * m, np.asarray(new, dtype=values.dtype), axis=axis)
+
+    return replace(
+        s,
+        uid=atoms(s.uid, s.next_uid + np.arange(m)),
+        coords=np.concatenate([s.coords[:, :p], xyz, s.coords[:, p:]], axis=1),
+        element=atoms(s.element, elements),
+        name=atoms(s.name, names),
+        altloc=atoms(s.altloc, np.full(m, "")),
+        occupancy=atoms(s.occupancy, np.ones(m)),
+        b=atoms(s.b, np.zeros(m)),
+        charge=atoms(s.charge, np.zeros(m)),
+        res_start=res_start,
+        res_name=put(s.res_name, name),
+        res_seq=put(s.res_seq, seq),
+        icode=put(s.icode, icode),
+        res_kind=put(s.res_kind, kind),
+        ss=put(s.ss, 0),
+        seqres=put(s.seqres, seqres),
+        label_asym=put(s.label_asym, s.label_asym[neighbour] if s.n_residues else ""),
+        entity=put(s.entity, entity),
+        chain_start=chain_start,
+        bonds=all_bonds.reshape(-1, 2),
+        order=np.concatenate([s.order, kinds]),
+        next_uid=s.next_uid + m,
+    )
+
+
 def rename_chain(s: Structure, chain: int, name: str) -> Structure:
     """Chain *chain* (an index) renamed *name*, which no other chain may have."""
     name = name.strip()

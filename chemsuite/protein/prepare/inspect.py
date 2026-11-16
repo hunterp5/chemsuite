@@ -18,7 +18,8 @@
 
 - alternate locations (the one shown is kept);
 - chain breaks: neighbouring residues of a chain with no peptide bond, and residues missing
-  from the deposited sequence (no loops are built: the ends stay charged termini);
+  from the deposited sequence, inside a chain or at its ends (no loops are built: those ends
+  take neutral ACE and NME caps, :func:`ends`);
 - missing heavy atoms of polymer residues, against their templates;
 - residues with no template (not built, hydrogens from RDKit);
 - covalent links between a ligand or glycan and the polymer, disulfides, metal sites.
@@ -39,12 +40,17 @@ from .templates import Library
 ALTLOCS = "altlocs"
 BREAK = "break"
 GAP = "gap"
+TRUNCATED = "truncated"
+CAP = "cap"
+FILLED = "filled"  # a residue missing alone, built (:func:`.repair.fill_single_gaps`)
 MISSING = "missing"
 UNKNOWN = "unknown"
 LINK = "link"
 DISULFIDE = "disulfide"
 METAL = "metal"
 POLYMER = (AMINO, NUCLEIC)
+#: residues that end a chain as caps, not as termini
+CAPS = frozenset(["ACE", "NME", "NH2"])
 #: atoms a residue needs before its missing atoms are built
 BACKBONE = {AMINO: ("N", "CA", "C"), NUCLEIC: ("C1'", "C4'")}
 
@@ -89,14 +95,40 @@ def _breaks(s: Structure) -> list[Finding]:
             if s.res_kind[r] not in POLYMER or s.res_kind[nxt] != s.res_kind[r]:
                 continue
             label = f"{s.residue_label(r)} – {s.residue_label(nxt)}"
-            numbered = s.seqres[r] >= 0 and s.seqres[nxt] >= 0
-            missing = int(s.seqres[nxt] - s.seqres[r] - 1) if numbered else 0
+            missing = _missing_between(s, r, nxt)
             if missing > 0:
-                found.append(Finding(GAP, label, f"{missing} residues not modelled: the ends are "
-                                     "left as charged termini", warn=True, residue=r))  # fmt: skip
+                found.append(Finding(GAP, label, f"{missing} residues not modelled", warn=True,
+                                     residue=r))  # fmt: skip
             elif (r, nxt) not in linked:
                 found.append(Finding(BREAK, label, "No bond between these residues", warn=True,
                                      residue=r))  # fmt: skip
+    found += _truncated(s)
+    return found
+
+
+def _truncated(s: Structure) -> list[Finding]:
+    """The chain ends that are not the ends of the deposited sequence."""
+    found = []
+    for c in range(s.n_chains):
+        span = s.residues_of(c)
+        amino = [r for r in range(span.start, span.stop) if s.res_kind[r] == AMINO]
+        if not amino:
+            continue
+        head, tail = amino[0], amino[-1]
+        if s.seqres[head] > 0 and str(s.res_name[head]) not in CAPS:
+            found.append(Finding(TRUNCATED, s.residue_label(head),
+                                 f"{int(s.seqres[head])} N-terminal residues not modelled",
+                                 residue=head))  # fmt: skip
+        if _more_after(s, tail) and str(s.res_name[tail]) not in CAPS:
+            more = len(s.sequence_of(int(s.entity[tail]))) - 1 - int(s.seqres[tail])
+            found.append(
+                Finding(
+                    TRUNCATED,
+                    s.residue_label(tail),
+                    f"{more} C-terminal residues not modelled",
+                    residue=tail,
+                )
+            )
     return found
 
 
@@ -113,15 +145,62 @@ def _peptide_links(s: Structure) -> set[tuple[int, int]]:
     return found
 
 
-def last_in_chain(s: Structure) -> set[int]:
-    """The polymer residues that end their chain (the true C-termini, not those at a gap)."""
-    out = set()
+@dataclass(frozen=True)
+class Ends:
+    """Where a protein's chains end: the true termini, and the ends of what was modelled."""
+
+    n_termini: frozenset[int]  # residues that start their sequence
+    c_termini: frozenset[int]  # residues that end it (they take an OXT)
+    open_n: frozenset[int]  # residues after a gap or a missing N-terminal stretch (ACE)
+    open_c: frozenset[int]  # residues before a gap or a missing C-terminal stretch (NME)
+
+
+def ends(s: Structure) -> Ends:
+    """The ends of every chain's stretches of amino acids. A stretch ends at a gap in the
+    deposited sequence (``seqres``) or at the chain's end; a chain's end is a true terminus
+    unless the sequence goes on beyond it, or it is a cap (ACE, NME, NH2) already. Without a
+    deposited sequence every chain end is a true terminus."""
+    n_term, c_term, open_n, open_c = set(), set(), set(), set()
     for c in range(s.n_chains):
         span = s.residues_of(c)
-        polymer = [r for r in range(span.start, span.stop) if s.res_kind[r] == AMINO]
-        if polymer:
-            out.add(polymer[-1])
-    return out
+        amino = [r for r in range(span.start, span.stop) if s.res_kind[r] == AMINO]
+        if not amino:
+            continue
+        stretches = [[amino[0]]]
+        for r, nxt in zip(amino, amino[1:], strict=False):
+            if _missing_between(s, r, nxt) > 0:
+                stretches.append([])
+            stretches[-1].append(nxt)
+        for k, stretch in enumerate(stretches):
+            head, tail = stretch[0], stretch[-1]
+            if str(s.res_name[head]) not in CAPS:
+                truncated = k > 0 or s.seqres[head] > 0
+                (open_n if truncated else n_term).add(head)
+            if str(s.res_name[tail]) not in CAPS:
+                truncated = k < len(stretches) - 1 or _more_after(s, tail)
+                (open_c if truncated else c_term).add(tail)
+    return Ends(frozenset(n_term), frozenset(c_term), frozenset(open_n), frozenset(open_c))
+
+
+def _missing_between(s: Structure, r: int, nxt: int) -> int:
+    """How many residues of the deposited sequence lie between *r* and *nxt*."""
+    if s.seqres[r] < 0 or s.seqres[nxt] < 0 or s.entity[r] != s.entity[nxt]:
+        return 0
+    return int(s.seqres[nxt] - s.seqres[r] - 1)
+
+
+def _more_after(s: Structure, r: int) -> bool:
+    """Whether the deposited sequence goes on after residue *r*."""
+    e = int(s.entity[r])
+    if s.seqres[r] < 0 or not 0 <= e < len(s.entity_id):
+        return False
+    return int(s.seqres[r]) < len(s.sequence_of(e)) - 1
+
+
+def last_in_chain(s: Structure) -> set[int]:
+    """The residues that end their chain's sequence, which take an OXT (not those before a gap
+    or a missing C-terminal stretch, which take an NME cap)."""
+    return set(ends(s).c_termini)
 
 
 def missing_atoms(

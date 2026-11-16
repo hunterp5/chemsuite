@@ -46,7 +46,7 @@ from chemsuite.core.jobs import CancelToken
 from ..structure import bond_orders, components
 from ..structure.bonds import template_smiles
 from ..structure.components import CcdCache, Component
-from ..structure.model import LIGAND, Structure
+from ..structure.model import ION, LIGAND, Structure
 
 SMILES = "smiles"
 FILE = "file"
@@ -111,6 +111,82 @@ def to_mol(
     if fitted is not None:
         return Ligand(fitted, residue, TEMPLATE)
     return Ligand(bond_orders.guess(bare), residue, GEOMETRY)
+
+
+class FormError(ValueError):
+    """The ligand's form cannot be read from the structure; the message says why."""
+
+
+def prepared_form(
+    structure: Structure,
+    residue: int,
+    smiles: str | None = None,
+    model: int = 0,
+    ccd: CcdCache | None = None,
+    cancel: CancelToken | None = None,
+) -> Ligand:
+    """Residue *residue* in the form the structure holds it, hydrogens and all: the bond
+    orders as :func:`to_mol` finds them, each heavy atom's formal charge from the structure
+    (the protomer Prepare chose), and each of the structure's hydrogens as an atom of its own
+    at the structure's coordinates (none placed by RDKit). Every atom carries its ``uid``.
+
+    Raises :class:`FormError` when the ligand is bonded to another residue (a covalent
+    ligand is not a molecule on its own), when a hydrogen is bonded to no heavy atom of it,
+    or when the charges and hydrogens do not make a valid molecule."""
+    active = structure.active()
+    span = structure.atoms_of(residue)
+    label = structure.residue_label(residue)
+    own = {i for i in range(span.start, span.stop) if active[i]}
+    ions = structure.atom_kind == ION  # a metal's contacts are not covalent links
+    for a, b in structure.bonds.tolist():
+        if (a in own) != (b in own) and not ions[a] and not ions[b]:
+            raise FormError(f"{label} is bonded to {structure.atom_label(b if a in own else a)}")
+    found = to_mol(structure, residue, smiles, active, model, ccd, cancel)
+    mol = Chem.RWMol(found.mol)
+    at = {atom.GetIntProp("uid"): atom.GetIdx() for atom in mol.GetAtoms()}
+    for atom in mol.GetAtoms():
+        i = structure.index_of_uid[atom.GetIntProp("uid")]
+        atom.SetFormalCharge(int(structure.charge[i]))
+        atom.SetNumExplicitHs(0)
+        atom.SetNoImplicit(True)
+    partner: dict[int, int] = {}
+    for a, b in structure.bonds.tolist():
+        for h, heavy in ((a, b), (b, a)):
+            if h in own and structure.element[h] == 1 and int(structure.uid[heavy]) in at:
+                partner[h] = at[int(structure.uid[heavy])]
+    xyz = structure.xyz(model)
+    conformer = mol.GetConformer()
+    for h in sorted(i for i in own if structure.element[i] == 1):
+        if h not in partner:
+            raise FormError(f"{structure.atom_label(h)} is bonded to no atom of {label}")
+        atom = Chem.Atom(1)
+        heavy_info = mol.GetAtomWithIdx(partner[h]).GetPDBResidueInfo()
+        info = Chem.AtomPDBResidueInfo()
+        info.SetName(f" {structure.name[h]:<3}"[:4])
+        if heavy_info is not None:
+            info.SetResidueName(heavy_info.GetResidueName())
+            info.SetResidueNumber(heavy_info.GetResidueNumber())
+            info.SetInsertionCode(heavy_info.GetInsertionCode())
+            info.SetChainId(heavy_info.GetChainId())
+        info.SetIsHeteroAtom(True)
+        atom.SetMonomerInfo(info)
+        atom.SetIntProp("uid", int(structure.uid[h]))
+        k = mol.AddAtom(atom)
+        mol.AddBond(partner[h], k, Chem.BondType.SINGLE)
+        conformer.SetAtomPosition(k, xyz[h].astype(float).tolist())
+    out = mol.GetMol()
+    try:
+        with rdBase.BlockLogs():
+            Chem.SanitizeMol(out)
+    except Chem.MolSanitizeException as error:
+        raise FormError(
+            f"{label}: its hydrogens and charges are not a molecule ({error})"
+        ) from None
+    Chem.AssignRadicals(out)
+    for atom in out.GetAtoms():
+        if atom.GetNumRadicalElectrons():
+            raise FormError(f"{label}: an atom is missing a hydrogen ({atom.GetSymbol()})")
+    return Ligand(out, residue, found.source)
 
 
 def _connectivity(structure: Structure, residue: int, atoms: list[int], model: int) -> Chem.Mol:

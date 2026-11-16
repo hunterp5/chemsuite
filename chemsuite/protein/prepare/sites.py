@@ -61,6 +61,8 @@ KT = RT_LN10 / np.log(10)  # kcal/mol at 298 K
 MODEL_PKA = {"ASP": 3.8, "GLU": 4.5, "HIS": 6.5, "CYS": 9.0, "TYR": 10.0, "LYS": 10.5, "NTERM": 8.0}
 #: His in water is about 4 parts HIE to 1 part HID
 HIE_PER_HID = 4.0
+#: the neutral N-terminus as a state (not "NH2", which is the amide cap residue's name)
+NEUTRAL_N = "N-neutral"
 #: (residue, parent atom) of the rotors that titrate, by residue name; NTERM is any N-terminus
 TITRATING = {("LYS", "NZ"), ("CYS", "SG"), ("TYR", "OH")}
 OH_LENGTH, SYN_ANGLE = 0.97, np.radians(107.0)
@@ -336,7 +338,7 @@ def _titrated(
     heavy = str(s.name[parent])
     pka = MODEL_PKA[kind]
     base = kind in ("LYS", "NTERM")
-    up, down = {"LYS": ("LYS", "LYN"), "NTERM": ("NH3+", "NH2"), "CYS": ("CYS", "CYM"),
+    up, down = {"LYS": ("LYS", "LYN"), "NTERM": ("NH3+", NEUTRAL_N), "CYS": ("CYS", "CYM"),
                 "TYR": ("TYR", "TYM")}[kind]  # fmt: skip
     q = 1 if base else 0
     variants = KT * np.log(len(states))

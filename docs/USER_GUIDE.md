@@ -1712,10 +1712,22 @@ X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked ou
 
 - **Protein** is the one to prepare (the one the viewer is looking at, by default).
 - **pH** decides which form each acid, base and ligand takes.
-- **Waters:** keep them all, only those within 5 Å of a ligand, or none.
+- **Waters:** keep them all, only those within 5 Å of a ligand, or none. Every water kept gets
+  its two hydrogens: with Optimise on, those within 5 Å of a ligand are oriented together with
+  the other choices; the rest are turned one at a time towards the N and O around them.
 - **Repair** builds side-chain atoms and terminal oxygens the file is missing, from the
-  component templates. No loops are built: a chain break is reported and its ends are left as
-  charged termini.
+  component templates, turning each rebuilt side chain (in 30° steps about its first two
+  bonds) to where it crowds its neighbours least. Where the file stops short of the deposited
+  sequence, the ends are capped rather than left as charged termini: an **ACE** cap before the
+  residue that resumes, an **NME** cap after the one that stops, as a force field needs. This
+  holds at a gap inside a chain and at a chain end the sequence goes on beyond (an OXT is built
+  only on a chain's true last residue). A residue missing on its own is **built** instead (its
+  backbone from its neighbours, its side chain from its template), since two caps would meet
+  where it is. Longer loops are not built. A file without a deposited sequence (no SEQRES or
+  entity sequence) keeps its chain ends as charged termini.
+- Ions take their formal charge from the file, else from the component (``FE`` is Fe³⁺, ``FE2``
+  Fe²⁺, ``CU1`` Cu⁺) or the element (Na⁺, Mg²⁺, Zn²⁺, Cl⁻). An ion with neither is marked ⚠:
+  set its charge by hand (Edit ▸ Charge).
 - **Optimise** chooses each Asn/Gln flip, each His tautomer (HID, HIE or HIP) and each
   hydroxyl, thiol and amine orientation by the hydrogen bonds they make, the choices solved
   together rather than one at a time.
@@ -1729,9 +1741,11 @@ Everything else about the protein — how it is shown, coloured, selected and la
 
 The **report** opens beside the structure in the viewer's own window — with the viewer closed
 it goes beside the table instead — one line per thing found or decided: alternate
-locations, chain breaks and missing atoms, covalent links, disulfides and metal sites, each
-flip, His state and uncommon protonation state. A line marked ⚠ is worth your eye: a chain
-break, a residue with no template, or a choice whose next best was nearly as good. Click a
+locations, chain breaks, gaps and chain ends not modelled, residues built, caps, missing atoms,
+covalent links, disulfides and metal sites, each flip, His state and uncommon protonation
+state. A line marked ⚠ is worth your eye: a chain break or gap, a residue built from nothing,
+a residue with no template, an ion of unknown charge, or a choice whose next best was nearly as
+good. Click a
 line to select its residue in the viewer. Hydroxyl and amine hydrogens with nothing to bind to
 are free to spin, so they are counted in one line rather than listed. The panel's title gives
 the pH and the structure's net charge; right-click (or Ctrl+C) copies the report as text. The
@@ -1747,8 +1761,9 @@ with the same settings, but applies nothing: it lays out everything it found and
 in the **Inspect** panel beside the structure, for you to go through first.
 
 - **Issues** are what the file is missing or carries twice, grouped by kind: alternate
-  locations, missing atoms, chain breaks, gaps in the sequence, residues with no template,
-  covalent links, disulfides and metal sites. A missing side chain has a box: untick it and it
+  locations, missing atoms, chain breaks, gaps in the sequence, chain ends not modelled,
+  residues built, caps, residues with no template, covalent links, disulfides and metal
+  sites. A missing side chain has a box: untick it and it
   is left as the file has it, a gap rather than a modelled guess. The others are there to be
   seen.
 - **Choices** are every decision, grouped by kind: alternate locations, amide flips, His

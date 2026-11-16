@@ -47,6 +47,7 @@ QT_FREE = (
     "sketch",
     "retro",
     "protein",
+    "simulate",
 )
 FORBIDDEN_FOR_QT_FREE = ("PySide6", "shiboken6", "pyqtgraph", "chemsuite.app", "chemsuite.tools")
 #: The Qt part of a Qt-free package, scanned by its own rules below.
@@ -164,6 +165,17 @@ def test_the_workbench_reaches_the_table_only_through_the_bridge() -> None:
     )
     offenders += _offenders(engine, ["chemsuite.core.table"])
     assert not offenders, "the workbench reaches past its bridge:\n" + "\n".join(offenders)
+
+
+def test_the_simulation_side_never_loads_the_engines_or_the_table() -> None:
+    """chemsuite.simulate describes systems and talks to a worker in OpenMM's own interpreter:
+    it never imports OpenMM or OpenFF (they are not in the app's interpreter), the table, or
+    the workbench UI."""
+    paths = sorted((PACKAGE / "simulate").rglob("*.py"))
+    forbidden = ("openmm", "openff", "openmmforcefields", "torch", "chemsuite.core.table",
+                 "chemsuite.protein.ui")  # fmt: skip
+    offenders = _offenders(paths, forbidden)
+    assert paths and not offenders, "chemsuite.simulate imports:\n" + "\n".join(offenders)
 
 
 def test_only_the_bridge_imports_the_workbench_ui() -> None:

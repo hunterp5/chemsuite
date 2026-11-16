@@ -37,6 +37,15 @@ def test_the_receptor_is_the_polymer_and_what_meeko_can_type(pocket) -> None:
     assert all(name == name.strip().upper() for name in receptor.dropped)
 
 
+def test_the_caps_preparation_puts_at_cut_ends_stay_in_the_receptor(pocket) -> None:
+    s = pocket.structure
+    caps = {str(n) for n in s.res_name} & {"ACE", "NME"}
+    assert caps == {"ACE", "NME"}  # the pocket is cut out of EGFR: it has caps
+    lines = [line for line in pocket.receptor.pdbqt.splitlines() if line.startswith("ATOM")]
+    written = {line[17:20].strip() for line in lines}
+    assert caps <= written and not caps & set(pocket.receptor.dropped)
+
+
 def test_the_receptor_can_be_narrowed_to_a_part_of_the_protein(pocket) -> None:
     s = pocket.structure
     near = np.isin(s.atom_kind, [AMINO]) & (s.atom_chain == 0)

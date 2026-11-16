@@ -38,7 +38,7 @@ from chemsuite.protein.structure.model import Structure
 from chemsuite.protein.workspace.reports import PrepareReport, Row
 from chemsuite.protein.workspace.reviews import Review
 
-from .prepare_dialog import PrepareDialog, select, show_report, structure_of, summary
+from .prepare_dialog import PrepareDialog, select_named, show_report, structure_of, summary
 from .tool import TOOL_ID, ccd, protein_workspace
 
 HYDROGEN = 1
@@ -161,7 +161,7 @@ def show_inspector(
         return panel
     panel = InspectorPanel(
         found,
-        select=lambda id, residue: select(ctx, id, residue),
+        select=lambda id, residue: select_prepared(ctx, panel, id, residue),
         resurvey=lambda skip, held: _resurvey(ctx, panel, skip, held),
         apply=lambda skip, held: apply_review(ctx, panel, skip, held),
     )
@@ -169,6 +169,14 @@ def show_inspector(
     panel.decided.connect(lambda: remember(ctx, panel))
     ctx.add_panel(panel, panel.title(), beside=ctx.find_panel(TOOL_ID))
     return panel
+
+
+def select_prepared(ctx: ToolContext, panel, protein: str, residue: int) -> None:
+    """Select the residue an Inspect line names. The line's *residue* indexes the survey's
+    prepared structure, which has caps and built residues the viewer's structure does not yet
+    have, so the residue is found again by its label."""
+    label = panel.survey.prepared.structure.residue_label(residue)
+    select_named(ctx, protein, label)
 
 
 def remember(ctx: ToolContext, panel) -> None:

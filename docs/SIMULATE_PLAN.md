@@ -99,6 +99,23 @@ Each gate can change the design, so none of M1–M5 starts until M0 is written u
 
 ## M1 — the system spec (Qt-free, `chemsuite/simulate/`)
 
+**Done 2026-11-15.** The Prepare fixes 1–7 above, each with its tests, plus what they turned
+up:
+- **A residue missing alone is built, not capped** (the user's choice, 2026-11-15): two caps
+  across a one-residue gap meet where its CA would be (methyls 1.6–1.9 Å apart).
+  `repair.fill_single_gaps` builds its backbone from its neighbours' peptide planes, its
+  side chain from its template, and reports it with ⚠.
+- **Rebuilt side chains are turned clear** of their neighbours (χ1, χ2 in 30° steps): a
+  side chain at the template's ideal angles sat 1.6 Å from an Arg, and Meeko read bonds into
+  the contact.
+- Report lines now select the right residue after caps are put in or waters dropped (they
+  were found on the input structure and kept its indices).
+- `simulate/spec.py` (`SystemSpec`, `ForceFieldSpec`, `MinimiseSpec` with the M3 stages),
+  `build.py` (forms read from the hydrogens; `StateMismatch`; blocking `Problem`s, plus bond
+  orders guessed from geometry, nucleic acids, glycans and alternate locations),
+  `result.py` (`MinimiseResult`, coordinates by uid, `warnings`);
+  `ligands.prepared_form` is fix 6.
+
 A new Qt-free top-level package, registered in `tests/test_import_boundaries.py:37` `QT_FREE`.
 It imports `protein.structure`, `protein.chem` and `core.jobs`; never Qt, `core.table` or OpenMM.
 

@@ -32,6 +32,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+#: the neutral N-terminus's state name (``prepare.sites.NEUTRAL_N``)
+NEUTRAL_N = "N-neutral"
 #: the settings a survey is run with, and their defaults (``pipeline.Options``'s)
 SETTINGS = {"ph": 7.0, "waters": "all", "repair": True, "optimise": True, "titrate": "off"}
 
@@ -90,5 +92,16 @@ class Review:
             saved["protein"],
             _settings(saved.get("settings")),
             tuple(s for s in skipped if isinstance(s, str)),
-            {k: v for k, v in overrides.items() if isinstance(k, str) and isinstance(v, str)},
+            {
+                k: _renamed(v)
+                for k, v in overrides.items()
+                if isinstance(k, str) and isinstance(v, str)
+            },  # fmt: skip
         )
+
+
+def _renamed(label: str) -> str:
+    """A state *label* as this chemsuite names it: the neutral N-terminus's states were "NH2 …°"
+    until 2026-11-15 (``NH2`` is also the amide cap's residue name), now "N-neutral …°"."""
+    old = "NH2 "
+    return NEUTRAL_N + label[len(old) - 1 :] if label.startswith(old) else label

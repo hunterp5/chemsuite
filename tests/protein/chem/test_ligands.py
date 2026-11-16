@@ -105,3 +105,48 @@ def test_the_pose_atoms_and_uids_are_kept(kinase) -> None:
     info = mol.GetAtomWithIdx(0).GetMonomerInfo()
     assert (info.GetResidueName(), info.GetChainId(), info.GetResidueNumber()) == ("ATP", "E", 355)
     assert mol.GetProp("_Name") == "E/ATP 355"
+
+
+def test_the_prepared_form_has_the_structures_own_hydrogens_and_charges(kinase) -> None:
+    from chemsuite.protein.prepare import pipeline
+
+    s = pipeline.prepare(kinase, pipeline.Options(waters=pipeline.NONE)).structure
+    residue = only_ligand(s)
+    mol = ligands.prepared_form(s, residue).mol
+    span = s.atoms_of(residue)
+    atoms = list(range(span.start, span.stop))
+    assert mol.GetNumAtoms() == len(atoms)  # every hydrogen is an atom, none added
+    by_uid = {atom.GetIntProp("uid"): atom for atom in mol.GetAtoms()}
+    assert set(by_uid) == set(s.uid[atoms].tolist())
+    positions = mol.GetConformer().GetPositions()
+    for i in atoms:
+        atom = by_uid[int(s.uid[i])]
+        assert atom.GetAtomicNum() == s.element[i] and atom.GetFormalCharge() == s.charge[i]
+        assert np.allclose(positions[atom.GetIdx()], s.xyz()[i], atol=1e-4)
+        assert atom.GetMonomerInfo().GetName().strip() == s.name[i]
+    assert sum(a.GetNumImplicitHs() for a in mol.GetAtoms()) == 0
+    assert Chem.GetFormalCharge(mol) == int(s.charge[atoms].sum()) < 0  # ATP's phosphates
+
+
+def test_a_ligand_bonded_to_the_protein_has_no_form_of_its_own(egfr) -> None:
+    import pytest
+
+    residue = [r for r in ligands.ligand_residues(egfr).tolist() if egfr.res_name[r] == "80U"][0]
+    with pytest.raises(ligands.FormError, match="CYS 797"):
+        ligands.prepared_form(egfr, residue)
+
+
+def test_a_hydrogen_short_is_an_error_not_a_radical(kinase) -> None:
+    import pytest
+
+    from chemsuite.protein.prepare import pipeline
+    from chemsuite.protein.structure import edit
+
+    s = pipeline.prepare(kinase, pipeline.Options(waters=pipeline.NONE)).structure
+    residue = only_ligand(s)
+    span = s.atoms_of(residue)
+    one_h = [i for i in range(span.start, span.stop) if s.element[i] == 1][0]
+    gone = np.zeros(s.n_atoms, dtype=bool)
+    gone[one_h] = True
+    with pytest.raises(ligands.FormError, match="missing a hydrogen"):
+        ligands.prepared_form(edit.delete(s, gone), residue)

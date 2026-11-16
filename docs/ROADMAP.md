@@ -387,7 +387,10 @@ MD, MM-GBSA/PBSA, solvent analysis and free energy (§7a 3, 5, 6). Plan approved
 [SIMULATE_PLAN.md](SIMULATE_PLAN.md): ff14SB + OpenFF Sage 2.3 (AshGC charges, no AmberTools) +
 TIP3P by default, ff19SB + OPC offered; no in-app MMFF tier; the minimised coordinates are a new
 model beside the prepared one; on by default when the worker is set; a native env with an
-optional WSL interpreter. Parked at M0 (the feasibility gates); see HANDOFF.
+optional WSL interpreter. M0 (the feasibility gates) passed on 2026-11-15
+([simulate/m0-review.md](simulate/m0-review.md)); M1 (the Prepare fixes and
+`chemsuite/simulate`'s spec, build and result) done the same day; M2, the worker, is next (see
+HANDOFF).
 
 ### 7.0e High priority: our own Uni-pKa (revised 2026-11-12)
 
@@ -467,19 +470,9 @@ pip extra.
    - **Measured first:** benchmarked against neutron structures, PKAD-2, Reduce, PROPKA3,
      Protoss (public PDB IDs through ProteinsPlus) and, optionally, MOE Protonate3D before it
      becomes the default. propka stays as a cross-check.
-   - **Relax after preparation (optional, off by default; its own plan, after P1).** Minimise the
-     prepared protein–ligand complex so new hydrogens, rebuilt side chains and the ligand settle
-     into the pocket, with heavy atoms held by harmonic restraints (≤ 0.3 Å RMSD). One undo step,
-     reporting RMSD and energy change. Two tiers:
-     - **Quick, in the app:** the pocket (residues within ~8 Å of the ligand), the ligand and every
-       hydrogen minimised with RDKit MMFF94, the rest of the protein fixed.
-     - **Full, in OpenMM's own interpreter** (phase 5's worker): the whole complex with amber14
-       and OpenFF or GAFF2 for the ligand, in implicit solvent, with the same restraints.
-
-     A checkbox under More Options in the Prepare dialog, and a separate command for a structure
-     already prepared. Open for its plan: whether MMFF on a capped pocket is good enough or the
-     quick tier waits for OpenMM, and the benchmark (heavy-atom RMSD to the deposit and clash
-     score on the neutron set).
+   - **Relax after preparation** is now §7.0g, planned in [SIMULATE_PLAN.md](SIMULATE_PLAN.md):
+     a staged, restrained minimisation of the whole complex in OpenMM's own interpreter (ff14SB +
+     Sage 2.3 in GBn2), on by default when the worker is set; no in-app MMFF tier.
 4. **Editing** (every edit one undoable step). *Done 2026-11-12, ahead of the rest: delete,
    element and charge, rename and renumber, with the Sequence window's kind rows to pick out
    waters and ions.* Still to do: waters beyond X Å;

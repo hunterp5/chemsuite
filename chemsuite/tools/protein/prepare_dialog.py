@@ -232,5 +232,18 @@ def select(ctx: ToolContext, protein: str, residue: int) -> None:
         session.select({protein: np.asarray(mask, dtype=bool)})
 
 
+def select_named(ctx: ToolContext, protein: str, label: str) -> None:
+    """Select the residue the workbench calls *label* (``A/HIS 57``) in *protein*: for a line
+    found on another structure than the one shown (Inspect's, which is prepared, with caps and
+    built residues put in, while the viewer still shows the file's)."""
+    shown = protein_workspace(ctx).session().display(protein)
+    if shown is None:
+        return
+    s = shown.structure
+    found = [r for r in range(s.n_residues) if s.residue_label(r) == label]
+    if found:
+        select(ctx, protein, found[0])
+
+
 def open_prepare(ctx: ToolContext):
     return ctx.show_dialog(PrepareDialog(ctx))

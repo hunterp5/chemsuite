@@ -25,8 +25,9 @@ orientations (at most :data:`MAX_STATES`) are, in order:
 - :data:`SPREAD` fixed orientations, so a water with few neighbours still has a choice.
 
 Orientations closer than :data:`SAME` (degrees, both hydrogens) to one already listed are left
-out. The geometry is TIP3P's (O–H 0.9572 Å, H–O–H 104.52°). Other waters keep no hydrogens and
-are scored as both donor and acceptor (:mod:`.energy`'s ``water`` term).
+out. The geometry is TIP3P's (O–H 0.9572 Å, H–O–H 104.52°). Other waters have no hydrogens
+while the sites are solved, and are scored as both donor and acceptor (:mod:`.energy`'s
+``water`` term); after the solve, :func:`complete` gives them hydrogens one at a time.
 """
 
 from __future__ import annotations
@@ -34,7 +35,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.spatial import cKDTree
 
-from ..structure.model import LIGAND, WATER
+from ..structure import edit
+from ..structure.model import LIGAND, WATER, Structure
 from . import sites
 from .hydrogens import HYDROGEN, Protonated
 from .sites import POLAR, Site, State
@@ -45,6 +47,9 @@ MAX_STATES = 30
 SPREAD = 12
 SAME = 20.0  # degrees
 OH, HOH = 0.9572, np.radians(104.52)
+BOND = 2.6  # Å: an N or O this close to a far water's hydrogen counts as its hydrogen bond
+TOO_CLOSE = 1.6  # Å from a far water's hydrogen to any atom
+CLASH = 10.0  # what such a contact costs, against one hydrogen bond's 1
 
 
 def find(p: Protonated) -> list[Site]:
@@ -76,6 +81,80 @@ def find(p: Protonated) -> list[Site]:
         site = sites.make_site(s, r, sites.WATER, np.array([o]), [o], list(states), graph)
         found.append(site)
     return found
+
+
+def complete(s: Structure) -> Structure:
+    """*s* with hydrogens on every water that has none yet (those :func:`find` left out, far
+    from any ligand), as a force field needs them. Each water takes, on its own, the orientation
+    whose hydrogens reach the most N and O within :data:`BOND` and come closest to no atom
+    than :data:`TOO_CLOSE`; the waters placed before it count as fixed."""
+    active = s.active()
+    bare = []
+    for r in np.flatnonzero(s.res_kind == WATER).tolist():
+        span = s.atoms_of(r)
+        atoms = [i for i in range(span.start, span.stop) if active[i]]
+        if len(atoms) == 1 and s.element[atoms[0]] == 8:
+            bare.append(atoms[0])
+    if not bare:
+        return s
+    x = s.coords.astype(np.float64)
+    polar = np.flatnonzero(active & np.isin(s.element, list(POLAR)))
+    polar_tree = cKDTree(x[0, polar])
+    others = np.flatnonzero(active)
+    tree = cKDTree(x[0, others])
+    placed: dict[tuple[int, int, int], list[np.ndarray]] = {}  # hydrogens added so far, by cell
+    hydrogens = []  # (water O, h1 direction, h2 direction)
+    for o in bare:
+        centre = x[0, o]
+        partners = [int(polar[k]) for k in polar_tree.query_ball_point(centre, NEIGHBOURS)
+                    if polar[k] != o]  # fmt: skip
+        best, h1, h2 = -np.inf, None, None
+        for a, b in _orientations([_unit(x[0, j] - centre) for j in partners]):
+            score = 0.0
+            for d in (a, b):
+                h = centre + OH * d
+                near = [int(others[k]) for k in tree.query_ball_point(h, BOND) if others[k] != o]
+                score += sum(1 for j in near if s.element[j] in POLAR)
+                closest = min((float(np.linalg.norm(x[0, j] - h)) for j in near), default=BOND)
+                if closest < TOO_CLOSE or _crowded(placed, h):
+                    score -= CLASH
+            if score > best:
+                best, h1, h2 = score, a, b
+        if h1 is None or h2 is None:
+            continue
+        for d in (h1, h2):
+            h = centre + OH * d
+            placed.setdefault(_cell(h), []).append(h)
+        hydrogens.append((o, h1, h2))
+    n = s.n_atoms
+    xyz = np.concatenate([np.stack([x[:, o] + OH * h1, x[:, o] + OH * h2], axis=1)
+                          for o, h1, h2 in hydrogens], axis=1)  # fmt: skip
+    oxygens = np.repeat([o for o, _a, _b in hydrogens], 2)
+    return edit.add_atoms(
+        s,
+        residues=s.residue_of[oxygens],
+        names=np.array(["H1", "H2"] * len(hydrogens)),
+        elements=np.full(len(oxygens), HYDROGEN),
+        xyz=xyz,
+        bonds=np.stack([oxygens, n + np.arange(len(oxygens))], axis=1),
+    )
+
+
+def _cell(h: np.ndarray) -> tuple[int, int, int]:
+    i, j, k = np.floor(h / TOO_CLOSE).astype(int).tolist()
+    return i, j, k
+
+
+def _crowded(placed: dict[tuple[int, int, int], list[np.ndarray]], h: np.ndarray) -> bool:
+    """Whether a hydrogen already placed is within :data:`TOO_CLOSE` of *h*."""
+    i, j, k = _cell(h)
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            for dk in (-1, 0, 1):
+                for other in placed.get((i + di, j + dj, k + dk), ()):
+                    if float(np.linalg.norm(other - h)) < TOO_CLOSE:
+                        return True
+    return False
 
 
 def _unit(v: np.ndarray) -> np.ndarray:

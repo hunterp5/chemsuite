@@ -51,7 +51,7 @@ from ..chem import ligands
 from ..structure import edit
 from ..structure.components import CcdCache
 from ..structure.model import AMINO, ION, NUCLEIC, WATER, Structure
-from . import templates
+from . import ions, templates
 from .templates import HYDROGEN, Library, Template
 
 #: metals that take a proton's place on a coordinating N, O or S
@@ -62,6 +62,7 @@ TEXTBOOK = {"ASP": ("HD2",), "GLU": ("HE2",)}
 PHOSPHATE = ("HOP2", "HOP3")
 POLAR = frozenset([7, 8, 16])
 KEPT = "Kept the hydrogens it has"  # the note on a residue that came with hydrogens
+UNKNOWN_ION = "Ion of unknown charge: set its formal charge"
 _TETRAHEDRAL = np.radians(109.47)
 _TRIGONAL = np.radians(120.0)
 
@@ -150,11 +151,14 @@ class _Plan:
     def residue(self, r: int) -> None:
         s = self.s
         kind = int(s.res_kind[r])
-        if kind in (WATER, ION):
+        if kind == WATER:
             return
         span = s.atoms_of(r)
         atoms = [i for i in range(span.start, span.stop) if self.active[i]]
         if not atoms:
+            return
+        if kind == ION:
+            self.ion(r, atoms)
             return
         if (s.element[atoms] == HYDROGEN).any():
             self.notes.append(Note(r, KEPT))
@@ -166,6 +170,16 @@ class _Plan:
                 return
             self.notes.append(Note(r, "No template: hydrogens from RDKit"))
         self.from_rdkit(r)
+
+    def ion(self, r: int, atoms: list[int]) -> None:
+        """An ion's charge, where the file gave none (:mod:`.ions`)."""
+        s = self.s
+        for i in atoms:
+            q = ions.charge(str(s.res_name[r]), int(s.element[i]), int(s.charge[i]))
+            if q is None:
+                self.notes.append(Note(r, UNKNOWN_ION))
+            else:
+                self.charges[i] = q
 
     def external(self, i: int) -> list[int]:
         r = self.s.residue_of[i]
