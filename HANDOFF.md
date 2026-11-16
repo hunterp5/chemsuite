@@ -300,7 +300,9 @@ other machine can pick it up. Update it at the end of a session that leaves work
   **M3 is done** (2026-11-15: `Prepared.built`, restraints per class of atom, tightening,
   `simulate/minimise.py` measuring the result; the tuning findings are under M3 in the plan).
   **M4 (the Minimise checkbox in Prepare, Protein ▸ Minimise…, the model beside the prepared
-  one, storage and invalidation) is next**, then the M5 benchmark. To run the real-env tests
+  one, storage and invalidation) is next**, then the M5 benchmark. Two constraints for M4
+  found in M3 are in the plan's M4 section (`built` is kept and unioned across re-prepares;
+  minimise only from the prepared model). To run the real-env tests
   here: `$env:CHEMSUITE_OPENMM_PYTHON = "D:\chemsuite-envs\cs-sim-m0\python.exe"` then
   `pytest -m openmm` (about 5 minutes). On the Mac, before the merge: `pytest tests/retro`
   (its fake worker is a shell script, so it skips on Windows) and gate 1. The P1 neutron marks hold after M1 (Asn 86.2, Gln 80.3, His 89.6,

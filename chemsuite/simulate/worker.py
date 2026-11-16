@@ -402,7 +402,12 @@ def minimise(request, inbox, ident):
                 or _rmsd(run.done, start, held) <= protocol["rmsd_limit"]):
             break
         scale = 2 ** (attempt + 1)
+        kept = run.done
         run.stage(last, began, scale=scale, name=f"{last['name']}, restraints x{scale}")
+        if inbox.stop.is_set():  # a restart stopped part-way is worse than the run it repeats
+            run.done = kept
+            run.stages[-1]["name"] += " (stopped, not used)"
+            break
     positions = run.done
     final = openmm.Context(copy.deepcopy(made.system), openmm.VerletIntegrator(0.001), platform,
                            properties)

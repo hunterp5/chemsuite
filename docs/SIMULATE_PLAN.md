@@ -235,6 +235,15 @@ above the RMSD limit, or with a remaining clash, is marked ⚠ rather than quiet
   **persisted too** (they are currently dropped), since MD and MM-GBSA need them.
 - **Invalidation:** re-running Prepare or editing the structure drops or flags the minimised
   model and its stored system; multi-model (NMR) input minimises the shown model only.
+- **Found in M3, to hold in M4:**
+  - `Prepared.built` is relative to `prepare()`'s input, and Prepare and Inspect's Apply both
+    prepare the structure *shown*, which may be prepared already: a second run would find no
+    caps or rebuilt side chains to call built, and restrain them where they were built. Keep
+    `built` with the document and take the union with the stored set on every re-prepare
+    (uids of atoms since deleted drop out).
+  - Minimise from the **prepared** model, never from a minimised one: restraints and RMSD
+    are measured from the model passed in, so a second minimisation from the first would
+    drift away from the deposit.
 
 ## M5 — benchmark and acceptance (`-m bench`, not the regular suite)
 
