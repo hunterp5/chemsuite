@@ -153,9 +153,11 @@ class StructureTree(QTreeWidget):
 
     def _fill(self, top: QTreeWidgetItem, protein: str, structure: Structure) -> None:
         kinds = structure.res_kind
+        # residues modelled at one place (microheterogeneity) count once
+        first = structure.altloc_group == np.arange(structure.n_residues)
         for c in range(structure.n_chains):
             span = structure.residues_of(c)
-            polymer = int(np.isin(kinds[span], (AMINO, NUCLEIC)).sum())
+            polymer = int((np.isin(kinds[span], (AMINO, NUCLEIC)) & first[span]).sum())
             if polymer:
                 name = str(structure.chain_name[c])
                 self._child(top, protein, f"Chain {chain_title(name)} ({polymer})",

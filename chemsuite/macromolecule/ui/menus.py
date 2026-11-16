@@ -222,7 +222,7 @@ def context_menu(
             menu.addAction("Delete Atom", lambda: _delete_here(panel, shown.id, index, False))
             menu.addAction("Delete Residue", lambda: _delete_here(panel, shown.id, index, True))
             fill_edit(menu.addMenu("Edit Selection"), panel, shortcuts=False)
-        alternates = sorted(set(structure.altloc[structure.atoms_of(residue)].tolist()) - {""})
+        alternates = sorted(set(structure.altloc[structure.altloc_span(residue)].tolist()) - {""})
         if alternates:
             alt = menu.addMenu("Alternate Location")
             current = shown.altlocs.get(residue, structure.default_altlocs.get(residue, ""))

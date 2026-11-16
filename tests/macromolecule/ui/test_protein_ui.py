@@ -461,6 +461,28 @@ def test_alternate_locations_can_be_switched(qtbot, monkeypatch) -> None:
     assert set(shown.structure.altloc[span][visible]) <= {"", other}
 
 
+def test_switching_the_residue_at_a_shared_place_shows_the_other_one(qtbot, monkeypatch) -> None:
+    from chemsuite.app.shell import graphics
+    from chemsuite.macromolecule.ui.panel import MacromoleculePanel
+
+    monkeypatch.setattr(graphics, "_problem", None)
+    t = Table()
+    add_protein(t, "1EJG", "1ejg_microhet.cif.gz")
+    panel = MacromoleculePanel(t)
+    qtbot.addWidget(panel)
+    shown = panel.session.display("1EJG")
+    s = shown.structure
+    pro, ser = (int(r) for r in np.flatnonzero(s.res_seq == 22))
+    top = panel.tree.topLevelItem(0)
+    assert top.child(0).text(0) == "Chain A (10)"  # places, not residues
+    shown.styles[s.atoms_of(pro)] = scene.STICK
+    panel.session.choose_altloc("1EJG", pro, "B")
+    assert (shown.styles[s.atoms_of(pro)] == scene.HIDDEN).all()
+    span = s.atoms_of(ser)
+    backbone = np.isin(s.name[span], ["N", "CA", "C", "O"]) & (s.altloc[span] == "B")
+    assert (shown.styles[span][backbone] == scene.STICK).all()  # SER takes PRO's style
+
+
 # saving and the GPU fallback
 
 

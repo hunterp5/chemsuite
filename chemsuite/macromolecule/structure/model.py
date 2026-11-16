@@ -189,34 +189,74 @@ class Structure:
 
     # alternate locations
     @cached_property
+    def altloc_group(self) -> np.ndarray:
+        """For each residue, the first residue at its place in the chain. A file can model
+        two residues at one place (microheterogeneity: PRO 22 and SER 22 in 1EJG, told apart
+        by their alternate locations); they make one group, given one letter, so one of them
+        is shown. Every other residue is a group of its own."""
+        group = np.arange(self.n_residues, dtype=np.int32)
+        has = np.zeros(self.n_residues, bool)
+        has[self.residue_of[self.altloc != ""]] = True
+        polymer = np.isin(self.res_kind, (AMINO, NUCLEIC))
+        chain = self.chain_of
+        for r in (np.flatnonzero(has[1:] & has[:-1] & polymer[1:] & polymer[:-1]) + 1).tolist():
+            if (chain[r] == chain[r - 1] and self.res_seq[r] == self.res_seq[r - 1]
+                    and self.icode[r] == self.icode[r - 1]):  # fmt: skip
+                group[r] = group[r - 1]
+        return _frozen(group)
+
+    def altloc_members(self, residue: int) -> np.ndarray:
+        """The residues of *residue*'s group (:attr:`altloc_group`), in order."""
+        group = self.altloc_group
+        return np.flatnonzero(group == group[residue])
+
+    def altloc_span(self, residue: int) -> slice:
+        """The atoms of *residue*'s whole group, which are one run."""
+        members = self.altloc_members(residue)
+        return slice(int(self.res_start[members[0]]), int(self.res_start[members[-1] + 1]))
+
+    @cached_property
     def default_altlocs(self) -> dict[int, str]:
         """For each residue with alternate locations, the one shown unless the user picks
-        another: the highest mean occupancy, then the first letter."""
+        another: the highest mean occupancy, then the first letter. The residues of a group
+        (:attr:`altloc_group`) get the same letter, chosen over all their atoms."""
         has = np.flatnonzero(self.altloc != "")
-        residues = self.residue_of[has]
+        groups = self.altloc_group[self.residue_of[has]]
         choice: dict[int, str] = {}
-        for residue in np.unique(residues):
-            atoms = has[residues == residue]
+        for group in np.unique(groups):
+            atoms = has[groups == group]
             letters = self.altloc[atoms]
-            choice[int(residue)] = max(
+            best = max(
                 np.unique(letters),
                 key=lambda x: (float(self.occupancy[atoms][letters == x].mean()), -ord(x)),
             )
+            for residue in np.unique(self.residue_of[atoms]).tolist():
+                choice[residue] = str(best)
         return choice
 
     def active(self, altlocs: Mapping[int, str] | None = None) -> np.ndarray:
         """Atoms shown: those with one location, and the chosen location of the others.
 
-        ``altlocs`` maps a residue index to the letter the user picked for it."""
+        ``altlocs`` maps a residue index to the letter the user picked for it; the pick holds
+        for the residue's whole group. A residue of a group with no atom at the group's letter
+        is not shown at all, its single-location atoms included."""
         mask = self.altloc == ""
         if mask.all():
             return mask
         chosen = dict(self.default_altlocs)
-        if altlocs:
-            chosen.update(altlocs)
+        group = self.altloc_group
+        for residue, letter in (altlocs or {}).items():
+            if 0 <= residue < self.n_residues:
+                for member in self.altloc_members(residue).tolist():
+                    chosen[member] = letter
         has = np.flatnonzero(~mask)
         letters = np.array([chosen.get(int(r), "") for r in self.residue_of[has]], dtype="<U1")
         mask[has] = self.altloc[has] == letters
+        sharing = np.flatnonzero(np.bincount(group, minlength=self.n_residues)[group] > 1)
+        for residue in sharing.tolist():
+            span = self.atoms_of(residue)
+            if not (self.altloc[span] == chosen.get(residue, "")).any():
+                mask[span] = False
         return mask
 
     def xyz(self, model: int = 0) -> np.ndarray:

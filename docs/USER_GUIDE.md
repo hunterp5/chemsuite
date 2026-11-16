@@ -1710,7 +1710,8 @@ or not, with the rows you chose.
   shown proteins have models, the list at its left picks which one the bar steps. The model
   shown is saved with the document.
 - Right-click an atom to select its residue, chain or surroundings, focus a ligand, switch an
-  alternate location, copy a ligand's SMILES, **Add Ligand to Table** (a cofactor, say, or a
+  alternate location (where a file models two residues at one place, such as PRO and SER at
+  22 in 1EJG, the letter picks which residue is shown, one at a time), copy a ligand's SMILES, **Add Ligand to Table** (a cofactor, say, or a
   ligand whose row you deleted), **Label ▸** its residue or the atom, start a **Measure From
   Here ▸** distance, angle or dihedral with it as the first atom, **Delete Atom** or
   **Delete Residue** (what was clicked), **Edit Selection ▸** (as in the Edit menu), or **Copy
@@ -1820,7 +1821,9 @@ in the **Inspect** panel beside the structure, for you to go through first.
   **Pocket** or **All** to choose them.
 - **Alternate locations** has a line for each residue the file models more than once, with
   the location kept (the highest occupancy, as Prepare… keeps); choose another letter to keep
-  that one instead. Each letter is listed with its mean occupancy. With **Repair** off the
+  that one instead. Each letter is listed with its mean occupancy. Two residues modelled at
+  one place make one line, under the first, each letter naming the residue it keeps, so the
+  prepared protein has one residue there. With **Repair** off the
   file's locations are left as they are, so there are no such lines.
 - **Crystal waters** has a line for each water in the file, **Kept** or **Dropped** as the
   **Waters** setting left it; overrule any one either way.

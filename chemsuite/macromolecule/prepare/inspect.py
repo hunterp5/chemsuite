@@ -79,7 +79,7 @@ def _altlocs(s: Structure) -> list[Finding]:
     chosen = s.default_altlocs
     if not chosen:
         return []
-    labels = [s.residue_label(r) for r in sorted(chosen)]
+    labels = [s.residue_label(r) for r in sorted(chosen) if s.altloc_group[r] == r]
     shown = ", ".join(labels[:6]) + (" …" if len(labels) > 6 else "")
     text = f"{len(labels)} residues with alternate locations: the location shown kept"
     return [Finding(ALTLOCS, shown, text)]

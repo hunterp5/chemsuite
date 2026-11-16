@@ -25,6 +25,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from chemsuite.macromolecule.prepare import pipeline, repair
 from chemsuite.macromolecule.structure import io, secondary, store
 from chemsuite.macromolecule.structure.model import (
     ADDITIVE,
@@ -154,6 +155,30 @@ def test_all_alternate_locations_are_kept_and_one_is_shown(lysozyme: Structure) 
     switched = lysozyme.active({r: other})
     span = lysozyme.atoms_of(r)
     assert set(lysozyme.altloc[span][switched[span]]) <= {"", other}
+
+
+def _shown(s: Structure, active: np.ndarray, number: int) -> list[str]:
+    """The names of the residues numbered *number* with any atom shown."""
+    residues = np.flatnonzero(s.res_seq == number)
+    return [str(s.res_name[r]) for r in residues if active[s.atoms_of(int(r))].any()]
+
+
+def test_two_residues_at_one_place_show_one_at_a_time() -> None:
+    """1EJG models PRO and SER at 22 and LEU and ILE at 25 (microheterogeneity): one letter
+    for the place shows one residue, as ChimeraX does, never one of each overlapping."""
+    s = load("1ejg_microhet.cif.gz")
+    pro, ser = (int(r) for r in np.flatnonzero(s.res_seq == 22))
+    assert s.altloc_group[ser] == pro and s.altloc_members(ser).tolist() == [pro, ser]
+    assert s.default_altlocs[pro] == s.default_altlocs[ser] == "A"
+    shown = s.active()
+    assert _shown(s, shown, 22) == ["PRO"] and _shown(s, shown, 25) == ["LEU"]
+    for picked in (pro, ser):  # a pick on either residue holds for the place
+        switched = s.active({picked: "B"})
+        assert _shown(s, switched, 22) == ["SER"]  # PRO's single-location atoms go too
+        assert _shown(s, switched, 25) == ["LEU"]
+    one = repair.one_location(s, {ser: "C"})
+    assert one.n_residues == 10 and one.res_name[one.res_seq == 22].tolist() == ["SER"]
+    assert pipeline.default_altlocs(s, pipeline.FIRST)[ser] == "A"
 
 
 # bonds

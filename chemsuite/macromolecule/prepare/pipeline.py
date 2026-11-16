@@ -402,8 +402,10 @@ def default_altlocs(s: Structure, rule: str = HIGHEST) -> dict[int, str]:
     if rule != FIRST:
         return dict(s.default_altlocs)
     has = np.flatnonzero(s.altloc != "")
-    return {r: str(min(s.altloc[has[s.residue_of[has] == r]]))
-            for r in np.unique(s.residue_of[has]).tolist()}  # fmt: skip
+    residues = np.unique(s.residue_of[has]).tolist()
+    groups = s.altloc_group[s.residue_of[has]]  # a group's residues share one letter
+    first = {g: str(min(s.altloc[has[groups == g]])) for g in np.unique(groups).tolist()}
+    return {r: first[int(s.altloc_group[r])] for r in residues}
 
 
 def _altlocs(s: Structure, chosen: Mapping[str, str], rule: str = HIGHEST) -> dict[int, str] | None:

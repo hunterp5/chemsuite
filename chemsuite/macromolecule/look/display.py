@@ -214,7 +214,7 @@ class Display:
         was = self.active
         self.altlocs[residue] = letter
         now = self.active
-        span = self.structure.atoms_of(residue)
+        span = self.structure.altloc_span(residue)  # a group's other residue may now show
         # the newly shown location takes the style its partner had
         for i in range(span.start, span.stop):
             if now[i] and not was[i]:

@@ -232,3 +232,19 @@ def test_each_crystal_water_can_be_kept_or_dropped(kinase) -> None:
     s = again.prepared.structure
     waters = {s.residue_label(int(r)) for r in np.unique(s.residue_of[s.atom_kind == WATER])}
     assert dropped[0].label in waters and kept[0].label not in waters
+
+
+def test_two_residues_at_one_place_are_one_choice() -> None:
+    from tests.macromolecule.conftest import load
+
+    s = load("1ejg_microhet.cif.gz")
+    found = review.survey("1EJG", s, NO_WATERS)
+    altlocs = {c.label: c for c in found.choices if c.kind == review.ALTLOC}
+    assert "A/SER 22" not in altlocs and "A/ILE 25" not in altlocs
+    place = altlocs["A/PRO 22"]
+    assert [state.note.split(",")[0] for state in place.states] == ["PRO", "SER", "SER"]
+    decisions = review.decisions_from(found, overrides={place.id: "B"})
+    again = review.survey("1EJG", s, NO_WATERS, decisions=decisions)
+    kept = again.prepared.structure
+    assert kept.res_name[kept.res_seq == 22].tolist() == ["SER"]
+    assert kept.res_name[kept.res_seq == 25].tolist() == ["LEU"]

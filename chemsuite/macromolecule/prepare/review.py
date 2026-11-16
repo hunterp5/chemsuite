@@ -176,19 +176,29 @@ def _altloc_choices(
     s: Structure, decisions: Decisions, rule: str = pipeline.HIGHEST
 ) -> list[Choice]:
     """A line for each residue with alternate locations: its letters with their occupancies,
-    the one kept chosen (by the *rule*, unless the chemist picked another)."""
+    the one kept chosen (by the *rule*, unless the chemist picked another). Two residues
+    modelled at one place (:attr:`Structure.altloc_group`) make one line, under the first,
+    each letter naming the residue it keeps."""
     out = []
     has = s.altloc != ""
     for r, default in sorted(pipeline.default_altlocs(s, rule).items()):
+        if s.altloc_group[r] != r:
+            continue  # the first residue of its group speaks for it
         label = s.residue_label(r)
-        atoms = np.flatnonzero(has & (s.residue_of == r))
+        span = s.altloc_span(r)
+        atoms = np.arange(span.start, span.stop)[has[span]]
         letters = sorted({str(x) for x in s.altloc[atoms]})
         picked = decisions.altlocs.get(label, default)
         picked = picked if picked in letters else default
+        shared = len(s.altloc_members(r)) > 1
         states = []
         for x in letters:
-            occupancy = float(s.occupancy[atoms][s.altloc[atoms] == x].mean())
-            states.append(State(x, "", 0.0, x == picked, 0.0, f"occupancy {occupancy:.2f}"))
+            at = atoms[s.altloc[atoms] == x]
+            occupancy = float(s.occupancy[at].mean())
+            text = f"occupancy {occupancy:.2f}"
+            if shared:
+                text = f"{s.res_name[s.residue_of[at[0]]]}, {text}"
+            states.append(State(x, "", 0.0, x == picked, 0.0, text))
         out.append(Choice(f"{ALTLOC}:{label}", ALTLOC, label, r, tuple(states),
                           letters.index(picked), float("inf")))  # fmt: skip
     return out
