@@ -167,17 +167,19 @@ def survey(
         for f in prepared.report
         if f.kind != pipeline.SITE and f.kind != pipeline.NOTE
     )
-    altlocs = _altloc_choices(s, chosen) if options.repair else []
-    choices = (*altlocs, *_choices(prepared), *_water_choices(s, prepared))
+    altlocs = _altloc_choices(s, chosen, options.altloc) if options.repair else []
+    choices = (*altlocs, *_choices(prepared, options.ambiguous), *_water_choices(s, prepared))
     return Survey(protein, issues, choices, prepared, options, chosen)
 
 
-def _altloc_choices(s: Structure, decisions: Decisions) -> list[Choice]:
+def _altloc_choices(
+    s: Structure, decisions: Decisions, rule: str = pipeline.HIGHEST
+) -> list[Choice]:
     """A line for each residue with alternate locations: its letters with their occupancies,
-    the one kept chosen (the highest occupancy, unless the chemist picked another)."""
+    the one kept chosen (by the *rule*, unless the chemist picked another)."""
     out = []
     has = s.altloc != ""
-    for r, default in sorted(s.default_altlocs.items()):
+    for r, default in sorted(pipeline.default_altlocs(s, rule).items()):
         label = s.residue_label(r)
         atoms = np.flatnonzero(has & (s.residue_of == r))
         letters = sorted({str(x) for x in s.altloc[atoms]})
@@ -214,7 +216,7 @@ def _issue_id(finding: inspection.Finding) -> str:
     return f"{finding.kind}:{finding.label}:{atoms}"
 
 
-def _choices(prepared: Prepared) -> tuple[Choice, ...]:
+def _choices(prepared: Prepared, ambiguous: float = pipeline.AMBIGUOUS) -> tuple[Choice, ...]:
     """Every decision, with each state's energy where the energies were kept."""
     energies = prepared.energies
     keys = prepared.keys
@@ -244,7 +246,9 @@ def _choices(prepared: Prepared) -> tuple[Choice, ...]:
                 choice.gap,
                 prepared.pka.get(site.residue),
                 prepared.population.get(site.residue),
-                pipeline.warns(choice, pipeline.site_fraction(choice, prepared.population)),
+                pipeline.warns(
+                    choice, pipeline.site_fraction(choice, prepared.population), ambiguous
+                ),
             )
         )
     return tuple(out)

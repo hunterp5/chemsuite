@@ -24,11 +24,11 @@ import pytest
 
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.protein.prepare import pipeline, sites
-from chemsuite.protein.structure import store
+from chemsuite.protein.structure import edit, store
 from chemsuite.protein.ui.panel import ProteinPanel
 from chemsuite.protein.ui.report import TOOL_ID as REPORT_ID
 from chemsuite.protein.ui.report import PrepareReportPanel
-from chemsuite.tools.protein import prepare_dialog, tool
+from chemsuite.tools.protein import prepare_dialog, prepare_options, tool
 from tests.gui import gui
 
 pytestmark = gui
@@ -93,6 +93,46 @@ def test_the_dialog_offers_the_shown_protein_and_its_defaults(opened) -> None:
     assert options.ph == 7.0 and options.waters == pipeline.ALL
     assert options.repair and options.optimise
     assert options.titrate == sites.OFF  # off by default: less accurate on average (P2)
+    assert options == pipeline.Options()  # every finer setting at the preparation's default
+
+
+def test_every_setting_goes_through_the_dialog_and_the_document(opened) -> None:
+    changed = pipeline.Options(
+        ph=6.5, waters=pipeline.NEAR_LIGANDS, repair=False, optimise=False,
+        titrate=sites.POCKET, ligand_states=False,
+        orient_waters=False, side_chains=False, fill_gaps=False, caps=False,
+        altloc=pipeline.FIRST, water_reach=7.5, water_b_max=40.0, his="HIE", flips=False,
+        ambiguous=2.0,
+    )  # fmt: skip
+    assert set(changed.changed()) == set(prepare_options.NAMES)  # not one left out
+    dialog = prepare_dialog.PrepareDialog(ToolContext(opened))
+    dialog.fields.set_options(changed)
+    assert dialog.options() == changed
+    saved = prepare_options.settings_of(changed)
+    assert prepare_options.options_from(saved) == changed
+    assert prepare_options.options_from({}) == pipeline.Options()  # an older document
+    junk = {"his": "HXX", "water_reach": "far", "caps": "yes", "water_b_max": None}
+    assert prepare_options.options_from(junk) == pipeline.Options()
+
+
+def test_settings_under_another_follow_it(opened) -> None:
+    fields = prepare_dialog.PrepareDialog(ToolContext(opened)).fields
+    assert not fields.water_reach.isEnabled()  # Waters ▸ All
+    fields.waters.set_value(pipeline.NEAR_LIGANDS)
+    assert fields.water_reach.isEnabled()
+    fields.repair.setChecked(False)
+    assert not fields.caps.isEnabled() and not fields.side_chains.isEnabled()
+    fields.optimise.setChecked(False)
+    assert not fields.his.isEnabled() and not fields.flips.isEnabled()
+
+
+def test_the_report_says_which_settings_were_changed(opened, qtbot) -> None:
+    panel = prepared(opened, qtbot, pipeline.Options(caps=False, his="HID"))
+    first = panel.report.rows[0]
+    assert first.label == prepare_dialog.SETTINGS
+    assert first.text == "Cap Ends off, His HID"
+    default = prepared(opened, qtbot)
+    assert all(row.label != prepare_dialog.SETTINGS for row in default.report.rows)
 
 
 def test_preparing_adds_hydrogens_in_one_undoable_step(opened, qtbot) -> None:
@@ -104,6 +144,24 @@ def test_preparing_adds_hydrogens_in_one_undoable_step(opened, qtbot) -> None:
     assert table.history.undo_label == "Prepare 1CRN"
     table.undo()
     assert hydrogens(opened) == 0 and list(table.assets) == ["1CRN"]
+
+
+def test_preparing_keeps_its_record_and_a_second_run_keeps_what_the_first_built(
+    opened, qtbot
+) -> None:
+    ctx = ToolContext(opened)
+    workspace = tool.protein_workspace(ctx)
+    s = prepare_dialog.structure_of(ctx, "1CRN")
+    tip = (s.name == "CZ") & (s.res_name[s.residue_of] == "ARG")  # Arg 10's, to be rebuilt
+    workspace.session().edit("Cut", {"1CRN": edit.delete(s, tip)})
+    prepared(opened, qtbot, pipeline.Options(ph=6.0))
+    first = workspace.prepared("1CRN")
+    s = prepare_dialog.structure_of(ctx, "1CRN")
+    assert first is not None and first.matches(s) and first.ph == 6.0
+    assert first.settings["ph"] == 6.0 and first.built
+    prepared(opened, qtbot)
+    again = workspace.prepared("1CRN")
+    assert again is not None and first.built <= again.built  # found already there: still built
 
 
 def test_the_report_docks_in_the_viewers_window(opened, qtbot) -> None:

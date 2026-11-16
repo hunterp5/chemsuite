@@ -1712,7 +1712,8 @@ X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked ou
 
 - **Protein** is the one to prepare (the one the viewer is looking at, by default).
 - **pH** decides which form each acid, base and ligand takes.
-- **Waters:** keep them all, only those within 5 Å of a ligand, or none. Every water kept gets
+- **Waters:** keep them all, only those near a ligand (within 5 Å, or **More Options ▸ Water
+  Distance**), or none. Every water kept gets
   its two hydrogens: with Optimise on, those within 5 Å of a ligand are oriented together with
   the other choices; the rest are turned one at a time towards the N and O around them.
 - **Repair** builds side-chain atoms and terminal oxygens the file is missing, from the
@@ -1734,6 +1735,28 @@ X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked ou
 - **More Options ▸ Titrate** works out each group's pKa in its surroundings and takes the form
   it mostly holds at that pH, for the groups near a ligand (Pocket) or for all of them. It is
   off by default: on the benchmark the textbook forms at pH 7 are right more often.
+
+The rest of **More Options** fine-tunes the run. Each one defaults to what Prepare does
+without it, and each has its explanation in its tooltip:
+
+| Setting | Default | What it changes |
+|---|---|---|
+| **Side Chains** | on | Builds missing side-chain atoms. Off: they stay as the file has them (a residue Prepare builds from nothing still gets its side chain). |
+| **Lone Residues** | on | Builds a residue missing on its own. Off: the ends either side are capped instead. |
+| **Cap Ends** | on | Puts ACE/NME caps on the cut ends. Off: the ends are left as the file has them. |
+| **Alternate Locations** | Most Occupied | Which location an atom modelled more than once keeps: the most occupied, or the first letter. |
+| **Water Distance** | 5 Å | How near a ligand a water must be, with Waters ▸ Near Ligands. |
+| **Water B-factor Limit** | Off | Drops waters whose B-factor is above it. A water kept by hand in Inspect stays. |
+| **Orient Waters** | on | Turns the waters near ligands with the rest of the hydrogen-bond network. |
+| **Ligand Forms** | on | Lets a ligand take another protomer or tautomer when its pocket favours it. Off: as drawn. |
+| **His** | Auto | Gives every His one tautomer (HID, HIE or HIP) instead of choosing each. A His bound to a metal keeps its own. |
+| **Flips** | on | Lets Asn, Gln and His flip. Off: they keep the file's orientation. |
+| **⚠ Threshold** | 1 kcal/mol | A choice whose next best is closer than this is marked ⚠, in the report and in Inspect alike. |
+
+The repair settings apply only with **Repair** on. His, Flips, the threshold, Titrate,
+Orient Waters and Ligand Forms apply only with **Optimise** on. When a setting is changed from
+its default, the report's first line (**Settings**) names it, so the report says how the
+structure was made.
 
 The work runs in the background and can be cancelled. What comes back replaces the protein in
 **one** step: Undo (Ctrl+Z, in the table or the viewer) puts the structure back as it was.

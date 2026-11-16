@@ -26,23 +26,25 @@ panel. What the preparation did is kept with the document, so the report comes b
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox
+from PySide6.QtWidgets import QComboBox
 
 from chemsuite.app.document.tools import ToolContext
-from chemsuite.app.widgets.dialogs import Segmented, ToolDialog
+from chemsuite.app.widgets.dialogs import ToolDialog
 from chemsuite.core.wording import plural
-from chemsuite.protein.prepare import pipeline, sites
+from chemsuite.protein.prepare import pipeline
 from chemsuite.protein.structure import store
 from chemsuite.protein.structure.model import Structure
+from chemsuite.protein.workspace.prepared import PreparedRecord, carried_built
 from chemsuite.protein.workspace.reports import PrepareReport, Row
 
+from .prepare_options import OptionsFields, describe, settings_of
 from .tool import KIND, TOOL_ID, ccd, dialog_parent, protein_workspace
 
-WATERS = ((pipeline.ALL, "All"), (pipeline.NEAR_LIGANDS, "Near Ligands"), (pipeline.NONE, "None"))
-TITRATE = ((sites.OFF, "Off"), (sites.POCKET, "Pocket"), (sites.ALL, "All"))
 HYDROGEN = 1
 #: between the two residues a report line names (a gap, a break, a disulfide)
 SPAN = " – "
+#: the report line naming the settings changed from the defaults
+SETTINGS = "Settings"
 
 
 class PrepareDialog(ToolDialog):
@@ -59,43 +61,8 @@ class PrepareDialog(ToolDialog):
             self.protein.setCurrentIndex(self.protein.findData(chosen))
         inputs.row("Protein", self.protein)
 
-        method = self.section("Method")
-        self.ph = QDoubleSpinBox()
-        self.ph.setRange(0.0, 14.0)
-        self.ph.setSingleStep(0.5)
-        self.ph.setDecimals(1)
-        self.ph.setValue(7.0)
-        method.row("pH", self.ph, help="Which form each acid, base and ligand takes.")
-        self.waters = Segmented(WATERS, pipeline.ALL)
-        method.row(
-            "Waters",
-            self.waters,
-            help="Keep every water, only those within 5 Å of a ligand, or none.",
-        )
-        self.repair = QCheckBox()
-        self.repair.setChecked(True)
-        method.row(
-            "Repair",
-            self.repair,
-            help="Build missing side-chain atoms and terminal oxygens from the component "
-            "templates. No loops are built.",
-        )
-        self.optimise = QCheckBox()
-        self.optimise.setChecked(True)
-        method.row(
-            "Optimise",
-            self.optimise,
-            help="Choose each Asn/Gln/His flip, each His tautomer and each hydroxyl and "
-            "amine rotor by the hydrogen bonds they make.",
-        )
-
-        more = self.section("More Options", collapsed=True)
-        self.titrate = Segmented(TITRATE, sites.OFF)
-        more.row(
-            "Titrate",
-            self.titrate,
-            help="Work out each group's pKa and take the form it mostly holds at this pH, "
-            "instead of the textbook form. Less accurate on average than the textbook forms.",
+        self.fields = OptionsFields(
+            self.section("Method"), self.section("More Options", collapsed=True)
         )
         self.protein.currentIndexChanged.connect(lambda *_: self.refresh())
         self.refresh()
@@ -110,13 +77,7 @@ class PrepareDialog(ToolDialog):
         return f"Prepare {name}" if name else "Prepare"
 
     def options(self) -> pipeline.Options:
-        return pipeline.Options(
-            ph=float(self.ph.value()),
-            waters=self.waters.value(),
-            repair=self.repair.isChecked(),
-            optimise=self.optimise.isChecked(),
-            titrate=self.titrate.value(),
-        )
+        return self.fields.options()
 
     def run(self):
         protein = self.protein.currentData()
@@ -173,8 +134,9 @@ def prepare_protein(ctx: ToolContext, protein: str, options: pipeline.Options):
             return
         workspace = protein_workspace(ctx)
         workspace.session().edit(f"Prepare {protein}", {protein: prepared.structure})
-        report = summary(protein, prepared, options.ph)
+        report = summary(protein, prepared, options)
         workspace.set_report(report)
+        workspace.set_prepared(record_of(protein, prepared, options, workspace.prepared(protein)))
         show_report(ctx, report)
         added = int((prepared.structure.element == HYDROGEN).sum()) - before
         warnings = f", {report.warnings} to check" if report.warnings else ""
@@ -186,13 +148,32 @@ def prepare_protein(ctx: ToolContext, protein: str, options: pipeline.Options):
     return ctx.run(f"Preparing {protein}…", work, done)
 
 
-def summary(protein: str, prepared: pipeline.Prepared, ph: float) -> PrepareReport:
-    """What the preparation did, in the compact form the document keeps."""
+def summary(protein: str, prepared: pipeline.Prepared, options: pipeline.Options) -> PrepareReport:
+    """What the preparation did, in the compact form the document keeps; led by the settings
+    changed from the defaults, so the report says how it was made."""
     rows = tuple(
         Row(finding.label, finding.text, finding.warn, finding.residue)
         for finding in prepared.report
     )
-    return PrepareReport(protein, rows, ph=ph, net_charge=prepared.net_charge)
+    if changed := describe(options):
+        rows = (Row(SETTINGS, changed), *rows)
+    return PrepareReport(protein, rows, ph=options.ph, net_charge=prepared.net_charge)
+
+
+def record_of(
+    protein: str,
+    prepared: pipeline.Prepared,
+    options: pipeline.Options,
+    before: PreparedRecord | None = None,
+) -> PreparedRecord:
+    """What the preparation left besides the structure, kept with the document; the atoms an
+    earlier preparation of the same protein built (*before*) are still counted built."""
+    s = prepared.structure
+    return PreparedRecord.of(
+        protein, s, ph=options.ph, settings=settings_of(options), states=prepared.states,
+        pka=prepared.pka, population=prepared.population,
+        built=carried_built(prepared.built, before, s),
+    )  # fmt: skip
 
 
 # -- the report panel ---------------------------------------------------------------------------

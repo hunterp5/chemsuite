@@ -33,12 +33,20 @@ from collections.abc import Mapping
 
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.core.wording import plural
-from chemsuite.protein.prepare import pipeline, review, sites
+from chemsuite.protein.prepare import pipeline, review
 from chemsuite.protein.structure.model import Structure
 from chemsuite.protein.workspace.reports import PrepareReport, Row
 from chemsuite.protein.workspace.reviews import Review
 
-from .prepare_dialog import PrepareDialog, select_named, show_report, structure_of, summary
+from .prepare_dialog import (
+    PrepareDialog,
+    record_of,
+    select_named,
+    show_report,
+    structure_of,
+    summary,
+)
+from .prepare_options import options_from, settings_of
 from .tool import TOOL_ID, ccd, protein_workspace
 
 HYDROGEN = 1
@@ -60,30 +68,6 @@ class InspectDialog(PrepareDialog):
         if not isinstance(protein, str):
             return None
         return inspect_protein(self.ctx, protein, self.options())
-
-
-# -- settings, as the document keeps them ---------------------------------------------------------
-def settings_of(options: pipeline.Options) -> dict:
-    return {
-        "ph": options.ph,
-        "waters": options.waters,
-        "repair": options.repair,
-        "optimise": options.optimise,
-        "titrate": options.titrate,
-    }
-
-
-def options_from(settings: Mapping) -> pipeline.Options:
-    waters = settings.get("waters")
-    titrate = settings.get("titrate")
-    return pipeline.Options(
-        ph=float(settings.get("ph", 7.0)),
-        waters=waters if waters in (pipeline.ALL, pipeline.NEAR_LIGANDS, pipeline.NONE)
-        else pipeline.ALL,
-        repair=settings.get("repair") is not False,
-        optimise=settings.get("optimise") is not False,
-        titrate=titrate if titrate in (sites.OFF, sites.POCKET, sites.ALL) else sites.OFF,
-    )  # fmt: skip
 
 
 # -- surveying ------------------------------------------------------------------------------------
@@ -237,9 +221,10 @@ def apply_review(ctx: ToolContext, panel, skipped, overrides):
             return
         workspace = protein_workspace(ctx)
         workspace.session().edit(f"Prepare {protein} (reviewed)", {protein: prepared.structure})
-        report = _with_provenance(summary(protein, prepared, options.ph), found, skipped,
+        report = _with_provenance(summary(protein, prepared, options), found, skipped,
                                   overrides, prepared.structure)  # fmt: skip
         workspace.set_report(report)
+        workspace.set_prepared(record_of(protein, prepared, options, workspace.prepared(protein)))
         workspace.drop_review(protein)
         show_report(ctx, report)
         panel.close_panel()

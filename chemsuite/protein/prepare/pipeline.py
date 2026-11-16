@@ -36,7 +36,7 @@ within it), and the result each group's pKa and protonated share. A group betwee
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -51,6 +51,11 @@ from .inspect import CAP, FILLED, Finding, inspect
 from .templates import Library
 
 ALL, NEAR_LIGANDS, NONE = "all", "near ligands", "none"
+#: which alternate location a residue keeps: the highest mean occupancy, or the first letter
+HIGHEST, FIRST = "highest", "first"
+#: a His left to choose its tautomer (else HID, HIE or HIP for every His)
+AUTO = "auto"
+HIS_FORMS = ("HID", "HIE", "HIP")
 WATER_REACH = 5.0  # Å from a ligand atom, for NEAR_LIGANDS
 POCKET_REACH = 6.0  # Å from a ligand atom: the residues that titrate with titrate=POCKET
 AMBIGUOUS = 1.0  # a site whose next best state is closer than this is marked ⚠
@@ -129,6 +134,21 @@ class Options:
     titrate: str = sites.OFF  # OFF, POCKET or ALL (see :func:`.sites.find_sites`)
     ligand_states: bool = True  # each ligand's protomers and tautomers (:mod:`.ligand_sites`)
     orient_waters: bool = True  # hydrogens on the waters near ligands (:mod:`.waters`)
+    # under repair: what is built, and which alternate location is kept
+    side_chains: bool = True  # missing side-chain atoms (a built residue gets its own always)
+    fill_gaps: bool = True  # a residue missing on its own is built (else its ends are capped)
+    caps: bool = True  # ACE/NME on the ends the file cuts (else charged termini)
+    altloc: str = HIGHEST  # HIGHEST or FIRST
+    water_reach: float = WATER_REACH  # Å from a ligand, for waters=NEAR_LIGANDS
+    water_b_max: float | None = None  # waters whose mean B-factor is above this are dropped
+    his: str = AUTO  # AUTO, or one of HIS_FORMS for every His (a metal's His keeps its own)
+    flips: bool = True  # Asn, Gln and His may flip (else only their states as built)
+    ambiguous: float = AMBIGUOUS  # kcal/mol: a choice whose next best is closer is marked ⚠
+
+    def changed(self) -> dict[str, object]:
+        """The settings that differ from the defaults (the fitted weights aside), by name."""
+        mine, default = asdict(self), asdict(Options())
+        return {k: v for k, v in mine.items() if k != "weights" and v != default[k]}
 
 
 @dataclass(frozen=True)
@@ -173,14 +193,18 @@ def prepare(
     caps: list[repair.Cap] = []
     filled: list[str] = []
     if options.repair:
-        located = repair.one_location(s, _altlocs(s, chosen.altlocs))
-        located, filled = repair.fill_single_gaps(located)
+        located = repair.one_location(s, _altlocs(s, chosen.altlocs, options.altloc))
+        if options.fill_gaps:
+            located, filled = repair.fill_single_gaps(located)
         named = None if chosen.repair is None else {*chosen.repair, *filled}
+        if not options.side_chains:
+            named = set(filled)  # a built residue still needs its side chain
         only = None if named is None else frozenset(residues_named(located, frozenset(named)))
         s = repair.build_missing(located, library, cancel, only=only)
-        s, caps = repair.cap_ends(s)
+        if options.caps:
+            s, caps = repair.cap_ends(s)
     check(cancel)
-    s = keep_waters(s, options.waters, chosen)
+    s = keep_waters(s, options.waters, chosen, options.water_reach, options.water_b_max)
     protonated = hydrogens.add_hydrogens(s, library, ccd, cancel)
     kept = frozenset(n.residue for n in protonated.notes if n.text == hydrogens.KEPT)
     # what was found on the file, its residues renumbered for the structure that comes out
@@ -226,7 +250,7 @@ def prepare(
         if detail:
             energies = tuple(solve.energies_of(table, weights, picked))
         protonated = solve.apply(protonated, found, picked)
-        report += _site_findings(protonated.structure, choices, share)
+        report += _site_findings(protonated.structure, choices, share, options.ambiguous)
         report += _rotor_finding(choices)
         report += _water_finding(choices)
     structure = waters.complete(protonated.structure)
@@ -257,7 +281,24 @@ def _sites(
     if options.orient_waters:
         found += waters.find(protonated)
     pocket = _pocket(s) if options.titrate == sites.POCKET else None
-    return sites.find_sites(protonated, options.titrate, pocket=pocket, taken=taken) + found
+    protein = sites.find_sites(protonated, options.titrate, pocket=pocket, taken=taken)
+    return [_restricted(site, options) for site in protein] + found
+
+
+def _restricted(site: sites.Site, options: Options) -> sites.Site:
+    """*site* with only the states the options allow: one His tautomer for every His, no
+    flipped amides or rings. Done where the site is made, so the solver, the titration and a
+    review all see the same states. A site that would have none left (a His a metal holds to
+    one tautomer) keeps its own."""
+    if site.kind == sites.HIS:
+        keep = tuple(st for st in site.states
+                     if (options.his == AUTO or st.tautomer == options.his)
+                     and (options.flips or not st.flipped))  # fmt: skip
+    elif site.kind == sites.AMIDE and not options.flips:
+        keep = tuple(st for st in site.states if not st.flipped)
+    else:
+        return site
+    return replace(site, states=keep) if keep and len(keep) < len(site.states) else site
 
 
 def _pocket(s: Structure) -> np.ndarray:
@@ -314,12 +355,19 @@ def _held(
     return held
 
 
-def keep_waters(s: Structure, which: str, chosen: Decisions | None = None) -> Structure:
-    """*s* with all its waters, none, or those within :data:`WATER_REACH` of a ligand; the
-    chemist's own keeps and drops (:class:`Decisions`) overrule that either way."""
+def keep_waters(
+    s: Structure,
+    which: str,
+    chosen: Decisions | None = None,
+    reach: float = WATER_REACH,
+    b_max: float | None = None,
+) -> Structure:
+    """*s* with all its waters, none, or those within *reach* Å of a ligand, less those whose
+    mean B-factor is above *b_max* (poorly placed); the chemist's own keeps and drops
+    (:class:`Decisions`) overrule that either way."""
     chosen = chosen or Decisions()
     water = s.atom_kind == WATER
-    if which == ALL and not chosen.drop_waters:
+    if which == ALL and not chosen.drop_waters and b_max is None:
         return s
     if not water.any():
         return s
@@ -330,10 +378,16 @@ def keep_waters(s: Structure, which: str, chosen: Decisions | None = None) -> St
         ligand = np.flatnonzero(s.atom_kind == LIGAND)
         if len(ligand):
             x = s.xyz()
-            near = cKDTree(x[ligand]).query(x[water], distance_upper_bound=WATER_REACH)[0]
+            near = cKDTree(x[ligand]).query(x[water], distance_upper_bound=reach)[0]
             keep = np.flatnonzero(water)[np.isfinite(near)]
             residues = np.unique(s.residue_of[keep])
             drop &= ~np.isin(s.residue_of, residues)
+    if b_max is not None:
+        atoms = np.flatnonzero(water)
+        owner = s.residue_of[atoms]
+        residues, at = np.unique(owner, return_inverse=True)
+        mean_b = np.bincount(at, weights=s.b[atoms]) / np.bincount(at)
+        drop |= water & np.isin(s.residue_of, residues[mean_b > b_max])
     if chosen.keep_waters:
         drop &= ~np.isin(s.residue_of, residues_named(s, chosen.keep_waters))
     if chosen.drop_waters:
@@ -341,14 +395,26 @@ def keep_waters(s: Structure, which: str, chosen: Decisions | None = None) -> St
     return s.subset(~drop)
 
 
-def _altlocs(s: Structure, chosen: Mapping[str, str]) -> dict[int, str] | None:
-    """The chemist's alternate locations, by residue index (None: the defaults)."""
-    if not chosen:
-        return None
-    return {r: chosen[s.residue_label(r)] for r in residues_named(s, chosen)}
+def default_altlocs(s: Structure, rule: str = HIGHEST) -> dict[int, str]:
+    """For each residue with alternate locations, the one kept unless the chemist picks
+    another: the highest mean occupancy (:attr:`Structure.default_altlocs`) or the first
+    letter."""
+    if rule != FIRST:
+        return dict(s.default_altlocs)
+    has = np.flatnonzero(s.altloc != "")
+    return {r: str(min(s.altloc[has[s.residue_of[has] == r]]))
+            for r in np.unique(s.residue_of[has]).tolist()}  # fmt: skip
 
 
-def warns(c: solve.Choice, fraction: float | None = None) -> bool:
+def _altlocs(s: Structure, chosen: Mapping[str, str], rule: str = HIGHEST) -> dict[int, str] | None:
+    """The alternate location of each residue that does not keep its default one, by residue
+    index (None: the defaults): the *rule*'s, then the chemist's."""
+    picked = default_altlocs(s, rule) if rule != HIGHEST else {}
+    picked.update({r: chosen[s.residue_label(r)] for r in residues_named(s, chosen)})
+    return picked or None
+
+
+def warns(c: solve.Choice, fraction: float | None = None, ambiguous: float = AMBIGUOUS) -> bool:
     """Whether a choice is worth the chemist's eye (⚠), the one rule the report and a review
     (:mod:`.review`) both use. *fraction* is a titrating site's protonated share (a ligand's:
     the share of the form it takes).
@@ -357,7 +423,7 @@ def warns(c: solve.Choice, fraction: float | None = None) -> bool:
     - A titrating site, or a ligand, when both its forms are present at this pH.
     - A rotor not when it is free to spin (no hydrogen bond) or its next best makes the same
       bonds (:data:`BONDED`, :data:`DEGENERATE`): either answer is the same answer.
-    - Anything else when the next best state is within :data:`AMBIGUOUS`.
+    - Anything else when the next best state is within *ambiguous* (:data:`AMBIGUOUS`).
     """
     kind = c.site.kind
     if kind == sites.WATER:
@@ -368,7 +434,7 @@ def warns(c: solve.Choice, fraction: float | None = None) -> bool:
         return MIXED < fraction < 1 - MIXED
     if kind == sites.ROTOR and (c.energy > BONDED or c.gap <= DEGENERATE):
         return False
-    return c.gap < AMBIGUOUS
+    return c.gap < ambiguous
 
 
 def site_fraction(c: solve.Choice, share: Mapping[int, float]) -> float | None:
@@ -377,7 +443,10 @@ def site_fraction(c: solve.Choice, share: Mapping[int, float]) -> float | None:
 
 
 def _site_findings(
-    s: Structure, choices: list[solve.Choice], share: dict[int, float] | None = None
+    s: Structure,
+    choices: list[solve.Choice],
+    share: dict[int, float] | None = None,
+    ambiguous: float = AMBIGUOUS,
 ) -> list[Finding]:
     """A row for each flip, each His, each uncommon protonation state, and each site whose
     choice is close (or, with titration, whose forms are mixed)."""
@@ -387,12 +456,12 @@ def _site_findings(
         state = c.site.states[c.state]
         fraction = site_fraction(c, share)
         if c.site.kind == sites.LIGAND:
-            found += _ligand_finding(s, c, fraction)
+            found += _ligand_finding(s, c, fraction, ambiguous)
             continue
         if c.site.kind == sites.WATER:
             continue  # one row for them all (_water_finding)
         if fraction is not None and c.site.kind != sites.HIS:  # titration decides, not the gap
-            mixed = warns(c, fraction)
+            mixed = warns(c, fraction, ambiguous)
             if state.form not in UNCOMMON and not mixed:
                 continue
             what = UNCOMMON.get(state.form) or state.form.title()
@@ -402,11 +471,11 @@ def _site_findings(
             continue
         if c.site.kind == sites.ROTOR and (c.energy > BONDED or c.gap <= DEGENERATE):
             continue  # free to spin, or the same bonds either way (_rotor_finding counts them)
-        if c.site.kind in (sites.ROTOR, sites.ACID) and c.gap >= AMBIGUOUS:
+        if c.site.kind in (sites.ROTOR, sites.ACID) and c.gap >= ambiguous:
             continue
-        if c.site.kind == sites.AMIDE and not state.flipped and c.gap >= AMBIGUOUS:
+        if c.site.kind == sites.AMIDE and not state.flipped and c.gap >= ambiguous:
             continue
-        close = warns(c, fraction)
+        close = warns(c, fraction, ambiguous)
         what = {sites.AMIDE: "Amide", sites.HIS: "His", sites.ROTOR: "Rotor",
                 sites.ACID: "Acid"}[c.site.kind]  # fmt: skip
         text = f"{what}: {state.label}" + (f" (next best within {c.gap:.1f})" if close else "")
@@ -417,10 +486,12 @@ def _site_findings(
     return found
 
 
-def _ligand_finding(s: Structure, c: solve.Choice, fraction: float | None) -> list[Finding]:
+def _ligand_finding(
+    s: Structure, c: solve.Choice, fraction: float | None, ambiguous: float = AMBIGUOUS
+) -> list[Finding]:
     """A row for a ligand not as drawn, or whose forms are mixed."""
     state = c.site.states[c.state]
-    mixed = warns(c, fraction)
+    mixed = warns(c, fraction, ambiguous)
     if state.form == ligand_sites.AS_DRAWN and not mixed:
         return []
     text = f"Ligand: {state.form}"
