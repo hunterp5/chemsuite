@@ -30,7 +30,7 @@ class FetchDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
         from .tool import dialog_parent
 
-        super().__init__(dialog_parent(ctx), "Fetch from PDB", guide="proteins")
+        super().__init__(dialog_parent(ctx), "Fetch from PDB", guide="macromolecules")
         self.ctx = ctx
         entry = self.section("Entry")
         self.code = entry.row("PDB ID", QLineEdit(),

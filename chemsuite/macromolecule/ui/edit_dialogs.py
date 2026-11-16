@@ -46,7 +46,7 @@ class EditDialog(ToolDialog):
         apply: Callable[[str], None],
         help: str = "",
     ) -> None:
-        super().__init__(parent, title, guide="proteins")
+        super().__init__(parent, title, guide="macromolecules")
         self.field = field
         self._apply = apply
         self.section("Edit").row(label, field, help)

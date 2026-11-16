@@ -97,7 +97,7 @@ def save_image(image: QImage, path: str, dpi: int) -> bool:
 
 class ExportImageDialog(ToolDialog):
     def __init__(self, panel: MacromoleculePanel) -> None:
-        super().__init__(panel.window(), "Export Image", guide="proteins")
+        super().__init__(panel.window(), "Export Image", guide="macromolecules")
         self.panel = panel
         view = panel.view
         self.aspect = view.width() / max(view.height(), 1) if view is not None else 4 / 3

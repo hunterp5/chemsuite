@@ -1055,3 +1055,19 @@ def test_the_view_menu_sets_background_projection_and_depth_cue(panel) -> None:
     panel.set_state(state)
     assert panel.background == "black" and panel.view.camera.orthographic
     assert not panel.view.depth_cue
+
+
+def test_the_pinned_sequence_menu_keeps_its_shortcut(panel, qtbot) -> None:
+    from PySide6.QtCore import Qt
+
+    from chemsuite.app.shell.windows import ToolWindow
+
+    window = ToolWindow(panel, "Macromolecule Viewer", name=lambda: "", menu_bar=panel.menu_bar)
+    with qtbot.waitActive(window):  # a shortcut needs its window active
+        window.show()
+        window.activateWindow()
+    panel.tree.setFocus()
+    qtbot.keyClick(panel.tree, Qt.Key.Key_L, Qt.KeyboardModifier.ControlModifier
+                   | Qt.KeyboardModifier.ShiftModifier)  # fmt: skip
+    assert panel.sequence_shown()
+    panel.setParent(None)  # the fixture's panel outlives the window

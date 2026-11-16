@@ -1540,15 +1540,17 @@ menus and the right-click menus:
   - **Save Session…** writes the whole workspace to a session file: every structure, how each
     looks, saved selections, the focused ligand, labels, measurements, the view (background
     and depth cue), and the preparation reports, poses and records. **Open…** on a session
-    file brings it all back. With structures already open it asks: **Replace** them (one
-    Undo puts them back) or **Add** the session's beside them (a structure whose ID is taken
+    file brings it all back. With structures already open it asks: **Replace** them (their
+    ligand rows in the table are kept; Undo takes the session's structures out and brings
+    back those it replaced) or **Add** the session's beside them (a structure whose ID is taken
     gets a new one, such as 1ATP-2, everywhere the session names it, and a saved selection
     whose name is taken gets `_2`). A session holds no table rows: **Tools ▸ Ligands to
     Table** makes them.
   - **Clear Session…** removes every structure, with the focus, saved selections, labels and
     measurements: an empty workspace. When ligand rows in the table name the structures you
-    choose **Delete Rows** or **Keep Rows**, once for all of them; one Undo brings everything
-    back, looking as it did.
+    choose **Delete Rows** or **Keep Rows**, once for all of them. One Undo brings the
+    structures (and any rows deleted) back, looking as they did; the focus, saved selections,
+    labels and measurements are not brought back.
   - Saving writes a temporary file first, so a save that fails leaves the old file as it was.
 - **The structures list:** right-click a structure for **Rename…** (the name shown; the ID the
   table's rows link to stays), **Duplicate** (a copy, `name-copy`, looking the same and keeping

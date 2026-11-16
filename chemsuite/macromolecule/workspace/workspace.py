@@ -257,7 +257,9 @@ class MacromoleculeWorkspace:
         it is added beside what is here. Reports, poses, reviews and records come with it."""
         incoming = MacromoleculeWorkspace(self.store, saved)
         state = incoming._pending
-        if replace:
+        if replace:  # what the structures had before is not the session's
+            for kept in (self.reports, self.poses, self.reviews, self.records):
+                kept.clear()
             self.session().set_state(state)
             if incoming.view:
                 self.view = dict(incoming.view)

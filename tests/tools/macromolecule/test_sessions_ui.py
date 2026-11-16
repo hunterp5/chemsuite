@@ -82,9 +82,12 @@ def test_replace_asks_first_when_structures_are_open(opened, qtbot, tmp_path, mo
     monkeypatch.setattr(session_files, "_ask_how", lambda ctx, name: None)
     wait(qtbot, session_files.open_session(ctx, path))
     assert list(session_files.structures(ctx)) == ["1ATP"]  # cancelled: as it was
+    workspace = tool.macromolecule_workspace(ctx)
+    workspace.set_prepared(PreparedRecord("1ATP", "made after the session was saved"))
     monkeypatch.setattr(session_files, "_ask_how", lambda ctx, name: session_files.REPLACE)
     wait(qtbot, session_files.open_session(ctx, path))
     assert list(session_files.structures(ctx)) == ["1ATP"]
+    assert workspace.prepared("1ATP") is None  # the session's 1ATP, not the one replaced
     table = opened.workspace.table
     assert table.history.undo_label == "Open kinase.cspx"
 
