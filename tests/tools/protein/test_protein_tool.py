@@ -93,13 +93,19 @@ def test_the_proteins_tools_are_the_viewer_prepare_and_docking(window) -> None:
         "protein",
         tool.PREPARE_ID,
         tool.INSPECT_ID,
+        tool.MINIMISE_ID,
         tool.DOCK_ID,
         tool.POSES_ID,
         tool.RESCORE_ID,
     ]
     # Prepare, Inspect and Poses reopen their panels, so they are not in the Protein menu
-    # (the viewer's Tools menu holds the first two); docking is
-    assert [t.id for t in tool.TOOLS if t.menu] == ["protein", tool.DOCK_ID, tool.RESCORE_ID]
+    # (the viewer's Tools menu holds the first two); minimising and docking are
+    assert [t.id for t in tool.TOOLS if t.menu] == [
+        "protein",
+        tool.MINIMISE_ID,
+        tool.DOCK_ID,
+        tool.RESCORE_ID,
+    ]
     from chemsuite.protein.ui.poses import PosesPanel
 
     assert PosesPanel.tool_id == tool.POSES_ID

@@ -398,3 +398,74 @@ class MinimiseSpec:
             raise SpecError("A minimisation has a tolerance, an iteration limit, an RMSD limit "
                             "and a tightening count")  # fmt: skip
         return cls(tuple(stages), float(tolerance), int(iterations), float(limit), int(tighten))
+
+
+#: the restraint strengths offered, as factors on :data:`STAGES`' constants
+RESTRAINT_SCALES = (0.5, 1.0, 2.0)
+#: the solvents a minimisation is offered in (explicit solvent is for MD)
+MINIMISE_SOLVENTS = (GBN2, VACUUM)
+
+
+@dataclass(frozen=True)
+class MinimiseSettings:
+    """What the chemist chooses for a minimisation (Prepare's Minimise and Protein ▸
+    Minimise…): the protein force field (its water model goes with it), the solvent, how hard
+    the deposited atoms are held, the RMSD limit and the platform ("" for the fastest that
+    works)."""
+
+    protein: str = FF14SB
+    solvent: str = GBN2
+    restraints: float = 1.0  # a factor on every restraint constant of STAGES
+    rmsd_limit: float = 0.3
+    platform: str = ""
+
+    def __post_init__(self) -> None:
+        if self.protein not in WATERS:
+            raise SpecError(f"No protein force field '{self.protein}'")
+        if self.solvent not in MINIMISE_SOLVENTS:
+            raise SpecError(f"A minimisation is not run in '{self.solvent}'")
+        if self.restraints <= 0 or self.rmsd_limit <= 0:
+            raise SpecError("Restraints and the RMSD limit are positive")
+
+    def forcefield(self) -> ForceFieldSpec:
+        return replace(ForceFieldSpec.paired(self.protein), solvent=self.solvent)
+
+    def protocol(self) -> MinimiseSpec:
+        stages = tuple(
+            replace(stage, **{k: v * self.restraints
+                              for k, v in zip(RESTRAINED, stage.restraints(), strict=True)})
+            for stage in STAGES
+        )  # fmt: skip
+        return MinimiseSpec(stages=stages, rmsd_limit=self.rmsd_limit)
+
+    def problem(self, has_waters: bool) -> str:
+        """Why these settings cannot minimise a structure (with crystal waters, or not), or
+        ``""``. OPC has a fourth site with no atom of its own, which is not placed yet."""
+        if has_waters and WATERS[self.protein] == OPC:
+            return f"{self.protein} uses OPC water, which chemsuite does not place yet: " \
+                "choose ff14SB, or prepare without waters"  # fmt: skip
+        return ""
+
+    def to_json(self) -> dict[str, Any]:
+        return {"protein": self.protein, "solvent": self.solvent, "restraints": self.restraints,
+                "rmsd_limit": self.rmsd_limit, "platform": self.platform}  # fmt: skip
+
+    @classmethod
+    def from_json(cls, saved: Any) -> MinimiseSettings:
+        """The settings *saved* holds; anything missing or not understood takes its default
+        (settings remembered by an older chemsuite)."""
+        d = cls()
+        if not isinstance(saved, dict):
+            return d
+        protein = saved.get("protein")
+        solvent = saved.get("solvent")
+        restraints = saved.get("restraints")
+        limit = saved.get("rmsd_limit")
+        platform = saved.get("platform")
+        return cls(
+            protein if protein in WATERS else d.protein,
+            solvent if solvent in MINIMISE_SOLVENTS else d.solvent,
+            float(restraints) if _is(restraints, float) and restraints > 0 else d.restraints,
+            float(limit) if _is(limit, float) and limit > 0 else d.rmsd_limit,
+            platform if isinstance(platform, str) else d.platform,
+        )

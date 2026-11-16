@@ -98,6 +98,30 @@ def test_a_charge_the_force_field_disagrees_with_blocks_the_build(worker, comple
     assert [p.label for p in raised.value.problems] == [lys.label]
 
 
+@pytest.mark.parametrize("protein", [spec.FF14SB, spec.FF19SB])
+@pytest.mark.parametrize("solvent", [spec.GBN2, spec.VACUUM])
+@pytest.mark.parametrize("waters", ["all", "none"])
+def test_the_force_fields_the_dialogs_offer_build(worker, protein, solvent, waters) -> None:
+    """The choices of Prepare's and Minimise…'s settings: each protein force field with its
+    water model, in implicit solvent or none, with the crystal waters kept or not. OPC's
+    fourth site is not placed yet, so ff19SB is offered only without waters
+    (``MinimiseSettings.problem``)."""
+    from .conftest import _prepared
+
+    s, states = _without(_prepared("3htb.cif.gz", waters), ("PO4", "BME"))
+    assert (s.res_name == "HOH").any() == (waters == "all")
+    settings = spec.MinimiseSettings(protein=protein, solvent=solvent)
+    forcefield = settings.forcefield()
+    charged = worker.charges(build.system_spec(s, states), forcefield)
+    problem = settings.problem(has_waters=waters == "all")
+    if problem:
+        assert protein == spec.FF19SB
+        with pytest.raises(build.BuildError, match="opc"):
+            worker.build(charged, forcefield)
+    else:
+        assert worker.build(charged, forcefield) == charged.n_atoms
+
+
 def test_minimising_moves_hydrogens_first_and_holds_heavy_atoms_near(worker, complex_) -> None:
     s, system = complex_
     charged = worker.charges(system, ForceFieldSpec())

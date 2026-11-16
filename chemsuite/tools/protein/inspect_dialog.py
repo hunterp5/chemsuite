@@ -58,6 +58,13 @@ class InspectDialog(PrepareDialog):
     def __init__(self, ctx: ToolContext) -> None:
         super().__init__(ctx)
         self.setWindowTitle("Inspect Protein")
+        # a review is applied in place; minimise it afterwards (Protein ▸ Minimise…)
+        self.minimise.setChecked(False)
+        self.method.set_row_visible(self.minimise, False)
+        self.minimising.section.setVisible(False)
+
+    def minimise_blocked(self) -> str:
+        return "Inspect applies its review in place"
 
     def verb(self) -> str:
         name = self.protein.currentText()

@@ -221,6 +221,20 @@ above the RMSD limit, or with a remaining clash, is marked ⚠ rather than quiet
 
 ## M4 — UI, storage and invalidation
 
+**Done 2026-11-15.** As below, except that the result is a **new protein**, not a model of
+the old one: Prepare with Minimise ticked leaves the protein as it was and adds `X-prep` and
+`X-min` in one undoable step (`ctx.edit`); Protein ▸ Minimise… adds `X-min` (then `X-min-2`…)
+for a prepared protein. Each copy names its source (`derived_from` in the asset meta) and is
+shown in its place (`WorkbenchSession._swap_sources`, undone both ways). Each keeps its own
+`PreparedRecord` (the minimised one with a `Minimisation`: source, force field, system, the
+result's numbers) and report. Invalidation is the record's atom digest: a protein edited after
+preparation must be prepared again, and a minimised one is never prepared or minimised again.
+`MinimiseSettings` (force field, GBn2/vacuum, restraint scale, RMSD limit, platform) is shared
+by both dialogs (`tools/protein/minimise_options.py`); ff19SB is refused while crystal waters
+are kept (OPC's virtual site is not placed). Prepare's Minimise is off by default until M5.
+Code: `tools/protein/minimise.py`, `minimise_dialog.py`; tests
+`tests/tools/protein/test_minimise_ui.py` (the fake worker).
+
 - `tools/protein/prepare_dialog.py`: a **Minimise** checkbox in Method (on when the worker is
   configured; its ⚠ problem text when not), and the force-field choice under More Options
   (ff14SB+Sage+TIP3P or ff19SB+OPC). No helper text — explanations go in `help=` tooltips.

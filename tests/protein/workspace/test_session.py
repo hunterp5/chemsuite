@@ -124,3 +124,29 @@ def test_slow_parts_wait_for_the_schedule_when_deferred(store) -> None:
     session.show_surface(True)
     _scene = session.scene
     assert asked and asked[-1] == session.scene.displays
+
+
+def test_a_copy_made_from_a_protein_shows_in_its_place_and_undo_shows_the_source() -> None:
+    from chemsuite.protein.workspace.session import DERIVED_FROM
+
+    store = AssetStore()
+    _add(store, "1CRN", "1crn.cif.gz")
+    session = WorkbenchSession(store, deferred=False)
+    original = store.assets["1CRN"]
+    prep = Asset("1CRN-prep", "protein", "1CRN-prep", original.payload, {DERIVED_FROM: "1CRN"})
+    minimised = Asset("1CRN-min", "protein", "1CRN-min", original.payload,
+                      {DERIVED_FROM: "1CRN-prep"})  # fmt: skip
+    store.edit("Prepare and minimise", [PutAsset("1CRN-prep", None, prep),
+                                        PutAsset("1CRN-min", None, minimised)])  # fmt: skip
+    shown = {d.id: d.visible for d in session.displays}
+    assert shown == {"1CRN": False, "1CRN-prep": False, "1CRN-min": True}
+    store.undo()
+    assert [(d.id, d.visible) for d in session.displays] == [("1CRN", True)]
+    store.redo()
+    assert {d.id: d.visible for d in session.displays} == shown
+    # a copy hidden by hand gives nothing back when it goes
+    session.set_visible("1CRN-min", False)
+    session.set_visible("1CRN", False)
+    store.undo()
+    assert [(d.id, d.visible) for d in session.displays] == [("1CRN", False)]
+    session.close()

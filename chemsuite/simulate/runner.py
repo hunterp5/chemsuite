@@ -111,7 +111,9 @@ class Simulator(LineWorker):
         reply = self._ok(self.request("hello", timeout=HELLO_TIMEOUT_S, cancel=cancel))
         platforms = tuple(Platform(str(p[0]), bool(p[1]), str(p[2])) for p in reply["platforms"])
         versions = {str(k): str(v) for k, v in reply["versions"].items()}
-        return Hello(str(reply["python"]), versions, platforms)
+        found = Hello(str(reply["python"]), versions, platforms)
+        _SEEN[self.where] = found
+        return found
 
     def charges(
         self, system: SystemSpec, forcefield: ForceFieldSpec, cancel: CancelToken | None = None
@@ -208,6 +210,15 @@ def _minimised(reply: dict) -> Minimised:
 
 # -- the warm workers ---------------------------------------------------------------------------
 _WORKERS: WarmWorkers[Simulator] = WarmWorkers(Simulator)
+#: what each interpreter's worker last said it has (Settings' Test, or a run), this session
+_SEEN: dict[Interpreter, Hello] = {}
+
+
+def platforms_seen(where: Interpreter) -> tuple[str, ...]:
+    """The platforms a worker in *where* has said work, without starting one (empty until a
+    worker there has said hello this session)."""
+    found = _SEEN.get(where)
+    return tuple(p.name for p in found.platforms if p.works) if found is not None else ()
 
 
 def worker_for(where: Interpreter) -> Simulator:

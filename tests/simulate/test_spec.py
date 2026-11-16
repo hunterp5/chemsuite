@@ -152,3 +152,33 @@ def test_a_damaged_result_is_refused() -> None:
         MinimiseResult.from_json({"digest": "x", "uid": [1], "xyz": [0, 0, 0]})  # no energies
     with pytest.raises(SpecError):
         MinimiseResult.from_json("result")
+
+
+def test_minimise_settings_make_the_force_field_and_the_protocol() -> None:
+    from chemsuite.simulate.spec import STAGES, MinimiseSettings
+
+    plain = MinimiseSettings()
+    assert plain.forcefield() == spec.ForceFieldSpec()
+    assert plain.protocol() == spec.MinimiseSpec()  # the defaults are M3's protocol
+    firm = MinimiseSettings(protein=spec.FF19SB, solvent=spec.VACUUM, restraints=2.0,
+                            rmsd_limit=0.5)  # fmt: skip
+    assert firm.forcefield() == spec.ForceFieldSpec(spec.FF19SB, water=spec.OPC,
+                                                    solvent=spec.VACUUM)  # fmt: skip
+    protocol = firm.protocol()
+    assert protocol.rmsd_limit == 0.5
+    for stage, base in zip(protocol.stages, STAGES, strict=True):
+        assert stage.restraints() == tuple(2.0 * v for v in base.restraints())
+    assert firm.problem(has_waters=True) and not firm.problem(has_waters=False)
+    assert not plain.problem(has_waters=True)
+    with pytest.raises(spec.SpecError):
+        MinimiseSettings(solvent=spec.EXPLICIT)
+
+
+def test_minimise_settings_survive_their_saved_form() -> None:
+    from chemsuite.simulate.spec import MinimiseSettings
+
+    settings = MinimiseSettings(spec.FF19SB, spec.VACUUM, 0.5, 0.4, "CUDA")
+    assert MinimiseSettings.from_json(settings.to_json()) == settings
+    assert MinimiseSettings.from_json(None) == MinimiseSettings()
+    junk = {"protein": "ff99", "solvent": 3, "restraints": -1, "rmsd_limit": True}
+    assert MinimiseSettings.from_json(junk) == MinimiseSettings()

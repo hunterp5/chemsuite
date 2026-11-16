@@ -1822,6 +1822,51 @@ document surveys the structure again and puts your decisions back, so the costs 
 always worked out from the structure as it is. Decisions name their residues by chain, name
 and number, so an edit elsewhere in the structure in the meantime does not move them.
 
+### Minimise
+
+A prepared structure can be relaxed in [OpenMM](https://openmm.org), so that hydrogens, rebuilt
+side chains and flipped groups settle against their neighbours while the deposited atoms stay
+near where the file put them. OpenMM must be set up first (see
+[Setting up OpenMM](#setting-up-openmm)); until it is, Minimise is greyed out and says why.
+
+- **Protein ▸ Prepare…** with **Minimise** ticked leaves the protein as it was and adds two
+  new ones in **one** step: **X-prep**, the prepared structure, and **X-min**, the same
+  minimised. Minimise needs **Repair** with **Side Chains** and **Cap Ends** on, since a force
+  field has no template for half a residue. If the minimisation cannot run, X-prep is still
+  added, and its report's first line (⚠) says why.
+- **Protein ▸ Minimise…** (in the viewer's **Tools** menu) adds **X-min** for a protein
+  already prepared. A protein edited after it was prepared must be prepared again first. A
+  minimised protein is never minimised or prepared again: its restraints would hold it to the
+  first result instead of the deposit, so start again from the one it came from. Each new
+  minimisation of the same protein is another copy (**X-min-2**…). With several models (NMR),
+  the model shown is minimised.
+
+Each new protein is shown in place of the one it was made from, which is hidden; Undo removes
+the new ones and shows the original again. The minimisation runs in three stages: hydrogens
+only; then side chains and waters, with the backbone, ligands and ions held; then the whole
+complex, each heavy atom held near its deposited position. Atoms Prepare built are never held.
+While the deposited heavy atoms end further than the **RMSD Limit**, the last stage runs again
+held twice as hard (up to three times).
+
+| Setting | Default | What it changes |
+|---|---|---|
+| **Force Field** | ff14SB | ff14SB with TIP3P water, or ff19SB with OPC water. Ligands take OpenFF Sage either way. ff19SB is not offered while crystal waters are kept (OPC's fourth site is not placed yet). |
+| **Solvent** | GBn2 | GBn2 implicit solvent, or none (vacuum). Kept crystal waters stay as explicit waters in both. |
+| **Restraints** | Normal | How hard the deposited heavy atoms are held: Loose (half), Normal or Firm (twice). |
+| **RMSD Limit** | 0.30 Å | The heavy-atom RMSD the run must end within; above it, the report marks ⚠. |
+| **Platform** | Auto | Where OpenMM runs: Auto takes the fastest that works (CUDA, OpenCL, CPU). The others are listed once OpenMM has run this session. |
+
+In Prepare these settings are under **Minimisation**; Prepare and Minimise share them, and
+they are remembered until chemsuite closes.
+
+The **report** of a minimised protein gives the energy before and after, how far the heavy
+atoms moved (RMSD overall, in the pocket — the deposited atoms within 5 Å of a small molecule
+— and of the ligand), the closest contact before and after, where the largest force is left,
+the five residues that moved most (click one to zoom to it), the force fields and ligand
+charges used, the platform, the time and the OpenMM version. A run that ends beyond the RMSD
+Limit, or with two atoms closer than 2.2 Å, is marked ⚠. The report, and how the protein was
+prepared and minimised, are saved with the document.
+
 ### Dock
 
 **Protein ▸ Dock…** docks the document's ligands into a pocket with
@@ -1882,8 +1927,8 @@ Minimising a prepared complex (and, later, molecular dynamics and binding free e
 [OpenMM](https://openmm.org) with the Amber ff14SB protein force field and
 [OpenFF Sage 2.3](https://openforcefield.org) for ligands, whose partial charges come from
 OpenFF's NAGL model. These live in a Python environment of their own, kept warm in the
-background once started. Nothing in chemsuite uses it yet: the minimisation step of
-**Prepare…** comes next.
+background once started. **Minimise** (see [Minimise](#minimise)) is the first thing that
+uses it.
 
 1. Install [Miniforge](https://conda-forge.org/download/) (or any conda).
 2. Create the environment from the file for your system in chemsuite's `envs` folder, for

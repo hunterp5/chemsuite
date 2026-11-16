@@ -210,3 +210,19 @@ def test_workers_are_kept_warm_per_interpreter_and_closed_together() -> None:
         runner.close_workers()
     assert runner.worker_for(a) is not None
     runner.close_workers()
+
+
+def test_the_platforms_a_worker_named_are_remembered_without_starting_one() -> None:
+    from chemsuite.simulate import runner
+
+    where = Interpreter(sys.executable)
+    runner._SEEN.pop(where, None)
+    assert runner.platforms_seen(where) == ()
+    worker = Simulator(where)
+    worker.command = [sys.executable, "-I", "-c", FAKE]
+    worker.env = None
+    try:
+        worker.hello()
+    finally:
+        worker.close()
+    assert "Reference" in runner.platforms_seen(where)

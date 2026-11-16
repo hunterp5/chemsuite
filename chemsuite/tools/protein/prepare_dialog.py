@@ -25,8 +25,10 @@ panel. What the preparation did is kept with the document, so the report comes b
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
+
 import numpy as np
-from PySide6.QtWidgets import QComboBox
+from PySide6.QtWidgets import QCheckBox, QComboBox
 
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import ToolDialog
@@ -36,7 +38,10 @@ from chemsuite.protein.structure import store
 from chemsuite.protein.structure.model import Structure
 from chemsuite.protein.workspace.prepared import PreparedRecord, carried_built
 from chemsuite.protein.workspace.reports import PrepareReport, Row
+from chemsuite.simulate.spec import MinimiseSettings
 
+from . import minimise
+from .minimise_options import MinimiseFields
 from .prepare_options import OptionsFields, describe, settings_of
 from .tool import KIND, TOOL_ID, ccd, dialog_parent, protein_workspace
 
@@ -45,6 +50,7 @@ HYDROGEN = 1
 SPAN = " – "
 #: the report line naming the settings changed from the defaults
 SETTINGS = "Settings"
+_minimise_on = False  # Minimise, remembered for the session (off until M5's benchmark passes)
 
 
 class PrepareDialog(ToolDialog):
@@ -61,16 +67,60 @@ class PrepareDialog(ToolDialog):
             self.protein.setCurrentIndex(self.protein.findData(chosen))
         inputs.row("Protein", self.protein)
 
-        self.fields = OptionsFields(
-            self.section("Method"), self.section("More Options", collapsed=True)
+        self.method = method = self.section("Method")
+        self.fields = OptionsFields(method, self.section("More Options", collapsed=True))
+        self.minimise = method.row("Minimise", QCheckBox())
+        self.minimise.setChecked(_minimise_on)
+        self.minimising = MinimiseFields(
+            self.section("Minimisation", collapsed=True), minimise.last_settings()
         )
+        self._minimise_help = (
+            "Relax the prepared structure in OpenMM, held near the deposited coordinates. The "
+            "protein is left as it was; the prepared and the minimised structures are added "
+            "as new proteins (-prep and -min)."
+        )
+        for box in (self.fields.repair, self.fields.side_chains, self.fields.caps):
+            box.toggled.connect(lambda *_: self.refresh())
+        self.fields.waters.changed.connect(lambda *_: self.refresh())
+        self.minimise.toggled.connect(lambda *_: self.refresh())
+        self.minimising.forcefield.changed.connect(lambda *_: self.refresh())
         self.protein.currentIndexChanged.connect(lambda *_: self.refresh())
         self.refresh()
+
+    def refresh(self) -> None:
+        why = self.minimise_blocked()
+        self.minimise.setEnabled(not why)
+        if why:
+            self.minimise.setChecked(False)
+        self.minimise.setToolTip(why or self._minimise_help)
+        self.minimising.set_enabled(self.minimise.isChecked())
+        protein = self.protein.currentData()
+        s = structure_of(self.ctx, protein) if isinstance(protein, str) else None
+        kept = self.fields.waters.value() != pipeline.NONE
+        self.minimising.allow_waters(kept and s is not None and minimise.has_waters(s))
+        super().refresh()
+
+    def minimise_blocked(self) -> str:
+        """Why Minimise cannot be ticked, or ``""``: OpenMM set up, and a preparation that
+        leaves nothing missing (a force field has no template for half a residue)."""
+        if why := minimise.ready():
+            return why
+        options = self.fields.options()
+        if not (options.repair and options.side_chains and options.caps):
+            return "Minimising needs Repair, with Side Chains and Cap Ends on"
+        return ""
 
     def problem(self) -> str:
         if self.protein.count() == 0:
             return "There are no proteins in this document"
+        protein = self.protein.currentData()
+        if isinstance(protein, str) and (why := minimise.minimised_already(self.ctx, protein)):
+            return why.replace(": minimise", ": prepare", 1)
         return ""
+
+    def minimise_settings(self) -> MinimiseSettings | None:
+        """The minimisation to run after the preparation, or None."""
+        return self.minimising.settings() if self.minimise.isChecked() else None
 
     def verb(self) -> str:
         name = self.protein.currentText()
@@ -80,10 +130,16 @@ class PrepareDialog(ToolDialog):
         return self.fields.options()
 
     def run(self):
+        global _minimise_on
         protein = self.protein.currentData()
         if not isinstance(protein, str):
             return None
-        return prepare_protein(self.ctx, protein, self.options())
+        if self.minimise.isEnabled():
+            _minimise_on = self.minimise.isChecked()
+        settings = self.minimise_settings()
+        if settings is not None:
+            minimise.remember(settings)
+        return prepare_protein(self.ctx, protein, self.options(), settings)
 
 
 # -- the proteins -------------------------------------------------------------------------------
@@ -116,36 +172,104 @@ def structure_of(ctx: ToolContext, protein: str) -> Structure | None:
 
 
 # -- running ------------------------------------------------------------------------------------
-def prepare_protein(ctx: ToolContext, protein: str, options: pipeline.Options):
-    """Prepare *protein* in the background, apply it as one undoable edit and show the
-    report. Returns the job, or None when there is no such protein."""
+def prepare_protein(
+    ctx: ToolContext,
+    protein: str,
+    options: pipeline.Options,
+    minimising: MinimiseSettings | None = None,
+):
+    """Prepare *protein* in the background and show the report. Returns the job, or None when
+    there is no such protein.
+
+    Without *minimising*, the prepared structure replaces the protein in one undoable edit.
+    With it, the protein is left as it was: the prepared structure and the minimised one are
+    added as new proteins (``X-prep``, ``X-min``) in one undoable step. A minimisation that
+    cannot run still adds ``X-prep``, its report saying why it was not minimised."""
     s = structure_of(ctx, protein)
     if s is None:
         return None
     cache = ccd(ctx)
     before = int((s.element == HYDROGEN).sum())
+    earlier = protein_workspace(ctx).prepared(protein)
+    worker = minimise.simulator() if minimising is not None else None
 
-    def work(job):
-        return pipeline.prepare(s, options, cache, job.cancel_token)
+    def work(job) -> Outcome:
+        prepared = pipeline.prepare(s, options, cache, job.cancel_token)
+        if worker is None or minimising is None:
+            return Outcome(prepared)
+        record = record_of(protein, prepared, options, earlier)
+        try:
+            relaxed = minimise.relax(worker, prepared.structure, record, minimising, cache,
+                                     report=job.report, cancel=job.cancel_token)  # fmt: skip
+        except minimise.FAILURES as error:
+            return Outcome(prepared, failure=error)
+        return Outcome(prepared, relaxed)
 
-    def done(prepared: pipeline.Prepared) -> None:
+    def done(outcome: Outcome) -> None:
         if structure_of(ctx, protein) is None:  # removed while it ran
             ctx.show_message(f"{protein} is no longer in this document")
             return
-        workspace = protein_workspace(ctx)
-        workspace.session().edit(f"Prepare {protein}", {protein: prepared.structure})
-        report = summary(protein, prepared, options)
-        workspace.set_report(report)
-        workspace.set_prepared(record_of(protein, prepared, options, workspace.prepared(protein)))
-        show_report(ctx, report)
+        prepared = outcome.prepared
+        if minimising is None:
+            workspace = protein_workspace(ctx)
+            workspace.session().edit(f"Prepare {protein}", {protein: prepared.structure})
+            report = summary(protein, prepared, options)
+            workspace.set_report(report)
+            workspace.set_prepared(record_of(protein, prepared, options, earlier))
+            show_report(ctx, report)
+        else:
+            report = _add_copies(ctx, protein, options, outcome, earlier)
         added = int((prepared.structure.element == HYDROGEN).sum()) - before
         warnings = f", {report.warnings} to check" if report.warnings else ""
         ctx.show_message(
-            f"Prepared {protein}: {plural(added, 'hydrogen')} added, "
+            f"Prepared {report.protein}: {plural(added, 'hydrogen')} added, "
             f"net charge {prepared.net_charge:+d}{warnings}"
         )
 
     return ctx.run(f"Preparing {protein}…", work, done)
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """A preparation, and the minimisation after it (or why there was none)."""
+
+    prepared: pipeline.Prepared
+    relaxed: minimise.Relaxed | None = None
+    failure: BaseException | None = None
+
+
+def _add_copies(
+    ctx: ToolContext,
+    protein: str,
+    options: pipeline.Options,
+    outcome: Outcome,
+    earlier: PreparedRecord | None,
+) -> PrepareReport:
+    """Add the prepared protein, and the minimised one when there is one, in one step; keep
+    their records and reports, and show the last. Returns the report shown."""
+    workspace = protein_workspace(ctx)
+    meta = ctx.table.assets[protein].meta
+    prepared, relaxed = outcome.prepared, outcome.relaxed
+    prep = minimise.copy_id(ctx, protein, minimise.PREPARED)
+    ops = [minimise.copy_op(prep, protein, prepared.structure, minimise.PREPARED, meta)]
+    made = None
+    if relaxed is not None:
+        made = minimise.copy_id(ctx, protein, minimise.MINIMISED, {prep})
+        ops.append(minimise.copy_op(made, prep, relaxed.structure, minimise.MINIMISED, meta))
+    label = f"Prepare and minimise {protein}" if made else f"Prepare {protein} as {prep}"
+    ctx.edit(label, ops)
+    record = record_of(prep, prepared, options, earlier)
+    workspace.set_prepared(record)
+    report = summary(prep, prepared, options)
+    if outcome.failure is not None:
+        report = replace(report, rows=(minimise.failed_row(outcome.failure), *report.rows))
+    workspace.set_report(report)
+    if made is not None and relaxed is not None:
+        workspace.set_prepared(minimise.record_of(made, prep, record, relaxed))
+        report = minimise.report_of(made, relaxed, options.ph)
+        workspace.set_report(report)
+    show_report(ctx, report)
+    return report
 
 
 def summary(protein: str, prepared: pipeline.Prepared, options: pipeline.Options) -> PrepareReport:

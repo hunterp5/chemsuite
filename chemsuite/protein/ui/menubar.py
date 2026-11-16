@@ -65,6 +65,7 @@ PROFILE = "profile"  # each ligand row's interactions, as columns
 REMOVE = "remove"  # remove a protein: (protein id)
 PREPARE = "prepare"  # hydrogens, flips and protonation states (Tools ▸ Prepare…)
 INSPECT = "inspect"  # every issue and choice, to tick and overrule (Tools ▸ Inspect…)
+MINIMISE = "minimise"  # a prepared protein minimised, as a new one (Tools ▸ Minimise…)
 DOCK = "dock"  # dock the table's ligands into a pocket (Tools ▸ Dock…)
 RESCORE = "rescore"  # score poses that already exist (Tools ▸ Rescore Poses…)
 SHOW_TABLE = "show_table"  # bring the document's table window forward
@@ -265,6 +266,9 @@ def _tools(menu: QMenu, panel: ProteinPanel, commands: Commands) -> None:
     inspect.setEnabled(INSPECT in commands and bool(panel.session.displays))
     inspect.setToolTip("Everything a preparation would find and decide, to tick and overrule "
                        "before it is applied")  # fmt: skip
+    relax = _command(menu, "Minimise…", commands, MINIMISE)
+    relax.setEnabled(MINIMISE in commands and bool(panel.session.displays))
+    relax.setToolTip("Relax a prepared protein in OpenMM, added as a new protein")
     menu.addSeparator()
     dock = _command(menu, "Dock…", commands, DOCK)
     dock.setEnabled(DOCK in commands and bool(panel.session.displays))

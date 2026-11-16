@@ -299,8 +299,9 @@ other machine can pick it up. Update it at the end of a session that leaves work
   `config.py`, the External Tools rows, `envs/openmm-*.yml`; see M2 in the plan).
   **M3 is done** (2026-11-15: `Prepared.built`, restraints per class of atom, tightening,
   `simulate/minimise.py` measuring the result; the tuning findings are under M3 in the plan).
-  **M4 (the Minimise checkbox in Prepare, Protein ▸ Minimise…, the model beside the prepared
-  one, storage and invalidation) is next**, then the M5 benchmark. Two constraints for M4
+  **M4 is done** (2026-11-15: Minimise in Prepare and Protein ▸ Minimise…, each result a
+  new protein `X-prep`/`X-min`; see M4 in the plan). **M5, the benchmark, is next**; a by-hand
+  run with the real env (Prepare + Minimise on 181L) is still owed. Two constraints for M4
   found in M3 are in the plan's M4 section (`built` is kept and unioned across re-prepares;
   minimise only from the prepared model). To run the real-env tests
   here: `$env:CHEMSUITE_OPENMM_PYTHON = "D:\chemsuite-envs\cs-sim-m0\python.exe"` then

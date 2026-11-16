@@ -69,7 +69,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from chemsuite.core.assets import AssetHost, PutAsset
+from chemsuite.core.assets import Asset, AssetHost, PutAsset
 from chemsuite.molview.measure import describe
 from chemsuite.protein.chem import poses
 from chemsuite.protein.look import display as displays
@@ -82,6 +82,8 @@ from chemsuite.protein.structure.select import Mask, SelectionError, select
 from .events import Event
 
 KIND = "protein"
+#: an asset's meta key naming the protein it was made from (a prepared or minimised copy)
+DERIVED_FROM = "derived_from"
 SET = "set"
 ADD = "add"
 TOGGLE = "toggle"
@@ -160,7 +162,7 @@ class WorkbenchSession:
         self.picked: list[Point] = []
         self._scene: displays.Scene | None = None
         self._pending: dict[str, dict] = {}  # saved display state for proteins not loaded yet
-        self._shown_assets: dict[str, object] = {}  # the asset each display was made from
+        self._shown_assets: dict[str, Asset] = {}  # the asset each display was made from
         self._unsubscribe = store.subscribe_assets(self._on_assets_changed)
         self.reload()
 
@@ -198,6 +200,7 @@ class WorkbenchSession:
                 shown.carry(current)  # replaced (an edit, or its undo): atoms keep their look
                 replaced = True
             new.append(shown)
+        self._swap_sources(old, new, assets)
         self.displays = new
         self._shown_assets = {asset.id: asset for asset in assets}
         if self.focused is not None and self.display(self.focused[0]) is None:
@@ -211,6 +214,31 @@ class WorkbenchSession:
         self.sceneChanged.emit()
         if replaced:
             self.edited.emit()
+
+    def _swap_sources(
+        self,
+        old: Mapping[str, displays.Display],
+        new: Sequence[displays.Display],
+        assets: Sequence[Asset],
+    ) -> None:
+        """A protein made from another (a prepared or minimised copy) shows in its place: the
+        source is hidden when the copy appears, and shown again when the copy goes (undone).
+        Visibility is not part of the document's undo, so it follows here, both ways."""
+        now = {d.id: d for d in new}
+        for asset in assets:  # (none when the document opens: each keeps how it was saved)
+            source = now.get(str(asset.meta.get(DERIVED_FROM, "")))
+            if old and asset.id not in old and source is not None:
+                source.visible = False
+        for gone, asset in self._shown_assets.items():
+            was = old.get(gone)
+            if gone in now or was is None or not was.visible:
+                continue
+            source, seen = str(asset.meta.get(DERIVED_FROM, "")), {gone}
+            while source not in now and source in self._shown_assets and source not in seen:
+                seen.add(source)  # a copy of a copy, both gone: back to what is left
+                source = str(self._shown_assets[source].meta.get(DERIVED_FROM, ""))
+            if source in now:
+                now[source].visible = True
 
     def _on_assets_changed(self, _ids: tuple[str, ...]) -> None:
         self.reload()

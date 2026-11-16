@@ -62,6 +62,7 @@ POSES_ID = "protein-poses"
 #: Protein ▸ Inspect… and its panel (``chemsuite.protein.ui.inspector.TOOL_ID``)
 INSPECT_ID = "protein-inspect"
 RESCORE_ID = "protein-rescore"
+MINIMISE_ID = "protein-minimise"
 #: the document part holding the protein workspace
 WORKSPACE_KEY = "protein_workspace"
 KIND = "protein"
@@ -79,6 +80,7 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         FETCH,
         INSPECT,
         LIGAND,
+        MINIMISE,
         OPEN,
         PREPARE,
         PROFILE,
@@ -106,6 +108,7 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         REMOVE: lambda protein: remove_protein(ctx, protein),
         PREPARE: lambda: open_prepare(ctx),
         INSPECT: lambda: open_inspect(ctx),
+        MINIMISE: lambda: open_minimise(ctx),
         DOCK: lambda: open_dock(ctx),
         RESCORE: lambda: open_rescore(ctx),
         SHOW_TABLE: lambda: show_table(ctx),
@@ -335,6 +338,12 @@ def open_prepare(ctx: ToolContext):
     return show(ctx)
 
 
+def open_minimise(ctx: ToolContext):
+    from .minimise_dialog import open_minimise as show
+
+    return show(ctx)
+
+
 def open_dock(ctx: ToolContext):
     from .dock_dialog import open_dock as show
 
@@ -402,6 +411,15 @@ TOOLS = [
         requires=("gemmi",),
         tip="Everything a preparation would find and decide, each issue to fix or leave and "
         "each choice to overrule, applied as one undoable edit",
+    ),
+    Tool(
+        id=MINIMISE_ID,
+        title="Minimise…",
+        menu=MENU,
+        open=open_minimise,
+        requires=("gemmi",),
+        tip="Relax a prepared protein in OpenMM, held near its deposited coordinates, and add "
+        "it as a new protein with a report of how far it moved",
     ),
     Tool(
         id=DOCK_ID,
