@@ -116,7 +116,7 @@ CC BY-SA 3.0 requires).
   - `Predictor`, which caches by microstate.
   - The weights archive is converted by `scripts/unipka/convert_weights.py` and checked by
     `scripts/unipka/golden.py`.
-- **U4:** ligand states in `protein/prepare/ligand_sites.py` from the model's free energies. A
+- **U4:** ligand states in `macromolecule/prepare/ligand_sites.py` from the model's free energies. A
   microstate's energy at pH is `G + ln10 · n · (pH − μ)` kT, with μ the training mean.
 - **U5:** Predict pKa, standardise and the descriptors move over; MolGpKa is removed.
 

@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Bundle the AutoDock Vina binaries chemsuite ships (``chemsuite/protein/dock/bin``).
+"""Bundle the AutoDock Vina binaries chemsuite ships (``chemsuite/macromolecule/dock/bin``).
 
 Vina is Apache-2.0, which a GPL-3-or-later project may ship as long as its licence and notice
 travel with it, so ``LICENSE-AutoDock-Vina.txt`` and ``NOTICE`` sit beside the binaries.
@@ -41,7 +41,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BIN = ROOT / "chemsuite" / "protein" / "dock" / "bin"
+BIN = ROOT / "chemsuite" / "macromolecule" / "dock" / "bin"
 PINS = BIN / "checksums.json"
 RELEASE = "https://github.com/ccsb-scripps/AutoDock-Vina/releases/download/v{version}/{asset}"
 LICENCE = "https://raw.githubusercontent.com/ccsb-scripps/AutoDock-Vina/v{version}/LICENSE"

@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Rebuild chemsuite/protein/prepare/data/templates.json from the wwPDB CCD:
+"""Rebuild chemsuite/macromolecule/prepare/data/templates.json from the wwPDB CCD:
 
     python scripts/build_prepare_templates.py
 
@@ -29,8 +29,8 @@ import json
 import sys
 import tempfile
 
-from chemsuite.protein.prepare import templates
-from chemsuite.protein.structure.components import CcdCache
+from chemsuite.macromolecule.prepare import templates
+from chemsuite.macromolecule.structure.components import CcdCache
 
 
 def main() -> int:

@@ -1,7 +1,7 @@
 # Protein preparation P1: hydrogens, flips, His states and rotors (2026-11-12)
 
 Plan: [`docs/PREPARE_PLAN.md`](../PREPARE_PLAN.md); baselines and pass marks:
-[`p0-review.md`](p0-review.md). Code: `chemsuite/protein/prepare/` (`templates`, `hydrogens`,
+[`p0-review.md`](p0-review.md). Code: `chemsuite/macromolecule/prepare/` (`templates`, `hydrogens`,
 `sites`, `energy`, `solve`, `inspect`, `repair`, `pipeline`). P1 is done.
 
 ## 1. What runs
@@ -87,7 +87,7 @@ set):
 | Entries answered | 262 | 262 | 262 | 259 |
 
 Half of the full set was used to fit, so the test-half row in §2 is the fair comparison. It
-matches or beats Reduce there too. `tests/protein/test_bench_prepare.py` holds these marks.
+matches or beats Reduce there too. `tests/macromolecule/test_bench_prepare.py` holds these marks.
 
 ## 4. Found on the way
 

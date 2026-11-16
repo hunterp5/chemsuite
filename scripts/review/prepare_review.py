@@ -103,7 +103,7 @@ def ligand_names(pdb_id: str) -> set[str]:
 def ideal(names: set[str]) -> dict[str, dict[str, int]]:
     """Hydrogens per heavy atom of each component, as the CCD draws it (downloaded with curl
     into ``ccd/``)."""
-    from chemsuite.protein.structure.components import CcdCache
+    from chemsuite.macromolecule.structure.components import CcdCache
 
     folder = DATA / "ccd"
     folder.mkdir(parents=True, exist_ok=True)
@@ -201,8 +201,8 @@ def _option(name: str) -> str:
 
 
 def run_chemsuite() -> None:
-    """chemsuite's own pipeline (``protein/prepare``) at each crystal pH, with the CCD entries in
-    ``ccd/``: ``--variant NAME`` (one of :data:`VARIANTS`, default ``chemsuite``) into
+    """chemsuite's own pipeline (``macromolecule/prepare``) at each crystal pH, with the CCD
+    entries in ``ccd/``: ``--variant NAME`` (one of :data:`VARIANTS`, default ``chemsuite``) into
     ``out/NAME``; ``--jobs N`` runs N entries at once."""
     from concurrent.futures import ProcessPoolExecutor
 
@@ -219,9 +219,9 @@ def run_chemsuite() -> None:
 
 
 def _prepare_one(pdb_id: str, variant: str) -> str:
-    from chemsuite.protein.prepare.pipeline import Options, prepare
-    from chemsuite.protein.structure import io
-    from chemsuite.protein.structure.components import CcdCache
+    from chemsuite.macromolecule.prepare.pipeline import Options, prepare
+    from chemsuite.macromolecule.structure import io
+    from chemsuite.macromolecule.structure.components import CcdCache
 
     ccd = CcdCache(DATA / "ccd", offline=True)
     try:
@@ -241,10 +241,10 @@ def training(pdb_id: str) -> bool:
 
 def _site_answers(pdb_id: str, expected: pt.Truth):
     """The tables of one entry, and for each scored site its key and each state's answer."""
-    from chemsuite.protein.prepare import energy, sites
-    from chemsuite.protein.prepare.hydrogens import add_hydrogens
-    from chemsuite.protein.structure import io
-    from chemsuite.protein.structure.components import CcdCache
+    from chemsuite.macromolecule.prepare import energy, sites
+    from chemsuite.macromolecule.prepare.hydrogens import add_hydrogens
+    from chemsuite.macromolecule.structure import io
+    from chemsuite.macromolecule.structure.components import CcdCache
 
     built = add_hydrogens(io.read(DATA / "inputs" / f"{pdb_id}.pdb"),
                           ccd=CcdCache(DATA / "ccd", offline=True))  # fmt: skip
@@ -274,7 +274,7 @@ def _site_answers(pdb_id: str, expected: pt.Truth):
 
 
 def _accuracy(cases, weights) -> dict[str, tuple[int, int]]:
-    from chemsuite.protein.prepare.solve import solve
+    from chemsuite.macromolecule.prepare.solve import solve
 
     tally: dict[str, list[int]] = {}
     for table, scored in cases:
@@ -298,7 +298,7 @@ def fit() -> None:
     """A coordinate search over the weights on the training half; prints both halves."""
     from dataclasses import replace
 
-    from chemsuite.protein.prepare.energy import Weights
+    from chemsuite.macromolecule.prepare.energy import Weights
 
     found = truths()
     cases = {True: [], False: []}
@@ -353,9 +353,16 @@ def _ligand_case(pdb_id: str, expected: pt.Truth):
     """The pipeline's tables for one entry (ligand states on, titration off), and each scored
     ligand atom: (site, the hydrogens of each of its states) or (-1, the fixed count), with the
     truth and the CCD's count."""
-    from chemsuite.protein.prepare import energy, hydrogens, pipeline, repair, sites, templates
-    from chemsuite.protein.structure import io
-    from chemsuite.protein.structure.components import CcdCache
+    from chemsuite.macromolecule.prepare import (
+        energy,
+        hydrogens,
+        pipeline,
+        repair,
+        sites,
+        templates,
+    )
+    from chemsuite.macromolecule.structure import io
+    from chemsuite.macromolecule.structure.components import CcdCache
 
     ccd = CcdCache(DATA / "ccd", offline=True)
     library = templates.Library(ccd)
@@ -399,8 +406,8 @@ def _ligand_case_or_none(pdb_id: str, expected: pt.Truth):
 
 def _ligand_accuracy(cases, weights) -> tuple[int, int, int, int]:
     """(right, scored, exceptions caught, exceptions)."""
-    from chemsuite.protein.prepare import pipeline, populations
-    from chemsuite.protein.prepare.solve import solve
+    from chemsuite.macromolecule.prepare import pipeline, populations
+    from chemsuite.macromolecule.prepare.solve import solve
 
     right = total = caught = unusual = 0
     for table, items, ph in cases:
@@ -427,7 +434,7 @@ def fit_ligands() -> None:
     import pickle
     from dataclasses import asdict, replace
 
-    from chemsuite.protein.prepare.energy import Weights
+    from chemsuite.macromolecule.prepare.energy import Weights
 
     if LIGAND_CASES.exists() and "--redo" not in sys.argv:
         cases = pickle.loads(LIGAND_CASES.read_bytes())

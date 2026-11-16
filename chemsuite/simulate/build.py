@@ -40,10 +40,9 @@ import numpy as np
 from rdkit import Chem
 
 from chemsuite.core.jobs import CancelToken, check
-
-from ..protein.chem import ligands
-from ..protein.structure.components import CcdCache
-from ..protein.structure.model import (
+from chemsuite.macromolecule.chem import ligands
+from chemsuite.macromolecule.structure.components import CcdCache
+from chemsuite.macromolecule.structure.model import (
     ADDITIVE,
     AMINO,
     GLYCAN,
@@ -53,6 +52,7 @@ from ..protein.structure.model import (
     WATER,
     Structure,
 )
+
 from . import spec
 from .spec import Molecule, Residue, SystemSpec
 

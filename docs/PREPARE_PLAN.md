@@ -62,7 +62,7 @@ The total free energy of one assignment is
 Output per site: chosen state, population, and the evidence (partners, ΔG to the next state).
 A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
 
-## Pipeline (Qt-free, `chemsuite/protein/prepare/`)
+## Pipeline (Qt-free, `chemsuite/macromolecule/prepare/`)
 
 1. **Inspect**: altlocs (take the highest occupancy, or keep both as models); chain breaks;
    missing atoms and residues; non-standard residues; covalent links; metals; disulfides. Each
@@ -131,7 +131,7 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
 
 ## Code layout
 
-- `chemsuite/protein/prepare/` (Qt-free, imports `structure`, `chem`, `ionisation`; never Qt or
+- `chemsuite/macromolecule/prepare/` (Qt-free, imports `structure`, `chem`, `ionisation`; never Qt or
   `core.table`):
   - `inspect.py`;
   - `repair.py`;
@@ -148,14 +148,14 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
 - `structure/edit.py`: add atoms and hydrogens as one undoable edit (`ProteinSession.edit`), so
   Prepare is a single undo step. Phase 4's "protonation states and flips by hand" reuses
   `sites.py` (set a site's state, re-solve its neighbours).
-- `protein/ui`: a Prepare dialog on the kit (`ToolDialog`; Input: protein and ligands; Method:
+- `macromolecule/ui`: a Prepare dialog on the kit (`ToolDialog`; Input: protein and ligands; Method:
   pH, waters, caps, relax; More Options folded), run as a background job that keeps nothing
   partial (it is a whole-structure result). The report goes in a panel registered as a `Part`.
 - Prepared state is saved with the document (workspace part).
-- `tools/protein`: once prepared, a ligand row's structure can be updated to the bound state
+- `tools/macromolecule`: once prepared, a ligand row's structure can be updated to the bound state
   chosen.
-- Tests: `tests/protein/prepare/` (unit tests per module plus the named cases, using small local
-  fixtures), benchmark `tests/protein/test_bench_prepare.py`.
+- Tests: `tests/macromolecule/prepare/` (unit tests per module plus the named cases, using small local
+  fixtures), benchmark `tests/macromolecule/test_bench_prepare.py`.
 
 ## Phases (each usable alone)
 
@@ -169,18 +169,18 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
   ([`prepare/p2-review.md`](prepare/p2-review.md)).
 - **P3**: ligand sites, waters and metals in the graph. The named cases pass. Populations and ⚠.
   Done 2026-11-13 (`ligand_sites.py`, `waters.py`, the named cases in
-  `tests/protein/prepare/test_named_cases.py`).
-- **P4**: the UI. Done 2026-11-14: **Protein ▸ Prepare…** (`tools/protein/prepare_dialog.py`)
+  `tests/macromolecule/prepare/test_named_cases.py`).
+- **P4**: the UI. Done 2026-11-14: **Protein ▸ Prepare…** (`tools/macromolecule/prepare_dialog.py`)
   with Input (protein), Method (pH, waters, repair, optimise) and a folded Titrate
   (Off / Pocket / All), run as a background job and applied as one undoable edit; the report
-  panel (`protein/ui/report.py`), whose lines select their residue and which is saved with the
-  document (`protein/workspace/reports.py`, under the protein workspace's `reports`). Titrating
+  panel (`macromolecule/ui/report.py`), whose lines select their residue and which is saved with the
+  document (`macromolecule/workspace/reports.py`, under the protein workspace's `reports`). Titrating
   the pocket alone now works (`pipeline._pocket`), and a rotor is reported only when its
   orientation makes a hydrogen bond and a different one was nearly as good: the free ones are
   counted in a line of their own, as the waters are.
   The **docking export** (Meeko PDBQT, an ensemble for ambiguous sites) moved to the docking
   plan, where the receptor is written. Done 2026-11-14 for a single receptor
-  (`protein/dock/pdbqt.py`; residues Meeko does not know are left out and named in
+  (`macromolecule/dock/pdbqt.py`; residues Meeko does not know are left out and named in
   `Receptor.dropped`, since Meeko would otherwise download them from the CCD); the ensemble
   for ambiguous sites is still to do.
 - **P5**: restrained minimisation and the MD hand-off, planned on their own in
@@ -192,8 +192,8 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
 
 ## Verification
 
-- `pytest tests/protein/prepare tests/test_architecture.py tests/test_import_boundaries.py`.
-- `pytest -m bench tests/protein/test_bench_prepare.py`: report vs the acceptance thresholds.
+- `pytest tests/macromolecule/prepare tests/test_architecture.py tests/test_import_boundaries.py`.
+- `pytest -m bench tests/macromolecule/test_bench_prepare.py`: report vs the acceptance thresholds.
 - By hand: prepare 5GNK and a DHFR–MTX complex in the workbench. Check the report, H-bond
   partners drawn, undo as one step, save, reopen.
 - `docs/USER_GUIDE.md` updated with each phase, and ROADMAP §7a phase 3 rewritten to this plan.

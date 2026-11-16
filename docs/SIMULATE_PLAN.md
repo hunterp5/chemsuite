@@ -30,7 +30,7 @@ Decided by the user in planning:
 
 ## What exists, and the gaps this plan must close
 
-- `prepare()` (`protein/prepare/pipeline.py:93`) returns
+- `prepare()` (`macromolecule/prepare/pipeline.py:93`) returns
   `Prepared(structure, states, report, choices, pka, population)`. `states` holds Amber-style
   labels (HID/HIE/HIP, ASH, GLH, LYN, TYM, CYM, "NH2") **but `res_name` is never changed**, and
   `prepare_dialog.py:168-176` throws `states`, `pka`, `population` and `choices` away: only the
@@ -230,16 +230,16 @@ shown in its place (`WorkbenchSession._swap_sources`, undone both ways). Each ke
 result's numbers) and report. Invalidation is the record's atom digest: a protein edited after
 preparation must be prepared again, and a minimised one is never prepared or minimised again.
 `MinimiseSettings` (force field, GBn2/vacuum, restraint scale, RMSD limit, platform) is shared
-by both dialogs (`tools/protein/minimise_options.py`); ff19SB is refused while crystal waters
+by both dialogs (`tools/macromolecule/minimise_options.py`); ff19SB is refused while crystal waters
 are kept (OPC's virtual site is not placed). Prepare's Minimise is off by default until M5.
-Code: `tools/protein/minimise.py`, `minimise_dialog.py`; tests
-`tests/tools/protein/test_minimise_ui.py` (the fake worker).
+Code: `tools/macromolecule/minimise.py`, `minimise_dialog.py`; tests
+`tests/tools/macromolecule/test_minimise_ui.py` (the fake worker).
 
-- `tools/protein/prepare_dialog.py`: a **Minimise** checkbox in Method (on when the worker is
+- `tools/macromolecule/prepare_dialog.py`: a **Minimise** checkbox in Method (on when the worker is
   configured; its ⚠ problem text when not), and the force-field choice under More Options
   (ff14SB+Sage+TIP3P or ff19SB+OPC). No helper text — explanations go in `help=` tooltips.
 - A separate **Protein ▸ Minimise…** command for an already-prepared structure, registered in
-  `TOOLS` (`tools/protein/tool.py:358`) and the viewer's command map.
+  `TOOLS` (`tools/macromolecule/tool.py:358`) and the viewer's command map.
 - Run through `ctx.run(..., keep_partial=False)` (a whole-structure result): `job.report` for
   progress, `job.emit_partial` for live energy.
 - Applied as **one undoable edit** via `WorkbenchSession.edit` (`workspace/session.py:332`),
@@ -261,7 +261,7 @@ Code: `tools/protein/minimise.py`, `minimise_dialog.py`; tests
 
 ## M5 — benchmark and acceptance (`-m bench`, not the regular suite)
 
-On the P0 neutron and named-case sets (`tests/protein/test_bench_prepare.py` alongside):
+On the P0 neutron and named-case sets (`tests/macromolecule/test_bench_prepare.py` alongside):
 heavy-atom RMSD to the deposit, clash score, hydrogen-position accuracy before and after
 (minimisation must not spoil the states Prepare chose), and ligand RMSD. Plus the real test of
 "simulation-ready": a **short explicit-solvent MD (100 ps–1 ns)** on each benchmark complex runs
@@ -286,7 +286,7 @@ The `SystemSpec` + worker pair is the single entry point for all of it:
 
 ## Verification
 
-- `pytest tests/simulate tests/protein/prepare tests/tools/protein tests/test_architecture.py
+- `pytest tests/simulate tests/macromolecule/prepare tests/tools/macromolecule tests/test_architecture.py
   tests/test_import_boundaries.py`; the full suite once before the release merge.
 - `pytest -m bench tests/simulate/test_bench_minimise.py` against the M5 thresholds.
 - `ruff check` / `ruff format` on the touched paths.

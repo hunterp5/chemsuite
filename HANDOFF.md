@@ -7,8 +7,8 @@ other machine can pick it up. Update it at the end of a session that leaves work
 
 - **Architecture refactor** (plan approved 2026-11-11; a copy is in Claude's plan file on the
   Windows PC, summarised here). The Protein Viewer becomes a subproject: a Qt-free engine and
-  workspace (`chemsuite/protein`, with its own `.cspx` session format), a Qt workbench UI
-  (`chemsuite/protein/ui`), and one bridge to the table (`chemsuite/tools/protein`). The app
+  workspace (`chemsuite/macromolecule`, with its own `.cspx` session format), a Qt workbench UI
+  (`chemsuite/macromolecule/ui`), and one bridge to the table (`chemsuite/tools/macromolecule`). The app
   around it gets a shared shell.
   - Phase A, done: protein-only documents ask to save; reopened proteins keep their look;
     custom colours saved; `ToolPanel` base and `DocumentPanels`; `JobHost`; layering tests
@@ -16,16 +16,16 @@ other machine can pick it up. Update it at the end of a session that leaves work
     tool).
   - Phase B, done 2026-11-11: `app/{shell,widgets,render3d,document,table}`;
     `protein/{structure,chem,look,ui}` (`ui` was `app/protein`, with its own shaders); the
-    bridge in `tools/protein` (`rows.py`, `follow.py` with the workbench's `LinkedRow`,
+    bridge in `tools/macromolecule` (`rows.py`, `follow.py` with the workbench's `LinkedRow`,
     `to_table.py`); `core/io` → `chemsuite/io`; tests mirror the code. Moves are done by
     `scripts/move_modules.py`. The launcher moved to `chemsuite.app.shell.main`: after
     pulling, run `pip install -e .` once on each machine (until then `chemsuite` will not
     start).
-  - Not moved in Phase B: `protein/workspace` (Phase C creates it), and the plan's shared
+  - Not moved in Phase B: `macromolecule/workspace` (Phase C creates it), and the plan's shared
     choosers (`tools/*/common` widgets into `app/widgets`), which merge code rather than move
     files (Phase E).
   - Phase C, done 2026-11-12: `core/history.py`, `core/assets.py` (`AssetStore`, `AssetHost`),
-    `core/container.py`; the Qt-free `protein/workspace` session with `SessionSignals` in the
+    `core/container.py`; the Qt-free `macromolecule/workspace` session with `SessionSignals` in the
     UI; the workspace saved as a document part (`ToolContext.document_part`) with the viewer
     closed, old documents migrated. `Workspace` moved to `app/document/workspace.py`.
   - Next, Phase D (`.cspx`, the shared start-up, scoped commands, standalone
@@ -62,11 +62,11 @@ other machine can pick it up. Update it at the end of a session that leaves work
 - **Protein editing and the Sequence window** (2026-11-11/12, before Phase C, at the user's
   request): a click selects an atom (double-click the residue, Alt-click the chain); Edit ▸
   Delete, Element, Charge, Rename Residue/Chain, Renumber, Undo/Redo, each one table step
-  (`protein/structure/edit.py`, `ProteinSession.edit`, the look carried by uid in
+  (`macromolecule/structure/edit.py`, `ProteinSession.edit`, the look carried by uid in
   `Display.carry`); a ligand's linked rows are relabelled in the same step
   (`LinkedRow.relabel`, `ToolContext.cell_ops`). The sequence strip moved into its own window
   (the Sequence menu, last), with a row each for ligands, glycans, additives, ions and waters.
-  Phase C moves the session's edit code into `protein/workspace` with the rest.
+  Phase C moves the session's edit code into `macromolecule/workspace` with the rest.
 - **CI** was red from RDKit 2026.9.2 (fixed 2026-11-12): cocaine's wedges (the sketcher now
   keeps the layout whose stereo survives nudges), Murcko scaffolds on macOS ("bad any cast":
   `descriptors/scaffold.py` stands in, equal to RDKit's on 26,048 molecules), a protein-tree
@@ -99,11 +99,11 @@ other machine can pick it up. Update it at the end of a session that leaves work
     entry reopened offline falls back to a geometry guess. Document saves keep them.
 
 - **Protein preparation** (plan approved 2026-11-11, `docs/PREPARE_PLAN.md`): a coupled
-  protein–ligand protonation and hydrogen model in `chemsuite/protein/prepare/`.
+  protein–ligand protonation and hydrogen model in `chemsuite/macromolecule/prepare/`.
   - **P0 done 2026-11-12**: [`docs/prepare/p0-review.md`](docs/prepare/p0-review.md)
     has the licences, the 262-entry neutron set, the scores and the acceptance thresholds for
     P1–P3. The harness is `scripts/review/prepare_truth.py` and `prepare_review.py`, with the
-    bench test `tests/protein/test_bench_prepare.py`.
+    bench test `tests/macromolecule/test_bench_prepare.py`.
   - The data live under `samples/prepare` (not committed) and are rebuilt by
     `prepare_review.py`'s steps: inputs, reduce (in WSL), propka and gemmi (in a bench venv),
     protoss and score.
@@ -113,7 +113,7 @@ other machine can pick it up. Update it at the end of a session that leaves work
     re-run `score` and add the column to the review.
   - **P1 in progress** (plan approved 2026-11-12; Claude's plan file on the Windows PC,
     summarised here). Done: `structure/edit.add_atoms` (new atoms into residues, uids kept);
-    `CcdCache.block`; `protein/prepare/templates.py` (CCD ideal geometry, internal
+    `CcdCache.block`; `macromolecule/prepare/templates.py` (CCD ideal geometry, internal
     coordinates and rotors for every hydrogen; 51 residues bundled in `prepare/data`, rebuilt
     by `scripts/build_prepare_templates.py`). Facts found: the CCD draws Lys, Arg and His
     charged and the termini neutral; NME's hydrogen is placed from the residue before it.
@@ -150,12 +150,12 @@ other machine can pick it up. Update it at the end of a session that leaves work
     off. Data: `samples/prepare/pkad` (PKAD-R CSV saved by hand; `pkad_review.py fetch`,
     `propka`, `tables`, `fit`, `chemsuite`, `score`).
   - **P3 done 2026-11-13**: ligand protomers and tautomers (`ligand_sites.py`), pocket waters
-    (`waters.py`), metal coordination; the named cases in `tests/protein/prepare/test_named_cases.py`.
+    (`waters.py`), metal coordination; the named cases in `tests/macromolecule/prepare/test_named_cases.py`.
   - **P4 done 2026-11-14** (the docking plan's Stage A): **Protein ▸ Prepare…**
-    (`tools/protein/prepare_dialog.py`) — protein, pH, waters, repair, optimise, and Titrate
+    (`tools/macromolecule/prepare_dialog.py`) — protein, pH, waters, repair, optimise, and Titrate
     (Off / Pocket / All) folded away — run as a background job and applied with
-    `session.edit` as one undo step; the report panel (`protein/ui/report.py`), whose lines
-    select their residue, kept with the document (`protein/workspace/reports.py`, saved under
+    `session.edit` as one undo step; the report panel (`macromolecule/ui/report.py`), whose lines
+    select their residue, kept with the document (`macromolecule/workspace/reports.py`, saved under
     the protein workspace's `reports`; older documents load unchanged). On the way: `titrate=POCKET`
     now actually titrates the pocket (`pipeline._pocket`), and rotor rows are reported only when
     the orientation makes a hydrogen bond *and* a different one was nearly as good
@@ -163,13 +163,13 @@ other machine can pick it up. Update it at the end of a session that leaves work
     crambin's report went from 14 ⚠ of 17 rows to 7 of 11.
   - **Stage B of the docking plan, 2026-11-14 (committed and merged, not yet tried by hand):** the
     bundled Vina 1.2.7 binaries with their licence, NOTICE and pinned hashes
-    (`protein/dock/bin`, `scripts/fetch_vina.py`); the Qt-free engine `protein/dock/`
+    (`macromolecule/dock/bin`, `scripts/fetch_vina.py`); the Qt-free engine `macromolecule/dock/`
     (`box.py`, `pdbqt.py` the Meeko boundary, `vina.py` the binary, `run.py` many ligands with
-    progress, cancel and finished ligands kept); the bridge `tools/protein/dock.py` and
+    progress, cancel and finished ligands kept); the bridge `tools/macromolecule/dock.py` and
     `dock_dialog.py` (Protein ▸ Dock… and Rescore Poses…, also in the viewer's Tools menu);
     `meeko>=0.8` a core dependency; package data and `.gitattributes` for the binaries.
-    Tests: `tests/protein/dock/` (27, one real dock at exhaustiveness 1 ≈ 11 s, the redocking
-    accuracy check behind `-m bench` ≈ 75 s) and `tests/tools/protein/test_dock_ui.py` (7).
+    Tests: `tests/macromolecule/dock/` (27, one real dock at exhaustiveness 1 ≈ 11 s, the redocking
+    accuracy check behind `-m bench` ≈ 75 s) and `tests/tools/macromolecule/test_dock_ui.py` (7).
     Found on the way: **Meeko downloads a CCD component for any residue name it does not
     know**, so `pdbqt.receptor` keeps only `known_residues()` (polymer, waters, ions, glycans)
     and names the rest in `Receptor.dropped`; `--score_only` still needs a box, so
@@ -180,11 +180,11 @@ other machine can pick it up. Update it at the end of a session that leaves work
     - The viewer's window holds docks (`app/document/panel_window.py`: `PanelWindow`,
       `WindowPanels`; `ToolContext.add_panel(..., beside=)`). The Prepare report, the Inspect
       panel and the Poses panel dock there, falling back to the main window.
-    - Poses stay in the viewer (`protein/workspace/poses.py`, `protein/ui/poses.py`): every
+    - Poses stay in the viewer (`macromolecule/workspace/poses.py`, `macromolecule/ui/poses.py`): every
       run kept and numbered with its scoring function, a rescore a run of its own, Remove Run,
       Copy to Table on request. Saved as a list per protein (an older single run reads as run 1).
-    - **Protein ▸ Inspect…** (`protein/prepare/review.py`, `protein/ui/inspector.py`,
-      `tools/protein/inspect_dialog.py`): `pipeline.Decisions` (repairs, waters, alternate
+    - **Protein ▸ Inspect…** (`macromolecule/prepare/review.py`, `macromolecule/ui/inspector.py`,
+      `tools/macromolecule/inspect_dialog.py`): `pipeline.Decisions` (repairs, waters, alternate
       locations, pinned states; residues named by label so edits elsewhere cannot move them),
       Re-survey, Apply as one edit, a report that records what was chosen by hand, the review
       saved with the document. One ⚠ rule, `pipeline.warns`, for the report and the review.
@@ -335,7 +335,7 @@ Still owed by the user: the ChemDraw hotkey list.
 
 ## Protein code map
 
-- `chemsuite/protein/` (Qt-free outside `ui`):
+- `chemsuite/macromolecule/` (Qt-free outside `ui`):
   - `structure/`: `model.Structure` (a struct-of-arrays keyed by atom uids), `store` (its
     bytes), `io` and `fetch` (files and downloads), `bonds`, `bond_orders`, `components`
     (CCD cache), `classify`, `select`, `sequence`, `secondary`, and `data/`.
@@ -346,16 +346,16 @@ Still owed by the user: the ChemDraw hotkey list.
     drawn.
   - `workspace/`: `session.py` (`WorkbenchSession`, Qt-free, plain `events.Event`s, reads an
     `AssetHost`) is the one object every other part talks to; `workspace.py`
-    (`ProteinWorkspace`) is the document part (`protein_workspace`) that keeps it and the view.
+    (`MacromoleculeWorkspace`) is the document part (`protein_workspace`) that keeps it and the view.
   - `ui/`: the Qt workbench. `session.py` is `SessionSignals` (the session's events as Qt
     signals, one per window);
     `host.py` holds `LinkedRow`; `panel.py` (a `ToolPanel`), `menubar.py`, `menus.py`,
     `export.py`, `tree.py`, `sequence_view.py`, `selection_bar.py`, `models_bar.py`,
     `pocket.py`, `labels.py`, `overlay.py`; `builds.py` runs builds as background jobs and
     drops stale results; `view.py` is on `RhiView`; `shaders/` holds the `pro_*` shaders.
-- `chemsuite/tools/protein/`, the bridge: `tool.py` (the tool, its window, open, fetch,
+- `chemsuite/tools/macromolecule/`, the bridge: `tool.py` (the tool, its window, open, fetch,
   remove), `rows.py` (the ligand-row columns, `ligand_rows`), `follow.py` (`TableRow`, the
   current row followed in the workbench), `to_table.py` (Ligands, Add Ligand and
   Interactions to Table), `dialogs.py`.
-- Tests: `tests/protein/{structure,chem,look,ui}`, `tests/tools/protein/test_protein_tool.py`,
-  and the benchmarks (`pytest -m bench tests/protein/test_bench_protein.py`).
+- Tests: `tests/macromolecule/{structure,chem,look,ui}`, `tests/tools/macromolecule/test_protein_tool.py`,
+  and the benchmarks (`pytest -m bench tests/macromolecule/test_bench_protein.py`).

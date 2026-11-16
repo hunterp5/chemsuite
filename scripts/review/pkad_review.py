@@ -45,7 +45,7 @@ from pathlib import Path
 
 import numpy as np
 
-from chemsuite.protein.prepare.energy import Weights
+from chemsuite.macromolecule.prepare.energy import Weights
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "samples" / "prepare" / "pkad"
@@ -172,9 +172,9 @@ def propka_pkas(pdb: str) -> dict[tuple[str, int, str], float]:
 def build_tables() -> None:
     """Each structure prepared (one location, missing atoms built, hydrogens), its titration
     sites found and their energy tables pickled with each site's key."""
-    from chemsuite.protein.prepare import energy, hydrogens, repair, sites, templates
-    from chemsuite.protein.structure import io
-    from chemsuite.protein.structure.components import CcdCache
+    from chemsuite.macromolecule.prepare import energy, hydrogens, repair, sites, templates
+    from chemsuite.macromolecule.structure import io
+    from chemsuite.macromolecule.structure.components import CcdCache
 
     TABLES.mkdir(parents=True, exist_ok=True)
     ccd = CcdCache(CCD)
@@ -210,7 +210,7 @@ def _key(s, site) -> tuple[str, int, str]:
 @cache
 def loaded() -> dict[str, tuple[list, object]]:
     """Each structure's site keys and tables."""
-    from chemsuite.protein.prepare.energy import Tables
+    from chemsuite.macromolecule.prepare.energy import Tables
 
     out = {}
     for path in sorted(TABLES.glob("*.pkl")):
@@ -222,7 +222,7 @@ def loaded() -> dict[str, tuple[list, object]]:
 
 def chemsuite_run(weights, method: str = "mean field", only: set[str] | None = None) -> dict:
     """pKa values of every PKAD-R entry with tables: {Entry: pKa}."""
-    from chemsuite.protein.prepare import populations
+    from chemsuite.macromolecule.prepare import populations
 
     by_pdb: dict[str, list[Entry]] = {}
     for e in entries():
@@ -290,7 +290,7 @@ def fit() -> None:
 
 def _weight(weights, name: str) -> float:
     """One weight by name."""
-    from chemsuite.protein.prepare.energy import TERMS
+    from chemsuite.macromolecule.prepare.energy import TERMS
 
     return float(weights.vector()[TERMS.index(name)])
 

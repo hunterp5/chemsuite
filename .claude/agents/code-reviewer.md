@@ -16,7 +16,7 @@ its rules override general style advice.
    - tools use the app only through `ToolContext`: no `.column(`, `slots_of(`, `.mol(` or
      direct table writes in `chemsuite/tools`;
    - Qt-free packages (`core`, `analysis`, `sketch`, `ionisation`, `protein` outside
-     `protein/ui`) import no Qt or app code;
+     `macromolecule/ui`) import no Qt or app code;
    - no new `getattr`/`hasattr`, `except Exception` or `type: ignore`; no file pushed past its
      line budget (`tests/test_architecture.py`);
    - dialogs and panels have no helper text: explanations go in tooltips, and the only text

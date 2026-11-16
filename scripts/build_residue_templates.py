@@ -13,7 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Build ``chemsuite/protein/data/residues.json`` from the wwPDB Chemical Component Dictionary.
+"""Build ``chemsuite/macromolecule/data/residues.json`` from the wwPDB Chemical Component
+Dictionary.
 
     python scripts/build_residue_templates.py
 
@@ -33,7 +34,7 @@ from pathlib import Path
 import gemmi
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "chemsuite" / "protein" / "data" / "residues.json"
+OUT = ROOT / "chemsuite" / "macromolecule" / "data" / "residues.json"
 URL = "https://files.rcsb.org/ligands/download/{}.cif"
 
 AMINO = [

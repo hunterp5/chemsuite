@@ -1,7 +1,7 @@
 # Protein preparation P0: the benchmark and the baselines (2026-11-12)
 
 Plan: [`docs/PREPARE_PLAN.md`](../PREPARE_PLAN.md). Code: `scripts/review/prepare_truth.py`
-(ground truth and scoring, tested in `tests/protein/prepare/test_prepare_truth.py`) and
+(ground truth and scoring, tested in `tests/macromolecule/prepare/test_prepare_truth.py`) and
 `scripts/review/prepare_review.py` (inputs, baselines, scores). Data and tools sit under
 `samples/prepare/`, which is not committed.
 
@@ -89,7 +89,7 @@ The "uncommon" questions are the neutron sites that are not in the textbook stat
 crystal's pH: a protonated Asp or Glu, a neutral Lys, a Tyr or Cys anion. The row above each
 one scores every site of that residue type.
 
-`tests/protein/test_bench_prepare.py` (`pytest -m bench`) checks the harness: the method that
+`tests/macromolecule/test_bench_prepare.py` (`pytest -m bench`) checks the harness: the method that
 flips nothing must land at 45–55% on orientation, and Reduce must keep these scores.
 
 ## 4. What the numbers say
@@ -148,7 +148,7 @@ it joins the table, and where it beats these thresholds its number becomes the t
 ## 5. Found on the way
 
 - `Component.to_mol` raised on the CCD's element "X" (an atom of unknown element) instead of
-  returning None. Fixed in `chemsuite/protein/structure/components.py`, with a test.
+  returning None. Fixed in `chemsuite/macromolecule/structure/components.py`, with a test.
 - `gemmi h` stops on any ligand missing from the monomer library (6 of 262 entries). This is
   what the plan feared: gemmi's hydrogens depend on a restraint dictionary for every ligand.
 - Protoss returns an empty ligand SDF for some entries; the reader skips those ligands.

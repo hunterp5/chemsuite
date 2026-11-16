@@ -15,7 +15,7 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
 """Qt test setup, shared by the GUI test folders (``tests/app``, ``tests/tools`` and
-``tests/protein/ui``): each folder's ``conftest.py`` imports these fixtures.
+``tests/macromolecule/ui``): each folder's ``conftest.py`` imports these fixtures.
 
 Set ``CHEMSUITE_NO_GUI=1`` to run the model-level tests under a ``QCoreApplication`` where no Qt
 platform plugin can load (some sandboxes); tests marked ``gui`` are then skipped. CI and

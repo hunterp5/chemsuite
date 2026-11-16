@@ -1,7 +1,7 @@
 # Protein preparation P2: titration (2026-11-12)
 
 Plan: [`docs/PREPARE_PLAN.md`](../PREPARE_PLAN.md); P1: [`p1-review.md`](p1-review.md). Code:
-`chemsuite/protein/prepare/` (`sites`, `energy`, `populations`, `solve`, `pipeline`). The
+`chemsuite/macromolecule/prepare/` (`sites`, `energy`, `populations`, `solve`, `pipeline`). The
 benchmark is `scripts/review/pkad_review.py`.
 
 **Outcome:** P2 works end to end and reaches PROPKA's accuracy on experimental pKa values. It
@@ -85,7 +85,7 @@ RMSE in pH units (share within 1 unit):
 | Tyr | test | 0.82 | 0.87 | 0.39 |
 | Lys | test | 0.66 | 0.63 | 0.77 |
 
-- **Matching PROPKA** (test half): met, 1.32 against 1.33. `tests/protein/test_bench_prepare.py`
+- **Matching PROPKA** (test half): met, 1.32 against 1.33. `tests/macromolecule/test_bench_prepare.py`
   holds it.
 - **Beating the null model**: not met, by chemsuite or PROPKA. The fit drives every
   environment weight towards zero: as built, the terms add as much noise as signal.
@@ -122,5 +122,5 @@ default.
   Then refit, aiming to beat the null model and to turn titration on by default.
 - His with titration on: keep P1's orientation terms for the flip, titrate only the charge.
 - Titrate the C-terminus.
-- Bench and runs: `pytest -m bench tests/protein/test_bench_prepare.py -s`;
+- Bench and runs: `pytest -m bench tests/macromolecule/test_bench_prepare.py -s`;
   `pkad_review.py tables`, `fit`, `chemsuite`, `score`.

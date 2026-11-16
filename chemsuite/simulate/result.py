@@ -31,7 +31,8 @@ from typing import Any
 
 import numpy as np
 
-from ..protein.structure.model import Structure
+from chemsuite.macromolecule.structure.model import Structure
+
 from .spec import SpecError
 
 #: closer than this (Å) between heavy atoms of different residues, not bonded, is a clash

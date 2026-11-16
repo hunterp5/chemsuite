@@ -52,11 +52,11 @@ include = ["chemsuite*"]
 "chemsuite.ionisation" = ["data/*"]  # MolGpKa weights, site templates, licence
 "chemsuite.ionisation.unipka" = ["data/*"]  # Uni-pKa site templates and licences
 "chemsuite.sketch" = ["data/*"]  # Ketcher licence and notice; templates from P2
-"chemsuite.protein.structure" = ["data/*"]  # residue templates from the wwPDB CCD (public domain)
-"chemsuite.protein.prepare" = ["data/*"]  # ideal residue geometry from the wwPDB CCD (public domain)
-"chemsuite.protein.dock" = ["bin/*", "bin/*/*"]  # the AutoDock Vina binaries, their licence and notice
+"chemsuite.macromolecule.structure" = ["data/*"]  # residue templates from the wwPDB CCD (public domain)
+"chemsuite.macromolecule.prepare" = ["data/*"]  # ideal residue geometry from the wwPDB CCD (public domain)
+"chemsuite.macromolecule.dock" = ["bin/*", "bin/*/*"]  # the AutoDock Vina binaries, their licence and notice
 "chemsuite.app.render3d" = ["shaders/*"]  # 3D Viewer shaders: sources and compiled .qsb
-"chemsuite.protein.ui" = ["shaders/*"]  # Protein Viewer shaders
+"chemsuite.macromolecule.ui" = ["shaders/*"]  # Protein Viewer shaders
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

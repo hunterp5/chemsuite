@@ -23,15 +23,15 @@ Read `docs/ARCHITECTURE.md` before structural changes. Tools use the app only th
 budget is full: write explicit code. Never raise a budget or widen an allowlist to make a
 change pass without asking the user: add a `ToolContext` helper or split the file instead.
 
-- **Qt-free packages** (`core`, `analysis`, `sketch`, `protein` outside `protein/ui`,
+- **Qt-free packages** (`core`, `analysis`, `sketch`, `protein` outside `macromolecule/ui`,
   `ionisation`, …) never import Qt or the app (`tests/test_import_boundaries.py`).
-- **The Protein Workbench is a subproject** (`chemsuite/protein`): Qt-free `structure`, `chem`,
+- **The Protein Workbench is a subproject** (`chemsuite/macromolecule`): Qt-free `structure`, `chem`,
   `look` and `workspace` (the session, with plain events, and the document's
-  `ProteinWorkspace`), and the Qt `ui` (`SessionSignals` relays the session's events per
-  window). Neither `protein/ui` nor the engine imports `core.table`; they read proteins through
+  `MacromoleculeWorkspace`), and the Qt `ui` (`SessionSignals` relays the session's events per
+  window). Neither `macromolecule/ui` nor the engine imports `core.table`; they read proteins through
   an `AssetHost` (`core/assets.py`) and the current row through the `LinkedRow` they are handed.
-  `protein/ui` never imports `app.document`, `app.table` or a tool. Only the bridge,
-  `tools/protein`, knows both the table and the workbench.
+  `macromolecule/ui` never imports `app.document`, `app.table` or a tool. Only the bridge,
+  `tools/macromolecule`, knows both the table and the workbench.
 - **State that lives with the document, not a window,** is a document part
   (`ToolContext.document_part`, `app/document/workspace.py`): saved under its own key whether or
   not the tool's window is open, with a `revision` for "needs saving".
@@ -40,7 +40,7 @@ change pass without asking the user: add a `ToolContext` helper or split the fil
   `ruff format`, and the full suite.
 - **3D is QRhi only**: any new 3D view is a `QRhiWidget` (the protein view is on the `RhiView`
   base in `app/render3d`), never `QOpenGLWidget`. Shaders are LF-only and hashed, in a
-  `shaders` folder per package (`app/render3d`, `protein/ui`); compiled `.qsb` files are
+  `shaders` folder per package (`app/render3d`, `macromolecule/ui`); compiled `.qsb` files are
   checked in and rebuilt only with `scripts/build_shaders.py`.
 - **Per-row tools keep finished rows on cancel**: the core raises `Cancelled(partial)`, the
   dialog passes `keep_partial=True` to `ctx.run`. Not for whole-dataset results (clustering,
@@ -59,9 +59,9 @@ changes.
   any test that exercises the changed behaviour (`grep -rl <name> tests` finds them). Use
   `-k` to narrow further while iterating.
 - Tests mirror the code: `chemsuite/<package>/<sub>/x.py` → `tests/<package>/<sub>/test_x*.py`
-  (Qt-free code under `tests/core`, `tests/protein/structure`, …; app code under
+  (Qt-free code under `tests/core`, `tests/macromolecule/structure`, …; app code under
   `tests/app/<shell|table|document|…>`; a tool under `tests/tools/<tool>`; the workbench UI
-  under `tests/protein/ui`). GUI test folders share `tests/gui.py` through their conftest.
+  under `tests/macromolecule/ui`). GUI test folders share `tests/gui.py` through their conftest.
 - Changed imports between packages → also run `tests/test_import_boundaries.py`.
 - Run the full suite only for broad or risky changes (shared infrastructure such as
   `core/table`, `jobs`, document save/load, the renderer, cross-cutting refactors), or right

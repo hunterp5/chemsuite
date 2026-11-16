@@ -22,8 +22,8 @@ from functools import cache
 
 import pytest
 
-from chemsuite.protein.prepare import pipeline
-from tests.protein.conftest import load
+from chemsuite.macromolecule.prepare import pipeline
+from tests.macromolecule.conftest import load
 
 
 @cache

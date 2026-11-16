@@ -15,10 +15,10 @@ not against general taste:
 - Tools reach the app only through `ToolContext`: never `.column(`, `slots_of(`, `.mol(` or
   direct table writes. A missing capability becomes a `ToolContext` helper.
 - Qt-free packages (`core`, `analysis`, `sketch`, `ionisation`, `protein` outside
-  `protein/ui`, …) never import Qt or the app (`tests/test_import_boundaries.py`). Computation
+  `macromolecule/ui`, …) never import Qt or the app (`tests/test_import_boundaries.py`). Computation
   lives there; the app only drives and draws it.
-- The Protein Workbench is a subproject: `protein/ui` never imports `app.document`, `app.table`
-  or a tool; `tools/protein` is the only bridge between the table and the workbench; proteins
+- The Protein Workbench is a subproject: `macromolecule/ui` never imports `app.document`, `app.table`
+  or a tool; `tools/macromolecule` is the only bridge between the table and the workbench; proteins
   are read through an `AssetHost`.
 - State that belongs to the document, not a window, is a document part with a `revision`.
   Documents reopen exactly as saved: new window state registers as a `Part`.

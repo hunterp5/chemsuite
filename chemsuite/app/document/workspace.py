@@ -19,7 +19,7 @@ and the document parts tools keep with it.
 A **document part** is state a tool keeps with the document rather than in a window: it is
 saved with the document under its own key whether or not the tool's window is open, and its
 ``revision`` tells the document it needs saving. The protein workspace is one
-(:mod:`chemsuite.tools.protein`). The app never knows what a part is: what the file holds
+(:mod:`chemsuite.tools.macromolecule`). The app never knows what a part is: what the file holds
 under a key no part has claimed yet is saved back as it was.
 """
 

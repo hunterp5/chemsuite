@@ -23,21 +23,21 @@ changing code.
   - `document`: the table window (main window, session, `ToolContext`, panels and docks).
   - `table`: the table view and model, column actions, search and filters.
   - `plots`, `viewer`, `sketcher`: the plot panels, the Browser, the sketcher.
-- `chemsuite/protein`: the Protein Workbench, a subproject. `structure`, `chem` and `look`
+- `chemsuite/macromolecule`: the Protein Workbench, a subproject. `structure`, `chem` and `look`
   are Qt-free; `ui` is its Qt workbench.
-- `chemsuite/tools`: one package per menu feature. `tools/protein` is the workbench's
+- `chemsuite/tools`: one package per menu feature. `tools/macromolecule` is the workbench's
   bridge to the table.
 - `tests` mirrors the code. The GUI test folders (`tests/app`, `tests/tools`,
-  `tests/protein/ui`) share the Qt setup in `tests/gui.py`.
+  `tests/macromolecule/ui`) share the Qt setup in `tests/gui.py`.
 
 ## Rules
 
 | Rule | Why | Enforced by |
 |---|---|---|
-| `core`, `analysis`, `molview`, `sketch`, `protein` (outside `protein/ui`) and the other domain packages never import Qt or the app. | They stay testable, scriptable and fast to import. | `tests/test_import_boundaries.py` |
+| `core`, `analysis`, `molview`, `sketch`, `protein` (outside `macromolecule/ui`) and the other domain packages never import Qt or the app. | They stay testable, scriptable and fast to import. | `tests/test_import_boundaries.py` |
 | `core` imports no domain package (file formats live above it, in `chemsuite/io`, which may use `sketch` to lay out reactions it writes), and the app never imports a tool: it reaches one through its `Tool` declaration (`open_at` for Data ▸ Browser). | Layers only point down; tools plug in. | `test_core_imports_no_domain_package`, `test_the_app_never_imports_a_tool` |
 | Tools use the app only through `ToolContext` (`chemsuite.app.document.tools`) and a short list of shared widgets. | Tools never depend on the window, so adding one never means editing it. | `test_tools_use_the_app_only_through_its_tool_api` (`TOOL_APP_IMPORTS`) |
-| The Protein Workbench's Qt layer (`protein/ui`) never imports the table window, the table view or a tool; it reaches the document's current row through a `LinkedRow` (`protein/ui/host.py`) its host hands it. Only the bridge, `tools/protein`, imports it. | The workbench grows on its own and will run without a table. | `test_the_workbench_ui_reaches_the_table_only_through_the_bridge` (`panel.py` and `session.py` still read the `Table`: a ratchet until the workspace engine), `test_only_the_bridge_imports_the_workbench_ui` |
+| The Protein Workbench's Qt layer (`macromolecule/ui`) never imports the table window, the table view or a tool; it reaches the document's current row through a `LinkedRow` (`macromolecule/ui/host.py`) its host hands it. Only the bridge, `tools/macromolecule`, imports it. | The workbench grows on its own and will run without a table. | `test_the_workbench_ui_reaches_the_table_only_through_the_bridge` (`panel.py` and `session.py` still read the `Table`: a ratchet until the workspace engine), `test_only_the_bridge_imports_the_workbench_ui` |
 | Tools never reach into the window or the context's private members. | MolManager's 271 `app._x` reaches. | `test_tools_never_reach_into_the_window` |
 | Tools read the table through `ToolContext` (`structure_inputs`, `table.read`) and write results only through `ctx.apply_results`. | One place handles undo, name clashes, deleted rows, and speed at 200k rows. | `test_tools_use_the_table_through_the_context` (ratchet) |
 | A panel that opens from a tool saves and reopens with the document. | Documents reopen exactly as saved. | `tests/app/document/test_session.py` |
@@ -78,7 +78,7 @@ is usually better than an exemption.
   system's own API (Direct3D 11, Metal, OpenGL on Linux). Every GPU widget in a window shares
   one API, so a new 3D view must be a `QRhiWidget` too, never a `QOpenGLWidget`. Shaders are
   compiled to `.qsb` with `scripts/build_shaders.py` and checked in. Each package keeps its
-  own in a `shaders` folder with its own manifest (`app/render3d`, `protein/ui`); a view names
+  own in a `shaders` folder with its own manifest (`app/render3d`, `macromolecule/ui`); a view names
   its package in `RhiView.shaders`.
 - **3D is checked once at start-up** (`chemsuite/app/shell/graphics.py`): anything that draws 3D
   reads `graphics.problem()` to grey itself out with the reason instead of failing when
@@ -95,25 +95,25 @@ is usually better than an exemption.
   a link column (`LINK_COLUMNS`: protein → `Protein`); copying rows to a new document takes the
   assets they name. Adding or removing a protein and its ligand rows is one undo step
   (`add_rows`/`remove_rows` with `extra_ops`).
-- **The Protein Workbench is a subproject** (`chemsuite/protein`), so it can grow on its own and
+- **The Protein Workbench is a subproject** (`chemsuite/macromolecule`), so it can grow on its own and
   later open without a table: Qt-free `structure` (the arrays, files, bonds, selections),
   `chem` (ligands, poses, interactions) and `look` (displays, scenes, meshes), and the Qt
-  `ui`. Only the bridge, `tools/protein`, knows both the table and the workbench: the
+  `ui`. Only the bridge, `tools/macromolecule`, knows both the table and the workbench: the
   ligand-row columns and `ligand_rows` (`rows.py`), following the current row (`follow.py`,
   the workbench's `LinkedRow`), and Ligands and Interactions to Table (`to_table.py`).
-- **Proteins are Qt-free arrays** (`chemsuite/protein/structure`): an immutable struct-of-arrays
+- **Proteins are Qt-free arrays** (`chemsuite/macromolecule/structure`): an immutable struct-of-arrays
   `Structure` keyed by atom uids (selections, labels, measurements and focus survive edits),
   a `Display` per protein holding how it looks, and a composed `Scene` the view uploads as a
   geometry buffer and a separate look buffer, so a selection change re-uploads colours only.
-  The session (`protein/workspace/session.py`, Qt-free, with plain events) is what the tree,
+  The session (`macromolecule/workspace/session.py`, Qt-free, with plain events) is what the tree,
   sequence, selection bar and view read and change, never each other; each viewer window
-  relays its events as Qt signals (`protein/ui/session.py`, `SessionSignals`), so a closing
+  relays its events as Qt signals (`macromolecule/ui/session.py`, `SessionSignals`), so a closing
   window lets go cleanly while the session lives on with the document.
 - **Document parts** (`app/document/workspace.py`, `ToolContext.document_part`): state a tool
   keeps with the document rather than a window, saved under its own key whether or not the
   window is open, with a `revision` the document compares on save. What a file holds under a
   key no part has claimed yet is saved back as it was. The protein workspace
-  (`protein/workspace/workspace.py`) is one: it keeps the saved state untouched until the
+  (`macromolecule/workspace/workspace.py`) is one: it keeps the saved state untouched until the
   viewer first opens, then holds the session; documents that saved the viewer's state with
   its window move it in when the window is restored.
 - **One `RhiView` base for 3D views** (`app/render3d/rhi_view.py`): camera, picking, slab and
@@ -126,7 +126,7 @@ is usually better than an exemption.
   (`add_panel`) stay for panels that sit beside the table.
 - **Slow protein parts build in the background, never stale.** Surfaces, interactions, pocket
   skins and large cartoons are `Build`s from `Display.pending()`, run as quick background jobs
-  (`protein/ui/builds.py`); a result is kept only if the display is still shown, still holds
+  (`macromolecule/ui/builds.py`); a result is kept only if the display is still shown, still holds
   the structure the work was handed, and the part's version has not moved on. The last result
   stays drawn until the new one lands.
 - **Every download goes through `core/download.py`**: HTTPS only, audited, refused when IT

@@ -44,9 +44,9 @@ def main(argv: list[str]) -> int:
     from chemsuite.app.shell.windows import ToolWindow
     from chemsuite.core.settings import DARK, LIGHT, Appearance
     from chemsuite.core.table import Asset, PutAsset, Table
-    from chemsuite.protein.chem import ligands
-    from chemsuite.protein.structure import io
-    from chemsuite.protein.ui.panel import ProteinPanel
+    from chemsuite.macromolecule.chem import ligands
+    from chemsuite.macromolecule.structure import io
+    from chemsuite.macromolecule.ui.panel import MacromoleculePanel
 
     out = Path(argv[1])
     out.mkdir(parents=True, exist_ok=True)
@@ -55,7 +55,7 @@ def main(argv: list[str]) -> int:
     name = str(structure.meta.get("id") or source.stem).upper()
     table = Table()
     table.edit("Open", [PutAsset(name, None, Asset(name, "protein", name, structure, {}))])
-    panel = ProteinPanel(table)
+    panel = MacromoleculePanel(table)
     window = ToolWindow(panel, "Protein Viewer", name=lambda: name, menu_bar=panel.menu_bar)
     window.resize(1400, 900)
     window.show()

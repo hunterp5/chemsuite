@@ -562,7 +562,7 @@ def test_shaders_are_built_from_the_current_sources() -> None:
     finally:
         sys.path.pop(0)
     folders = build_shaders.folders()
-    assert len(folders) == 2  # app/render3d and protein/ui
+    assert len(folders) == 2  # app/render3d and macromolecule/ui
     for folder in folders:
         manifest = json.loads((folder / build_shaders.MANIFEST).read_text())
         assert manifest == build_shaders.hashes(folder), "shaders changed: run build_shaders.py"

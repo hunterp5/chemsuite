@@ -9,8 +9,8 @@
 chemsuite/app/molview/shaders/*.vert text eol=lf
 chemsuite/app/molview/shaders/*.frag text eol=lf
 
-# The bundled AutoDock Vina binaries (chemsuite/protein/dock/bin) are programs, not text.
-chemsuite/protein/dock/bin/*/* binary
+# The bundled AutoDock Vina binaries (chemsuite/macromolecule/dock/bin) are programs, not text.
+chemsuite/macromolecule/dock/bin/*/* binary
 
 *.qsb binary
 *.gz binary

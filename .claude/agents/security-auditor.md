@@ -12,14 +12,14 @@ fixes several licence questions.
 
 **Untrusted input.** Chemists open files from colleagues, vendors and the web.
 
-- Readers (`chemsuite/io`, `core/document.py`, `protein/structure`) for SDF, mol2, CSV, XLSX,
+- Readers (`chemsuite/io`, `core/document.py`, `macromolecule/structure`) for SDF, mol2, CSV, XLSX,
   RD/RXN, CDX/CDXML, MRV, Maestro, XYZ, PDB/mmCIF, and `.csd`/`.cspx` documents (SQLite
   containers): path traversal from names stored inside, decompression bombs (gzip, zip), huge
   allocations from sizes stored in headers, SQL built from strings.
 - `pickle`, `eval`, `exec`, or `numpy.load(allow_pickle=True)` on anything that came from a
   file or the network.
 
-**Programs and processes.** Look at `subprocess` calls (AutoDock Vina in `protein/dock/bin`,
+**Programs and processes.** Look at `subprocess` calls (AutoDock Vina in `macromolecule/dock/bin`,
 WSL, OpenMM workers): shell=True, arguments built from file contents, and temp files in shared
 locations. Check that bundled binaries are verified against their pinned hashes.
 

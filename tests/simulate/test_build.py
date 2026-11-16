@@ -20,9 +20,9 @@ import numpy as np
 import pytest
 from rdkit import Chem
 
-from chemsuite.protein.prepare import sites
-from chemsuite.protein.structure import edit
-from chemsuite.protein.structure.model import Structure
+from chemsuite.macromolecule.prepare import sites
+from chemsuite.macromolecule.structure import edit
+from chemsuite.macromolecule.structure.model import Structure
 from chemsuite.simulate import build, spec
 
 
@@ -156,6 +156,6 @@ def test_a_mid_chain_form_at_a_chain_end_blocks(crambin) -> None:
 
 def test_the_neutral_n_terminus_state_is_named_alike_on_both_sides() -> None:
     assert build.NEUTRAL_N == sites.NEUTRAL_N
-    from chemsuite.protein.prepare import solve
+    from chemsuite.macromolecule.prepare import solve
 
     assert build.PROTEIN_STATES == solve.RECORDED

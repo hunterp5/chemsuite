@@ -433,12 +433,12 @@ pip extra.
    pocket by the pose display and copied to table rows on request; covalent and
    flexible-side-chain docking; ensemble and consensus scoring; pocket detection and
    druggability; interaction fingerprints across poses, building on Interactions to Table. The
-   receptor is prepared by `protein/prepare` (phase 3's P1 is enough for docking).
+   receptor is prepared by `macromolecule/prepare` (phase 3's P1 is enough for docking).
    - **Progress (2026-11-14):** Stage A is Prepare (phase 3's P4). Stage B: AutoDock Vina 1.2.7
      bundled for Windows, macOS and Linux with its licence and pinned hashes
-     (`protein/dock/bin`, `scripts/fetch_vina.py`); the Qt-free engine `protein/dock/` (box,
+     (`macromolecule/dock/bin`, `scripts/fetch_vina.py`); the Qt-free engine `macromolecule/dock/` (box,
      Meeko PDBQT, the Vina binary, many ligands with progress, cancel and finished ligands
-     kept); **Protein ▸ Dock…** and **Rescore Poses…** (`tools/protein/dock.py`,
+     kept); **Protein ▸ Dock…** and **Rescore Poses…** (`tools/macromolecule/dock.py`,
      `dock_dialog.py`). Redocking 80U into 5GNK puts the top pose 1.13 Å from the crystal's.
      **2026-11-15:** poses moved out of the table into the viewer's Poses panel (Copy to Table
      on request); every run kept and numbered with its scoring function, a rescore a run

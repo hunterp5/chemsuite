@@ -33,8 +33,8 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from chemsuite.core.jobs import Cancelled, CancelToken
+from chemsuite.macromolecule.structure.model import Structure
 
-from ..protein.structure.model import Structure
 from . import build, spec
 from .result import Contact, MinimiseResult
 from .runner import Minimised, Progress, Simulator

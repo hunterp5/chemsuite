@@ -19,8 +19,8 @@
 ``chemsuite.core`` (and the ported domain packages) must never depend on Qt or on the
 ``chemsuite.app`` shell, so the table, files and computations stay testable without a GUI and
 reusable from scripts. Tools may use the app only through ``ToolContext``. The Protein
-Workbench's Qt layer (``chemsuite.protein.ui``) reaches the table only through its bridge,
-``chemsuite.tools.protein``.
+Workbench's Qt layer (``chemsuite.macromolecule.ui``) reaches the table only through its bridge,
+``chemsuite.tools.macromolecule``.
 """
 
 from __future__ import annotations
@@ -46,12 +46,12 @@ QT_FREE = (
     "ionisation",
     "sketch",
     "retro",
-    "protein",
+    "macromolecule",
     "simulate",
 )
 FORBIDDEN_FOR_QT_FREE = ("PySide6", "shiboken6", "pyqtgraph", "chemsuite.app", "chemsuite.tools")
 #: The Qt part of a Qt-free package, scanned by its own rules below.
-WORKBENCH_UI = PACKAGE / "protein" / "ui"
+WORKBENCH_UI = PACKAGE / "macromolecule" / "ui"
 
 
 def _imported_modules(path: Path) -> set[str]:
@@ -161,7 +161,7 @@ def test_the_workbench_reaches_the_table_only_through_the_bridge() -> None:
     paths = sorted(WORKBENCH_UI.rglob("*.py"))
     offenders = _offenders(paths, (*WORKBENCH_UI_FORBIDDEN, "chemsuite.core.table"))
     engine = sorted(
-        p for p in (PACKAGE / "protein").rglob("*.py") if not p.is_relative_to(WORKBENCH_UI)
+        p for p in (PACKAGE / "macromolecule").rglob("*.py") if not p.is_relative_to(WORKBENCH_UI)
     )
     offenders += _offenders(engine, ["chemsuite.core.table"])
     assert not offenders, "the workbench reaches past its bridge:\n" + "\n".join(offenders)
@@ -173,17 +173,17 @@ def test_the_simulation_side_never_loads_the_engines_or_the_table() -> None:
     the workbench UI."""
     paths = sorted((PACKAGE / "simulate").rglob("*.py"))
     forbidden = ("openmm", "openff", "openmmforcefields", "torch", "chemsuite.core.table",
-                 "chemsuite.protein.ui")  # fmt: skip
+                 "chemsuite.macromolecule.ui")  # fmt: skip
     offenders = _offenders(paths, forbidden)
     assert paths and not offenders, "chemsuite.simulate imports:\n" + "\n".join(offenders)
 
 
 def test_only_the_bridge_imports_the_workbench_ui() -> None:
-    """The engine (the rest of chemsuite.protein) and the app never import the workbench UI;
-    the table side opens it through its bridge, chemsuite.tools.protein."""
-    bridge = PACKAGE / "tools" / "protein"
+    """The engine (the rest of chemsuite.macromolecule) and the app never import the workbench UI;
+    the table side opens it through its bridge, chemsuite.tools.macromolecule."""
+    bridge = PACKAGE / "tools" / "macromolecule"
     found = []
     for path in sorted(PACKAGE.rglob("*.py")):
         if not (path.is_relative_to(WORKBENCH_UI) or path.is_relative_to(bridge)):
-            found += _offenders([path], ["chemsuite.protein.ui"])
+            found += _offenders([path], ["chemsuite.macromolecule.ui"])
     assert not found, "imports the workbench UI from outside its bridge:\n" + "\n".join(found)

@@ -29,9 +29,9 @@ The full suite passes (2,639 passed). Everything else is open.
 
 | Depth | Areas |
 |---|---|
-| Read in full | `core/` (container, document, download, settings, mols, history, jobs), `core/table/table.py`, `io/` (load, delimited, sdf, formats, xlsx), `app/shell/jobs.py`, `job_host.py`, `main.py`, `app/document/tools.py`, `session.py`, open/save/close in `main_window.py`, `table_model.py`, the image cache in `table_view.py`, `protein/dock/vina.py`, `protein/structure/{components,fetch,store}.py`, `retro/{runner,download}.py`, `tests/test_architecture.py`, CI |
-| Skimmed or searched only | `core/table/columns.py`, `analysis/`, `sar/`, `descriptors/`, `conformers/`, `ionisation/`, the tool dialogs, `app/plots`, `app/viewer`, `protein/ui`, `protein/workspace` |
-| Not reviewed | `sketch/` and `app/sketcher` (about 6,000 lines), `protein/prepare` (hydrogens, energy, sites), `protein/look`, `molview`, the shaders and the QRhi drawing code, the scientific correctness of any model or descriptor, the test suite's quality |
+| Read in full | `core/` (container, document, download, settings, mols, history, jobs), `core/table/table.py`, `io/` (load, delimited, sdf, formats, xlsx), `app/shell/jobs.py`, `job_host.py`, `main.py`, `app/document/tools.py`, `session.py`, open/save/close in `main_window.py`, `table_model.py`, the image cache in `table_view.py`, `macromolecule/dock/vina.py`, `macromolecule/structure/{components,fetch,store}.py`, `retro/{runner,download}.py`, `tests/test_architecture.py`, CI |
+| Skimmed or searched only | `core/table/columns.py`, `analysis/`, `sar/`, `descriptors/`, `conformers/`, `ionisation/`, the tool dialogs, `app/plots`, `app/viewer`, `macromolecule/ui`, `macromolecule/workspace` |
+| Not reviewed | `sketch/` and `app/sketcher` (about 6,000 lines), `macromolecule/prepare` (hydrogens, energy, sites), `macromolecule/look`, `molview`, the shaders and the QRhi drawing code, the scientific correctness of any model or descriptor, the test suite's quality |
 
 Each finding says how it was established:
 
@@ -174,7 +174,7 @@ cache; make the cache an instance owned by the GUI side, or guard it with a lock
 - `retro/download.py:56–76` fetches about 1.4 GB of ONNX models, templates and an HDF5 stock
   that a worker interpreter then loads. There is no pinned SHA-256 or size; integrity rests
   on TLS alone. (The Vina binaries, by contrast, are checksum-pinned in
-  `protein/dock/bin/checksums.json`; do the same here.)
+  `macromolecule/dock/bin/checksums.json`; do the same here.)
 - `download.py:97` checks only that the first URL is `https://`. `urllib` follows redirects,
   including to `http://`, and both Zenodo and figshare redirect.
 - Resume (`download.py:147–162`) sends `Range: bytes=N-` with no `If-Range`/ETag. If the
@@ -218,7 +218,7 @@ for metadata) but not throughout:
 - Saved regular expressions in filters and searches are restored and run on the GUI thread
   when a document opens (`app/document/session.py`), so a document can carry a pattern that
   freezes the window (catastrophic backtracking).
-- `protein/structure/store.py:unpack` accepts arrays of any shape and dtype; mismatched
+- `macromolecule/structure/store.py:unpack` accepts arrays of any shape and dtype; mismatched
   lengths surface later as index errors in drawing code. A missing `_meta` raises `KeyError`
   rather than `StoreError`.
 
@@ -310,7 +310,7 @@ mtime and size at open and compare before saving.
 | # | Finding | Where |
 |---|---|---|
 | m1 | Files written through `mkstemp` + `os.replace` end up mode `0600` on macOS and Linux and lose the previous file's permissions and ACLs: a document saved on a shared drive becomes unreadable to the group. Copy the old mode (or apply the umask) before the rename. Applies to documents, every export and settings. | `core/container.py:66`, `io/formats.py:230`, `core/settings.py:341` |
-| m2 | Atomic write is implemented five times with different guarantees: only `io.formats.atomic_write` fsyncs; `SettingsStore.save` leaks the temp file on a non-`OSError`; `CcdCache._write` and the download `.part` use fixed names. One helper in `core`. | as m1, plus `protein/structure/components.py:239`, `core/download.py:146` |
+| m2 | Atomic write is implemented five times with different guarantees: only `io.formats.atomic_write` fsyncs; `SettingsStore.save` leaks the temp file on a non-`OSError`; `CcdCache._write` and the download `.part` use fixed names. One helper in `core`. | as m1, plus `macromolecule/structure/components.py:239`, `core/download.py:146` |
 | m3 | `iter_blocks` does `buffer += chunk` and rescans the whole buffer until it finds `$$$$`. A large file with no record terminator (a wrong file renamed `.sdf`, one huge record) is quadratic in time and held entirely in memory. Cap the buffer and fail with a clear message. | `io/sdf.py:70–90`; same shape in `mol2.py:56`, `rdf.py:88` |
 | m4 | `csv` field limit is the default 131,072 characters; a cell larger than that (a molfile or sequence in a CSV) aborts the import with `_csv.Error`. Raise the limit. | `io/delimited.py:112` |
 | m5 | The CSV header is read with `readline()`, so a quoted header containing a newline is split. | `io/delimited.py:86` |
@@ -319,13 +319,13 @@ mtime and size at open and compare before saving.
 | m8 | No static type check in CI although the code is fully annotated and `# type: ignore` is budgeted. | CI |
 | m9 | On Unix, `_stop_group` sends `SIGKILL` to the process group after the leader has been reaped; if nothing else was in the group, that id can already belong to an unrelated new process group. Rare. Skip the final kill when `killpg(group, 0)` says the group is empty, or keep the leader unreaped until after it. | `core/jobs/children.py:116` |
 | m10 | On Windows a child is assigned to its Job Object after it has started, so anything it spawns in the first moments escapes kill-on-close. Start suspended, assign, resume. | `core/jobs/children.py:60–61` |
-| m11 | The Vina fallback copies the binary to a predictable folder in the system temp directory and trusts an existing file of the same size. On a shared Linux machine another user can plant it. The app passes a per-user cache folder, so this only bites library use; remove the fallback or use a `0700` per-user folder. | `protein/dock/vina.py:112` |
+| m11 | The Vina fallback copies the binary to a predictable folder in the system temp directory and trusts an existing file of the same size. On a shared Linux machine another user can plant it. The app passes a per-user cache folder, so this only bites library use; remove the fallback or use a `0700` per-user folder. | `macromolecule/dock/vina.py:112` |
 | m12 | Any change to cells, rows, columns or styles drops every filter's cached mask, including filters on other columns. Background parsing applies 2,000 rows at a time, so with a filter active a 200k-row import recomputes each mask up to 100 times. Drop only the masks whose `columns` were touched (and the all-column quick search). | `core/table/table.py:810` |
 | m13 | Removing or converting a column drops the filters and sort keys that used it, and undo restores the column but not those. | `core/table/table.py:_remove_column`, `_replace_column` |
 | m14 | A table listener that raises stops the remaining listeners from hearing `Changed`, leaving panels stale. Isolate listeners (log and continue). | `core/table/table.py:_emit` |
 | m15 | Two running instances share `settings.json` (last writer wins: recent files and tool paths can be lost) and the same rotating log files (rotation fails on Windows when another process holds the file). | `core/settings.py`, `core/logbook.py:228` |
-| m16 | `.missing` markers in the CCD cache never expire, so a component added to the CCD later is never found. Cached `.cif` files are never revalidated. | `protein/structure/components.py:_fetched` |
-| m17 | `gzip.decompress` of a fetched PDB entry has no size limit (up to 256 MB compressed is accepted). | `protein/structure/fetch.py:70` |
+| m16 | `.missing` markers in the CCD cache never expire, so a component added to the CCD later is never found. Cached `.cif` files are never revalidated. | `macromolecule/structure/components.py:_fetched` |
+| m17 | `gzip.decompress` of a fetched PDB entry has no size limit (up to 256 MB compressed is accepted). | `macromolecule/structure/fetch.py:70` |
 | m18 | `_status` builds a one-element numpy array per call and is asked for every painted structure cell; `image()` does the same for its cache key. Index `_blobs[slot]` directly. | `app/table/table_model.py:323`, `table_view.py:144` |
 | m19 | `app/shell`, described as the layer every window uses, imports one domain feature directly: `chemsuite.retro` in `settings_dialog.py:71–72, 508, 547, 562` and `main.py:96`. A registry for "external tool tests" and "things to close at exit" would keep the shell free of features, as `Tool` does for menus. | `app/shell` |
 | m20 | `core/document.py` serialises columns by reading their private arrays (8 uses of `_values`, `_codes`, `_dict`, `_blobs`, …). Encoding and decoding belong on the column classes. | `core/document.py:156–174, 238–264` |
@@ -340,13 +340,13 @@ mtime and size at open and compare before saving.
 
 | What | Copies | Where | Suggested home |
 |---|---|---|---|
-| `_mol(cell)`: bytes → `mol_from_blob`, str → `mol_from_text` | 10 identical, plus `mol_of` | `analysis/{fingerprints,reagents,standardize}.py`, `conformers/etkdg.py`, `descriptors/compute.py`, `ionisation/predict.py`, `sar/{central_ring,constellation,fragments,mmp}.py`, `tools/protein/rows.py:81` | `core.mols.mol_from_cell` |
+| `_mol(cell)`: bytes → `mol_from_blob`, str → `mol_from_text` | 10 identical, plus `mol_of` | `analysis/{fingerprints,reagents,standardize}.py`, `conformers/etkdg.py`, `descriptors/compute.py`, `ionisation/predict.py`, `sar/{central_ring,constellation,fragments,mmp}.py`, `tools/macromolecule/rows.py:81` | `core.mols.mol_from_cell` |
 | Chunk → `ordered_map` → collect → `Cancelled(partial)` driver | about 13 | see M9 | one helper in `core/jobs` |
 | Atomic write (temp file + replace) | 5 | see m2 | `core` |
 | Block reader: `iter_blocks` / `parse_block` / read loop | 3 | `io/sdf.py`, `io/mol2.py`, `io/rdf.py` | a shared record splitter parameterised by terminator (not diffed line by line; same shape) |
 | Header handling and the "decide reaction columns from the first rows" closure, and `_batch` | 2 | `io/delimited.py:86–107`, `io/xlsx.py:66–83` | one function taking rows |
 | oid → slot lookup with the clip-and-compare idiom | 3 | `Table.slots_of`, `Table.has_oid`, `TableModel.rows_of_oids` | a `Table.find_slots(oids)` returning −1 for missing |
-| "parse a number or None" | 4 | `core/table/{criteria,search,split_join}.py`, `protein/prepare/templates.py` | `core/table/numbers.py` |
+| "parse a number or None" | 4 | `core/table/{criteria,search,split_join}.py`, `macromolecule/prepare/templates.py` | `core/table/numbers.py` |
 | `CHUNK` and `TIMEOUT_S` | redefined, unused | `retro/download.py:45–46` (the module delegates to `core.download`) | delete |
 
 ### Unused
@@ -361,14 +361,14 @@ No references anywhere:
 set_all_enabled`, `app/table/advanced_search.py:492 remove_row`,
 `core/table/columns.py:394 unique_values` and `:435 unused_entries`,
 `plotting/data.py:134 is_plottable_axis`, `plotting/orbit.py:106 eye_direction`,
-`protein/structure/select.py:126 _per_atom`, `protein/ui/sequence_view.py:369 scroll_to`,
+`macromolecule/structure/select.py:126 _per_atom`, `macromolecule/ui/sequence_view.py:369 scroll_to`,
 `sketch/edits.py:238 last_edit`, `ionisation/unipka/__init__.py:65 Predictor` (probably
 work in progress for the Uni-pKa model, per HANDOFF).
 
 Used only by tests (production code never calls them), a sample:
 `Table.clear_filters`, `Table.remove_column` (the app uses `remove_columns`),
 `ParsedColumn.invalid_mask`, `core/structure_input.py is_valid` and `mol_weight`,
-`protein/dock/box.py from_residue` and `volume`, `protein/chem/interactions.py
+`macromolecule/dock/box.py from_residue` and `volume`, `macromolecule/chem/interactions.py
 ligand_query`, `sketch/layout.py best_layout`, `unipka.macro_pkas`. Either they are API
 waiting for a caller or the tests are keeping dead code alive.
 
@@ -442,7 +442,7 @@ Where the structure leaks:
    `app/table/table_view.py` while `app/shell/main.py`, the viewer and `ToolContext` all use
    it. It is a shared service; move it to `app/widgets` or `app/shell` and hand it to the
    context.
-5. **`protein/ui/panel.py` and `protein/workspace/session.py` still read the `Table`**: a
+5. **`macromolecule/ui/panel.py` and `macromolecule/workspace/session.py` still read the `Table`**: a
    known ratchet in `test_import_boundaries.py`, noted here so it stays visible.
 6. **Tools still reading column internals**: 40 budgeted uses across nine files
    (`COLUMN_INTERNALS_IN_TOOLS`), the largest being `tools/retro/dialog.py` (9) and
@@ -501,7 +501,7 @@ Things this review would otherwise have let pass without comment.
 **Areas I did not read and you should not assume are clean**
 
 - The sketcher (`sketch/`, `app/sketcher`, about 6,000 lines including the 1,341-line
-  canvas) and all of `protein/prepare`. Both parse or build chemistry by hand and are where
+  canvas) and all of `macromolecule/prepare`. Both parse or build chemistry by hand and are where
   subtle correctness bugs would live.
 - The GPU code. I did not check buffer lifetimes, device-loss handling or what happens when
   a QRhi resource fails to create mid-session (start-up is checked by `graphics.py`).
