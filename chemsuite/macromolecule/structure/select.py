@@ -25,6 +25,7 @@ Words (case does not matter; several values join with ``+`` or ``,``)::
     $name (a saved selection)
 
 ``organic`` is ligands, additives and glycans; ``hetero`` is everything not in a polymer.
+``chain ''`` is a chain without a name (PyMOL's spelling), as docking and MD files often have.
 ``name`` and ``resn`` accept ``*`` and ``?`` wildcards.
 """
 
@@ -106,7 +107,17 @@ def compile_selection(text: str) -> _Eval:
 
 
 def _values(text: str) -> list[str]:
-    return [v for v in re.split(r"[+,]", text) if v]
+    return ["" if v in ("''", '""') else v for v in re.split(r"[+,]", text) if v]
+
+
+def chain_word(name: str) -> str:
+    """The words that select chain *name*, a blank one included."""
+    return f"chain {name}" if name else "chain ''"
+
+
+def chain_title(name: str) -> str:
+    """How a chain is named on screen: its name, or "unnamed"."""
+    return name if name else "unnamed"
 
 
 def _matches(column: np.ndarray, patterns: list[str], upper: bool = True) -> Mask:

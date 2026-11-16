@@ -45,7 +45,7 @@ from chemsuite.macromolecule.structure.model import (
     WATER,
     Structure,
 )
-from chemsuite.macromolecule.structure.select import select
+from chemsuite.macromolecule.structure.select import chain_title, chain_word, select
 from chemsuite.macromolecule.workspace.session import ADD, SET, TOGGLE
 
 from .session import SessionSignals
@@ -59,7 +59,7 @@ _GROUPS = ((ION, "Ions", "ion"), (WATER, "Waters", "water"), (ADDITIVE, "Additiv
 def residue_expression(structure: Structure, residue: int) -> str:
     chain = structure.chain_name[structure.chain_of[residue]]
     number = f"{structure.res_seq[residue]}{structure.icode[residue]}"
-    return f"chain {chain} and resi {number} and resn {structure.res_name[residue]}"
+    return f"{chain_word(str(chain))} and resi {number} and resn {structure.res_name[residue]}"
 
 
 class StructureTree(QTreeWidget):
@@ -157,9 +157,9 @@ class StructureTree(QTreeWidget):
             span = structure.residues_of(c)
             polymer = int(np.isin(kinds[span], (AMINO, NUCLEIC)).sum())
             if polymer:
-                name = structure.chain_name[c]
-                self._child(top, protein, f"Chain {name} ({polymer})",
-                            f"chain {name} and polymer")  # fmt: skip
+                name = str(structure.chain_name[c])
+                self._child(top, protein, f"Chain {chain_title(name)} ({polymer})",
+                            f"{chain_word(name)} and polymer")  # fmt: skip
         asset = self.session.store.assets.get(protein)
         guessed = set(asset.meta.get(GUESSED, "").splitlines()) if asset is not None else set()
         for residue in np.flatnonzero(kinds == LIGAND):

@@ -21,7 +21,12 @@ import numpy as np
 import pytest
 
 from chemsuite.macromolecule.structure.model import Structure
-from chemsuite.macromolecule.structure.select import SelectionError, residues_in, select
+from chemsuite.macromolecule.structure.select import (
+    SelectionError,
+    chain_word,
+    residues_in,
+    select,
+)
 
 
 def count(s: Structure, text: str, **kw) -> int:
@@ -119,3 +124,29 @@ def test_mistakes_say_where(kinase: Structure, text: str, position: int) -> None
     with pytest.raises(SelectionError) as error:
         select(kinase, text)
     assert error.value.position == position
+
+
+def blank_chain(path) -> Structure:
+    """Crambin with no chain name and a ligand numbered 1, as a docking program writes it."""
+    import gzip
+
+    from chemsuite.macromolecule.structure import io
+
+    from ..conftest import DATA
+
+    with gzip.open(DATA / "1crn.pdb.gz", "rt") as source:
+        lines = [line[:21] + " " + line[22:] for line in source if line.startswith("ATOM")]
+    lines += ["HETATM  400  C1  LIG     1      10.000  10.000  10.000  1.00  0.00           C\n",
+              "HETATM  401  O1  LIG     1      11.200  10.000  10.000  1.00  0.00           O\n",
+              "END\n"]  # fmt: skip
+    path.write_text("".join(lines))
+    return io.read(path)
+
+
+def test_a_chain_without_a_name_is_selected_as_chain_quotes(tmp_path) -> None:
+    s = blank_chain(tmp_path / "docked.pdb")
+    assert list(s.chain_name) == [""]
+    assert chain_word("") == "chain ''" and chain_word("A") == "chain A"
+    assert count(s, "chain ''") == count(s, 'chain ""') == s.n_atoms
+    assert count(s, "chain ''+A") == s.n_atoms and count(s, "chain A") == 0
+    assert count(s, f"{chain_word('')} and polymer") == 327

@@ -34,7 +34,7 @@ from chemsuite.macromolecule.look import colours, scene
 from chemsuite.macromolecule.look.display import TRANSPARENCIES
 from chemsuite.macromolecule.structure.io import MMCIF, PDB
 from chemsuite.macromolecule.structure.model import LIGAND
-from chemsuite.macromolecule.structure.select import SelectionError
+from chemsuite.macromolecule.structure.select import SelectionError, chain_word
 from chemsuite.macromolecule.workspace.session import (
     ADD,
     ATOM_LABEL,
@@ -195,7 +195,7 @@ def context_menu(
         title = menu.addAction(structure.atom_label(index))
         title.setEnabled(False)
         here = residue_expression(structure, residue)
-        chain = f"chain {structure.chain_name[structure.chain_of[residue]]}"
+        chain = chain_word(str(structure.chain_name[structure.chain_of[residue]]))
 
         def pick(expression: str, mode: str = SET) -> None:
             try:

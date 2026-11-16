@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from chemsuite.macromolecule.structure.select import SelectionError
+from chemsuite.macromolecule.structure.select import SelectionError, chain_title, chain_word
 from chemsuite.macromolecule.workspace.session import SET
 
 from .session import SessionSignals
@@ -62,8 +62,9 @@ AROUND_KINDS = (
     ("Atoms", "within {} of $selection"),
 )
 _SYNTAX = (
-    "chain A, resi 10-50, resn HIS+ASP, name CA, elem Fe; protein, ligand, water, ion, "
-    "backbone, sidechain, helix, sheet; byres S, within 5 of S; and, or, not, ( ); $saved"
+    "chain A (chain '' unnamed), resi 10-50, resn HIS+ASP, name CA, elem Fe; protein, ligand, "
+    "water, ion, backbone, sidechain, helix, sheet; byres S, within 5 of S; and, or, not, ( ); "
+    "$saved"
 )
 
 
@@ -139,7 +140,7 @@ class SelectionBar(QWidget):
         names = sorted({str(n) for d in self.session.displays if d.visible
                         for n in d.structure.chain_name})  # fmt: skip
         for name in names:
-            chains.addAction(name, lambda n=name: self.pick(f"chain {n}"))
+            chains.addAction(chain_title(name), lambda n=name: self.pick(chain_word(n)))
         chains.setEnabled(bool(names))
         around = menu.addMenu("Around")
         for kind, template in AROUND_KINDS:

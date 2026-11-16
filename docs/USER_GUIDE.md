@@ -1641,7 +1641,8 @@ or not, with the rows you chose.
   use its keys: the arrows move a cursor, Shift+arrows select from where it started, Return
   selects the residue under it, Home and End jump to the ends of a row. In the viewer, Ctrl/⌘+A selects every atom, Ctrl/⌘+C copies the selection as PDB and F frames
   it (a text field keeps its own). The structures list highlights a chain or ligand that is wholly selected and puts
-  one partly selected in bold. Type in the selection field (point at it for the syntax): `chain A`,
+  one partly selected in bold. Type in the selection field (point at it for the syntax): `chain A` (`chain ''` for a
+  chain without a name, as docking and MD files often have; the list calls it unnamed),
   `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres (polymer within 5 of
   ligand)` (whole residues near a ligand; `byres` takes what follows it, hence the brackets),
   `and`, `or`, `not`. The **Select** menu has the usual picks (each shows its expression in the

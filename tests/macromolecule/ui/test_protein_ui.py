@@ -179,6 +179,18 @@ def test_tree_entries_select_what_they_name(panel) -> None:
     assert np.array_equal(np.unique(s.atom_chain[selected]), [1])
 
 
+def test_tree_entries_of_a_chain_without_a_name_select_it(tmp_path) -> None:
+    from chemsuite.macromolecule.structure.select import select
+    from chemsuite.macromolecule.ui.tree import residue_expression
+
+    from ..structure.test_select import blank_chain
+
+    s = blank_chain(tmp_path / "docked.pdb")
+    ligand = s.n_residues - 1
+    picked = select(s, residue_expression(s, ligand))
+    assert picked.sum() == 2 and (s.residue_of[picked] == ligand).all()  # not THR 1
+
+
 def test_clicking_letters_selects_residues(panel, qtbot) -> None:
     strip = panel.sequence.strip
     row = strip.rows[0]
