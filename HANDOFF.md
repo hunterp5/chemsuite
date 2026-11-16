@@ -1,10 +1,31 @@
-# Handoff: state of play (updated 2026-11-15, on Windows)
+# Handoff: state of play (updated 2026-11-16, on Windows)
 
 The rules live in `CLAUDE.md`; this file is only what is in flight, so the next session on the
 other machine can pick it up. Update it at the end of a session that leaves work open.
 
 ## In progress
 
+- **Macromolecule Viewer** (2026-11-16, plan approved; Claude's plan file on the Windows PC,
+  `whimsical-growing-ripple.md`). The Protein Viewer is renamed in the code and on screen:
+  `chemsuite/protein` → `chemsuite/macromolecule`, `tools/protein` → `tools/macromolecule`
+  (tests follow). **After pulling, run `pip install -e .` once, and delete any leftover
+  `chemsuite/protein`, `tests/protein` and `tests/tools/protein` folders** (only
+  `__pycache__` is left in them, and Python can import them as namespace packages). Saved
+  names are unchanged (asset kind `protein`, the `protein_workspace` part, tool ids), so every
+  document opens as before.
+  - Done: session files (`.cspx`, `macromolecule/workspace/file.py`; Open, Save Session,
+    Replace or Add with ids renamed); File ▸ Save (every shown structure in one file);
+    Clear Session; the list's Rename / Duplicate / Delete; the Ligand and Window menus folded
+    into View and Tools; Sequence pinned at the right (a corner `QMenuBar`).
+  - Deferred: opening a `.cspx` from the table window's File ▸ Open (the app cannot call a
+    tool until the tool hooks of Phase E); the standalone viewer (Phase D.2–3).
+  - Undo of Clear Session brings the structures back with their looks, not the focus, saved
+    selections, labels or measurements (the guide says so).
+  - Found: a style sheet on a menu-bar corner `QToolButton` keeps the palette it was polished
+    with, so the table window's **Layout** and **Log** buttons draw white text after a switch
+    to the Fusion light theme at run time (Preferences). Not fixed yet.
+  - Next: the ownership-hierarchy deep dive (chains, residues, what belongs to what), checked
+    against PyMOL and ChimeraX, both installed on the Windows PC.
 - **Architecture refactor** (plan approved 2026-11-11; a copy is in Claude's plan file on the
   Windows PC, summarised here). The Protein Viewer becomes a subproject: a Qt-free engine and
   workspace (`chemsuite/macromolecule`, with its own `.cspx` session format), a Qt workbench UI
