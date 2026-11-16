@@ -128,7 +128,7 @@ def read_container(
         return read(connection)
     except sqlite3.DatabaseError as err:
         raise error(f"{path.name} is not a {what} ({err})") from err
-    except (KeyError, ValueError, TypeError, zlib.error, struct.error) as err:
+    except (LookupError, ValueError, TypeError, ArithmeticError, zlib.error, struct.error) as err:
         if isinstance(err, ContainerError):
             raise
         raise error(f"{path.name} is damaged ({err!r})") from err

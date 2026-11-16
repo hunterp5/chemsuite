@@ -29,6 +29,7 @@ No Qt here.
 
 from __future__ import annotations
 
+import faulthandler
 import itertools
 import json
 import logging
@@ -42,11 +43,12 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 CAPACITY = 10_000
 LOG_FILE = "chemsuite.log"
 AUDIT_FILE = "audit.log"
+CRASH_FILE = "crash.log"
 FILE_BYTES = 2 * 1024 * 1024
 FILE_BACKUPS = 4  # plus the live file: five in all
 LOG_ENV = "CHEMSUITE_LOG_DIR"
@@ -236,6 +238,32 @@ def setup_logging(
             log.warning("cannot write log files in %s: %s", folder, err)
     for handler in _installed:
         root.addHandler(handler)
+    return path
+
+
+_crash_file: IO[str] | None = None
+
+
+def enable_crash_trace(folder: Path | None = None) -> Path | None:
+    """Have Python write every thread's stack to ``crash.log`` when the process dies in
+    native code (RDKit, Qt, a GPU driver): the one failure no exception hook sees. Returns
+    the file, or None when the folder cannot be written."""
+    global _crash_file
+    path = (folder or log_folder()) / CRASH_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file() and path.stat().st_size > FILE_BYTES:
+            path.unlink()
+        handle = open(path, "a", encoding="utf-8")  # noqa: SIM115 - open for the process's life
+    except OSError as err:
+        log.warning("cannot write %s: %s", path, err)
+        return None
+    handle.write(f"--- chemsuite started {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    handle.flush()
+    faulthandler.enable(file=handle)
+    if _crash_file is not None:
+        _crash_file.close()
+    _crash_file = handle
     return path
 
 

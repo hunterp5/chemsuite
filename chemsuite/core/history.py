@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Any
 
 
@@ -56,8 +57,10 @@ class Command:
     def structural(self) -> bool:
         return any(op.structural for op in self.ops)
 
-    @property
+    @cached_property
     def nbytes(self) -> int:
+        """Measured once: the history adds up every command on each edit, and measuring a
+        column walks its cells."""
         return sum(op.nbytes for op in self.ops)
 
     def inverted(self) -> Command:

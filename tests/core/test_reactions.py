@@ -189,6 +189,18 @@ def test_rd_file_round_trip(tmp_path) -> None:
     )
 
 
+def test_rd_file_data_with_a_dollar_line_stays_one_record(tmp_path) -> None:
+    """A datum ends at the next line starting with ``$``: such a line inside a value must not
+    end it, or start a record."""
+    table = _reaction_table()
+    table.set_cells("Notes", [int(table.oids[0])], ["first\n$RFMT\n$DTYPE x\nlast"])
+    path = tmp_path / "dollar.rdf"
+    save_table(table, path)
+    back = load_table(path)
+    assert len(back) == 3
+    assert back.column("Notes").display(0) == "first\n $RFMT\n $DTYPE x\nlast"
+
+
 def test_rd_file_keeps_atom_maps_and_agents(tmp_path) -> None:
     table = _reaction_table()
     save_table(table, tmp_path / "set.rdf")

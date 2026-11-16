@@ -329,11 +329,6 @@ class _Dictionary:
             self._ranks = ranks
         return self._ranks
 
-    @property
-    def nbytes(self) -> int:
-        # str object + dict slot + list slot; an estimate is all memory reporting needs.
-        return sum(sys.getsizeof(s) + 24 for s in self.strings)
-
 
 class TextColumn(Column):
     kind = TEXT
@@ -437,7 +432,11 @@ class TextColumn(Column):
 
     @property
     def nbytes(self) -> int:
-        return self._codes.nbytes + self._dict.nbytes
+        # The strings these cells use, not the whole dictionary: an undo snapshot of one cell
+        # shares its column's dictionary and holds next to none of it.
+        strings = self._dict.strings
+        used = np.unique(self._codes).tolist()
+        return self._codes.nbytes + sum(sys.getsizeof(strings[code]) + 24 for code in used)
 
 
 # --------------------------------------------------------------------------------------------

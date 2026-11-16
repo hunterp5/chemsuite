@@ -476,3 +476,17 @@ def test_duplicate_rows_copies_cells_and_undoes() -> None:
     assert table.cell("pIC50", int(copies[1])) == "5" and len(table) == 4
     table.undo()
     assert len(table) == 2
+
+
+def test_one_cell_edits_do_not_use_up_the_undo_history() -> None:
+    """An undo step for one cell shares its column's dictionary: it must not count all of it
+    (the history's memory cap would then drop steps after a few edits of a large column)."""
+    t = Table()
+    oids = t.add_rows({"ID": [f"CMPD-{i:06d}" for i in range(20_000)]}, undoable=False)
+    t.history.max_bytes = 4 * 1024**2  # the column's own strings are about 1.5 MB
+    for k in range(50):
+        t.set_cells("ID", [int(oids[k])], [f"edited-{k}"])
+    assert t.history.nbytes < 100_000
+    for _ in range(50):
+        assert t.undo() == "Edit cells"
+    assert t.cell("ID", int(oids[0])) == "CMPD-000000"

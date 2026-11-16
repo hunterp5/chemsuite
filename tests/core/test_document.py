@@ -159,3 +159,23 @@ def test_random_tables_round_trip(tmp_path: Path, data) -> None:
     path = tmp_path / "r.csd"
     save_document(t, path)
     assert snapshot(load_document(path)[0]) == snapshot(t)
+
+
+def test_text_codes_out_of_range_are_a_damaged_document(tmp_path: Path) -> None:
+    import struct
+    import zlib
+
+    t = Table()
+    t.add_rows({"A": ["x", "y", "z"]})
+    path = tmp_path / "codes.csd"
+    save_document(t, path)
+    connection = sqlite3.connect(path)
+    (data,) = connection.execute("SELECT data FROM chunks").fetchone()
+    raw = bytearray(zlib.decompress(data))
+    (sections,) = struct.unpack_from("<I", raw)
+    struct.pack_into("<I", raw, 4 + 8 * sections, 999)  # the first cell's code
+    connection.execute("UPDATE chunks SET data = ?", (zlib.compress(bytes(raw)),))
+    connection.commit()
+    connection.close()
+    with pytest.raises(DocumentError, match="damaged"):
+        load_document(path)

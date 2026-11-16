@@ -40,7 +40,7 @@ from chemsuite.core.mols import looks_like_molblock, mol_to_blob, smiles_of
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import StructureColumn
 
-from .formats import Batch, atomic_write, file_size, open_binary
+from .formats import Batch, atomic_write, decode, file_size, open_binary
 
 STRUCTURE = "Structure"
 TITLE = "Title"
@@ -92,7 +92,7 @@ def _last_record_end(buffer: bytes) -> int:
 
 def parse_block(data: bytes) -> SdfBlock:
     """Parse every record in *data* (worker-process entry point)."""
-    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    text = decode(data).replace("\r\n", "\n")
     out = SdfBlock()
     with rdBase.BlockLogs():
         for record in _RECORD_END.split(text):
@@ -205,6 +205,7 @@ def write_sdf(
     fields = [c for c in (columns or table.column_names) if c not in (structure, TITLE)]
     slots = np.arange(len(table)) if oids is None else table.slots_of(oids)
     titles = table.column(TITLE) if TITLE in table else None
+    tags = {name: field_name(name) for name in fields}
     with atomic_write(path, "w", encoding="utf-8", newline="\n") as handle:
         for start in range(0, len(slots), 2048):
             check(cancel)
@@ -221,10 +222,30 @@ def write_sdf(
                     if conformer is not None:
                         handle.write(f"> <Conformer>\n{index + 1}\n\n")
                     for name in fields:
-                        handle.write(f"> <{name}>\n{values[name][i]}\n\n")
+                        handle.write(f"> <{tags[name]}>\n{field_value(values[name][i])}\n\n")
                     handle.write("$$$$\n")
             if progress is not None:
                 progress(min(start + 2048, len(slots)), len(slots))
+
+
+_NAME_UNSAFE = str.maketrans({"<": "(", ">": ")", "\n": " ", "\r": " "})
+
+
+def field_name(name: str) -> str:
+    """*name* as an SD field name: the format has no way to write ``<``, ``>`` or a line
+    break inside one."""
+    return name.translate(_NAME_UNSAFE)
+
+
+def field_value(text: str) -> str:
+    """*text* as an SD field's value, which a blank line ends and a ``$$$$`` line would end
+    the record with: blank lines are left out and a line starting ``$$$$`` is indented, so
+    every other line reads back as written."""
+    if "\n" not in text and "\r" not in text and not text.startswith("$$$$"):
+        return text
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines = [line for line in lines if line.strip()]
+    return "\n".join(f" {line}" if line.startswith("$$$$") else line for line in lines)
 
 
 def _molblock(column: StructureColumn, slot: int, title: str, conformer: int | None = None) -> str:

@@ -289,3 +289,72 @@ def test_parse_skips_rows_edited_meanwhile(monkeypatch) -> None:
     column = table.column("S")
     assert table.cell("S", 1) == "C1CC"
     assert column.pending_mask().tolist() == [True, False]  # not overwritten with CCO's blob
+
+
+# -- nothing lost on the way in or out ------------------------------------------------------------
+
+_ETHANOL = "\n  chemsuite\n\n  1  0  0  0  0  0  0  0  0  0999 V2000\n" + (
+    "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\nM  END\n"
+)
+
+
+def test_a_late_windows_1252_character_is_kept(tmp_path: Path) -> None:
+    """The encoding is judged from the first 64 KB; a µ after that must not become U+FFFD."""
+    rows = ["Name,Unit", *(f"cmpd{i},nM" for i in range(8000)), "last,µM"]
+    path = tmp_path / "late.csv"
+    path.write_bytes("\n".join(rows).encode("cp1252"))
+    assert path.stat().st_size > 65536
+    table = load_table(path)
+    assert table.cell("Unit", int(table.oids[-1])) == "µM"
+
+
+def test_an_sd_file_that_is_not_utf8_keeps_its_characters(tmp_path: Path) -> None:
+    path = tmp_path / "latin.sdf"
+    path.write_bytes(f"{_ETHANOL}> <Dose>\n5 µM at 37 °C\n\n$$$$\n".encode("cp1252"))
+    assert all_cells(load_table(path))["Dose"] == ["5 µM at 37 °C"]
+
+
+def test_sd_fields_with_blank_lines_and_record_marks_read_back(tmp_path: Path) -> None:
+    table = Table()
+    table.add_rows(
+        {
+            "Structure": StructureColumn.from_texts(["CCO", "CCN"]),
+            "Note": ["line one\n\nline three", "a\n$$$$\nb"],
+            "a<b>": ["x", "y"],
+        }
+    )
+    out = tmp_path / "notes.sdf"
+    save_table(table, out)
+    again = all_cells(load_table(out))
+    assert again["Note"] == ["line one\nline three", "a\n $$$$\nb"]
+    assert again["a(b)"] == ["x", "y"]
+
+
+@given(st.lists(st.text("ab$<> \n\r", max_size=30), min_size=1, max_size=4))
+def test_any_text_cell_keeps_its_sd_record(notes) -> None:
+    """Whatever a cell holds, an SD file has one record per row, and each field reads back
+    as it was written (blank lines apart)."""
+    import tempfile
+
+    table = Table()
+    table.add_rows({"Structure": StructureColumn.from_texts(["C"] * len(notes)), "Note": notes})
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder) / "any.sdf"
+        save_table(table, out)
+        again = load_table(out)
+    assert len(again) == len(notes)
+    meant = ["\n".join(x.rstrip() for x in sdf_io.field_value(n).split("\n")) for n in notes]
+    assert all_cells(again)["Note"] == meant
+
+
+def test_xlsx_text_starting_with_equals_stays_text(tmp_path: Path) -> None:
+    import openpyxl
+
+    values = ["=1+1", '=HYPERLINK("http://x","y")', "plain"]
+    table = Table()
+    table.add_rows({"=Name": values})
+    out = tmp_path / "formula.xlsx"
+    save_table(table, out)
+    sheet = openpyxl.load_workbook(out).worksheets[0]
+    assert [cell.data_type for row in sheet.iter_rows() for cell in row] == ["s"] * 4
+    assert all_cells(load_table(out))["=Name"] == values

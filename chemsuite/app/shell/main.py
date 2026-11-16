@@ -65,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     log_file = logbook.setup_logging(level=logbook.level_from(policy.get("log_level")))
     audit_file = logbook.setup_audit(policy.get("audit_log"))
     install_crash_handler()
+    logbook.enable_crash_trace()  # native crashes, which no exception hook sees
     log = logging.getLogger("chemsuite")
     log.info(
         "chemsuite %s starting: Python %s, Qt %s, %s",

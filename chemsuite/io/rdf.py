@@ -55,7 +55,7 @@ from chemsuite.core.reactions import (
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import ReactionColumn, StructureColumn
 
-from .formats import Batch, atomic_write, file_size, open_binary
+from .formats import Batch, atomic_write, decode, file_size, open_binary
 
 REACTION = "Reaction"
 STRUCTURE = "Structure"
@@ -103,7 +103,7 @@ def iter_blocks(stream, block_bytes: int | None = None) -> Iterator[bytes]:
 def parse_block(data: bytes) -> RdfBlock:
     """Parse every record in *data* (worker-process entry point). Text before the first record
     (the ``$RDFILE`` header) is skipped; a block with no records at all is one RXN file."""
-    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    text = decode(data).replace("\r\n", "\n")
     out = RdfBlock()
     starts = [m.start() for m in _RECORD_START.finditer(text)]
     with rdBase.BlockLogs():
@@ -245,10 +245,23 @@ def write_rdf(
                 for name in fields:
                     value = values[name][i]
                     if value:
-                        handle.write(f"$DTYPE {name}\n$DATUM {value}\n")
+                        handle.write(f"$DTYPE {_one_line(name)}\n$DATUM {_datum(value)}\n")
             done += len(chunk)
             if progress is not None:
                 progress(done, len(slots))
+
+
+def _one_line(name: str) -> str:
+    return " ".join(name.splitlines())
+
+
+def _datum(value: str) -> str:
+    """*value* as a datum, which the next line starting with ``$`` ends: such lines of the
+    value itself are indented."""
+    if "\n$" not in value and "\r" not in value:
+        return value
+    lines = value.splitlines()
+    return "\n".join([lines[0], *(f" {x}" if x.startswith("$") else x for x in lines[1:])])
 
 
 def write_rxn(table: Table, path: str | Path, oid: int, reaction: str | None = None) -> None:

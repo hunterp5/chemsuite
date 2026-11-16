@@ -121,12 +121,22 @@ def write_xlsx(
 ) -> None:
     """Numbers are written as numbers (so Excel can compute with them), everything else as text."""
     import openpyxl
+    from openpyxl.cell import WriteOnlyCell
 
     names = list(columns or table.column_names)
     slots = np.arange(len(table)) if oids is None else table.slots_of(oids)
     workbook = openpyxl.Workbook(write_only=True)
     sheet = workbook.create_sheet("chemsuite")
-    sheet.append(names)
+
+    def text_cell(text: str | None) -> object:
+        # openpyxl stores a string starting with "=" as a formula: say it is text
+        if text and text[0] == "=":
+            cell = WriteOnlyCell(sheet, value=text)
+            cell.data_type = "s"
+            return cell
+        return text or None
+
+    sheet.append([text_cell(name) for name in names])
     for start in range(0, len(slots), 4096):
         check(cancel)
         chunk = slots[start : start + 4096]
@@ -137,7 +147,7 @@ def write_xlsx(
                 values = column.values(chunk)
                 cells.append([None if np.isnan(v) else float(v) for v in values])
             else:
-                cells.append([text or None for text in column.displays(chunk)])
+                cells.append([text_cell(text) for text in column.displays(chunk)])
         for row in zip(*cells, strict=True):
             sheet.append(list(row))
     with atomic_write(path, "wb") as handle:

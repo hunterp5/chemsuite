@@ -136,3 +136,19 @@ def test_excepthooks_log_and_report(restore_logging) -> None:
     assert seen[1][0].startswith("KeyError")
     messages = [e.message for e in lb.logbook().entries()[-2:]]
     assert "uncaught exception in thread worker-1" in messages[1]
+
+
+def test_a_native_crash_leaves_a_trace(tmp_path) -> None:
+    """A crash in native code ends the process with no exception: the stack must be on disk."""
+    import subprocess
+
+    code = (
+        "import faulthandler, pathlib, sys\n"
+        "from chemsuite.core import logbook\n"
+        "assert logbook.enable_crash_trace(pathlib.Path(sys.argv[1])) is not None\n"
+        "faulthandler._sigsegv()\n"
+    )
+    done = subprocess.run([sys.executable, "-c", code, str(tmp_path)], check=False, timeout=60)
+    assert done.returncode != 0
+    text = (tmp_path / lb.CRASH_FILE).read_text(encoding="utf-8")
+    assert "chemsuite started" in text and "most recent call first" in text

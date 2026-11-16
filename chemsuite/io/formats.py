@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import codecs
 import gzip
 import io
 import os
@@ -207,13 +208,36 @@ def detect_encoding(sample: bytes) -> str:
     return "utf-8"
 
 
+#: The codec error handler that reads bytes which are not valid in the file's encoding as
+#: Windows-1252 (Latin-1 for the five bytes Windows-1252 leaves undefined), so no character
+#: of a file is ever lost: a UTF-8 file with a stray µ from another code page, or a
+#: Windows-1252 file whose first accent comes after the sample :func:`detect_encoding` saw.
+KEEP_BYTES = "chemsuite-keep-bytes"
+
+
+def _keep_bytes(error: UnicodeError) -> tuple[str, int]:
+    if not isinstance(error, UnicodeDecodeError):
+        raise error
+    bad = error.object[error.start : error.end]
+    return bad.decode("cp1252", errors="ignore") or bad.decode("latin-1"), error.end
+
+
+codecs.register_error(KEEP_BYTES, _keep_bytes)
+
+
+def decode(data: bytes) -> str:
+    """*data* as text: UTF-8, with any other bytes read as Windows-1252 (never lost)."""
+    return data.decode("utf-8", errors=KEEP_BYTES)
+
+
 @contextmanager
 def open_text(path: str | Path) -> Iterator[tuple[IO[str], IO[bytes]]]:
-    """``(text stream, raw file)`` with the encoding detected from the first 64 KB."""
+    """``(text stream, raw file)`` with the encoding detected from the first 64 KB; bytes
+    further on that do not fit it are read as Windows-1252 (see :data:`KEEP_BYTES`)."""
     with open_binary(path) as (stream, raw):
         buffered = io.BufferedReader(stream) if not hasattr(stream, "peek") else stream
         encoding = detect_encoding(buffered.peek(65536)[:65536])
-        text = io.TextIOWrapper(buffered, encoding=encoding, errors="replace", newline="")
+        text = io.TextIOWrapper(buffered, encoding=encoding, errors=KEEP_BYTES, newline="")
         try:
             yield text, raw
         finally:

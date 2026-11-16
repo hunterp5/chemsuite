@@ -49,6 +49,7 @@ from .formats import (
     XYZ,
     Batch,
     atomic_write,
+    decode,
     open_binary,
     split_suffix,
 )
@@ -130,7 +131,7 @@ def _guarded(records: Iterator[Record]) -> Iterator[Record]:
 
 def _read_text(path: str | Path) -> str:
     with open_binary(path) as (stream, _raw):
-        return stream.read().decode("utf-8", errors="replace").replace("\r\n", "\n")
+        return decode(stream.read()).replace("\r\n", "\n")
 
 
 def _title(mol: Chem.Mol) -> str:

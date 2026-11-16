@@ -42,7 +42,7 @@ from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.table import Column, Table
 from chemsuite.core.table.columns import StructureColumn
 
-from .formats import Batch, atomic_write, file_size, open_binary
+from .formats import Batch, atomic_write, decode, file_size, open_binary
 from .sdf import STRUCTURE, TITLE, SdfBlock, first_structure_column
 
 BLOCK_BYTES = 1 << 20
@@ -72,7 +72,7 @@ def parse_block(data: bytes) -> SdfBlock:
     """Parse every record in *data* (worker-process entry point)."""
     from chemsuite.core.mols import mol_to_blob, smiles_of
 
-    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    text = decode(data).replace("\r\n", "\n")
     out = SdfBlock()
     with rdBase.BlockLogs():
         for record in _RECORD_START.split(text):

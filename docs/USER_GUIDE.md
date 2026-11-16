@@ -170,7 +170,9 @@ window of its own; a window that already holds a table does not take dropped fil
 
 Any of these except Excel and binary ChemDraw (`.cdx`) can also be gzip-compressed
 (`compounds.sdf.gz`). The text encoding is detected
-automatically.
+automatically (UTF-8 or Windows-1252). A character that does not fit the detected encoding is
+read as Windows-1252, so a µ, ° or Å is kept wherever it sits in the file, in every text
+format.
 
 Large files open quickly. The text loads first and the table appears; structures are then parsed
 in the background, using every processor core. You can scroll and work while that happens.
@@ -206,6 +208,12 @@ in the background, using every processor core. You can scroll and work while tha
     them out (using every processor core). Blank values are left out.
   - An **RXN file** holds one reaction: export a single selected row.
   - CSV, TSV and Excel write reactions as reaction SMILES.
+  - **Excel** gets numbers as numbers and everything else as text: a cell that starts with
+    `=` stays text and never becomes a formula.
+  - An **SD file** ends a data field at a blank line, so blank lines inside a cell are left
+    out; a line starting `$$$$` (the end of a record) is indented by one space, and `<`, `>`
+    in a column name become `(`, `)`. An RD file indents a line of a cell that starts with
+    `$` in the same way.
   - A **mol2 file** holds the first structure column, one molecule per row (blank and invalid
     structures are left out), with every hydrogen, SYBYL atom types and Gasteiger partial
     charges. Molecules with 3D coordinates keep them; others get 2D ones. Only the **Title**
@@ -2323,7 +2331,8 @@ padlock.
   Log on macOS) shows the session's log. Filter it by level and text. A job's messages
   (Show Messages on the Jobs tab) show with the job's name above the list; click it to show
   every message again. Double-click a message from a job to find the job on the Jobs tab.
-- **Help ▸ Show Log Folder** opens the folder of log files to attach to a bug report.
+- **Help ▸ Show Log Folder** opens the folder of log files to attach to a bug report. If
+  chemsuite ever closes by itself, `crash.log` there says where it was at that moment.
 - **Help ▸ chemsuite User Guide** opens this guide; **About chemsuite** (in the chemsuite menu
   on macOS) shows the version and licence.
 - If chemsuite hits an unexpected error, it shows a report you can copy. The details are also
