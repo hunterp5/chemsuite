@@ -212,7 +212,9 @@ class Display:
 
     def choose_altloc(self, residue: int, letter: str) -> None:
         was = self.active
-        self.altlocs[residue] = letter
+        for member in self.structure.altloc_members(residue).tolist():
+            self.altlocs.pop(member, None)  # one pick for a place, under its first residue
+        self.altlocs[int(self.structure.altloc_group[residue])] = letter
         now = self.active
         span = self.structure.altloc_span(residue)  # a group's other residue may now show
         # the newly shown location takes the style its partner had

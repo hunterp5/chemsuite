@@ -225,7 +225,8 @@ def context_menu(
         alternates = sorted(set(structure.altloc[structure.altloc_span(residue)].tolist()) - {""})
         if alternates:
             alt = menu.addMenu("Alternate Location")
-            current = shown.altlocs.get(residue, structure.default_altlocs.get(residue, ""))
+            place = int(structure.altloc_group[residue])
+            current = shown.altlocs.get(place, structure.default_altlocs.get(residue, ""))
             for letter in alternates:
                 action = alt.addAction(
                     letter, lambda x=letter: session.choose_altloc(shown.id, residue, x)

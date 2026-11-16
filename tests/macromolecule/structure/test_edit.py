@@ -105,6 +105,17 @@ def test_rename_a_chain_unless_taken(kinase) -> None:
         edit.rename_chain(kinase, 0, "")
 
 
+def test_a_renamed_chain_keeps_its_whole_name(crambin) -> None:
+    from dataclasses import replace
+
+    from chemsuite.macromolecule.structure import store
+
+    assert edit.rename_chain(crambin, 0, "AB12").chain_name.tolist() == ["AB12"]
+    narrow = replace(crambin, chain_name=crambin.chain_name.astype("<U1"))  # one stored narrow
+    renamed = edit.rename_chain(narrow, 0, "AB")
+    assert store.unpack(renamed.to_bytes()).chain_name.tolist() == ["AB"]
+
+
 def test_renumber_refuses_a_number_already_taken(egfr) -> None:
     waters = np.flatnonzero(egfr.res_kind == WATER)[:3]
     edited = edit.renumber(egfr, waters, 2001)

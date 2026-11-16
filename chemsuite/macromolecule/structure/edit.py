@@ -265,7 +265,7 @@ def rename_chain(s: Structure, chain: int, name: str) -> Structure:
     others = np.delete(s.chain_name, chain)
     if name in others:
         raise EditError(f"There is already a chain {name}")
-    names = s.chain_name.copy()
+    names = s.chain_name.astype(f"<U{max(4, s.chain_name.itemsize // 4, len(name))}")
     names[chain] = name
     return replace(s, chain_name=names)
 

@@ -78,6 +78,12 @@ def _suffix_format(path: str | PathLike[str]) -> str | None:
     return SUFFIXES.get(suffixes[-1]) if suffixes else None
 
 
+def _names(values: list[str]) -> np.ndarray:
+    """Chain or subchain names, at least four characters wide (so a chain renamed later fits)
+    and as wide as the longest the file has."""
+    return np.array(values, dtype=f"<U{max([4, *map(len, values)])}")
+
+
 def from_gemmi(st: gemmi.Structure, block: gemmi.cif.Block | None = None) -> Structure:
     """``st`` as a Structure; ``block``, the mmCIF block it was read from, gives the bond
     orders of its ligands (its chemical component tables)."""
@@ -147,10 +153,10 @@ def from_gemmi(st: gemmi.Structure, block: gemmi.cif.Block | None = None) -> Str
         res_kind=np.array(res["kind"], dtype=np.uint8),
         ss=np.zeros(len(res["name"]), dtype=np.uint8),
         seqres=np.array(res["seqres"], dtype=np.int32),
-        label_asym=np.array(res["asym"], dtype=str),  # as long as the file has them
+        label_asym=_names(res["asym"]),
         entity=np.array(res["entity"], dtype=np.int16),
         chain_start=np.array(chain_start, dtype=np.int32),
-        chain_name=np.array(chain_names, dtype=str),  # "AA-10" in an assembly file
+        chain_name=_names(chain_names),  # "AA-10" in an assembly file
         entity_id=np.array([e.name for e in st.entities], dtype="<U8"),
         entity_seq=np.array([m for s in sequences for m in s], dtype="<U5"),
         entity_seq_start=np.cumsum([0] + [len(s) for s in sequences]).astype(np.int32),

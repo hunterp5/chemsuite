@@ -481,6 +481,10 @@ def test_switching_the_residue_at_a_shared_place_shows_the_other_one(qtbot, monk
     span = s.atoms_of(ser)
     backbone = np.isin(s.name[span], ["N", "CA", "C", "O"]) & (s.altloc[span] == "B")
     assert (shown.styles[span][backbone] == scene.STICK).all()  # SER takes PRO's style
+    panel.session.choose_altloc("1EJG", ser, "A")
+    panel.session.choose_altloc("1EJG", pro, "C")  # the latest pick wins, on either residue
+    assert shown.active[s.atoms_of(ser)].any() and not shown.active[s.atoms_of(pro)].any()
+    assert shown.altlocs == {pro: "C"}
 
 
 # saving and the GPU fallback
