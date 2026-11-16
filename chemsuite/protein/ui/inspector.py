@@ -81,7 +81,7 @@ ISSUE_GROUPS = {
     inspection.METAL: "Metal sites",
 }
 
-Select = Callable[[str, int], None]
+Select = Callable[[str, int, str], None]  # protein, residue, the line's label
 Decide = Callable[[tuple[str, ...], dict[str, str]], None]
 
 
@@ -400,7 +400,7 @@ class InspectorPanel(ToolPanel):
         for item in self.rows.selectedItems():
             line = item.data(0, LINE)
             if isinstance(line, (Issue, Choice)) and line.residue >= 0:
-                self._select(self.survey.protein, line.residue)
+                self._select(self.survey.protein, line.residue, line.label)
                 return
 
     # -- acting -------------------------------------------------------------------------------

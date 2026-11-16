@@ -52,7 +52,7 @@ class PrepareReportPanel(ToolPanel):
     tool_id = TOOL_ID
 
     def __init__(
-        self, report: PrepareReport, select: Callable[[str, int], None] | None = None
+        self, report: PrepareReport, select: Callable[[str, int, str], None] | None = None
     ) -> None:
         super().__init__()
         self.report = report
@@ -113,10 +113,11 @@ class PrepareReportPanel(ToolPanel):
     def _selected(self) -> None:
         if self._select is None:
             return
-        residues = [item.data(0, Qt.ItemDataRole.UserRole) for item in self.rows.selectedItems()]
-        chosen = [int(r) for r in residues if isinstance(r, int) and r >= 0]
-        if chosen:
-            self._select(self.report.protein, chosen[0])
+        for item in self.rows.selectedItems():
+            residue = item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(residue, int) and residue >= 0:
+                self._select(self.report.protein, residue, item.text(1))
+                return
 
     def state(self) -> dict:
         return {"protein": self.report.protein}

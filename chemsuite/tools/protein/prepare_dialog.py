@@ -41,6 +41,8 @@ from .tool import KIND, TOOL_ID, ccd, dialog_parent, protein_workspace
 WATERS = ((pipeline.ALL, "All"), (pipeline.NEAR_LIGANDS, "Near Ligands"), (pipeline.NONE, "None"))
 TITRATE = ((sites.OFF, "Off"), (sites.POCKET, "Pocket"), (sites.ALL, "All"))
 HYDROGEN = 1
+#: between the two residues a report line names (a gap, a break, a disulfide)
+SPAN = " – "
 
 
 class PrepareDialog(ToolDialog):
@@ -205,7 +207,9 @@ def show_report(ctx: ToolContext, report: PrepareReport):
     if isinstance(panel, PrepareReportPanel):
         panel.fill(report)
         return panel
-    panel = PrepareReportPanel(report, select=lambda id, residue: select(ctx, id, residue))
+    panel = PrepareReportPanel(
+        report, select=lambda id, residue, label: select(ctx, id, residue, label)
+    )
     ctx.add_panel(panel, panel.title(), beside=ctx.find_panel(TOOL_ID))
     return panel
 
@@ -220,29 +224,50 @@ def open_report(ctx: ToolContext, state: dict):
     return show_report(ctx, report) if report is not None else None
 
 
-def select(ctx: ToolContext, protein: str, residue: int) -> None:
-    """Select *residue* in the workbench (a report line was clicked)."""
-    workspace = protein_workspace(ctx)
-    session = workspace.session()
+def select(ctx: ToolContext, protein: str, residue: int, line: str = "") -> None:
+    """Select *residue* in the workbench and bring it into view (a report line was clicked).
+
+    *line* is the line's label: one that names two residues (``A/LYS 10 – A/GLY 15``, a gap,
+    a break or a disulfide) frames both, so the gap between them is seen; the first is
+    selected."""
+    session = protein_workspace(ctx).session()
     shown = session.display(protein)
     if shown is None:
         return
-    mask = shown.structure.residue_of == residue
-    if mask.any():
-        session.select({protein: np.asarray(mask, dtype=bool)})
+    s = shown.structure
+    mask = np.asarray(s.residue_of == residue, dtype=bool)
+    if not mask.any():
+        return
+    session.select({protein: mask})
+    around = mask.copy()
+    if SPAN in line:
+        other = pipeline.residues_named(s, [line.split(SPAN, 1)[1].strip()])
+        if other:
+            around |= s.residue_of == other[0]
+    frame(ctx, protein, around)
 
 
-def select_named(ctx: ToolContext, protein: str, label: str) -> None:
+def frame(ctx: ToolContext, protein: str, atoms: np.ndarray) -> None:
+    """Zoom the viewer onto these atoms of *protein* (not when it is hidden or the viewer is
+    closed)."""
+    from chemsuite.protein.ui.panel import ProteinPanel
+
+    panel = ctx.find_panel(TOOL_ID)
+    shown = protein_workspace(ctx).session().display(protein)
+    if isinstance(panel, ProteinPanel) and shown is not None and shown.visible:
+        panel.frame_atoms(shown.xyz[atoms])
+
+
+def select_named(ctx: ToolContext, protein: str, label: str, line: str = "") -> None:
     """Select the residue the workbench calls *label* (``A/HIS 57``) in *protein*: for a line
     found on another structure than the one shown (Inspect's, which is prepared, with caps and
     built residues put in, while the viewer still shows the file's)."""
     shown = protein_workspace(ctx).session().display(protein)
     if shown is None:
         return
-    s = shown.structure
-    found = [r for r in range(s.n_residues) if s.residue_label(r) == label]
+    found = pipeline.residues_named(shown.structure, [label])
     if found:
-        select(ctx, protein, found[0])
+        select(ctx, protein, found[0], line)
 
 
 def open_prepare(ctx: ToolContext):

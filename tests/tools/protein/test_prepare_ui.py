@@ -19,11 +19,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.protein.prepare import pipeline, sites
 from chemsuite.protein.structure import store
+from chemsuite.protein.ui.panel import ProteinPanel
 from chemsuite.protein.ui.report import TOOL_ID as REPORT_ID
 from chemsuite.protein.ui.report import PrepareReportPanel
 from chemsuite.tools.protein import prepare_dialog, tool
@@ -138,6 +140,48 @@ def test_the_report_lines_select_their_residue_in_the_workbench(opened, qtbot) -
     assert session.selected_count() == int((shown.structure.residue_of == chosen).sum())
     # a line about two residues (a disulfide, a chain break) names both and selects the first
     assert item.text(1).startswith(shown.structure.residue_label(chosen))
+
+
+@pytest.fixture
+def framed(opened, monkeypatch) -> list[np.ndarray]:
+    """What the viewer is asked to zoom onto (the view itself cannot draw offscreen; its
+    camera is tested in tests/protein/ui)."""
+    calls: list[np.ndarray] = []
+    monkeypatch.setattr(ProteinPanel, "frame_atoms", lambda self, xyz: calls.append(xyz))
+    return calls
+
+
+def test_a_report_line_zooms_to_its_residue(opened, qtbot, framed) -> None:
+    panel = prepared(opened, qtbot)
+    session = tool.protein_workspace(ToolContext(opened)).session()
+    rows = [i for i, row in enumerate(panel.report.rows) if row.residue >= 0]
+    panel.rows.setCurrentItem(panel.rows.topLevelItem(rows[-1]))
+    shown = session.display("1CRN")
+    atoms = shown.xyz[shown.structure.residue_of == panel.report.rows[rows[-1]].residue]
+    assert len(framed) == 1 and np.array_equal(framed[0], atoms)
+
+
+def test_a_line_naming_two_residues_frames_both(opened, framed) -> None:
+    ctx = ToolContext(opened)
+    session = tool.protein_workspace(ctx).session()
+    s = session.display("1CRN").structure
+    first, last = 0, s.n_residues - 1
+    while s.res_kind[last] != s.res_kind[first]:
+        last -= 1
+    line = f"{s.residue_label(first)}{prepare_dialog.SPAN}{s.residue_label(last)}"
+    prepare_dialog.select(ctx, "1CRN", first, line)
+    both = session.display("1CRN").xyz[(s.residue_of == first) | (s.residue_of == last)]
+    assert len(framed) == 1 and np.array_equal(framed[0], both)
+    assert session.selected_count() == int((s.residue_of == first).sum())  # the first only
+
+
+def test_a_hidden_protein_is_selected_but_not_framed(opened, framed) -> None:
+    ctx = ToolContext(opened)
+    session = tool.protein_workspace(ctx).session()
+    session.set_visible("1CRN", False)
+    prepare_dialog.select(ctx, "1CRN", 3)
+    assert framed == []
+    assert session.display("1CRN").selected.any()
 
 
 def test_the_warned_lines_are_marked_and_counted(opened, qtbot) -> None:

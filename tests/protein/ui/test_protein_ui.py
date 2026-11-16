@@ -452,6 +452,18 @@ def test_alternate_locations_can_be_switched(qtbot, monkeypatch) -> None:
 # saving and the GPU fallback
 
 
+def test_framing_a_residue_centres_it_with_its_surroundings(panel) -> None:
+    from chemsuite.protein.ui.panel import AROUND
+
+    shown = panel.session.display("1ATP")
+    whole = panel.view.camera.radius
+    atoms = shown.xyz[shown.structure.residue_of == 40]
+    panel.frame_atoms(atoms)
+    camera = panel.view.camera
+    assert np.linalg.norm(camera.centre - atoms.mean(axis=0)) < 1.0
+    assert AROUND - 1.5 <= camera.radius < whole
+
+
 def test_the_panel_reopens_as_it_was(panel, table, qtbot, monkeypatch) -> None:
     from chemsuite.app.shell import graphics
     from chemsuite.protein.ui.panel import ProteinPanel

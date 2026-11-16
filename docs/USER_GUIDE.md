@@ -1746,7 +1746,9 @@ covalent links, disulfides and metal sites, each flip, His state and uncommon pr
 state. A line marked ⚠ is worth your eye: a chain break or gap, a residue built from nothing,
 a residue with no template, an ion of unknown charge, or a choice whose next best was nearly as
 good. Click a
-line to select its residue in the viewer. Hydroxyl and amine hydrogens with nothing to bind to
+line to select its residue and zoom the viewer onto it, with some of its surroundings; a line
+naming two residues (a gap, a chain break, a disulfide) zooms out to show both and selects the
+first. A hidden protein's residue is selected but not zoomed to. Hydroxyl and amine hydrogens with nothing to bind to
 are free to spin, so they are counted in one line rather than listed. The panel's title gives
 the pH and the structure's net charge; right-click (or Ctrl+C) copies the report as text. The
 report is saved with the document and comes back with it.
@@ -1783,6 +1785,7 @@ in the **Inspect** panel beside the structure, for you to go through first.
 - **⚠ Only** shows just the lines worth a look, by the same rule as the preparation report:
   near ties, mixed protonation, chain breaks, residues with no template. A water's orientation
   and a hydroxyl with nothing to bind to are never flagged (any answer is as good).
+- Click a line to select its residue and zoom onto it, as in the report.
 - **Re-survey** solves again with your choices held. Choices are not independent — the
   hydrogen-bond network couples neighbouring sites — so holding one flip can change what the
   residues around it should do, and this shows you before anything is applied.

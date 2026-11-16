@@ -161,7 +161,7 @@ def show_inspector(
         return panel
     panel = InspectorPanel(
         found,
-        select=lambda id, residue: select_prepared(ctx, panel, id, residue),
+        select=lambda id, residue, line: select_prepared(ctx, panel, id, residue, line),
         resurvey=lambda skip, held: _resurvey(ctx, panel, skip, held),
         apply=lambda skip, held: apply_review(ctx, panel, skip, held),
     )
@@ -171,12 +171,12 @@ def show_inspector(
     return panel
 
 
-def select_prepared(ctx: ToolContext, panel, protein: str, residue: int) -> None:
+def select_prepared(ctx: ToolContext, panel, protein: str, residue: int, line: str = "") -> None:
     """Select the residue an Inspect line names. The line's *residue* indexes the survey's
     prepared structure, which has caps and built residues the viewer's structure does not yet
     have, so the residue is found again by its label."""
     label = panel.survey.prepared.structure.residue_label(residue)
-    select_named(ctx, protein, label)
+    select_named(ctx, protein, label, line)
 
 
 def remember(ctx: ToolContext, panel) -> None:

@@ -79,6 +79,8 @@ CARTOON = "cartoon"
 SURFACE = "surface"
 LINES = "interactions"
 POCKET = "pocket"
+#: Å of surroundings kept in view when a residue is framed (:meth:`ProteinPanel.frame_atoms`)
+AROUND = 8.0
 #: the commands a tool gives the viewer (see :mod:`.menubar`)
 OPEN, FETCH, EXTRACT, LIGAND = menubar.OPEN, menubar.FETCH, menubar.EXTRACT, menubar.LIGAND
 PROFILE, REMOVE, SHOW_TABLE = menubar.PROFILE, menubar.REMOVE, menubar.SHOW_TABLE
@@ -358,6 +360,16 @@ class ProteinPanel(ToolPanel):
             return
         positions = np.concatenate(points)
         self.view.frame(positions, np.full(len(positions), 1.5))
+
+    def frame_atoms(self, positions: np.ndarray) -> None:
+        """Bring these atoms (a residue, or the two either side of a gap) to the middle of the
+        view, with at least :data:`AROUND` Å of their surroundings: a report line zooms to
+        its residue, never to a side chain filling the screen."""
+        if self.view is None or not len(positions):
+            return
+        centre = positions.mean(axis=0)
+        reach = np.linalg.norm(positions - centre, axis=1)
+        self.view.frame(positions, np.maximum(1.5, AROUND - reach))
 
     def reset_view(self) -> None:
         if self.view is not None:
