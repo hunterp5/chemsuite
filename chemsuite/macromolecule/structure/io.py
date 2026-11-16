@@ -147,10 +147,10 @@ def from_gemmi(st: gemmi.Structure, block: gemmi.cif.Block | None = None) -> Str
         res_kind=np.array(res["kind"], dtype=np.uint8),
         ss=np.zeros(len(res["name"]), dtype=np.uint8),
         seqres=np.array(res["seqres"], dtype=np.int32),
-        label_asym=np.array(res["asym"], dtype="<U4"),
+        label_asym=np.array(res["asym"], dtype=str),  # as long as the file has them
         entity=np.array(res["entity"], dtype=np.int16),
         chain_start=np.array(chain_start, dtype=np.int32),
-        chain_name=np.array(chain_names, dtype="<U4"),
+        chain_name=np.array(chain_names, dtype=str),  # "AA-10" in an assembly file
         entity_id=np.array([e.name for e in st.entities], dtype="<U8"),
         entity_seq=np.array([m for s in sequences for m in s], dtype="<U5"),
         entity_seq_start=np.cumsum([0] + [len(s) for s in sequences]).astype(np.int32),

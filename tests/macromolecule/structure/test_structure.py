@@ -80,6 +80,17 @@ def test_pdb_and_mmcif_give_the_same_structure() -> None:
     assert np.array_equal(pdb.seqres, cif.seqres)
 
 
+def test_long_chain_names_stay_apart() -> None:
+    st = gemmi.read_structure(str(DATA / "1crn.cif.gz"))
+    copy = st[0][0].clone()
+    st[0][0].name, copy.name = "AA-10", "AA-11"  # an assembly's tenth and eleventh copies
+    st[0].add_chain(copy)
+    st.setup_entities()
+    s = io.from_gemmi(st)
+    assert list(s.chain_name) == ["AA-10", "AA-11"]
+    assert store.unpack(s.to_bytes()).chain_name.tolist() == ["AA-10", "AA-11"]
+
+
 def test_metadata_is_read(lysozyme: Structure) -> None:
     assert lysozyme.meta["id"] == "3HTB"
     assert lysozyme.meta["method"] == "X-RAY DIFFRACTION"

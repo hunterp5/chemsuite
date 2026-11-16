@@ -94,11 +94,11 @@ class Structure:
     res_kind: np.ndarray  # uint8, the kinds above
     ss: np.ndarray  # uint8 secondary structure
     seqres: np.ndarray  # int32: position in the entity's full sequence, -1 if not in one
-    label_asym: np.ndarray  # <U4 mmCIF label_asym_id (subchain)
+    label_asym: np.ndarray  # str mmCIF label_asym_id (subchain), as wide as the longest
     entity: np.ndarray  # int16: index into the entities, -1 if none
     # chains (c), by author chain name
     chain_start: np.ndarray  # int32 (c + 1)
-    chain_name: np.ndarray  # <U4
+    chain_name: np.ndarray  # str, as wide as the longest name
     # entities (e): the full (SEQRES) sequence of each, as residue names
     entity_id: np.ndarray  # <U8
     entity_seq: np.ndarray  # <U5, all sequences one after the other
