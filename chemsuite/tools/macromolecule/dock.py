@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Docking from the table's ligands into the viewer's Poses panel: Protein ▸ Dock… and
+"""Docking from the table's ligands into the viewer's Poses panel: Tools ▸ Dock… and
 Rescore Poses….
 
 The docking itself is :mod:`chemsuite.macromolecule.dock` (Qt-free, table-free). This module is the
@@ -266,7 +266,7 @@ def docking_problem(structure: Structure | None) -> str:
     if structure is None:
         return "There is no such protein in this document"
     if not has_hydrogens(structure):
-        return "This protein has no hydrogens: prepare it first (Protein ▸ Prepare…)"
+        return "This protein has no hydrogens: prepare it first (Tools ▸ Prepare…)"
     return ""
 
 

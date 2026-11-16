@@ -16,9 +16,9 @@
 """Minimisation in the workbench: a prepared protein relaxed in OpenMM's own interpreter
 (:mod:`chemsuite.simulate`), kept as a **new protein** beside the one it was made from.
 
-- Protein ▸ Prepare… with Minimise ticked leaves the protein as it was and adds two:
+- Tools ▸ Prepare… with Minimise ticked leaves the protein as it was and adds two:
   ``X-prep`` (prepared) and ``X-min`` (prepared, then minimised), in one undoable step.
-- Protein ▸ Minimise… adds ``X-min`` for a protein already prepared.
+- Tools ▸ Minimise… adds ``X-min`` for a protein already prepared.
 
 Each copy names the protein it was made from (``derived_from`` in its meta), and the
 workbench shows the copy in its place (:meth:`WorkbenchSession._swap_sources`). Each copy
@@ -149,7 +149,7 @@ def has_waters(s: Structure) -> bool:
 
 
 def problem(ctx: ToolContext, protein: str, settings: MinimiseSettings) -> str:
-    """Why Protein ▸ Minimise… cannot run on *protein*, or ``""``."""
+    """Why Tools ▸ Minimise… cannot run on *protein*, or ``""``."""
     if why := ready():
         return why
     if why := minimised_already(ctx, protein):
@@ -263,7 +263,7 @@ def failed_row(error: BaseException) -> Row:
     return Row("Minimised", f"Not minimised: {text}", True)
 
 
-# -- Protein ▸ Minimise… -------------------------------------------------------------------------
+# -- Tools ▸ Minimise… -------------------------------------------------------------------------
 def minimise_protein(ctx: ToolContext, protein: str, settings: MinimiseSettings):
     """Minimise *protein* (prepared) in the background and add the result as a new protein,
     with its report. Returns the job, or None when it cannot run (:func:`problem`)."""

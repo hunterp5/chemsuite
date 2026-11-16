@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The Protein Viewer's menu bar: the viewer is a window of its own, so everything it does is
+"""The Macromolecule Viewer's menu bar: the viewer is a window of its own, so everything it does is
 here (and in the right-click menu), not in toolbar buttons.
 
 - File: open, fetch, remove and save proteins; save the selection; close the window.

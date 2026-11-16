@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""A preparation being reviewed (Protein ▸ Inspect…), kept with the document until applied.
+"""A preparation being reviewed (Tools ▸ Inspect…), kept with the document until applied.
 
 A review is the settings it was surveyed with and what the chemist has said so far: the
 issues they unticked and the states they chose by hand. That is all that is saved. The survey

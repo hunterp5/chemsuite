@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Protein ▸ Inspect…: everything a preparation would find and decide, to tick and overrule.
+"""Tools ▸ Inspect…: everything a preparation would find and decide, to tick and overrule.
 
 The panel shows a :class:`~chemsuite.macromolecule.prepare.review.Survey` as a tree:
 

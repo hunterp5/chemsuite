@@ -121,7 +121,7 @@ is usually better than an exemption.
 - **A workspace of its own is a window, not a dock.** `ToolContext.add_window` hosts a tool's
   widget in a top-level `ToolWindow` (`app/shell/windows.py`, owned by the window's
   `DocumentPanels` in `app/document/panels.py`) with the tool's own menu bar
-  and no toolbar: the Protein Viewer. It belongs to the document (closes with it, saved and
+  and no toolbar: the Macromolecule Viewer. It belongs to the document (closes with it, saved and
   reopened with it, geometry included) and its shortcuts are its own. Docks
   (`add_panel`) stay for panels that sit beside the table.
 - **Slow protein parts build in the background, never stale.** Surfaces, interactions, pocket

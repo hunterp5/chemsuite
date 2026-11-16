@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Protein ▸ Dock… and Rescore Poses…: AutoDock Vina on the document's ligands.
+"""Tools ▸ Dock… and Rescore Poses…: AutoDock Vina on the document's ligands.
 
 The box comes from what the workbench is looking at — the focused ligand, the selection, or a
 ligand row — or from numbers typed in. The receptor must be prepared first (Vina types atoms
@@ -327,7 +327,7 @@ class RescoreDialog(ToolDialog):
             if not len(self.rows.oids()):
                 return "There are no rows to score"
         elif not self._kept():
-            return "This protein has no docked poses: dock into it first (Protein ▸ Dock…)"
+            return "This protein has no docked poses: dock into it first (Tools ▸ Dock…)"
         return dock.docking_problem(structure_of(self.ctx, self.protein.currentData()))
 
     def verb(self) -> str:

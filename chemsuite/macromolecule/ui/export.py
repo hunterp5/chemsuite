@@ -194,7 +194,7 @@ class ExportImageDialog(ToolDialog):
     def run(self):
         path = self.path
         if not path:
-            path, _ = QFileDialog.getSaveFileName(self, "Export Image", "protein.png", FORMATS)
+            path, _ = QFileDialog.getSaveFileName(self, "Export Image", "structure.png", FORMATS)
         if not path:
             return None
         width, height = self.pixel_size()

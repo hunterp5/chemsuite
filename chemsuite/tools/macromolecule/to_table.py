@@ -15,7 +15,7 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
 """Ligands and their interactions as table rows: Ligands to Table, Add Ligand to Table and
-Interactions to Table, from the Protein Viewer's Ligand menu."""
+Interactions to Table, from the Macromolecule Viewer's Ligand menu."""
 
 from __future__ import annotations
 
@@ -108,7 +108,7 @@ def interactions_to_table(ctx: ToolContext):
             oids.append(int(oid))
             names.append(protein)
     if not oids:
-        ctx.show_message("No rows name a protein in this document")
+        ctx.show_message("No rows name a structure in this document")
         return None
     labels, smiles, inputs = _row_ligands(ctx, oids)
 

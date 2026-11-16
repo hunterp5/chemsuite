@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The minimisation's settings as dialog fields: Protein ▸ Minimise… and Prepare's
+"""The minimisation's settings as dialog fields: Tools ▸ Minimise… and Prepare's
 Minimisation section share them."""
 
 from __future__ import annotations

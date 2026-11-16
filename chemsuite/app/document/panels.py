@@ -16,7 +16,7 @@
 """Tool windows, and saving and reopening tool panels with the document.
 
 A tool shows its work either in a dock beside the table (``ToolContext.add_panel``) or, for a
-workspace of its own such as the Protein Viewer, in a
+workspace of its own such as the Macromolecule Viewer, in a
 :class:`~chemsuite.app.shell.windows.ToolWindow` (``ToolContext.add_window``): a top-level
 window with its own menu bar, titled after the document, that cannot be docked. Either way it
 belongs to the document: it closes with it, and when its widget is a ``ToolPanel`` with a

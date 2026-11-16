@@ -7,7 +7,7 @@ travel, so every durable rule lives here; `HANDOFF.md` holds only the current st
 
 A desktop medicinal-chemistry workbench: PySide6 (Essentials only, no WebEngine) + RDKit,
 GPL-3.0-or-later, Python 3.11–3.13. Two halves: the **data table** (work up and visualise data,
-generate chemical information) and the **Protein Viewer** (binding modes, PLIF, alignment, and
+generate chemical information) and the **Macromolecule Viewer** (binding modes, PLIF, alignment, and
 later docking, MD and free energy). It replaces MolManager, whose 60-mixin window, `getattr`
 fallbacks and blind excepts are the anti-pattern.
 

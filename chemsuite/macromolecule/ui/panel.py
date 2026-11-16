@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The Protein Viewer panel: layout and wiring only.
+"""The Macromolecule Viewer panel: layout and wiring only.
 
 The viewer is a workspace of its own, in a window of its own (``ToolContext.add_window``) whose
 menu bar is :mod:`.menubar` (files, copying, selecting, display, ligand work, the camera). The
@@ -239,7 +239,7 @@ class MacromoleculePanel(ToolPanel):
             self.session.clear_selection()
 
     def title(self) -> str:
-        return "Protein Viewer"
+        return "Macromolecule Viewer"
 
     def close_viewer(self) -> None:
         """Close the viewer's window."""
@@ -534,7 +534,7 @@ class MacromoleculePanel(ToolPanel):
             return True
         missing = self.linked.missing(self.session, oid)
         if missing:
-            self.status.setText(f"Protein {missing} is not in this document")
+            self.status.setText(f"Structure {missing} is not in this document")
         return False
 
     def _row_edited(self, oid: int | None, oids: np.ndarray) -> None:

@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Editing in the Protein Viewer, and its Sequence window: every edit one undoable step."""
+"""Editing in the Macromolecule Viewer, and its Sequence window: every edit one undoable step."""
 
 from __future__ import annotations
 

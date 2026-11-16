@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Protein ▸ Minimise…: a prepared protein minimised, kept as a new protein
+"""Tools ▸ Minimise…: a prepared protein minimised, kept as a new protein
 (:mod:`.minimise`)."""
 
 from __future__ import annotations

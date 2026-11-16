@@ -41,7 +41,7 @@ def chem(window):
 
 def test_menu_bar_order(window) -> None:
     titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
-    assert titles[:6] == ["File", "Edit", "Tools", "Chemistry", "Data", "Protein"]
+    assert titles[:6] == ["File", "Edit", "Tools", "Chemistry", "Data", "Macromolecule"]
     assert titles[-1] == "Help"
     if window.menuBar().isNativeMenuBar():  # macOS: Layout and Log in a Window menu
         assert titles[6:-1] == ["Window"]

@@ -24,7 +24,7 @@ donors and acceptors.
 
 A hydrogen bond needs the donor–acceptor distance and, at both ends, the partner where a
 hydrogen or lone pair can point (:func:`_points_at`). **Where the donor carries its hydrogen**
-— a prepared structure (Protein ▸ Prepare…), an NMR model, a ligand drawn with hydrogens — the
+— a prepared structure (Tools ▸ Prepare…), an NMR model, a ligand drawn with hydrogens — the
 real geometry is used instead of that proxy: the H···A distance (at most 2.5 Å, Baker &
 Hubbard 1984) and the D–H···A angle (at least 100°, PLIP's) (:func:`_donor_hydrogen`), and the
 dashed line is drawn from the hydrogen, which is where the bond is. A hydroxyl, thiol or

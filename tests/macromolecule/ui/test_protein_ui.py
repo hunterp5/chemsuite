@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The Protein Viewer panel: session, tree, sequence strip, selection bar, menus, state."""
+"""The Macromolecule Viewer panel: session, tree, sequence strip, selection bar, menus, state."""
 
 from __future__ import annotations
 
@@ -596,7 +596,7 @@ def test_a_surface_is_built_in_the_background_and_a_stale_one_dropped(deferring)
     session.select_text("chain E")
     session.show_surface(True)
     assert not len(session.scene.surface.triangles)  # drawn without waiting
-    assert [label for label, *_ in runner.jobs] == ["Building a protein surface"]
+    assert [label for label, *_ in runner.jobs] == ["Building a surface"]
     session.built()  # drawn again: asking for the version being built starts nothing
     assert len(runner.jobs) == 1
     session.select_text("chain I")
@@ -909,7 +909,7 @@ def test_the_viewers_own_keys_while_focus_is_inside(panel, qtbot) -> None:
 
     from chemsuite.app.shell.windows import ToolWindow
 
-    window = ToolWindow(panel, "Protein Viewer", name=lambda: "", menu_bar=panel.menu_bar)
+    window = ToolWindow(panel, "Macromolecule Viewer", name=lambda: "", menu_bar=panel.menu_bar)
     with qtbot.waitActive(window):  # a shortcut needs its window active
         window.show()
         window.activateWindow()
@@ -980,9 +980,9 @@ def test_closing_the_viewer_window_lets_go_of_the_document(qtbot, table, monkeyp
     monkeypatch.setattr(graphics, "_problem", None)
     stopped = []
     panel = MacromoleculePanel(table, watch_current=lambda follow: lambda: stopped.append(True))
-    window = ToolWindow(panel, "Protein Viewer", name=lambda: "Kinases",
+    window = ToolWindow(panel, "Macromolecule Viewer", name=lambda: "Kinases",
                         menu_bar=panel.menu_bar, on_close=panel.close_panel)  # fmt: skip
-    assert window.windowTitle() == "Protein Viewer — Kinases"
+    assert window.windowTitle() == "Macromolecule Viewer — Kinases"
     assert window.menuBar() is panel.menu_bar
     window.show()
     window.close()

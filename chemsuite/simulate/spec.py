@@ -408,7 +408,7 @@ MINIMISE_SOLVENTS = (GBN2, VACUUM)
 
 @dataclass(frozen=True)
 class MinimiseSettings:
-    """What the chemist chooses for a minimisation (Prepare's Minimise and Protein ▸
+    """What the chemist chooses for a minimisation (Prepare's Minimise and Tools ▸
     Minimise…): the protein force field (its water model goes with it), the solvent, how hard
     the deposited atoms are held, the RMSD limit and the platform ("" for the fastest that
     works)."""

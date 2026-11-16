@@ -400,7 +400,7 @@ class ToolContext:
         ``titleChanged`` keeps the dock's title up to date.
 
         *beside* is a widget whose own window should hold the panel instead — the result of a
-        workspace with a window of its own (the Protein Viewer) belongs beside the structure
+        workspace with a window of its own (the Macromolecule Viewer) belongs beside the structure
         it describes. When that window cannot hold panels, or is not open, the dock goes
         beside the table as usual.
         """

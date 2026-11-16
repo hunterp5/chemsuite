@@ -15,7 +15,7 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """A tool window whose own results dock beside it.
 
-A workspace with a window of its own — the Protein Viewer — computes things there: what a
+A workspace with a window of its own — the Macromolecule Viewer — computes things there: what a
 preparation decided, the poses a docking run produced. Those belong beside the structure they
 describe, not beside the table in another window, so :class:`PanelWindow` is a
 :class:`~chemsuite.app.shell.windows.ToolWindow` that can hold panel docks of its own, with

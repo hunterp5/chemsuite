@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Minimising in the workbench: Prepare's Minimise and Protein ▸ Minimise…, each result kept
+"""Minimising in the workbench: Prepare's Minimise and Tools ▸ Minimise…, each result kept
 as a new protein, run here on the fake OpenMM worker."""
 
 from __future__ import annotations

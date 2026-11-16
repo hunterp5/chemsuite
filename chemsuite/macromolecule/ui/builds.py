@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 #: runs ``work(job)`` in the background and ``on_done(result)`` on the GUI thread
 Run = Callable[[str, Callable[[Any], Any], Callable[[Any], None]], "Job | None"]
 TITLES = {
-    "surface": "Building a protein surface",
+    "surface": "Building a surface",
     "pocket": "Building a pocket surface",
     "interactions": "Finding interactions",
     "cartoon": "Building a cartoon",

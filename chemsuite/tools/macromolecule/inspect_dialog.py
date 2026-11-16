@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Protein ▸ Inspect…: a preparation surveyed, reviewed line by line, then applied.
+"""Tools ▸ Inspect…: a preparation surveyed, reviewed line by line, then applied.
 
 Prepare… decides everything and applies it at once. Inspect… runs the same preparation
 (:mod:`chemsuite.macromolecule.prepare.review`) without committing it and opens the Inspect panel
@@ -58,7 +58,7 @@ class InspectDialog(PrepareDialog):
     def __init__(self, ctx: ToolContext) -> None:
         super().__init__(ctx)
         self.setWindowTitle("Inspect Protein")
-        # a review is applied in place; minimise it afterwards (Protein ▸ Minimise…)
+        # a review is applied in place; minimise it afterwards (Tools ▸ Minimise…)
         self.minimise.setChecked(False)
         self.method.set_row_visible(self.minimise, False)
         self.minimising.section.setVisible(False)

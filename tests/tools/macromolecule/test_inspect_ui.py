@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Protein ▸ Inspect…: a preparation surveyed, overruled line by line and applied."""
+"""Tools ▸ Inspect…: a preparation surveyed, overruled line by line and applied."""
 
 from __future__ import annotations
 

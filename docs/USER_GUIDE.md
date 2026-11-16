@@ -49,7 +49,7 @@ Each document has its own window. From top to bottom:
   | Data ▸ Similarity | Cluster, Bin Values, Similarity Search, Diverse Subset |
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
   | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
-  | Protein | Protein Viewer: the workspace for proteins, with its own menus |
+  | Protein | Macromolecule Viewer: the workspace for proteins, with its own menus |
   | Help | This guide, the log folder, About |
 
   - Every command that a tool adds appears in these menus. If a command is greyed out, its
@@ -1018,7 +1018,7 @@ descriptors, conformers, clustering, maps and searches.
     made ahead, structures being read) stop with them. Background work alone stops without
     asking.
   - When the last document window closes, everything closes with it: the Log, Sketcher and
-    Protein Viewer windows, the worker processes and external programs such as AutoDock
+    Macromolecule Viewer windows, the worker processes and external programs such as AutoDock
     Vina, together with anything they started. Nothing keeps running after chemsuite is
     gone, and a save that was cut short leaves the old file as it was.
   - Results from a job are never written into a different document.
@@ -1522,7 +1522,7 @@ tooltips give the reason. Preferences ▸ General ▸ 3D graphics can force soft
 
 ### Proteins
 
-**Protein ▸ Protein Viewer** (Ctrl+Shift+R) opens a workspace for proteins: a window of its
+**Macromolecule ▸ Macromolecule Viewer** (Ctrl+Shift+R) opens a workspace for proteins: a window of its
 own, titled after the document, with its own menu bar (on macOS the menu bar at the top of the
 screen switches to the viewer's menus while it is in front). It is not docked beside the table;
 it closes with its document and reopens with it, in the same size and place. Everything the
@@ -1531,7 +1531,7 @@ viewer does is in its menus and the right-click menu:
 - **File:** **Open Protein…** (Ctrl+O; PDB or mmCIF files, gzipped or not), **Fetch from
   PDB…** (Ctrl+Shift+O; download an entry by its ID, such as 1ATP), **Save Protein As ▸**
   (every model and alternate location), **Save Selection As…** (PDB or mmCIF), **Export
-  Image…** (Ctrl+E, below), **Remove Protein ▸** and **Close Window** (Ctrl+W). Saving writes a temporary file first, so a save
+  Image…** (Ctrl+E, below), **Remove Macromolecule ▸** and **Close Window** (Ctrl+W). Saving writes a temporary file first, so a save
   that fails leaves the old file as it was. A selection across several proteins is written as
   one file; a chain whose ID another protein took first is renamed, and the status line says
   how. With no protein open, the middle of the window offers Open and Fetch. A protein can also
@@ -1706,7 +1706,7 @@ only sends the ID, over HTTPS; when IT turns downloads off it says so instead.
 
 ### Prepare
 
-**Protein ▸ Prepare…** gives a structure the hydrogens, side chains and protonation states it
+**Tools ▸ Prepare…** gives a structure the hydrogens, side chains and protonation states it
 needs before anything is measured or docked. Crystal structures carry almost no hydrogens, and
 X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked out here.
 
@@ -1781,7 +1781,7 @@ His tautomer 64% (Reduce: 85/79/88/62).
 
 ### Inspect
 
-**Protein ▸ Inspect…** (in the viewer's **Tools** menu) runs the same preparation as Prepare…,
+**Tools ▸ Inspect…** (in the viewer's **Tools** menu) runs the same preparation as Prepare…,
 with the same settings, but applies nothing: it lays out everything it found and would decide
 in the **Inspect** panel beside the structure, for you to go through first.
 
@@ -1829,12 +1829,12 @@ side chains and flipped groups settle against their neighbours while the deposit
 near where the file put them. OpenMM must be set up first (see
 [Setting up OpenMM](#setting-up-openmm)); until it is, Minimise is greyed out and says why.
 
-- **Protein ▸ Prepare…** with **Minimise** ticked leaves the protein as it was and adds two
+- **Tools ▸ Prepare…** with **Minimise** ticked leaves the protein as it was and adds two
   new ones in **one** step: **X-prep**, the prepared structure, and **X-min**, the same
   minimised. Minimise needs **Repair** with **Side Chains** and **Cap Ends** on, since a force
   field has no template for half a residue. If the minimisation cannot run, X-prep is still
   added, and its report's first line (⚠) says why.
-- **Protein ▸ Minimise…** (in the viewer's **Tools** menu) adds **X-min** for a protein
+- **Tools ▸ Minimise…** (in the viewer's **Tools** menu) adds **X-min** for a protein
   already prepared. A protein edited after it was prepared must be prepared again first. A
   minimised protein is never minimised or prepared again: its restraints would hold it to the
   first result instead of the deposit, so start again from the one it came from. Each new
@@ -1869,7 +1869,7 @@ prepared and minimised, are saved with the document.
 
 ### Dock
 
-**Protein ▸ Dock…** docks the document's ligands into a pocket with
+**Tools ▸ Dock…** docks the document's ligands into a pocket with
 [AutoDock Vina](https://github.com/ccsb-scripps/AutoDock-Vina) 1.2.7, which ships with
 chemsuite (Apache-2.0; no download and nothing to install). The poses are kept with the
 protein and listed in the **Poses** panel beside the pocket they were docked into, since that
@@ -1878,7 +1878,7 @@ each becomes a row linked to its protein, draws in its pocket when its row is cu
 answers plots, filters and SAR as anything else does.
 
 Prepare the protein first: Vina types an atom by the hydrogens on it, so a structure with none
-is turned away with a line pointing at **Protein ▸ Prepare…**.
+is turned away with a line pointing at **Tools ▸ Prepare…**.
 
 - **Protein** is the receptor; **Ligands** the structure column to dock, over the rows you
   choose (All, Shown or Selected). A row whose structure has no 3D coordinates gets one
@@ -1912,7 +1912,7 @@ Only the parts of a receptor that AutoDock knows are used: the polymer, waters, 
 glycans. Ligands, buffers and additives are left out — a ligand is what is being docked — and
 the run says which residue names were left out.
 
-**Protein ▸ Rescore Poses…** scores poses that already exist exactly where they stand, with
+**Tools ▸ Rescore Poses…** scores poses that already exist exactly where they stand, with
 Vina or Vinardo. **Poses** chooses what to score: **Docked**, the poses of one of the
 protein's runs (**Run**, the one shown in the Poses panel to begin with); or a **Table
 Column** of structures over the rows you choose. The scores are a new run beside the one they

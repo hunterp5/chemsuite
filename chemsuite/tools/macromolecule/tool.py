@@ -54,28 +54,28 @@ from .rows import PROTEIN_COLUMN, ligand_rows
 from .rows import guessed as guessed_ligands
 
 TOOL_ID = "protein"
-#: Protein ▸ Prepare…, which also reopens its report panel
+#: Tools ▸ Prepare…, which also reopens its report panel
 #: (``chemsuite.macromolecule.ui.report.TOOL_ID``, kept in step by the tests)
 PREPARE_ID = "protein-prepare"
-#: Protein ▸ Dock… and Rescore Poses… (the viewer's Tools menu holds them too)
+#: Tools ▸ Dock… and Rescore Poses… (the viewer's Tools menu holds them too)
 DOCK_ID = "protein-dock"
 #: the Poses panel (``chemsuite.macromolecule.ui.poses.TOOL_ID``, kept in step by the tests)
 POSES_ID = "protein-poses"
-#: Protein ▸ Inspect… and its panel (``chemsuite.macromolecule.ui.inspector.TOOL_ID``)
+#: Tools ▸ Inspect… and its panel (``chemsuite.macromolecule.ui.inspector.TOOL_ID``)
 INSPECT_ID = "protein-inspect"
 RESCORE_ID = "protein-rescore"
 MINIMISE_ID = "protein-minimise"
 #: the document part holding the protein workspace
 WORKSPACE_KEY = "protein_workspace"  # a saved name: kept, so every document opens
 KIND = "protein"
-MENU = ("Protein",)
+MENU = ("Macromolecule",)
 #: the viewer's window: this share of the main window, centred over it
 WINDOW_SHARE = 0.85
-FILE_FILTER = "Protein files (*.pdb *.ent *.cif *.mmcif *.pdb.gz *.ent.gz *.cif.gz)"
+FILE_FILTER = "Structure files (*.pdb *.ent *.cif *.mmcif *.pdb.gz *.ent.gz *.cif.gz)"
 
 
 def open_viewer(ctx: ToolContext, state: dict | None = None):
-    """Bring the open Protein Viewer forward, or open one (with *state* when reopening)."""
+    """Bring the open Macromolecule Viewer forward, or open one (with *state* when reopening)."""
     from chemsuite.macromolecule.ui.panel import (
         DOCK,
         EXTRACT,
@@ -230,7 +230,7 @@ def add_protein(
     meta["source"] = source
     if guessed := guessed_ligands(rows):
         meta[ligands.GUESSED] = "\n".join(guessed)
-    ctx.edit(f"Add protein {protein}",
+    ctx.edit(f"Add {protein}",
              [PutAsset(protein, None, Asset(protein, KIND, protein, structure, meta))])  # fmt: skip
     count = len(rows[PROTEIN_COLUMN])
     ctx.show_message(f"Added {protein} ({structure.n_atoms:,} atoms, {plural(count, 'ligand')})")
@@ -243,7 +243,7 @@ def open_protein(ctx: ToolContext, paths: list[str] | None = None):
     if paths is None:
         from PySide6.QtWidgets import QFileDialog
 
-        paths, _ = QFileDialog.getOpenFileNames(dialog_parent(ctx), "Open Protein", "", FILE_FILTER)
+        paths, _ = QFileDialog.getOpenFileNames(dialog_parent(ctx), "Open", "", FILE_FILTER)
     files = io.readable(paths)
     if not files:
         return None
@@ -271,7 +271,7 @@ def open_protein(ctx: ToolContext, paths: list[str] | None = None):
         if problems:
             ctx.show_message("Could not read " + "; ".join(problems))
 
-    return ctx.run("Reading proteins…", work, done)
+    return ctx.run("Reading structures…", work, done)
 
 
 def _stem(path: Path) -> str:
@@ -387,13 +387,13 @@ def restore_inspect(ctx: ToolContext, state: dict):
 TOOLS = [
     Tool(
         id=TOOL_ID,
-        title="Protein Viewer",
+        title="Macromolecule Viewer",
         menu=MENU,
         open=open_viewer,
         restore=lambda ctx, state: open_viewer(ctx, state),
         requires=("gemmi",),
         shortcut="Ctrl+Shift+R",
-        tip="A workspace for proteins: open or fetch structures, cartoon and surface, "
+        tip="A workspace for macromolecules: open or fetch structures, cartoon and surface, "
         "selections, interactions and ligand pockets",
     ),
     Tool(

@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Protein ▸ Dock… and Rescore Poses…: the dialogs, the box, and the rows a run writes.
+"""Tools ▸ Dock… and Rescore Poses…: the dialogs, the box, and the rows a run writes.
 
 Vina itself is stood in for here (``tests/macromolecule/dock`` runs the real binary); these tests
 are about the bridge: what the dialog asks for, and what lands in the table.
@@ -335,7 +335,7 @@ def test_rescore_says_so_when_a_protein_has_no_docked_poses(opened) -> None:
     dialog = dock_dialog.RescoreDialog(ToolContext(opened))
     dialog.source.set_value(dock_dialog.KEPT)
     assert dialog.problem() == (
-        "This protein has no docked poses: dock into it first (Protein ▸ Dock…)"
+        "This protein has no docked poses: dock into it first (Tools ▸ Dock…)"
     )
     dialog.close()
 

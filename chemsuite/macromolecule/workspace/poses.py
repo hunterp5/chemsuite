@@ -15,7 +15,7 @@
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """The poses a docking run produced, kept with the document.
 
-A docking run is work done in the Protein Viewer, so its poses stay there: the Poses panel
+A docking run is work done in the Macromolecule Viewer, so its poses stay there: the Poses panel
 lists them beside the pocket they were docked into, and they reach the table only when the
 chemist asks for them (Poses to Table). Before this they went straight into the table, which
 put a pocket's results in another window and filled the table with rows nobody had asked for.

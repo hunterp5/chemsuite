@@ -13,8 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The Protein Viewer tool: its window, open, fetch (a stub opener: no network), ligand rows on
-request, the table link."""
+"""The Macromolecule Viewer tool: its window, open, fetch (a stub opener: no network), ligand
+rows on request, the table link."""
 
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ def test_the_proteins_tools_are_the_viewer_prepare_and_docking(window) -> None:
 
 def test_the_viewer_has_a_menu_of_its_own(window) -> None:
     titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
-    protein = window.menuBar().actions()[titles.index("Protein")].menu()
+    protein = window.menuBar().actions()[titles.index("Macromolecule")].menu()
     assert window.tool_action("protein") in protein.actions()
     chemistry = window.menuBar().actions()[titles.index("Chemistry")].menu()
     assert window.tool_action("protein") not in chemistry.actions()
@@ -134,7 +134,7 @@ def test_the_viewer_opens_as_its_own_window(window, qtbot, monkeypatch) -> None:
         d.widget() is panel for d in window.tool_panels.docks
     )  # not a dock: not dockable
     assert viewer.menuBar() is panel.menu_bar and viewer.width() >= window.width() * 0.8
-    assert viewer.windowTitle() == f"Protein Viewer — {window.document_name}"
+    assert viewer.windowTitle() == f"Macromolecule Viewer — {window.document_name}"
     assert panel.views.currentWidget() is panel.empty  # no proteins yet: ways to add one
     titles = [b.text() for b in panel.empty.findChildren(QPushButton)]
     assert titles == ["Open Protein…", "Fetch from PDB…"]
@@ -456,7 +456,7 @@ def test_removing_a_protein_asks_about_its_rows(with_rows, qtbot, monkeypatch) -
     qtbot.keyClick(panel.tree, Qt.Key.Key_Delete)
     assert not table.assets and atp in table.oids
     ctx.set_current_oid(atp)
-    assert panel.status.text() == "Protein 1ATP is not in this document"
+    assert panel.status.text() == "Structure 1ATP is not in this document"
     table.undo()
     assert tool.remove_protein(ctx, "1ATP", tool.KEEP_ROWS) and len(asked) == 3
     assert not tool.remove_protein(ctx, "1ATP")  # not there any more

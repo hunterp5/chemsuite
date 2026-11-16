@@ -28,7 +28,7 @@ from PySide6.QtWidgets import QMainWindow, QMenuBar, QWidget
 class ToolWindow(QMainWindow):
     """A top-level window around a tool's widget, closed with its document.
 
-    *name* gives the document's name (the title reads "Protein Viewer — Kinases") and
+    *name* gives the document's name (the title reads "Macromolecule Viewer — Kinases") and
     *on_close* lets the widget go of the document before the window is deleted.
     """
 

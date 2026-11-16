@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Protein ▸ Prepare…: hydrogens, flips, His states and protonation, as one undoable edit.
+"""Tools ▸ Prepare…: hydrogens, flips, His states and protonation, as one undoable edit.
 
 The work itself is :func:`chemsuite.macromolecule.prepare.pipeline.prepare` (repair, waters,
 hydrogens, then flips, His states and rotors at their best). This module is the bridge: the

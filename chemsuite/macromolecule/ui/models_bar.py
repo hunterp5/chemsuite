@@ -48,7 +48,7 @@ class ModelsBar(QToolBar):
         self._ids: list[str] = []
 
         self.protein = QComboBox()
-        self.protein.setToolTip("Which protein's models to step through")
+        self.protein.setToolTip("Which structure's models to step through")
         self.protein.currentIndexChanged.connect(self.refresh)
         self._protein_action = self.addWidget(self.protein)
         self.previous = self._add(
