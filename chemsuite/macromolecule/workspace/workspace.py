@@ -250,6 +250,32 @@ class MacromoleculeWorkspace:
             self._changes += 1
         self.view = new
 
+    # -- a session file, or an empty workspace -----------------------------------------------
+    def take(self, saved: Any, *, replace: bool) -> None:
+        """A session file's saved state, its structures added already under ids free here:
+        with *replace* it stands in for the session's (focus and view included); otherwise
+        it is added beside what is here. Reports, poses, reviews and records come with it."""
+        incoming = MacromoleculeWorkspace(self.store, saved)
+        state = incoming._pending
+        if replace:
+            self.session().set_state(state)
+            if incoming.view:
+                self.view = dict(incoming.view)
+        else:
+            self.session().merge_state(state)
+        self.reports.update(incoming.reports)
+        self.poses.update(incoming.poses)
+        self.reviews.update(incoming.reviews)
+        self.records.update(incoming.records)
+        self._changes += 1
+
+    def clear(self) -> None:
+        """Forget the focus, named selections, labels and measurements (Clear Session, its
+        structures removed in one step). Reports and records are kept by structure id, so an
+        undo brings them back with their structures."""
+        self.session().clear_all()
+        self._changes += 1
+
     # -- saving -------------------------------------------------------------------------------
     @property
     def revision(self) -> int:

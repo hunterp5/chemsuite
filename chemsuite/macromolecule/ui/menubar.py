@@ -13,19 +13,20 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The Macromolecule Viewer's menu bar: the viewer is a window of its own, so everything it does is
-here (and in the right-click menu), not in toolbar buttons.
+"""The Macromolecule Viewer's menu bar: the viewer is a window of its own, so everything it
+does is here (and in the right-click menus), not in toolbar buttons.
 
-- File: open, fetch, remove and save proteins; save the selection; close the window.
+- File: open structures and sessions, fetch, save the shown structures, the session, the
+  selection or an image; clear the session.
 - Edit: undo and redo the document's steps; copy the selection; delete it, give its atoms an
   element or a charge, rename or renumber its residues or chain.
 - Select: everything, kinds, chains, around the selection, saved selections.
 - Display: Show, Hide, Colour, Label (on the selection); Hydrogens, Surface Transparency.
-- Ligand: focus a ligand in its pocket, interactions, measurements, ligands to the table.
-- Tools: what a tool of the app does to a protein (Prepare), each in its own dialog.
-- View: the camera, which areas show, full screen.
-- Window: minimise, the table's window.
-- Sequence (last, at the far right): the Sequence window, and which of its kind rows show.
+- Tools: what a tool of the app does to a structure (Prepare…), each in its own dialog;
+  measurements; ligands and their interactions to the table.
+- View: the camera, a ligand's pocket (focus, its surface), interactions, which areas show,
+  the table's window, full screen.
+- Sequence (pinned at the far right): the Sequence window, and which of its kind rows show.
 
 Menus are filled when they open, so they always match the session.
 """
@@ -36,6 +37,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QActionGroup, QColor, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar
 
@@ -62,7 +64,11 @@ FETCH = "fetch"
 EXTRACT = "extract"
 LIGAND = "ligand"  # add one ligand's row: (protein id, residue)
 PROFILE = "profile"  # each ligand row's interactions, as columns
-REMOVE = "remove"  # remove a protein: (protein id)
+REMOVE = "remove"  # delete a structure: (structure id)
+RENAME = "rename"  # rename a structure: (structure id)
+DUPLICATE = "duplicate"  # copy a structure, look and all: (structure id)
+SAVE_SESSION = "save_session"  # every structure and how it looks, as a session file
+CLEAR = "clear"  # every structure removed: an empty workspace
 PREPARE = "prepare"  # hydrogens, flips and protonation states (Tools ▸ Prepare…)
 INSPECT = "inspect"  # every issue and choice, to tick and overrule (Tools ▸ Inspect…)
 MINIMISE = "minimise"  # a prepared protein minimised, as a new one (Tools ▸ Minimise…)
@@ -70,30 +76,44 @@ DOCK = "dock"  # dock the table's ligands into a pocket (Tools ▸ Dock…)
 RESCORE = "rescore"  # score poses that already exist (Tools ▸ Rescore Poses…)
 SHOW_TABLE = "show_table"  # bring the document's table window forward
 Commands = Mapping[str, Callable[..., object]]
-#: the Sequence menu sits last, at the far right of the bar
-MENUS = ("File", "Edit", "Select", "Display", "Ligand", "Tools", "View", "Window", "Sequence")
+MENUS = ("File", "Edit", "Select", "Display", "Tools", "View")
+#: pinned at the far right of the bar (the last menu where the bar is the system's: macOS)
+SEQUENCE = "Sequence"
 
 
-def build(panel: MacromoleculePanel, commands: Commands) -> QMenuBar:
+class MenuBar(QMenuBar):
+    """The viewer's menu bar, holding the Sequence menu apart from the others."""
+
+    def __init__(self, parent) -> None:
+        super().__init__(parent)
+        self.sequence = QMenu(SEQUENCE, self)
+
+    def menus(self) -> dict[str, QMenu]:
+        """Every menu by its title, the Sequence menu included."""
+        found = {a.text(): a.menu() for a in self.actions() if a.menu() is not None}
+        return {**found, SEQUENCE: self.sequence}
+
+
+def build(panel: MacromoleculePanel, commands: Commands) -> MenuBar:
     """The menu bar; its window shows it (it stays hidden while the panel has no window)."""
-    bar = QMenuBar(panel)
+    bar = MenuBar(panel)
     bar.hide()
     fills = (
         lambda m: _file(m, panel, commands),
         lambda m: _edit(m, panel),
         lambda m: _select(m, panel),
         lambda m: _display(m, panel),
-        lambda m: _ligand(m, panel, commands),
         lambda m: _tools(m, panel, commands),
-        lambda m: _view(m, panel),
-        lambda m: _window(m, panel, commands),
-        lambda m: _sequence(m, panel),
+        lambda m: _view(m, panel, commands),
     )
     filled = []
     for title, fill in zip(MENUS, fills, strict=True):
         menu = bar.addMenu(title)
         menu.aboutToShow.connect(lambda m=menu, f=fill: (m.clear(), f(m)))
         filled.append((menu, fill))
+    _pin_sequence(bar)
+    bar.sequence.aboutToShow.connect(lambda: (bar.sequence.clear(), _sequence(bar.sequence, panel)))
+    filled.append((bar.sequence, lambda m: _sequence(m, panel)))
 
     def refresh() -> None:
         """Fill the closed menus again, so their shortcuts are enabled as the session allows
@@ -112,6 +132,18 @@ def build(panel: MacromoleculePanel, commands: Commands) -> QMenuBar:
     return bar
 
 
+def _pin_sequence(bar: MenuBar) -> None:
+    """The Sequence menu at the far right, in the bar's corner, or the last menu where the
+    system draws the bar (macOS, which has no corner)."""
+    if bar.isNativeMenuBar():
+        bar.addMenu(bar.sequence)
+        return
+    corner = QMenuBar(bar)  # a menu bar of its own: drawn as the titles beside it, any theme
+    corner.setNativeMenuBar(False)
+    corner.addMenu(bar.sequence)
+    bar.setCornerWidget(corner, Qt.Corner.TopRightCorner)
+
+
 def _command(menu: QMenu, title: str, commands: Commands, key: str, *args):
     action = menu.addAction(title, lambda: commands[key](*args) if key in commands else None)
     action.setEnabled(key in commands)
@@ -120,26 +152,28 @@ def _command(menu: QMenu, title: str, commands: Commands, key: str, *args):
 
 def _file(menu: QMenu, panel: MacromoleculePanel, commands: Commands) -> None:
     shown = panel.session.displays
-    _command(menu, "Open Protein…", commands, OPEN).setShortcut(QKeySequence.StandardKey.Open)
+    visible = any(d.visible for d in shown)
+    _command(menu, "Open…", commands, OPEN).setShortcut(QKeySequence.StandardKey.Open)
     _command(menu, "Fetch from PDB…", commands, FETCH).setShortcut(QKeySequence("Ctrl+Shift+O"))
     menu.addSeparator()
-    saving = menu.addMenu("Save Protein As")
-    for display in shown:
-        saving.addAction(f"{display.name}…", lambda p=display.id: save_protein(panel, p))
-    saving.setEnabled(bool(shown))
-    save = menu.addAction("Save Selection As…", lambda: save_selection(panel))
-    save.setEnabled(panel.session.selected_count() > 0)
+    save = menu.addAction("Save…", lambda: save_structures(panel))
+    save.setShortcut(QKeySequence.StandardKey.Save)
+    save.setToolTip("Every shown structure in one PDB or mmCIF file")
+    save.setEnabled(visible)
+    session = _command(menu, "Save Session…", commands, SAVE_SESSION)
+    session.setShortcut(QKeySequence("Ctrl+Shift+S"))
+    session.setToolTip("Every structure, how it looks, selections, focus, labels, measurements, "
+                       "reports and poses, in one file to open again")  # fmt: skip
+    session.setEnabled(SAVE_SESSION in commands and bool(shown))
+    selection = menu.addAction("Save Selection…", lambda: save_selection(panel))
+    selection.setEnabled(panel.session.selected_count() > 0)
     export = menu.addAction("Export Image…", panel.export_image)
     export.setShortcut(QKeySequence("Ctrl+E"))
     export.setEnabled(panel.view is not None and bool(shown))
     menu.addSeparator()
-    removing = menu.addMenu("Remove Protein")
-    for display in shown:
-        _command(removing, display.name, commands, REMOVE, display.id)
-    removing.setEnabled(REMOVE in commands and bool(shown))
-    menu.addSeparator()
-    close = menu.addAction("Close Window", panel.close_viewer)
-    close.setShortcut(QKeySequence.StandardKey.Close)
+    clear = _command(menu, "Clear Session…", commands, CLEAR)
+    clear.setToolTip("Remove every structure: an empty workspace")
+    clear.setEnabled(CLEAR in commands and bool(shown))
 
 
 def _edit(menu: QMenu, panel: MacromoleculePanel) -> None:
@@ -193,18 +227,14 @@ def _display(menu: QMenu, panel: MacromoleculePanel) -> None:
     menus.fill_transparency(menu.addMenu("Surface Transparency"), session)
 
 
-def _ligand(menu: QMenu, panel: MacromoleculePanel, commands: Commands) -> None:
+def _view(menu: QMenu, panel: MacromoleculePanel, commands: Commands) -> None:
     session = panel.session
-    menus.fill_focus(menu.addMenu("Focus"), session)
-    skin = menu.addAction(
-        "Pocket Surface", lambda: session.show_pocket_surface(not session.pocket_surface)
+    menu.addAction("Frame Selection", panel.frame_selection).setToolTip(
+        "Fit the selection (everything, when nothing is selected) to the view (F)"
     )
-    skin.setCheckable(True)
-    skin.setChecked(session.pocket_surface)
-    skin.setToolTip("Draw a see-through skin over the focused pocket, by hydrophobicity")
-    clear = menu.addAction("Clear Focus", session.clear_focus)
-    clear.setEnabled(session.focused is not None)
+    menu.addAction("Reset View", panel.reset_view)
     menu.addSeparator()
+    _ligand(menu.addMenu("Ligand"), panel)
     shown = menu.addAction(
         "Interactions", lambda: session.show_interactions(not session.interactions_shown)
     )
@@ -213,20 +243,6 @@ def _ligand(menu: QMenu, panel: MacromoleculePanel, commands: Commands) -> None:
     shown.setToolTip(
         "Show the interactions of the selection, or of every ligand when nothing is selected"
     )
-    menus.fill_measure(menu.addMenu("Measure"), session)
-    menu.addSeparator()
-    have = bool(session.displays)
-    _command(menu, "Ligands to Table", commands, EXTRACT).setEnabled(EXTRACT in commands and have)
-    _command(menu, "Interactions to Table", commands, PROFILE).setEnabled(
-        PROFILE in commands and have
-    )
-
-
-def _view(menu: QMenu, panel: MacromoleculePanel) -> None:
-    menu.addAction("Frame Selection", panel.frame_selection).setToolTip(
-        "Fit the selection (everything, when nothing is selected) to the view (F)"
-    )
-    menu.addAction("Reset View", panel.reset_view)
     menu.addSeparator()
     background = menu.addMenu("Background")
     group = QActionGroup(background)
@@ -246,14 +262,29 @@ def _view(menu: QMenu, panel: MacromoleculePanel) -> None:
     for action in (ortho, cue):
         action.setEnabled(panel.view is not None)
     menu.addSeparator()
-    tree = menu.addAction("Proteins List", lambda: panel.tree.setVisible(panel.tree.isHidden()))
+    tree = menu.addAction("Structures List", lambda: panel.tree.setVisible(panel.tree.isHidden()))
     tree.setCheckable(True)
     tree.setChecked(not panel.tree.isHidden())
+    _command(menu, "Show Table", commands, SHOW_TABLE)
     menu.addSeparator()
     full = menu.addAction("Full Screen", panel.toggle_full_screen)
     full.setShortcut(QKeySequence.StandardKey.FullScreen)
     full.setCheckable(True)
     full.setChecked(panel.window().isFullScreen())
+
+
+def _ligand(menu: QMenu, panel: MacromoleculePanel) -> None:
+    """View ▸ Ligand: a ligand in its pocket."""
+    session = panel.session
+    menus.fill_focus(menu.addMenu("Focus"), session)
+    skin = menu.addAction(
+        "Pocket Surface", lambda: session.show_pocket_surface(not session.pocket_surface)
+    )
+    skin.setCheckable(True)
+    skin.setChecked(session.pocket_surface)
+    skin.setToolTip("Draw a see-through skin over the focused pocket, by hydrophobicity")
+    clear = menu.addAction("Clear Focus", session.clear_focus)
+    clear.setEnabled(session.focused is not None)
 
 
 def _tools(menu: QMenu, panel: MacromoleculePanel, commands: Commands) -> None:
@@ -277,13 +308,14 @@ def _tools(menu: QMenu, panel: MacromoleculePanel, commands: Commands) -> None:
     rescore = _command(menu, "Rescore Poses…", commands, RESCORE)
     rescore.setEnabled(RESCORE in commands and bool(panel.session.displays))
     rescore.setToolTip("Score poses that already exist where they stand")
-
-
-def _window(menu: QMenu, panel: MacromoleculePanel, commands: Commands) -> None:
-    minimise = menu.addAction("Minimize", lambda: panel.window().showMinimized())
-    minimise.setShortcut(QKeySequence("Ctrl+M"))
     menu.addSeparator()
-    _command(menu, "Show Table", commands, SHOW_TABLE)
+    menus.fill_measure(menu.addMenu("Measure"), panel.session)
+    menu.addSeparator()
+    have = bool(panel.session.displays)
+    _command(menu, "Ligands to Table", commands, EXTRACT).setEnabled(EXTRACT in commands and have)
+    _command(menu, "Interactions to Table", commands, PROFILE).setEnabled(
+        PROFILE in commands and have
+    )
 
 
 def _sequence(menu: QMenu, panel: MacromoleculePanel) -> None:
@@ -315,18 +347,27 @@ def save_selection(panel: MacromoleculePanel, path: str | None = None) -> str:
     return path
 
 
-def save_protein(panel: MacromoleculePanel, protein: str, path: str | None = None) -> str:
-    """Write a whole protein (every model and alternate location) to a PDB or mmCIF file."""
-    shown = panel.session.display(protein)
-    if shown is None:
+def save_structures(panel: MacromoleculePanel, path: str | None = None) -> str:
+    """Write every shown structure to one PDB or mmCIF file (by its suffix): one structure
+    whole (every model and alternate location); several as one model, chains whose ID another
+    took first renamed. Returns the path."""
+    shown = [d for d in panel.session.displays if d.visible]
+    if not shown:
         return ""
     if path is None:
+        name = shown[0].name if len(shown) == 1 else "structures"
         path, _ = QFileDialog.getSaveFileName(
-            panel, "Save Protein", f"{shown.name}.cif", "mmCIF (*.cif);;PDB (*.pdb)"
+            panel, "Save", f"{name}.cif", "mmCIF (*.cif);;PDB (*.pdb)"
         )
     if not path:
         return ""
-    _write(panel, path, protein_io.to_text(shown.structure, protein_io.format_of(path)))
+    text, renamed = protein_io.to_text_many(
+        [(d.structure, None) for d in shown], protein_io.format_of(path)
+    )
+    _write(panel, path, text)
+    if renamed:
+        said = ", ".join(f"{shown[k].name} {old} → {new}" for (k, old), new in renamed.items())
+        panel.status.setText(f"Saved with chains renamed: {said}")
     return path
 
 

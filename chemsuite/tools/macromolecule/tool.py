@@ -77,7 +77,9 @@ FILE_FILTER = "Structure files (*.pdb *.ent *.cif *.mmcif *.pdb.gz *.ent.gz *.ci
 def open_viewer(ctx: ToolContext, state: dict | None = None):
     """Bring the open Macromolecule Viewer forward, or open one (with *state* when reopening)."""
     from chemsuite.macromolecule.ui.panel import (
+        CLEAR,
         DOCK,
+        DUPLICATE,
         EXTRACT,
         FETCH,
         INSPECT,
@@ -87,11 +89,14 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
         PREPARE,
         PROFILE,
         REMOVE,
+        RENAME,
         RESCORE,
+        SAVE_SESSION,
         SHOW_TABLE,
         MacromoleculePanel,
     )
 
+    from . import session_files
     from .to_table import add_ligand, extract_ligands, interactions_to_table
 
     if state is None:
@@ -102,12 +107,16 @@ def open_viewer(ctx: ToolContext, state: dict | None = None):
     if state is not None and "session" in state:  # saved before the workspace kept it
         workbench.adopt(state)
     commands = {
-        OPEN: lambda: open_protein(ctx),
+        OPEN: lambda: session_files.open_files(ctx),
         FETCH: lambda: fetch_from_pdb(ctx),
         EXTRACT: lambda: extract_ligands(ctx),
         LIGAND: lambda protein, residue: add_ligand(ctx, protein, residue),
         PROFILE: lambda: interactions_to_table(ctx),
         REMOVE: lambda protein: remove_protein(ctx, protein),
+        RENAME: lambda protein: session_files.rename_structure(ctx, protein),
+        DUPLICATE: lambda protein: session_files.duplicate_structure(ctx, protein),
+        SAVE_SESSION: lambda: session_files.save_session(ctx),
+        CLEAR: lambda: session_files.clear_session(ctx),
         PREPARE: lambda: open_prepare(ctx),
         INSPECT: lambda: open_inspect(ctx),
         MINIMISE: lambda: open_minimise(ctx),
@@ -312,7 +321,7 @@ def remove_protein(ctx: ToolContext, protein: str, rows: str | None = None) -> b
         if rows is None:
             return False
     deleting = rows != KEEP_ROWS
-    ctx.remove_rows(linked if deleting else [], f"Remove protein {protein}",
+    ctx.remove_rows(linked if deleting else [], f"Delete {protein}",
                     extra_ops=[PutAsset(protein, asset, None)])  # fmt: skip
     gone = f" and {len(linked)} ligand row(s)" if deleting and len(linked) else ""
     ctx.show_message(f"Removed {protein}{gone}")
@@ -325,7 +334,7 @@ def _ask_rows(ctx: ToolContext, name: str, count: int) -> str | None:
 
     question = f"Remove {name} and its {count} ligand row(s)?"
     box = QMessageBox(
-        QMessageBox.Icon.Question, "Remove Protein", question, parent=dialog_parent(ctx)
+        QMessageBox.Icon.Question, "Delete Structure", question, parent=dialog_parent(ctx)
     )
     delete = box.addButton("Delete Rows", QMessageBox.ButtonRole.DestructiveRole)
     keep = box.addButton("Keep Rows", QMessageBox.ButtonRole.AcceptRole)

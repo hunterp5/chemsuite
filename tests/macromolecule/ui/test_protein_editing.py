@@ -53,9 +53,14 @@ def waters_row(panel) -> int:
     return next(r for r, row in enumerate(rows) if row.kind == WATER)
 
 
-def test_the_sequence_has_its_own_window_from_the_last_menu(panel, qtbot) -> None:
-    titles = [a.text() for a in panel.menu_bar.actions()]
-    assert titles[-1] == "Sequence"
+def test_the_sequence_has_its_own_window_from_the_pinned_menu(panel, qtbot) -> None:
+    from PySide6.QtCore import Qt
+
+    corner = panel.menu_bar.cornerWidget(Qt.Corner.TopRightCorner)
+    if panel.menu_bar.isNativeMenuBar():  # macOS: the last menu
+        assert panel.menu_bar.actions()[-1].menu() is panel.menu_bar.sequence
+    else:  # pinned at the right of the bar
+        assert [a.menu() for a in corner.actions()] == [panel.menu_bar.sequence]
     assert panel._sequence_window is None  # made when first asked for
     action_in(menu_of(panel, "Sequence"), "Sequence Viewer").trigger()
     window = panel.sequence_window

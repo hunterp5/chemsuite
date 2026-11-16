@@ -54,7 +54,7 @@ def table() -> Table:
 
 def menu_of(panel, title: str):
     """The viewer's menu-bar menu *title*, filled as when it opens."""
-    menu = next(a.menu() for a in panel.menu_bar.actions() if a.text() == title)
+    menu = panel.menu_bar.menus()[title]  # the Sequence menu too, pinned at the right
     menu.aboutToShow.emit()
     return menu
 
@@ -707,8 +707,8 @@ def _atp_atom(name: str) -> int:
 
 def test_interactions_of_the_ligands_or_the_selection(panel) -> None:
     session = panel.session
-    action_in(menu_of(panel, "Ligand"), "Interactions").trigger()  # nothing selected: ligands
-    assert action_in(menu_of(panel, "Ligand"), "Interactions").isChecked()
+    action_in(menu_of(panel, "View"), "Interactions").trigger()  # nothing selected: ligands
+    assert action_in(menu_of(panel, "View"), "Interactions").isChecked()
     shown = session.display("1ATP")
     s = shown.structure
     assert np.array_equal(shown.query, s.res_kind[s.residue_of] == 2)
@@ -717,8 +717,8 @@ def test_interactions_of_the_ligands_or_the_selection(panel) -> None:
     session.select_text("chain I")
     session.show_interactions()
     assert np.array_equal(shown.query, s.atom_chain == 1)
-    action_in(menu_of(panel, "Ligand"), "Interactions").trigger()
-    assert not action_in(menu_of(panel, "Ligand"), "Interactions").isChecked()
+    action_in(menu_of(panel, "View"), "Interactions").trigger()
+    assert not action_in(menu_of(panel, "View"), "Interactions").isChecked()
     assert not shown.query.any()
     assert len(session.scene.lines) == 0
 
@@ -815,13 +815,13 @@ def test_the_binding_site_picks_whole_residues(panel) -> None:
 
 
 def test_the_focus_menu_lists_the_ligands(panel) -> None:
-    ligand = menu_of(panel, "Ligand")
+    ligand = action_in(menu_of(panel, "View"), "Ligand").menu()
     focus = action_in(ligand, "Focus").menu()
     assert [a.text() for a in focus.actions()] == ["E/ATP 355"]
     assert not action_in(ligand, "Clear Focus").isEnabled()
     focus.actions()[0].trigger()
     assert panel.session.focused_residue() is not None
-    ligand = menu_of(panel, "Ligand")
+    ligand = action_in(menu_of(panel, "View"), "Ligand").menu()
     assert action_in(ligand, "Focus").menu().actions()[0].isChecked()
     assert action_in(ligand, "Clear Focus").isEnabled()
 

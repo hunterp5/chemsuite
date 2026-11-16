@@ -45,9 +45,7 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QGridLayout,
-    QHBoxLayout,
     QLabel,
-    QPushButton,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -86,6 +84,12 @@ OPEN, FETCH, EXTRACT, LIGAND = menubar.OPEN, menubar.FETCH, menubar.EXTRACT, men
 PROFILE, REMOVE, SHOW_TABLE = menubar.PROFILE, menubar.REMOVE, menubar.SHOW_TABLE
 PREPARE, DOCK, RESCORE = menubar.PREPARE, menubar.DOCK, menubar.RESCORE
 INSPECT, MINIMISE = menubar.INSPECT, menubar.MINIMISE
+RENAME, DUPLICATE, SAVE_SESSION, CLEAR = (
+    menubar.RENAME,
+    menubar.DUPLICATE,
+    menubar.SAVE_SESSION,
+    menubar.CLEAR,
+)
 THEME, BACKGROUNDS = menubar.THEME, menubar.BACKGROUNDS
 #: what a click in the view selects
 ATOM, RESIDUE, CHAIN = "atom", "residue", "chain"
@@ -138,12 +142,17 @@ class MacromoleculePanel(ToolPanel):
 
         self.tree = StructureTree(self.signals)
         self.tree.focusRequested.connect(self.frame_selection)
-        if REMOVE in self.commands:
-            self.tree.removeRequested.connect(self.commands[REMOVE])
+        for key, signal in ((REMOVE, self.tree.removeRequested),
+                            (RENAME, self.tree.renameRequested),
+                            (DUPLICATE, self.tree.duplicateRequested)):  # fmt: skip
+            if key in self.commands:
+                signal.connect(self.commands[key])
+        self.tree.offer(rename=RENAME in self.commands, duplicate=DUPLICATE in self.commands,
+                        delete=REMOVE in self.commands)  # fmt: skip
         self._sequence_window: SequenceWindow | None = None
         self._sequence_state: dict = {}  # saved, for the window when it is first made
         self.views = QStackedWidget()
-        self.empty = self._empty_page(commands)
+        self.empty = QWidget()  # an empty workspace: File ▸ Open… or Fetch from PDB…
         self.views.addWidget(self.empty)
         self.models_bar = ModelsBar(self.signals)
         middle = QWidget()
@@ -168,6 +177,7 @@ class MacromoleculePanel(ToolPanel):
         layout.addWidget(self.status)
 
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, self._escape)
+        QShortcut(QKeySequence.StandardKey.Close, self, self.close_viewer)
         QShortcut(QKeySequence("["), self, lambda: self.models_bar.step(-1))
         QShortcut(QKeySequence("]"), self, lambda: self.models_bar.step(1))
         frame = QShortcut(QKeySequence(Qt.Key.Key_F), self, lambda: self.frame_selection())
@@ -251,19 +261,7 @@ class MacromoleculePanel(ToolPanel):
             return  # not in a window of its own
         window.showNormal() if window.isFullScreen() else window.showFullScreen()
 
-    # what the middle shows: the view, why there is none, or ways to add a protein
-    def _empty_page(self, commands: menubar.Commands) -> QWidget:
-        page = QWidget()
-        row = QHBoxLayout(page)
-        row.addStretch(1)
-        for key, title in ((menubar.OPEN, "Open Protein…"), (menubar.FETCH, "Fetch from PDB…")):
-            if key in commands:
-                button = QPushButton(title)
-                button.clicked.connect(lambda _c=False, k=key: commands[k]())
-                row.addWidget(button)
-        row.addStretch(1)
-        return page
-
+    # what the middle shows: the view, why there is none, or nothing (no structures)
     def _show_page(self) -> None:
         if not self.session.displays:
             self.views.setCurrentWidget(self.empty)

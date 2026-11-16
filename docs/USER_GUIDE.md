@@ -1520,25 +1520,42 @@ the viewer stays in 2D, the 3D switch and the 3D plot types are greyed out, and 
 tooltips give the reason. Preferences ▸ General ▸ 3D graphics can force software drawing
 (Windows and Linux) or turn 3D off.
 
-### Proteins
+### Macromolecules
 
-**Macromolecule ▸ Macromolecule Viewer** (Ctrl+Shift+R) opens a workspace for proteins: a window of its
-own, titled after the document, with its own menu bar (on macOS the menu bar at the top of the
-screen switches to the viewer's menus while it is in front). It is not docked beside the table;
-it closes with its document and reopens with it, in the same size and place. Everything the
-viewer does is in its menus and the right-click menu:
+**Macromolecule ▸ Macromolecule Viewer** (Ctrl+Shift+R) opens a workspace for macromolecules —
+proteins, nucleic acids, glycans and their complexes: a window of its own, titled after the
+document, with its own menu bar (on macOS the menu bar at the top of the screen switches to the
+viewer's menus while it is in front). It is not docked beside the table; it closes with its
+document and reopens with it, in the same size and place. Everything the viewer does is in its
+menus and the right-click menus:
 
-- **File:** **Open Protein…** (Ctrl+O; PDB or mmCIF files, gzipped or not), **Fetch from
-  PDB…** (Ctrl+Shift+O; download an entry by its ID, such as 1ATP), **Save Protein As ▸**
-  (every model and alternate location), **Save Selection As…** (PDB or mmCIF), **Export
-  Image…** (Ctrl+E, below), **Remove Macromolecule ▸** and **Close Window** (Ctrl+W). Saving writes a temporary file first, so a save
-  that fails leaves the old file as it was. A selection across several proteins is written as
-  one file; a chain whose ID another protein took first is renamed, and the status line says
-  how. With no protein open, the middle of the window offers Open and Fetch. A protein can also
-  be removed from its right-click menu in the proteins list, or with Delete. When ligand rows
-  in the table name it you choose **Delete Rows** or **Keep Rows**; either way one Undo brings
-  it all back. A kept row whose protein is gone says so on the viewer's status line when you
-  make it current.
+- **File:** **Open…** (Ctrl+O; PDB or mmCIF files, gzipped or not, and session files,
+  `.cspx`), **Fetch from PDB…** (Ctrl+Shift+O; download an entry by its ID, such as 1ATP),
+  **Save…** (Ctrl+S), **Save Session…** (Ctrl+Shift+S), **Save Selection…** (PDB or mmCIF),
+  **Export Image…** (Ctrl+E, below) and **Clear Session…**. Ctrl+W closes the window.
+  - **Save…** writes every shown structure to one PDB or mmCIF file. One structure is written
+    whole (every model and alternate location); several are written as one model, and a
+    chain whose ID another structure took first is renamed (the status line says how). A
+    selection across several structures is written the same way.
+  - **Save Session…** writes the whole workspace to a session file: every structure, how each
+    looks, saved selections, the focused ligand, labels, measurements, the view (background
+    and depth cue), and the preparation reports, poses and records. **Open…** on a session
+    file brings it all back. With structures already open it asks: **Replace** them (one
+    Undo puts them back) or **Add** the session's beside them (a structure whose ID is taken
+    gets a new one, such as 1ATP-2, everywhere the session names it, and a saved selection
+    whose name is taken gets `_2`). A session holds no table rows: **Tools ▸ Ligands to
+    Table** makes them.
+  - **Clear Session…** removes every structure, with the focus, saved selections, labels and
+    measurements: an empty workspace. When ligand rows in the table name the structures you
+    choose **Delete Rows** or **Keep Rows**, once for all of them; one Undo brings everything
+    back, looking as it did.
+  - Saving writes a temporary file first, so a save that fails leaves the old file as it was.
+- **The structures list:** right-click a structure for **Rename…** (the name shown; the ID the
+  table's rows link to stays), **Duplicate** (a copy, `name-copy`, looking the same and keeping
+  its preparation record) and **Delete…** (or press Delete). When ligand rows in the table name
+  it you choose **Delete Rows** or **Keep Rows**; either way one Undo brings it all back. A
+  kept row whose structure is gone says so on the viewer's status line when you make it
+  current.
 - **Edit:** **Undo** and **Redo** (Ctrl+Z, Ctrl+Y: the document's last step, named in
   the menu, whether made here or in the table), **Copy** (Ctrl+C: the selected atoms as PDB
   text), **Copy Selection As ▸ PDB / mmCIF**, **Copy Image** (Ctrl+Shift+C: the view at twice
@@ -1550,19 +1567,18 @@ viewer does is in its menus and the right-click menu:
   Selection…** and **Clear Selection**.
 - **Display:** **Show**, **Hide**, **Colour** and **Label** (on the selection), **Hydrogens**
   and **Surface Transparency** (on every protein).
-- **Ligand:** **Focus ▸** a ligand in its pocket, **Pocket Surface**, **Clear Focus**,
-  **Interactions**, **Measure ▸**, **Ligands to Table** and **Interactions to Table** (both
-  below).
-- **View:** **Frame Selection** (F), **Reset View**, **Background ▸** (the theme's, white,
-  grey or black), **Orthographic** (parallel projection: no perspective, so sizes compare across
-  depth), **Depth Cue** (fade what lies further back; off draws everything fully), whether the
-  proteins list shows, and **Full Screen**. Background, projection and depth cue are saved with
-  the document.
-- **Window:** **Minimize** (Ctrl+M) and **Show Table**, which brings the document's table
-  forward.
-- **Sequence** (the last menu, at the far right): **Sequence Viewer** (Ctrl+Shift+L) opens the
-  sequence in a window of its own, and **Rows ▸** chooses which of its rows for ligands,
-  glycans, additives, ions and waters show (below).
+- **Tools:** **Prepare…**, **Inspect…**, **Minimise…**, **Dock…** and **Rescore Poses…**
+  (below), **Measure ▸**, **Ligands to Table** and **Interactions to Table** (below).
+- **View:** **Frame Selection** (F), **Reset View**, **Ligand ▸** (**Focus ▸** a ligand in
+  its pocket, **Pocket Surface**, **Clear Focus**), **Interactions**, **Background ▸** (the
+  theme's, white, grey or black), **Orthographic** (parallel projection: no perspective, so
+  sizes compare across depth), **Depth Cue** (fade what lies further back; off draws everything
+  fully), whether the **Structures List** shows, **Show Table** (brings the document's table
+  forward) and **Full Screen**. Background, projection and depth cue are saved with the
+  document.
+- **Sequence** (pinned at the far right of the menu bar; on macOS, the last menu): **Sequence
+  Viewer** (Ctrl+Shift+L) opens the sequence in a window of its own, and **Rows ▸** chooses
+  which of its rows for ligands, glycans, additives, ions and waters show (below).
 
 **Figures.** **File ▸ Export Image…** draws the view again at the size you ask for, rather
 than enlarging the screen: give the width in pixels, centimetres or inches with a resolution
@@ -1580,12 +1596,12 @@ the document as changed; selecting atoms or turning the camera does not. Closing
 that holds only proteins still asks to save it. Opening or
 fetching one adds only the protein: the table is not touched. Its ligands' bond orders are worked out as it loads (asking the PDB's
 chemical component dictionary when needed), and a ligand whose bond orders had to be guessed is
-marked ⚠ in the proteins list. Ligands become table rows only when you ask:
+marked ⚠ in the structures list. Ligands become table rows only when you ask:
 
-- **Ligand ▸ Ligands to Table** adds a row for each ligand of every protein that has none in
+- **Tools ▸ Ligands to Table** adds a row for each ligand of every protein that has none in
   the table yet. Cofactors (ATP, NAD, FAD, haem, SAM…) get a row only when they are the
   protein's only ligand; **Add Ligand to Table** in the right-click menu adds one.
-- **Ligand ▸ Interactions to Table**: for each ligand row (the selected rows, or all), how many
+- **Tools ▸ Interactions to Table**: for each ligand row (the selected rows, or all), how many
   hydrogen bonds, salt bridges, π-stacking, cation–π, hydrophobic, halogen-bond, metal and
   water-bridge contacts its ligand makes, one number column each, and a **Contacts** column
   naming the residues and how (`MET793 HB; LEU788 X`). With no ligand rows yet, it adds them
@@ -1597,7 +1613,7 @@ marked ⚠ in the proteins list. Ligands become table rows only when you ask:
 | Protein | Which protein the ligand belongs to (a second copy of 1ATP becomes 1ATP-2) |
 | Ligand ID | Chain, residue name and number, such as `E/ATP 355` |
 | Ligand | The ligand as a structure, in its pose from the file (3D kept) |
-| Bond Orders | Where the bond orders came from (the first that fits): **SMILES** (one the row already had), **File** (the file's own component tables, as PDB mmCIF files carry), **CCD (downloaded)** (the PDB's chemical component dictionary, fetched once per ligand and kept, when downloads are allowed), **CCD template** (bundled with chemsuite) or **Guessed from geometry**, which is worth checking. A guessed ligand is marked ⚠ in the proteins list |
+| Bond Orders | Where the bond orders came from (the first that fits): **SMILES** (one the row already had), **File** (the file's own component tables, as PDB mmCIF files carry), **CCD (downloaded)** (the PDB's chemical component dictionary, fetched once per ligand and kept, when downloads are allowed), **CCD template** (bundled with chemsuite) or **Guessed from geometry**, which is worth checking. A guessed ligand is marked ⚠ in the structures list |
 
 Make a ligand row current in the table and the viewer shows that ligand in its pocket. When
 the row's **Ligand** is 3D and no longer sits where the file has it (a docked pose, or a ligand
@@ -1606,7 +1622,7 @@ pocket and interactions, and the ligand of the file it stands in for faded besid
 comparison. Editing the current row's ligand updates the pose at once. The pose is not saved
 with the viewer; making the row current brings it back.
 
-**The viewer.** The proteins list (tick a protein to show or hide it; click a chain or ligand to
+**The viewer.** The structures list (tick a protein to show or hide it; click a chain or ligand to
 select it) beside the 3D view. The sequence has a window of its own (**Sequence ▸ Sequence
 Viewer**): a row for each chain, its letters following the full sequence (residues missing
 from the model show faint), and under the chains one row each for the ligands, glycans,
@@ -1622,7 +1638,7 @@ or not, with the rows you chose.
   drag across cells, click a row's name to select the whole row (a chain, or every water), or
   use its keys: the arrows move a cursor, Shift+arrows select from where it started, Return
   selects the residue under it, Home and End jump to the ends of a row. In the viewer, Ctrl/⌘+A selects every atom, Ctrl/⌘+C copies the selection as PDB and F frames
-  it (a text field keeps its own). The proteins list highlights a chain or ligand that is wholly selected and puts
+  it (a text field keeps its own). The structures list highlights a chain or ligand that is wholly selected and puts
   one partly selected in bold. Type in the selection field (point at it for the syntax): `chain A`,
   `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres (polymer within 5 of
   ligand)` (whole residues near a ligand; `byres` takes what follows it, hence the brackets),
@@ -1905,7 +1921,7 @@ it: **Pose** (1 is Vina's best), **Affinity (kcal/mol)**, **RMSD l.b.** and
 the pocket. Ctrl+C copies the scores as text, and **Copy to Table** writes the chosen poses as
 rows holding **Protein**, **Ligand** (the pose), **Pose**, **Affinity (kcal/mol)**,
 **RMSD l.b.**, **RMSD u.b.** and **Docked From** (the row it was docked from) — then run
-**Ligand ▸ Interactions to Table** on those rows to profile them. The runs are saved with the
+**Tools ▸ Interactions to Table** on those rows to profile them. The runs are saved with the
 document and come back with it, panel and all.
 
 Only the parts of a receptor that AutoDock knows are used: the polymer, waters, ions and

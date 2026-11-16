@@ -201,6 +201,10 @@ class WorkbenchSession:
                 replaced = True
             new.append(shown)
         self._swap_sources(old, new, assets)
+        here = {asset.id for asset in assets}
+        for gone in old.values():  # removed: kept, so an undo brings it back looking the same
+            if gone.id not in here:
+                self._pending[gone.id] = gone.state()
         self.displays = new
         self._shown_assets = {asset.id: asset for asset in assets}
         if self.focused is not None and self.display(self.focused[0]) is None:
@@ -863,12 +867,7 @@ class WorkbenchSession:
         self._pending = saved
         self.measurements = _points(state.get("measurements"))
         self.pocket_surface = state.get("pocket_surface", True) is not False
-        self.labels = {
-            (str(item[0]), item[1], item[2]): None
-            for item in state.get("labels") or []
-            if isinstance(item, list) and len(item) == 3 and isinstance(item[1], int)
-            and item[2] in (ATOM_LABEL, RESIDUE_LABEL)
-        }  # fmt: skip
+        self.labels = dict.fromkeys(_labels(state.get("labels")))
         self.labelsChanged.emit()
         focused = _points([[state.get("focused")]])
         self.focused = focused[0][0] if focused else None
@@ -879,6 +878,54 @@ class WorkbenchSession:
         self._scene = None
         self.proteinsChanged.emit()
         self.sceneChanged.emit()
+
+    # a session file opened beside what is here, or the workspace emptied
+    def merge_state(self, state: Mapping) -> None:
+        """Add a saved state (a session file's, its structures added already under ids free
+        here) to this one: the looks, named selections (a name taken gets _2, _3…),
+        measurements and labels. The focus stays as it is."""
+        saved = dict(state.get("proteins", {}))
+        for shown in self.displays:
+            if shown.id in saved:
+                shown.set_state(saved.pop(shown.id))
+        self._pending.update(saved)
+        for name, proteins in dict(state.get("named", {})).items():
+            new, n = str(name), 2
+            while new in self.named:
+                new, n = f"{name}_{n}", n + 1
+            self.named[new] = {str(p): [int(u) for u in uids] for p, uids in dict(proteins).items()}
+        self.measurements += _points(state.get("measurements"))
+        self.labels.update(dict.fromkeys(_labels(state.get("labels"))))
+        self.touched()
+        self._scene = None
+        self.labelsChanged.emit()
+        self.measurementsChanged.emit()
+        self.proteinsChanged.emit()
+        self.sceneChanged.emit()
+
+    def clear_all(self) -> None:
+        """Forget the focus, named selections, labels and measurements (Clear Session)."""
+        self.clear_focus()
+        self.named = {}
+        self._pending = {}
+        self.clear_labels()
+        self.clear_measurements()
+
+    def copy_look(self, source: str, copy: str) -> None:
+        """The structure *copy*, about to be added, starts looking as *source* does."""
+        shown = self.display(source)
+        if shown is not None:
+            self._pending[copy] = shown.state()
+
+
+def _labels(data) -> list[tuple[str, int, str]]:
+    """Labels from saved state: [structure id, atom uid, kind]; bad entries are dropped."""
+    return [
+        (str(item[0]), item[1], item[2])
+        for item in (data if isinstance(data, list) else [])
+        if isinstance(item, list) and len(item) == 3 and isinstance(item[1], int)
+        and item[2] in (ATOM_LABEL, RESIDUE_LABEL)
+    ]  # fmt: skip
 
 
 def _atoms(count: int) -> str:

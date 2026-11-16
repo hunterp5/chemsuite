@@ -81,7 +81,7 @@ def with_rows(opened, qtbot):
 
 
 def menu_of(panel, title: str):
-    menu = next(a.menu() for a in panel.menu_bar.actions() if a.text() == title)
+    menu = panel.menu_bar.menus()[title]  # the Sequence menu too, pinned at the right
     menu.aboutToShow.emit()
     return menu
 
@@ -135,9 +135,8 @@ def test_the_viewer_opens_as_its_own_window(window, qtbot, monkeypatch) -> None:
     )  # not a dock: not dockable
     assert viewer.menuBar() is panel.menu_bar and viewer.width() >= window.width() * 0.8
     assert viewer.windowTitle() == f"Macromolecule Viewer — {window.document_name}"
-    assert panel.views.currentWidget() is panel.empty  # no proteins yet: ways to add one
-    titles = [b.text() for b in panel.empty.findChildren(QPushButton)]
-    assert titles == ["Open Protein…", "Fetch from PDB…"]
+    assert panel.views.currentWidget() is panel.empty  # no structures yet
+    assert not panel.empty.findChildren(QPushButton)  # an empty workspace: File ▸ Open…
     assert tool.open_viewer(ToolContext(window)) is panel  # brought forward, not a second one
 
 
@@ -158,15 +157,21 @@ def test_the_viewer_menus_open_and_fetch(window, monkeypatch) -> None:
     from chemsuite.macromolecule.ui.menubar import MENUS
 
     calls: list[str] = []
-    monkeypatch.setattr(tool, "open_protein", lambda ctx: calls.append("open"))
+    from chemsuite.tools.macromolecule import session_files
+
+    monkeypatch.setattr(session_files, "open_files", lambda ctx: calls.append("open"))
     monkeypatch.setattr(tool, "fetch_from_pdb", lambda ctx: calls.append("fetch"))
     panel = tool.open_viewer(ToolContext(window))
     file_menu = menu_of(panel, "File")
+    titles = [a.text() for a in file_menu.actions() if a.text()]
+    assert titles == ["Open…", "Fetch from PDB…", "Save…", "Save Session…", "Save Selection…",
+                      "Export Image…", "Clear Session…"]  # fmt: skip
     for action in file_menu.actions():
-        if action.text() in ("Open Protein…", "Fetch from PDB…"):
+        if action.text() in ("Open…", "Fetch from PDB…"):
             action.trigger()
     assert calls == ["open", "fetch"]
-    assert [a.text() for a in panel.menu_bar.actions()] == list(MENUS)
+    titles = [a.text() for a in panel.menu_bar.actions() if a.menu() is not panel.menu_bar.sequence]
+    assert titles == list(MENUS)  # no Ligand or Window menu
 
 
 def test_opening_adds_the_protein_but_not_its_ligands(opened, qtbot) -> None:
@@ -174,7 +179,7 @@ def test_opening_adds_the_protein_but_not_its_ligands(opened, qtbot) -> None:
     assert list(table.assets) == ["1ATP"] and len(table.oids) == 3 and "Ligand" not in table
     panel = ToolContext(opened).find_panel("protein")
     assert panel is not None and [d.id for d in panel.session.displays] == ["1ATP"]
-    action = next(a for a in menu_of(panel, "Ligand").actions() if a.text() == "Ligands to Table")
+    action = next(a for a in menu_of(panel, "Tools").actions() if a.text() == "Ligands to Table")
     action.trigger()
     qtbot.waitUntil(lambda: "Ligand" in table, timeout=30_000)
     oid = int(table.oids[-1])
@@ -409,8 +414,8 @@ def test_interactions_to_table(opened, qtbot) -> None:
     ctx = ToolContext(opened)
     table = opened.workspace.table
     panel = ctx.find_panel("protein")
-    ligand = menu_of(panel, "Ligand")
-    action = next(a for a in ligand.actions() if a.text() == "Interactions to Table")
+    tools = menu_of(panel, "Tools")
+    action = next(a for a in tools.actions() if a.text() == "Interactions to Table")
     assert action.isEnabled()
     action.trigger()
     qtbot.waitUntil(lambda: "Contacts" in table, timeout=30_000)
@@ -443,12 +448,10 @@ def test_removing_a_protein_asks_about_its_rows(with_rows, qtbot, monkeypatch) -
     assert not tool.remove_protein(ctx, "1ATP")  # cancelled
     assert asked == [("1ATP", 1)] and "1ATP" in table.assets
     answer[0] = tool.DELETE_ROWS
-    file_menu = menu_of(panel, "File")
-    removing = next(a.menu() for a in file_menu.actions() if a.text() == "Remove Protein")
-    removing.actions()[0].trigger()
+    panel.tree.removeRequested.emit("1ATP")  # the list's Delete…
     assert not table.assets and atp not in table.oids and not panel.session.displays
     assert panel.session.focused is None
-    assert table.undo() == "Remove protein 1ATP"
+    assert table.undo() == "Delete 1ATP"
     assert "1ATP" in table.assets and atp in table.oids
     # keeping the rows: the viewer says the row's protein is gone
     answer[0] = tool.KEEP_ROWS
@@ -487,18 +490,35 @@ def test_copying_two_proteins_makes_one_file(opened, qtbot) -> None:
     assert panel.status.text() == "Chains renamed: 1ATP-2 E → A, 1ATP-2 I → B"
 
 
-def test_save_protein_as_writes_every_atom(opened, tmp_path) -> None:
+def test_save_writes_every_atom_of_the_shown_structure(opened, tmp_path) -> None:
     from chemsuite.macromolecule.structure import io
-    from chemsuite.macromolecule.ui.menubar import save_protein
+    from chemsuite.macromolecule.ui.menubar import save_structures
 
     panel = ToolContext(opened).find_panel("protein")
-    path = save_protein(panel, "1ATP", str(tmp_path / "kinase.pdb"))
+    path = save_structures(panel, str(tmp_path / "kinase.pdb"))
     back = io.read(path)
     assert back.n_atoms == panel.session.display("1ATP").structure.n_atoms
     assert not list(tmp_path.glob("*.part"))
-    file_menu = menu_of(panel, "File")
-    saving = next(a.menu() for a in file_menu.actions() if a.text() == "Save Protein As")
-    assert [a.text() for a in saving.actions()] == ["1ATP…"]
+    assert action_of(menu_of(panel, "File"), "Save…").isEnabled()
+
+
+def test_save_writes_the_shown_structures_as_one(opened, qtbot, tmp_path) -> None:
+    from chemsuite.macromolecule.structure import io
+    from chemsuite.macromolecule.ui.menubar import save_structures
+
+    job = tool.open_protein(ToolContext(opened), [str(DATA / "1atp.cif.gz")])
+    qtbot.waitUntil(lambda: not job.running, timeout=30_000)
+    panel = ToolContext(opened).find_panel("protein")
+    one = panel.session.display("1ATP").structure.n_atoms
+    back = io.read(save_structures(panel, str(tmp_path / "both.cif")))
+    assert back.n_atoms == 2 * one
+    assert panel.status.text().startswith("Saved with chains renamed: 1ATP-2 E → A")
+    panel.session.display("1ATP-2").visible = False  # only the shown ones
+    assert io.read(save_structures(panel, str(tmp_path / "one.cif"))).n_atoms == one
+
+
+def action_of(menu, text: str):
+    return next(a for a in menu.actions() if a.text() == text)
 
 
 def test_renaming_a_ligand_renames_its_row_in_the_same_step(with_rows) -> None:

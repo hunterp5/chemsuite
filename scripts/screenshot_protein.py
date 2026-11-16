@@ -13,7 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Render the Protein Viewer to PNG files in light and dark, to compare with the table and plots.
+"""Render the Macromolecule Viewer to PNG files in light and dark, to compare with the table
+and plots.
 
     .venv/bin/python scripts/screenshot_protein.py OUT_DIR [FILE]
 
@@ -56,7 +57,7 @@ def main(argv: list[str]) -> int:
     table = Table()
     table.edit("Open", [PutAsset(name, None, Asset(name, "protein", name, structure, {}))])
     panel = MacromoleculePanel(table)
-    window = ToolWindow(panel, "Protein Viewer", name=lambda: name, menu_bar=panel.menu_bar)
+    window = ToolWindow(panel, "Macromolecule Viewer", name=lambda: name, menu_bar=panel.menu_bar)
     window.resize(1400, 900)
     window.show()
 

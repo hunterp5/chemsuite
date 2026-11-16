@@ -64,11 +64,14 @@ def residue_expression(structure: Structure, residue: int) -> str:
 
 class StructureTree(QTreeWidget):
     focusRequested = Signal()
-    removeRequested = Signal(str)  # a protein's id: Remove Protein from its menu or Delete
+    removeRequested = Signal(str)  # a structure's id: Delete… from its menu, or the Delete key
+    renameRequested = Signal(str)  # a structure's id: Rename… from its menu
+    duplicateRequested = Signal(str)  # a structure's id: Duplicate from its menu
 
     def __init__(self, signals: SessionSignals, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.session = signals.session
+        self._offered: dict[str, bool] = {}  # which of a structure's commands are carried out
         self.setHeaderHidden(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.setUniformRowHeights(True)
@@ -217,8 +220,16 @@ class StructureTree(QTreeWidget):
             return
         protein = str(item.data(0, _PROTEIN))
         menu = QMenu(self)
-        menu.addAction("Remove Protein…", lambda: self.removeRequested.emit(protein))
+        for title, signal in (("Rename…", self.renameRequested),
+                              ("Duplicate", self.duplicateRequested),
+                              ("Delete…", self.removeRequested)):  # fmt: skip
+            action = menu.addAction(title, lambda s=signal: s.emit(protein))
+            action.setEnabled(self._offered.get(title, False))
         menu.exec(self.viewport().mapToGlobal(where))
+
+    def offer(self, *, rename: bool, duplicate: bool, delete: bool) -> None:
+        """Which of a structure's commands its menu offers (the host carries them out)."""
+        self._offered = {"Rename…": rename, "Duplicate": duplicate, "Delete…": delete}
 
     def keyPressEvent(self, event) -> None:
         if event.matches(QKeySequence.StandardKey.SelectAll) or event.matches(
