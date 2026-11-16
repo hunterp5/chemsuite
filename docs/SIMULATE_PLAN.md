@@ -135,6 +135,26 @@ It imports `protein.structure`, `protein.chem` and `core.jobs`; never Qt, `core.
 
 ## M2 — the worker and its runner (`chemsuite/simulate/`)
 
+**Done 2026-11-15.** As below, with:
+- `core/jobs/lines.py` (`LineWorker`, `WarmWorkers`, `child_environment`, `is_app_python`);
+  retro is a `LineWorker` subclass, its API unchanged. A cancelled request that cannot stop
+  is now killed at once (it waited 5 s for a quit the busy worker never read), and a worker
+  that dies is reported with its exit code.
+- The worker's `minimise` runs the stages already (OpenMM's `MinimizationReporter` gives the
+  energy events and the stop between iterations); M3 is the result (RMSD, contacts, what
+  moved), the tuning and the benchmark. First run, T4 lysozyme L99A with its ligand, 200
+  iterations a stage on the CPU: heavy-atom RMSD 0.24 Å, but surface side-chain tips swing
+  up to 1.1 Å in the free side-chain stage (Glu 108 OE1, Lys 124 NZ): M3 should weigh a light
+  restraint there.
+- `build` gives every residue but a small molecule its template by name (ions too: FE and FE2
+  are the same atom to a graph), refuses a molecule with no charges, and checks every
+  residue's total charge in the system against the spec's formal charge.
+- Env files in `envs/` (8.4.0 pinned, provisionally); the Mac one is untested.
+- Tests: `tests/core/test_lines.py` (a plain-Python fake worker, so they run on Windows),
+  `tests/simulate/test_runner.py` (a fake OpenMM worker), and `tests/simulate/test_worker.py`
+  against a real env (`CHEMSUITE_OPENMM_PYTHON`, marker `openmm`). Retro's own worker tests
+  still need a POSIX shell: run `tests/retro` on the Mac before the merge.
+
 - Extract the JSON-lines client from `retro/runner.py` into a shared
   `core/jobs/lines.py` (`LineWorker`, `worker_for`, `child_environment`, `probe` helpers) and
   **move retro onto it**, so there is one implementation, not two. Protocol additions needed by

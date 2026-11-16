@@ -79,6 +79,20 @@ TOOLS: tuple[ExternalTool, ...] = (
         version_args=(),
     ),
     ExternalTool(
+        "openmm_python",
+        "OpenMM Python",
+        "Python interpreter of the OpenMM environment, for minimisation and simulation.",
+    ),
+    ExternalTool(
+        "openmm_wsl_python",
+        "OpenMM Python (WSL)",
+        "Python of an OpenMM environment inside WSL, as a Linux path; used when no native "
+        "OpenMM Python is set.",
+        kind="file",
+        version_args=(),
+        windows_only=True,
+    ),
+    ExternalTool(
         "wsl",
         "WSL",
         "wsl.exe, so Windows can run Linux-only tools.",

@@ -1850,6 +1850,30 @@ too to score a pose moved by hand in the sketcher.
 
 Docking is not yet covalent, does not move side chains, and docks one receptor at a time.
 
+### Setting up OpenMM
+
+Minimising a prepared complex (and, later, molecular dynamics and binding free energies) runs in
+[OpenMM](https://openmm.org) with the Amber ff14SB protein force field and
+[OpenFF Sage 2.3](https://openforcefield.org) for ligands, whose partial charges come from
+OpenFF's NAGL model. These live in a Python environment of their own, kept warm in the
+background once started. Nothing in chemsuite uses it yet: the minimisation step of
+**Prepare…** comes next.
+
+1. Install [Miniforge](https://conda-forge.org/download/) (or any conda).
+2. Create the environment from the file for your system in chemsuite's `envs` folder, for
+   example `conda env create --solver libmamba -f envs/openmm-win-64.yml -p D:\envs\openmm`.
+   On Windows and macOS, the file's first lines give one more command, which installs
+   `openmmforcefields`. The environment takes about 3.5 GB.
+3. In **Preferences ▸ External Tools**, set **OpenMM Python** to that environment's `python`
+   and press **Test**. It reports the OpenMM, openmmforcefields and OpenFF versions and each
+   platform a calculation can run on: **CUDA** on an NVIDIA graphics card, **OpenCL**, **CPU**.
+
+On an NVIDIA card, the environment's `cuda-version` must not be newer than the driver supports
+(`nvidia-smi` shows it); a mismatch leaves CUDA out of the Test result. On Windows, an
+environment inside WSL works too: set **OpenMM Python (WSL)** to its Linux path (such as
+`/home/you/miniforge3/envs/openmm/bin/python`), created from `envs/openmm-linux-64.yml`. It is
+used when no **OpenMM Python** is set.
+
 ### Retrosynthesis
 
 Chemistry ▸ Reaction ▸ Retrosynthesis plans synthetic routes to each structure with
@@ -2332,7 +2356,7 @@ keeps them and **Cancel** puts everything back.
 |---|---|
 | Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colourful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
 | Keyboard | Change any command's shortcut. |
-| External Tools | Paths to optional programs (Open Babel, Gnina, AmberTools, MAFFT, AiZynthFinder), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
+| External Tools | Paths to optional programs (Open Babel, Gnina, AmberTools, MAFFT, AiZynthFinder, [OpenMM](#setting-up-openmm)), each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
 | General | Processor cores to use (0 = automatic: all but one, so the window stays responsive), 3D graphics (Automatic, Software on Windows and Linux, or Off; takes effect after a restart), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
 
 Your IT department can fix some settings for everyone. Those are shown greyed out with a

@@ -24,17 +24,13 @@ so the process goes and the targets already finished are kept (``Cancelled(parti
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import queue
-import subprocess
-import threading
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from chemsuite.core.jobs import Cancelled, CancelToken, Progress, check, children
+from chemsuite.core.jobs import Cancelled, CancelToken, Progress
+from chemsuite.core.jobs.lines import LineWorker, WarmWorkers, WorkerError, child_environment
 
 from . import worker as worker_script
 from .config import SearchOptions
@@ -45,13 +41,9 @@ log = logging.getLogger(__name__)
 #: how long to wait for the worker to start, and for one search to come back
 START_TIMEOUT_S = 180.0
 SEARCH_TIMEOUT_MARGIN_S = 300.0
-#: how often a blocking wait looks at the cancel token
-POLL_S = 0.05
-#: tail of the worker's stderr kept for an error message
-_TAIL_CHARS = 4000
 
 
-class RetroError(RuntimeError):
+class RetroError(WorkerError):
     """The worker could not be started, died, or answered nothing usable."""
 
 
@@ -69,91 +61,22 @@ class SearchReply:
         return not self.error
 
 
-class Worker:
+class Worker(LineWorker):
     """One AiZynthFinder process, talking JSON lines (see :mod:`.worker`)."""
+
+    error = RetroError
 
     def __init__(self, python: str, config: Path | str) -> None:
         self.python = str(python)
         self.config = str(config)
-        self._process: subprocess.Popen[str] | None = None
-        self._replies: queue.Queue[dict | None] = queue.Queue()
-        self._errors: list[str] = []
-        self._next_id = 1
-        self._lock = threading.Lock()
-
-    # -- the process --------------------------------------------------------------------------
-    @property
-    def alive(self) -> bool:
-        return self._process is not None and self._process.poll() is None
-
-    def start(self, cancel: CancelToken | None = None) -> None:
-        """Start the worker and wait for its ready line. A live worker is left alone."""
-        if self.alive:
-            return
-        self.close()
-        command = worker_script.command(self.python, self.config)
-        try:
-            self._process = children.start(
-                command,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                env=child_environment(self.python),
-                cwd=str(Path(self.config).parent if Path(self.config).parent.is_dir() else "."),
-            )
-        except OSError as err:
-            raise RetroError(f"Could not start {self.python}: {err}") from err
-        self._replies = queue.Queue()
-        self._errors = []
-        threading.Thread(target=self._read_replies, daemon=True).start()
-        threading.Thread(target=self._read_errors, daemon=True).start()
-        ready = self._await_reply(0, START_TIMEOUT_S, cancel)
-        if not ready.get("ready"):
-            raise RetroError(self._died_message())
-
-    def close(self) -> None:
-        """Ask the worker to quit; kill it if it will not."""
-        process = self._process
-        self._process = None
-        if process is None:
-            return
-        try:
-            if process.poll() is None and process.stdin is not None:
-                process.stdin.write(json.dumps({"id": -1, "op": "quit"}) + "\n")
-                process.stdin.flush()
-                process.wait(timeout=5)
-        except (OSError, ValueError, subprocess.TimeoutExpired):
-            pass
-        finally:
-            children.stop(process)
-
-    # -- requests -----------------------------------------------------------------------------
-    def request(
-        self, op: str, body: dict | None = None, *, timeout: float, cancel: CancelToken | None
-    ) -> dict:
-        """Send one request and return its reply. Raises :class:`RetroError` on a dead worker.
-
-        A reply with ``ok: false`` is returned as-is: a target that fails is the caller's to
-        report, not a reason to tear the worker down.
-        """
-        with self._lock:
-            self.start(cancel)
-            process = self._process
-            if process is None or process.stdin is None:
-                raise RetroError("The AiZynthFinder worker is not running.")
-            ident = self._next_id
-            self._next_id += 1
-            payload = {"id": ident, "op": op, **(body or {})}
-            try:
-                process.stdin.write(json.dumps(payload) + "\n")
-                process.stdin.flush()
-            except (OSError, ValueError) as err:
-                raise RetroError(self._died_message()) from err
-            return self._await_reply(ident, timeout, cancel)
+        folder = Path(self.config).parent
+        super().__init__(
+            worker_script.command(self.python, self.config),
+            name="The AiZynthFinder worker",
+            env=child_environment(self.python),
+            cwd=str(folder if folder.is_dir() else "."),
+            start_timeout=START_TIMEOUT_S,
+        )
 
     def hello(self, cancel: CancelToken | None = None) -> dict:
         """The worker's AiZynthFinder version. Loads no models."""
@@ -179,97 +102,22 @@ class Worker:
             routes=compact_routes(reply.get("trees"), stats.get("stock_info")),
         )
 
-    # -- plumbing -----------------------------------------------------------------------------
-    def _read_replies(self) -> None:
-        process = self._process
-        if process is None or process.stdout is None:
-            return
-        try:
-            for line in process.stdout:
-                text = line.strip()
-                if not text:
-                    continue
-                try:
-                    self._replies.put(json.loads(text))
-                except ValueError:
-                    log.debug("ignored a line that is not a reply: %.200s", text)
-        except (OSError, ValueError):
-            pass
-        finally:
-            self._replies.put(None)  # end of stream: the worker is gone
-
-    def _read_errors(self) -> None:
-        process = self._process
-        if process is None or process.stderr is None:
-            return
-        try:
-            for line in process.stderr:
-                self._errors.append(line)
-                if len(self._errors) > 400:
-                    del self._errors[:200]
-        except (OSError, ValueError):
-            pass
-
-    def _await_reply(self, ident: int, timeout: float, cancel: CancelToken | None) -> dict:
-        """Wait for the reply to *ident*, looking at *cancel* as it goes."""
-        waited = 0.0
-        while True:
-            check(cancel)
-            try:
-                reply = self._replies.get(timeout=POLL_S)
-            except queue.Empty:
-                waited += POLL_S
-                if waited >= timeout:
-                    raise RetroError(
-                        f"AiZynthFinder did not answer within {timeout:.0f} s."
-                    ) from None
-                continue
-            if reply is None:
-                raise RetroError(self._died_message())
-            if reply.get("id") == ident:
-                return reply
-            log.debug("ignored a stale reply %r", reply.get("id"))
-
-    def _died_message(self) -> str:
-        tail = "".join(self._errors)[-_TAIL_CHARS:].strip()
-        code = self._process.poll() if self._process is not None else None
-        head = "The AiZynthFinder worker stopped"
-        if code not in (None, 0):
-            head += f" (exit code {code})"
-        return f"{head}.\n{tail}" if tail else f"{head}."
-
 
 # -- the warm worker ----------------------------------------------------------------------------
 # One at a time: a loaded AiZynthFinder holds its models and the whole stock in memory (about a
 # gigabyte with the ZINC stock), so changing either path in Settings retires the old process
 # rather than leaving it loaded beside the new one.
-_WORKERS: dict[tuple[str, str], Worker] = {}
-_WORKERS_LOCK = threading.Lock()
+_WORKERS: WarmWorkers[Worker] = WarmWorkers(lambda key: Worker(*key), single=True)
 
 
 def worker_for(python: str, config: Path | str) -> Worker:
     """The warm worker for this interpreter and config, started on first use."""
-    key = (str(python), str(config))
-    with _WORKERS_LOCK:
-        stale = [other for name, other in _WORKERS.items() if name != key]
-        for name in [name for name in _WORKERS if name != key]:
-            del _WORKERS[name]
-        found = _WORKERS.get(key)
-        if found is None:
-            found = Worker(*key)
-            _WORKERS[key] = found
-    for other in stale:
-        other.close()
-    return found
+    return _WORKERS.get((str(python), str(config)))
 
 
 def close_workers() -> None:
     """Stop every warm worker (the app closing, or the paths changing in Settings)."""
-    with _WORKERS_LOCK:
-        workers = list(_WORKERS.values())
-        _WORKERS.clear()
-    for item in workers:
-        item.close()
+    _WORKERS.close_all()
 
 
 def search(
@@ -355,43 +203,6 @@ def unique_targets(values: Iterable[str]) -> list[str]:
             seen.add(text)
             out.append(text)
     return out
-
-
-def child_environment(python: str) -> dict[str, str]:
-    """The worker's environment: chemsuite's own Python settings removed.
-
-    A conda environment gets its own ``bin``/``Library\\bin`` in front of ``PATH`` so that the
-    RDKit and HDF5 libraries beside its interpreter load without activating the environment.
-    """
-    env = os.environ.copy()
-    for key in (
-        "PYTHONPATH",
-        "PYTHONHOME",
-        "CONDA_PREFIX",
-        "CONDA_DEFAULT_ENV",
-        "CONDA_PYTHON_EXE",
-    ):
-        env.pop(key, None)
-    env["PYTHONNOUSERSITE"] = "1"
-    env["PYTHONUNBUFFERED"] = "1"
-    root = _conda_root(python)
-    if root is None:
-        return env
-    extra = [root, root / "Library" / "bin", root / "Scripts", root / "bin"]
-    prefix = os.pathsep.join(str(path) for path in extra if path.is_dir())
-    if prefix:
-        env["PATH"] = prefix + os.pathsep + env.get("PATH", "")
-    env["CONDA_PREFIX"] = str(root)
-    return env
-
-
-def _conda_root(python: str) -> Path | None:
-    """The environment root of *python* when it looks like a conda or venv layout."""
-    path = Path(python)
-    for parent in path.parents:
-        if (parent / "conda-meta").is_dir() or (parent / "pyvenv.cfg").is_file():
-            return parent
-    return None
 
 
 def _message(reply: dict) -> str:

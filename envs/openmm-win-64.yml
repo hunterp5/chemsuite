@@ -1,0 +1,33 @@
+# OpenMM environment for chemsuite's minimisation worker, Windows (x86-64, NVIDIA GPU optional).
+#
+#   conda env create --solver libmamba -f envs/openmm-win-64.yml -p D:\chemsuite-envs\openmm
+#   D:\chemsuite-envs\openmm\python.exe -m pip install --no-deps ^
+#       git+https://github.com/openmm/openmmforcefields@0.15.1
+#
+# Then set D:\chemsuite-envs\openmm\python.exe as Preferences > External Tools > OpenMM Python
+# and press Test.
+#
+# - openmmforcefields is installed by pip, without dependencies: conda-forge's builds all require
+#   AmberTools, which has no Windows package, and none of it is needed here.
+# - cuda-version must not exceed what the NVIDIA driver supports (nvidia-smi shows it); 12.6 is
+#   right for driver 560. OpenMM 8.6 is built for CUDA 12.9 and later only, so it needs a newer
+#   driver; 8.4.0 is pinned for now (provisional: docs/simulate/m0-review.md).
+# - pytorch-cpu: NAGL charges take about a second per ligand on the CPU; the CUDA build makes the
+#   environment 12 GB instead of 3.5 GB and gains nothing.
+name: chemsuite-openmm
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - openmm=8.4.0
+  - cuda-version=12.6
+  - pytorch-cpu
+  - openff-toolkit-base=0.19.0
+  - openff-interchange-base=0.5.5
+  - openff-nagl=0.6.1
+  - openff-nagl-models=2026.09.0
+  - rdkit
+  - numpy
+  - lxml
+  - pip

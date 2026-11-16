@@ -70,6 +70,7 @@ from chemsuite.core.settings import (
 )
 from chemsuite.retro.config import CONFIG_TOOL as RETRO_CONFIG_TOOL
 from chemsuite.retro.config import PYTHON_TOOL as RETRO_PYTHON_TOOL
+from chemsuite.simulate.config import TOOLS as SIMULATE_TOOLS
 
 from .commands import Portable, all_shortcuts, commands, conflicts
 from .job_host import JobHost
@@ -493,6 +494,8 @@ class ToolsPage(QWidget):
         path = self.edits[tool_id].text().strip() or et.resolve(tool_id, self.dialog.user) or ""
         if tool_id in RETRO_TOOLS:
             ok, message = self._test_retro(tool_id)
+        elif tool_id in SIMULATE_TOOLS:
+            ok, message = self._test_openmm(tool_id)
         else:
             ok, message = et.test_tool(tool_id, path) if path else (False, "Not found.")
         self.results[tool_id].setText(("✓ " if ok else "✗ ") + message)
@@ -517,6 +520,22 @@ class ToolsPage(QWidget):
         guard[0](Qt.CursorShape.WaitCursor)  # importing AiZynthFinder takes a few seconds
         try:
             return probe(python, config if tool_id == RETRO_CONFIG_TOOL and config else None)
+        finally:
+            guard[1]()
+
+    def _test_openmm(self, tool_id: str) -> tuple[bool, str]:
+        """Test the OpenMM environment itself: a worker reports the versions and the platforms
+        a context can be made on."""
+        from chemsuite.simulate.config import WSL_TOOL, Interpreter
+        from chemsuite.simulate.runner import probe
+
+        python = self.edits[tool_id].text().strip()
+        if not python:
+            return False, "Not set."
+        guard = QGuiApplication.setOverrideCursor, QGuiApplication.restoreOverrideCursor
+        guard[0](Qt.CursorShape.WaitCursor)  # OpenMM tries each platform: a few seconds
+        try:
+            return probe(Interpreter(python, wsl=tool_id == WSL_TOOL))
         finally:
             guard[1]()
 

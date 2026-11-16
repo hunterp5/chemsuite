@@ -104,6 +104,9 @@ def run_app(
         window.open_path(path)
     code = app.exec()
     close_workers()  # asks the warm AiZynthFinder worker to quit before it is ended
+    from chemsuite.simulate.runner import close_workers as close_simulation_workers
+
+    close_simulation_workers()  # and the OpenMM ones (imported only now: not at start-up)
     clean = runner.shutdown()
     logbook.audit("exit", code=code, forced=not clean)
     if clean:

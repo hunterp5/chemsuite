@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 from PySide6.QtGui import QKeySequence, QPalette
 from PySide6.QtWidgets import QApplication
@@ -180,6 +181,25 @@ def test_external_tool_test_button(window, tmp_path) -> None:
     assert tools.results["mafft"].text().startswith("✗")
     dialog.accept()
     assert settings_hub().settings.tool_paths["mafft"] == str(tmp_path / "nope")
+
+
+def test_the_openmm_test_button_asks_the_worker(window, monkeypatch) -> None:
+    """The OpenMM interpreter is tested by a worker (versions, working platforms), not by
+    ``--version``; chemsuite's own interpreter is refused before anything starts."""
+    from chemsuite.simulate import runner
+    from chemsuite.simulate.config import Interpreter
+
+    tools = window.open_settings().tools
+    assert tools.test("openmm_python") == (False, "Not set.")
+    tools.edits["openmm_python"].setText(sys.executable)
+    ok, message = tools.test("openmm_python")
+    assert not ok and "own interpreter" in message
+    asked = []
+    monkeypatch.setattr(runner, "probe", lambda where: (asked.append(where) or True, "OpenMM 8.4"))
+    tools.edits["openmm_python"].setText("C:/envs/sim/python.exe")
+    assert tools.test("openmm_python") == (True, "OpenMM 8.4")
+    assert asked == [Interpreter("C:/envs/sim/python.exe")]
+    assert tools.results["openmm_python"].text() == "✓ OpenMM 8.4"
 
 
 def test_open_recent_and_last_folder(window, tmp_path) -> None:

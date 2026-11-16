@@ -1,0 +1,27 @@
+# OpenMM environment for chemsuite's minimisation worker, macOS on Apple silicon.
+#
+# NOT YET TESTED: M0's gate 1 on the Mac is still owed (docs/simulate/m0-review.md). Check that it
+# solves, that OpenMM lists the OpenCL and CPU platforms (there is no CUDA on a Mac), and that
+# `pytest -m openmm` passes with CHEMSUITE_OPENMM_PYTHON set to this env's bin/python.
+#
+#   conda env create --solver libmamba -f envs/openmm-osx-arm64.yml
+#   <env>/bin/python -m pip install --no-deps git+https://github.com/openmm/openmmforcefields@0.15.1
+#
+# openmmforcefields is installed by pip in case conda-forge's build wants AmberTools, which may
+# have no osx-arm64 package; drop that step if `openmmforcefields=0.15.1` solves under conda.
+name: chemsuite-openmm
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - openmm=8.4.0
+  - pytorch-cpu
+  - openff-toolkit-base=0.19.0
+  - openff-interchange-base=0.5.5
+  - openff-nagl=0.6.1
+  - openff-nagl-models=2026.09.0
+  - rdkit
+  - numpy
+  - lxml
+  - pip

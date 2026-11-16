@@ -30,10 +30,10 @@ from __future__ import annotations
 
 import re
 import shutil
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from chemsuite.core.jobs.lines import is_app_python
 from chemsuite.core.settings import Settings
 
 PYTHON_TOOL = "aizynthfinder_python"
@@ -172,14 +172,6 @@ def resolve_config(settings: Settings, text: str = "") -> Path | None:
         return None
     path = Path(raw).expanduser()
     return path if path.is_file() else None
-
-
-def is_app_python(python: str) -> bool:
-    """True when *python* is the interpreter running chemsuite itself."""
-    try:
-        return Path(python).resolve() == Path(sys.executable).resolve()
-    except OSError:
-        return False
 
 
 # -- what may run -------------------------------------------------------------------------------

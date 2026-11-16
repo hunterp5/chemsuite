@@ -294,8 +294,13 @@ other machine can pick it up. Update it at the end of a session that leaves work
   component/element (`prepare/ions.py`, one table with `energy.py`), turns rebuilt side chains
   clear, renames the neutral N-terminus state `N-neutral` (saved reviews migrate);
   `ligands.prepared_form`; `edit.insert_residue`; the Qt-free `chemsuite/simulate`
-  (`spec.py`, `build.py`, `result.py`; tests in `tests/simulate`). **M2 (the worker and its
-  runner) is next.** The P1 neutron marks hold after M1 (Asn 86.2, Gln 80.3, His 89.6,
+  (`spec.py`, `build.py`, `result.py`; tests in `tests/simulate`). **M2 is done** too (the
+  shared `core/jobs/lines.py` client, retro moved onto it, `simulate/worker.py`, `runner.py`,
+  `config.py`, the External Tools rows, `envs/openmm-*.yml`; see M2 in the plan).
+  **M3 (the minimisation result, protocol tuning, benchmark) is next.** To run the real-env
+  tests here: `$env:CHEMSUITE_OPENMM_PYTHON = "D:\chemsuite-envs\cs-sim-m0\python.exe"` then
+  `pytest -m openmm` (about 2 minutes). On the Mac, before the merge: `pytest tests/retro`
+  (its fake worker is a shell script, so it skips on Windows) and gate 1. The P1 neutron marks hold after M1 (Asn 86.2, Gln 80.3, His 89.6,
   tautomer 63.8%; Reduce 85.4/78.9/88.3/62.5).
   - **Open, found 2026-11-15, older than M1:** the P2 mark fails. PKAD-R's pickled tables were
     from before P3 (20 energy terms, now 26) and `pkad_review.py chemsuite` crashed on them, so

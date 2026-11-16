@@ -63,6 +63,7 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 markers = [
     "bench: performance benchmarks; run with `pytest -m bench`",
+    "openmm: needs an OpenMM environment named by CHEMSUITE_OPENMM_PYTHON; `pytest -m openmm`",
 ]
 qt_api = "pyside6"
 

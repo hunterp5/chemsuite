@@ -132,6 +132,10 @@ is usually better than an exemption.
 - **Every download goes through `core/download.py`**: HTTPS only, audited, refused when IT
   policy turns the network off, with an injectable opener so tests never touch the network.
   Files that can be fetched again (the CCD components) live in `ToolContext.cache_folder`.
-- **Heavy simulation runs in its own interpreter** (planned: OpenMM, openfe), driven as a
-  JSON-lines worker like `retro/runner.py`, so its pins never meet RDKit's and a native crash
-  never takes the app down.
+- **Programs that cannot share the app's interpreter run as JSON-lines workers in their own**
+  (AiZynthFinder, OpenMM; openfe later), so their pins never meet RDKit's and a native crash
+  never takes the app down. Every one is a `core/jobs/lines.LineWorker`: one client, with
+  events before a reply (progress, energies) and a cooperative stop, kept warm by
+  `WarmWorkers`. The script it runs is a string passed to `python -I -c`, so it counts towards
+  the ratchets like any other code (no `except Exception`, no `getattr`). The app never
+  imports OpenMM or OpenFF (`test_the_simulation_side_never_loads_the_engines_or_the_table`).

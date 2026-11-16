@@ -389,8 +389,9 @@ TIP3P by default, ff19SB + OPC offered; no in-app MMFF tier; the minimised coord
 model beside the prepared one; on by default when the worker is set; a native env with an
 optional WSL interpreter. M0 (the feasibility gates) passed on 2026-11-15
 ([simulate/m0-review.md](simulate/m0-review.md)); M1 (the Prepare fixes and
-`chemsuite/simulate`'s spec, build and result) done the same day; M2, the worker, is next (see
-HANDOFF).
+`chemsuite/simulate`'s spec, build and result) and M2 (the OpenMM worker, its runner and the
+shared JSON-lines client) done the same day; M3, the minimisation result and its benchmark, is
+next (see HANDOFF).
 
 ### 7.0e High priority: our own Uni-pKa (revised 2026-11-12)
 
