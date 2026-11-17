@@ -40,8 +40,8 @@ Each document has its own window. From top to bottom:
 
   | Menu | Holds |
   |---|---|
-  | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close |
-  | Edit | Undo, Copy and Paste, selecting rows, Delete Selection, Status Bar, Preferences |
+  | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close (clears the window to a new, empty document; with other windows open it closes this one) |
+  | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection), Status Bar, Preferences |
   | Tools | Utilities ▸ (Calculator, Random ▸ Random Numbers and Random Rows), Sketcher |
   | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
   | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
@@ -1013,7 +1013,7 @@ descriptors, conformers, clustering, maps and searches.
   The tools in the right-hand column have no meaningful result until the whole run is complete.
 - **Safety.**
   - Closing a document cancels its queued jobs and asks about running ones.
-  - Quitting (or closing the last document window) asks first when jobs you started are
+  - Closing the last document window (its ✕) asks first when jobs you started are
     running or queued, in any window, and says how many background tasks (pictures, views
     made ahead, structures being read) stop with them. Background work alone stops without
     asking.
@@ -2482,7 +2482,7 @@ You can change any of these in Preferences ▸ Keyboard.
 | Action | Shortcut |
 |---|---|
 | New / Open / Save / Save As | Ctrl+N / Ctrl+O / Ctrl+S / Ctrl+Shift+S |
-| Close window | Ctrl+F4 |
+| Close (clear the document) | Ctrl+F4 |
 | Undo / Redo | Ctrl+Z / Ctrl+Y |
 | Copy / Paste | Ctrl+C / Ctrl+V |
 | Search Rows | Ctrl+F |

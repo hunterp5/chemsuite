@@ -18,7 +18,7 @@
 the last one.
 
 - Closing a document window while others stay open asks only about that document's jobs.
-- Closing the last one (or Quit) asks about every job the user started, from any window, and
+- Closing the last one asks about every job the user started, from any window, and
   names the background tasks that stop with them. Background work alone stops without asking.
 - Once the last document window has closed, every other window (the Log, a Sketcher, tool
   windows) closes too and the app quits; ``main.run_app`` then stops whatever still runs.
@@ -38,8 +38,6 @@ class _State:
     #: Set by ``main.run_app`` only: closing the last document window quits the app. Tests
     #: open and close windows freely without quitting the test application.
     with_last_window = False
-    #: Quit has asked about every job once: the windows it closes do not ask again
-    asked = False
 
 
 state = _State()
@@ -54,8 +52,6 @@ def jobs_question(runner: JobRunner, owner: QObject, *, last: bool) -> str | Non
 
     *last*: no other document window is open, so closing it quits the app.
     """
-    if state.asked:
-        return None
     if not (last and state.with_last_window):
         jobs = [job for job in runner.jobs_of(owner) if not job.background]
         if not jobs:
@@ -90,21 +86,6 @@ def confirm(parent: QWidget, question: str) -> bool:
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
     )
     return answer == QMessageBox.StandardButton.Yes
-
-
-def confirm_quit(parent: QWidget, runner: JobRunner) -> bool:
-    """Quit: ask once about every running job; the windows then close without asking again."""
-    question = quit_question(runner)
-    if question and not confirm(parent, question):
-        return False
-    state.asked = True
-    return True
-
-
-def quit_finished() -> None:
-    """Quit has closed its windows, or one refused (its save prompt was cancelled): later
-    closes ask again."""
-    state.asked = False
 
 
 def window_closed(none_left: Callable[[], bool]) -> None:

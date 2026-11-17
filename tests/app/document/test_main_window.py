@@ -126,3 +126,39 @@ def test_files_dropped_on_an_empty_window_open_in_it(qtbot, window, tmp_path: Pa
     assert _drop(window, notes, smi, enter=True).isAccepted()
     assert _drop(window, notes, smi).isAccepted()
     qtbot.waitUntil(lambda: len(window.workspace.table) == 2, timeout=10_000)
+
+
+def test_close_clears_the_last_window_and_keeps_it_open(window, monkeypatch) -> None:
+    from PySide6.QtWidgets import QMessageBox
+
+    from chemsuite.app.document import main_window
+
+    assert main_window._windows == [window]
+    window.workspace.table.set_cells("ID", [1], ["Z"])
+    answers = [QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Discard]
+    monkeypatch.setattr(QMessageBox, "question", lambda *_a, **_k: answers.pop(0))
+    before = window.workspace
+    window._commands["file.close"].trigger()
+    assert window.workspace is before  # Cancel: nothing changed
+    window._commands["file.close"].trigger()
+    assert window.workspace is not before and window.workspace.is_empty
+    assert window.workspace.path is None and not window.isWindowModified()
+    assert main_window._windows == [window]
+
+
+def test_close_closes_a_window_when_another_is_open(window, qtbot) -> None:
+    from chemsuite.app.document import main_window
+
+    second = window.new_window()
+    qtbot.addWidget(second)
+    second._commands["file.close"].trigger()
+    assert main_window._windows == [window]
+
+
+def test_menus_have_no_quit_and_delete_selection_sits_with_the_selection(window) -> None:
+    assert "file.quit" not in window._commands
+    edit = next(a.menu() for a in window.menuBar().actions() if a.text() == "&Edit")
+    names = [a.text() for a in edit.actions()]
+    clear = names.index("Clear Selection")
+    assert names[clear + 1] == "&Delete Selection"
+    assert names[clear - 2 : clear] == ["Select &All", "Invert Selection"]

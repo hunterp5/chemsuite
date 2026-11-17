@@ -34,7 +34,6 @@ import shiboken6
 from PySide6.QtCore import QEvent, QModelIndex, QPoint, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
-    QApplication,
     QDialog,
     QDockWidget,
     QFileDialog,
@@ -576,10 +575,9 @@ class MainWindow(QMainWindow):
             A("file.export_selected", "&Selected Rows…", lambda: self.export_dialog(True))
         )
         file_menu.addSeparator()
-        file_menu.addAction(A("file.close", "&Close", self.close, QKeySequence.StandardKey.Close))
-        quit_action = A("file.quit", "&Quit", self._quit, QKeySequence.StandardKey.Quit)
-        quit_action.setMenuRole(QAction.MenuRole.QuitRole)
-        file_menu.addAction(quit_action)
+        file_menu.addAction(
+            A("file.close", "&Close", self.close_document, QKeySequence.StandardKey.Close)
+        )
 
         self._building = "Edit"
         edit = bar.addMenu("&Edit")
@@ -621,7 +619,6 @@ class MainWindow(QMainWindow):
                 "Ctrl+Shift+A",
             )
         )
-        edit.addSeparator()
         edit.addAction(
             A("edit.delete_rows", "&Delete Selection", self.delete_rows, "Ctrl+Backspace")
         )
@@ -1543,11 +1540,22 @@ class MainWindow(QMainWindow):
         self._parse_job = job
 
     # -- closing -----------------------------------------------------------------------------
-    def closeEvent(self, event: QCloseEvent) -> None:
-        question = quitting.jobs_question(self._runner, self, last=_windows == [self])
-        if question and not quitting.confirm(self, question):
-            event.ignore()
+    def close_document(self) -> None:
+        """File ▸ Close: another document window just closes; the last one is cleared to the
+        fresh, empty document the app starts with, and stays open."""
+        if _windows != [self]:
+            self.close()
             return
+        if not self._may_close(last=False):  # this document's jobs only: nothing quits
+            return
+        self._stop_work()
+        self._install(Workspace(Table()))
+
+    def _may_close(self, *, last: bool) -> bool:
+        """Ask about running jobs, then whether to save: False when the user cancels."""
+        question = quitting.jobs_question(self._runner, self, last=last)
+        if question and not quitting.confirm(self, question):
+            return False
         if self.workspace.is_modified and not self.workspace.is_empty:
             answer = QMessageBox.question(
                 self,
@@ -1560,11 +1568,19 @@ class MainWindow(QMainWindow):
             if answer == QMessageBox.StandardButton.Cancel or (
                 answer == QMessageBox.StandardButton.Save and not self.save()
             ):
-                event.ignore()
-                return
+                return False
+        return True
+
+    def _stop_work(self) -> None:
         self._runner.cancel_all(owner=self)
         if self._parse_job is not None:  # not owned (it never blocks closing), so stop it here
             self._parse_job.cancel()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if not self._may_close(last=_windows == [self]):
+            event.ignore()
+            return
+        self._stop_work()
         self._teardown()
         if self in _windows:  # closing twice must not disconnect twice
             _windows.remove(self)
@@ -1572,11 +1588,3 @@ class MainWindow(QMainWindow):
                 settings_hub().changed.disconnect(self._apply_settings)
             quitting.window_closed(lambda: not _windows)
         event.accept()
-
-    def _quit(self) -> None:
-        if not quitting.confirm_quit(self, self._runner):
-            return
-        closed = all(window.close() for window in list(_windows))  # stops at a refusal
-        quitting.quit_finished()
-        if closed:
-            QApplication.quit()

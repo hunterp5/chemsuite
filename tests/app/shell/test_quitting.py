@@ -30,7 +30,6 @@ from chemsuite.app.shell.jobs import JobRunner
 @pytest.fixture
 def runner(qapp, monkeypatch):
     monkeypatch.setattr(quitting.state, "with_last_window", True)
-    monkeypatch.setattr(quitting.state, "asked", False)
     release = threading.Event()
     r = JobRunner(threads=8)
     r.release = release
@@ -76,17 +75,6 @@ def test_background_work_alone_quits_without_asking(runner) -> None:
     submit(runner, background=True)
     submit(runner, QObject(), background=True)
     assert quitting.jobs_question(runner, QObject(), last=True) is None
-
-
-def test_quit_asks_once_for_every_window(runner, monkeypatch) -> None:
-    submit(runner)
-    asked: list[str] = []
-    monkeypatch.setattr(quitting, "confirm", lambda parent, q: asked.append(q) or True)
-    assert quitting.confirm_quit(None, runner)
-    assert len(asked) == 1
-    assert quitting.jobs_question(runner, QObject(), last=True) is None  # not again per window
-    quitting.quit_finished()  # a save prompt was cancelled: the next close asks again
-    assert quitting.jobs_question(runner, QObject(), last=True)
 
 
 def test_without_quit_on_last_window_closing_the_last_asks_as_before(runner, monkeypatch) -> None:
