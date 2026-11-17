@@ -280,6 +280,35 @@ def test_3d_keeps_the_reference_each_row_fits_best() -> None:
     assert (values[:2] > 0.5).all()
 
 
+def test_3d_keeps_each_row_s_pose_on_its_nearest_reference() -> None:
+    from chemsuite.core.mols import mol_from_blob
+    from chemsuite.superpose.model import reference_id_of
+
+    cells = ["CC(=O)Nc1ccc(O)cc1", "C1C2CC3CC1CC(C2)C3", None]  # paracetamol, adamantane
+    refs = [_in_3d(cells[0], "paracetamol"), _in_3d(cells[1], "adamantane")]
+    method = sm.Method(kind=sm.SHAPE, conformers=3)
+    search = sm.Search((sm.Method(), method), prefilter=0)
+    assert score_cells(cells, refs, search).poses is None  # only when asked for
+    scores = score_cells(cells, refs, search, pose_ids=["ref-a", "ref-b"])
+    assert scores.poses[2] is None  # a blank row has no pose
+    for row in (0, 1):
+        blob, smiles, index = scores.poses[row]
+        mol = mol_from_blob(blob)
+        assert mol.GetNumConformers() == 1 and smiles == Chem.CanonSmiles(cells[row])
+        assert index == row  # each fits its own shape best, as the 3D score says
+        assert reference_id_of(mol) == ["ref-a", "ref-b"][row]
+    with pytest.raises(ValueError, match="one pose id per reference"):
+        score_cells(cells, refs, search, pose_ids=["ref-a"])
+
+
+def test_3d_poses_follow_the_prefilter() -> None:
+    cells = ["CCCCCCCCCC", "CC(=O)Nc1ccc(O)cc1", "CCO"]
+    reference = _in_3d(cells[1], "paracetamol")
+    search = sm.Search((sm.Method(), sm.Method(kind=sm.SHAPE, conformers=3)), prefilter=1)
+    scores = score_cells(cells, [reference], search, pose_ids=["ref"])
+    assert [p is not None for p in scores.poses] == [False, True, False]
+
+
 def test_3d_fuses_over_the_references_as_asked() -> None:
     cells = ["CC(=O)Nc1ccc(O)cc1", "C1C2CC3CC1CC(C2)C3"]  # paracetamol, adamantane
     refs = [_in_3d(cells[0], "paracetamol"), _in_3d(cells[1], "adamantane")]

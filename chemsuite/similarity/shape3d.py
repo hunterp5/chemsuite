@@ -27,14 +27,14 @@ from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import Executor
 
 import numpy as np
-from rdkit import rdBase
+from rdkit import Chem, rdBase
 
 from chemsuite.analysis.fingerprints import Cell
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
-from chemsuite.core.mols import mol_from_blob
+from chemsuite.core.mols import mol_from_blob, smiles_of
 from chemsuite.superpose import model as sp
-from chemsuite.superpose.run import fits_over_references, mol_of_cell, prepare_reference
+from chemsuite.superpose.run import mol_of_cell, placed, prepare_reference, probe_fits, probe_of
 
 from .fusion import fuse
 from .model import COLOR, FIELD, SHAPE, Method, Reference
@@ -56,37 +56,51 @@ def settings_for(kind: str, conformers: int, color_weight: float, field_weight: 
     )
 
 
+#: a row's aligned pose: its structure (naming the reference it was fitted onto), the SMILES it
+#: shows, and which reference that is
+Pose = tuple[bytes, str, int]
+
+
 def score_chunk(
-    args: tuple[str, object, Sequence[bytes], Sequence[int], Sequence[Cell]],
-) -> list[tuple[float, ...]]:
-    """Per cell, its score against each reference (a picklable worker entry point).
+    args: tuple[str, object, Sequence[bytes], Sequence[int], Sequence[Cell], Sequence[str] | None],
+) -> list[tuple[tuple[float, ...], Pose | None]]:
+    """Per cell, its score against each reference and, if poses are asked for, its pose (a
+    picklable worker entry point).
 
     *args* is ``(method, superpose settings, the prepared references as blobs, the reference
-    each cell is (-1: none), cells)``. NaN for a blank or invalid cell, for a cell that will
-    not embed in 3D, for the cell's own reference, and where a reference gives no fit.
+    each cell is (-1: none), cells, pose ids)``. A score is NaN for a blank or invalid cell,
+    for a cell that will not embed in 3D, for the cell's own reference, and where a reference
+    gives no fit. With *pose ids* (one per reference: what each pose names its reference by),
+    the pose is the cell's best-scoring conformer moved onto the reference it scores best
+    against, which is the one the fusion names nearest; None where there is no fit.
     """
-    kind, settings, reference_blobs, own, cells = args
+    kind, settings, reference_blobs, own, cells, pose_ids = args
     name = SCORES[kind]
     blank = tuple(NAN for _ in reference_blobs)
-    out: list[tuple[float, ...]] = []
+    out: list[tuple[tuple[float, ...], Pose | None]] = []
     with rdBase.BlockLogs():
         references = [mol_from_blob(blob) for blob in reference_blobs]
         for cell, skip in zip(cells, own, strict=True):
             mol = mol_of_cell(cell)
-            if mol is None:
-                out.append(blank)
+            probe = None if mol is None else probe_of(mol, settings)
+            if probe is None:
+                out.append((blank, None))
                 continue
             # a reference the cell itself is, or one that would not load, is not compared with
             wanted = [i for i, r in enumerate(references) if i != skip and r is not None]
-            fits = fits_over_references(mol, [references[i] for i in wanted], settings)
-            if fits is None:
-                out.append(blank)
-                continue
+            fits = probe_fits(probe, [references[i] for i in wanted], settings)
             row = list(blank)
             for index, fit in zip(wanted, fits, strict=True):
                 if fit is not None:
                     row[index] = float(fit.scores[name])
-            out.append(tuple(row))
+            pose = None
+            if pose_ids is not None and any(np.isfinite(row)):
+                index = int(np.nanargmax(row))
+                fit = fits[wanted.index(index)]
+                moved, _fit = placed(probe, fit)
+                display = smiles_of(Chem.RemoveHs(moved))
+                pose = (sp.blob_with_reference(moved, pose_ids[index]), display, index)
+            out.append((tuple(row), pose))
     return out
 
 
@@ -103,11 +117,17 @@ CHUNK_ROWS = 2
 
 
 def _chunks(
-    kind: str, settings, blobs: list[bytes], own: np.ndarray, cells: Sequence[Cell], size: int
+    kind: str,
+    settings,
+    blobs: list[bytes],
+    own: np.ndarray,
+    cells: Sequence[Cell],
+    size: int,
+    pose_ids: Sequence[str] | None,
 ) -> Iterator[tuple]:
     for start in range(0, len(cells), size):
         stop = start + size
-        yield kind, settings, blobs, own[start:stop].tolist(), list(cells[start:stop])
+        yield kind, settings, blobs, own[start:stop].tolist(), list(cells[start:stop]), pose_ids
 
 
 def score(
@@ -117,20 +137,23 @@ def score(
     fuse_how: str,
     own: np.ndarray,
     *,
+    pose_ids: Sequence[str] | None = None,
     executor: Executor | None = None,
     progress: Callable[[int, int], None] | None = None,
     cancel: CancelToken | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """``(score, nearest reference)`` per cell by *method* (a 3D method).
+) -> tuple[np.ndarray, np.ndarray, list[Pose | None] | None]:
+    """``(score, nearest reference, poses)`` per cell by *method* (a 3D method).
 
     *own* gives, per cell, the reference that is that cell (-1: none), so it is not compared
-    with itself. On cancel, raises ``Cancelled`` whose partial is that pair for the cells
-    finished so far, or None if none were.
+    with itself. With *pose_ids* (one per reference, see :func:`score_chunk`) each cell's
+    aligned pose comes back too; without them, *poses* is None. On cancel, raises
+    ``Cancelled`` whose partial is that triple for the cells finished so far, or None if none
+    were.
     """
     settings = settings_for(method.kind, method.conformers, method.color_weight,
                             method.field_weight)  # fmt: skip
     blobs = prepared_references([r.mol for r in references])
-    rows: list[tuple[float, ...]] = []
+    rows: list[tuple[tuple[float, ...], Pose | None]] = []
     done = [0]
 
     def finished(part: list) -> None:
@@ -138,11 +161,12 @@ def score(
         if progress is not None:
             progress(done[0], len(cells))
 
-    def fused(found: list[tuple[float, ...]]) -> tuple[np.ndarray, np.ndarray]:
-        matrix = np.array(found, dtype=np.float64).reshape(len(found), len(references))
-        return fuse(matrix, fuse_how)
+    def fused(found: list) -> tuple[np.ndarray, np.ndarray, list[Pose | None] | None]:
+        matrix = np.array([r[0] for r in found], dtype=np.float64)
+        values, nearest = fuse(matrix.reshape(len(found), len(references)), fuse_how)
+        return values, nearest, None if pose_ids is None else [r[1] for r in found]
 
-    chunks = _chunks(method.kind, settings, blobs, own, cells, CHUNK_ROWS)
+    chunks = _chunks(method.kind, settings, blobs, own, cells, CHUNK_ROWS, pose_ids)
     try:
         for part in ordered_map(score_chunk, chunks, executor, cancel=cancel, finished=finished):
             rows.extend(part)

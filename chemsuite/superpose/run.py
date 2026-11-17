@@ -120,14 +120,20 @@ def superpose_one(mol: Chem.Mol, reference: Chem.Mol, settings: Settings) -> tup
     found = best(fits_of(probe, reference, settings), settings.method)
     if found is None:
         raise ValueError("no fit")
+    return placed(probe, found)
+
+
+def placed(probe: Chem.Mol, fit: Fit) -> tuple[Chem.Mol, Fit]:
+    """*probe*'s conformer that *fit* names, alone and moved into place, and the fit renumbered
+    (``conf_id`` the conformer's position among the probe's: 0 is the first)."""
     out = Chem.Mol(probe)
-    keep = Chem.Conformer(probe.GetConformer(found.conf_id))
+    keep = Chem.Conformer(probe.GetConformer(fit.conf_id))
     out.RemoveAllConformers()
     keep.SetId(0)
-    apply_transform(keep, found.transform)
+    apply_transform(keep, fit.transform)
     out.AddConformer(keep, assignId=False)
-    conf_index = [c.GetId() for c in probe.GetConformers()].index(found.conf_id)
-    return out, Fit(conf_index, found.transform, found.scores)
+    conf_index = [c.GetId() for c in probe.GetConformers()].index(fit.conf_id)
+    return out, Fit(conf_index, fit.transform, fit.scores)
 
 
 def fits_over_references(
@@ -142,6 +148,13 @@ def fits_over_references(
     probe = probe_of(mol, settings)
     if probe is None:
         return None
+    return probe_fits(probe, references, settings)
+
+
+def probe_fits(
+    probe: Chem.Mol, references: Sequence[Chem.Mol], settings: Settings
+) -> list[Fit | None]:
+    """*probe*'s best fit onto each of *references*, in their order (see :func:`probe_of`)."""
     out: list[Fit | None] = []
     for reference in references:
         try:

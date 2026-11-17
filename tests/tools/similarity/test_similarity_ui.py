@@ -25,6 +25,14 @@ pytestmark = gui
 SMILES = ["CCO", "CCCO", "CCCCO", "c1ccccc1", "Cc1ccccc1", "CCc1ccccc1", "c1ccncc1", "C1CCCCC1", ""]
 
 
+@pytest.fixture(autouse=True)
+def fresh_settings(monkeypatch):
+    """Similarity Search remembers the last run's settings; each test starts without them."""
+    from chemsuite.tools.similarity import search
+
+    monkeypatch.setattr(search, "_last", None)
+
+
 @pytest.fixture
 def chem(window):
     from chemsuite.app.document.main_window import Workspace
@@ -52,44 +60,144 @@ def _cells(table, name):
     return [table.cell(name, int(o)) for o in table.oids]
 
 
+def _run(dialog, qtbot):
+    assert dialog.problem() == "", dialog.problem()
+    dialog.accept()
+    qtbot.waitUntil(lambda: not dialog.job.running, timeout=30_000)
+
+
 def test_similarity_to_a_structure(chem, qtbot) -> None:
     table = chem.workspace.table
     chem.view.setCurrentIndex(chem.workspace.model.index(1, 0))
     dialog = chem.open_tool("similarity")
-    assert dialog.query.text() == "CCCO"  # the current row
+    assert [e.name for e in dialog.refs.entries()] == ["C1"]  # the current row
+    assert dialog.primary.text() == "Compare 9 Rows"
+    assert not dialog.refs.section.is_row_visible(dialog.refs.fuse)  # one reference
     dialog.select.setChecked(True)
     dialog.threshold.setValue(0.99)
-    job = dialog.calculate()
-    qtbot.waitUntil(lambda: not job.running, timeout=20_000)
-    values = _cells(table, "Similarity")
-    assert values[1] == "1.000" and values[-1] == ""
+    _run(dialog, qtbot)
+    values = _cells(table, "ECFP4 Tanimoto")
+    assert values[1] == "1.000" and values[-1] == ""  # the row itself scores as itself
+    assert "Nearest Reference" not in table and "Consensus" not in table
     assert chem.workspace.selection.as_array().tolist() == [int(table.oids[1])]
-    assert table.sort_keys[0] == ("Similarity", False)
-    assert dialog.primary.text() == "Compare 9 Rows"
-    dialog.query.setText("not smiles")
-    assert not dialog.primary.isEnabled() and dialog.status.text()
+    assert table.sort_keys[0] == ("ECFP4 Tanimoto", False)
+    assert table.history.undo_label == "Similarity search"
+
+
+def test_references_are_added_typed_and_removed(chem) -> None:
+    dialog = chem.open_tool("similarity")
+    refs = dialog.refs
+    assert not refs.entries() and "Add a reference" in dialog.status.text()
+    refs.smiles.setText("not smiles")
+    assert not refs.add_button.isEnabled()
+    refs.smiles.setText("c1ccncc1")
+    refs.add_button.click()
+    refs.smiles.setText("CCO")
+    refs.smiles.returnPressed.emit()
+    assert [e.name for e in refs.entries()] == ["c1ccncc1", "CCO"] and not refs.smiles.text()
+    assert refs.section.is_row_visible(refs.fuse)  # several: Best or Mean
+    refs.list.setCurrentRow(0)
+    refs.remove.click()
+    assert [e.name for e in refs.entries()] == ["CCO"] and dialog.primary.isEnabled()
     dialog.reject()
 
 
-def test_similarity_to_the_selection(chem, qtbot) -> None:
+def test_similarity_to_the_selected_rows(chem, qtbot) -> None:
     table = chem.workspace.table
     chem.workspace.selection.set(table.oids[[0, 3]].tolist(), "test")
     dialog = chem.open_tool("similarity")
-    assert dialog.reference.buttons["selection"].text() == "Selected Rows (2)"
-    dialog.to_selection.setChecked(True)
-    assert not dialog._reference.is_row_visible(dialog.query_field)
-    assert dialog.output.text() == "Max Similarity to Selection"
+    assert dialog.refs.source.buttons["selection"].text() == "Selected Rows (2)"
+    dialog.refs.source.set_value("selection")
+    assert not dialog.refs.section.is_row_visible(dialog.refs.list)
     dialog.sort.setChecked(False)
-    job = dialog.calculate()
-    qtbot.waitUntil(lambda: not job.running, timeout=20_000)
-    nearest = _cells(table, "Nearest Selected")
+    _run(dialog, qtbot)
+    nearest = _cells(table, "Nearest Reference")
     assert nearest[1] == "C0" and nearest[4] == "C3"
-    assert nearest[0] == "C3"  # a selected row is not its own nearest neighbour
-    # The second run reuses cached fingerprints.
+    assert nearest[0] == "C3"  # a selected row is not its own nearest neighbor
+    assert _cells(table, "ECFP4 Tanimoto")[0] != "1.000"
+    # the fingerprints are cached for the next search
     from chemsuite.analysis.fingerprints import cache_for
 
     assert cache_for(table).get("SMILES", "morgan2", table.oids) is not None
-    dialog.reject()
+    chem.workspace.selection.set([], "test")
+    assert "No rows are selected" in dialog.refs.problem()
+
+
+def test_several_methods_give_a_consensus(chem, qtbot) -> None:
+    table = chem.workspace.table
+    chem.view.setCurrentIndex(chem.workspace.model.index(4, 0))  # toluene
+    dialog = chem.open_tool("similarity")
+    methods = dialog.methods
+    assert not methods.section.is_row_visible(methods.consensus)
+    methods.use_pharmacophore.setChecked(True)
+    methods.use_substructure.setChecked(True)
+    methods.substructure.setCurrentIndex(methods.substructure.findData("scaffold"))
+    assert methods.section.is_row_visible(methods.consensus)
+    _run(dialog, qtbot)
+    for name in ("ECFP4 Tanimoto", "Pharmacophore 2D Tanimoto", "Scaffold Match", "Consensus"):
+        assert name in table
+    assert _cells(table, "Scaffold Match")[3] == "1.000"  # benzene: the same scaffold
+    assert table.sort_keys[0] == ("Consensus", False)
+    # the next dialog remembers the methods
+    again = chem.open_tool("similarity")
+    assert again.methods.use_substructure.isChecked() and again.methods.count() == 3
+    again.reject()
+
+
+def test_3d_keeps_the_aligned_poses_with_their_reference(window, qtbot) -> None:
+    from chemsuite.superpose.model import REFERENCE_KIND, reference_id_of
+    from tests.tools.superpose.test_superpose_ui import _install
+
+    chem = _install(window)
+    table = chem.workspace.table
+    chem.view.setCurrentIndex(chem.workspace.model.index(0, 0))
+    dialog = chem.open_tool("similarity")
+    assert not dialog.output.is_row_visible(dialog.poses)
+    dialog.methods.use_3d.setChecked(True)
+    assert "no 3D coordinates" in dialog.status.text()  # the SMILES column is flat
+    dialog.structure.setCurrentText("Mol 3D")
+    dialog.refs.list.setCurrentRow(0)
+    dialog.refs.remove.click()
+    dialog.refs.add_current_row()
+    assert dialog.output.is_row_visible(dialog.poses)
+    dialog.poses.setChecked(True)
+    _run(dialog, qtbot)
+    assert "Shape Tanimoto" in table and "Mol 3D superposed" in table
+    assert table.history.undo_label == "Similarity search"
+    poses = table.column("Mol 3D superposed")
+    assert poses.mol(1) is not None and poses.mol(1).GetNumConformers() == 1
+    found = {reference_id_of(poses.mol(i)) for i in range(len(table)) if poses.mol(i)}
+    assert len(found) == 1  # one reference, kept once
+    asset = table.assets[found.pop()]
+    assert asset.kind == REFERENCE_KIND and asset.name == "A"
+    assert asset.meta["source"] == "row" and asset.meta["method"] == "shape"
+    table.undo()  # the asset goes with the column
+    assert "Mol 3D superposed" not in table and not table.assets
+
+
+def test_screening_a_file_opens_the_hits(chem, qtbot, tmp_path) -> None:
+    path = tmp_path / "library.smi"
+    path.write_text("CCO one\nCCCO two\nc1ccccc1 three\nCCCCO four\n", encoding="utf-8")
+    opened = []
+    chem.open_table = lambda table, message="": opened.append((table, message))
+    dialog = chem.open_tool("similarity")
+    dialog.where.set_value("file")
+    assert dialog.status.text() == "Choose a library file to screen."
+    dialog.path.setText(str(tmp_path / "missing.smi"))
+    assert dialog.status.text() == "The file was not found."
+    dialog.path.setText(str(path))
+    dialog.refs.smiles.setText("CCO")
+    dialog.refs.add_typed()
+    dialog.top.setValue(2)
+    assert dialog.primary.text() == "Screen File"
+    _run(dialog, qtbot)
+    qtbot.waitUntil(lambda: bool(opened), timeout=10_000)
+    hits, message = opened[0]
+    assert len(hits) == 2 and "ECFP4 Tanimoto" in hits.column_names
+    assert message == "2 hits from 4 compounds of library.smi"
+    names = [hits.cell(n, int(o)) for o in hits.oids for n in hits.column_names
+             if hits.kind(n) != "structure" and n != "ECFP4 Tanimoto"]  # fmt: skip
+    assert names[0] == "one"  # itself first
 
 
 def test_diverse_subset(chem, qtbot) -> None:

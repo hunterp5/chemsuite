@@ -128,7 +128,6 @@ COLUMN_INTERNALS_IN_TOOLS = {
     "chemsuite/tools/statistics/panel.py": 4,
     "chemsuite/tools/medchem/dialog.py": 3,
     "chemsuite/tools/sar/matrix_panel.py": 3,
-    "chemsuite/tools/similarity/search.py": 3,
 }
 #: Tools changing the table other than through ToolContext.apply_results.
 DIRECT_WRITES_IN_TOOLS = {

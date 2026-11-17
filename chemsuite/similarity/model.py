@@ -162,9 +162,10 @@ def check_references(references: Sequence[Reference], search: Search) -> None:
     flat = [r.name or "a reference" for r in references if not has_3d(r.mol)]
     if flat:
         names = ", ".join(flat[:3]) + ("…" if len(flat) > 3 else "")
+        one = len(flat) == 1
         raise ValueError(
-            f"{names} {'has' if len(flat) == 1 else 'have'} no 3D coordinates, which the 3D "
-            "methods need: generate conformers for it first, or use a 3D structure"
+            f"{names} {'has' if one else 'have'} no 3D coordinates, which the 3D methods need: "
+            f"generate conformers for {'it' if one else 'them'} first, or use a 3D structure"
         )
 
 
@@ -172,12 +173,15 @@ def check_references(references: Sequence[Reference], search: Search) -> None:
 class Scores:
     """Results row for row: each method's score (NaN: not scored), the index of each row's
     nearest reference by the primary method (-1: none), the consensus when there are several
-    methods, and the fingerprints computed on the way (for a cache)."""
+    methods, the fingerprints computed on the way (for a cache), and, when they were asked for,
+    the aligned poses of the first 3D method: per row ``(structure, SMILES, reference index)``
+    or None (see :func:`chemsuite.similarity.shape3d.score_chunk`)."""
 
     columns: dict[str, np.ndarray]
     nearest: np.ndarray
     consensus: np.ndarray | None = None
     fingerprints: dict[str, Fingerprints] = field(default_factory=dict)
+    poses: list[tuple[bytes, str, int] | None] | None = None
 
     def __len__(self) -> int:
         return len(self.nearest)
@@ -186,4 +190,5 @@ class Scores:
         """The first *rows* rows."""
         consensus = None if self.consensus is None else self.consensus[:rows]
         columns = {name: values[:rows] for name, values in self.columns.items()}
-        return Scores(columns, self.nearest[:rows], consensus, self.fingerprints)
+        poses = None if self.poses is None else self.poses[:rows]
+        return Scores(columns, self.nearest[:rows], consensus, self.fingerprints, poses)

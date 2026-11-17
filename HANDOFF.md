@@ -319,6 +319,13 @@ other machine can pick it up. Update it at the end of a session that leaves work
     takes the converter from the field.
   - **Still to do:** the by-hand run in the app (prepare a reagent column, save it, build
     amides from a drawn core with it). Not yet tried outside the tests.
+- **Unified Similarity Search** (done 2026-11-17, all five phases of `docs/SIMILARITY_PLAN.md`):
+  the engine is `chemsuite/similarity`, the dialog `tools/similarity/search.py` with
+  `references.py` and `methods.py`; Superpose's pose writing is shared in
+  `tools/superpose/poses.py`. **Still to do:** the by-hand run in the app (plan §Verification:
+  ECFP4 + 3D Shape against two references with Keep Aligned Poses; an SDF from `samples/`
+  screened with 3D on; cancel midway). Known gap: a file screen's second stage (every method
+  over the kept hits) does not stop on cancel, so a cancel with 3D on still runs 3D on them.
 
 ## Next
 

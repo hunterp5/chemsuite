@@ -44,7 +44,8 @@ TOOLS = (
         open=_dialog("search"),
         requires=("rdkit",),
         needs_structures=True,
-        tip="Similarity of every row to a structure, or to its nearest selected compound.",
+        tip="Score rows, or screen a library file, against one or more structures by "
+        "fingerprint, pharmacophore, substructure or 3D shape.",
     ),
     Tool(
         id="diverse_subset",

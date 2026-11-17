@@ -24,6 +24,9 @@ when it has none, from a plain ECFP4 Tanimoto computed for the purpose.
 Cancelling keeps what is finished, on the rows it belongs to: a cheap method that finished part
 way gives its first rows, and an expensive one gives the prefiltered rows it reached, each
 score left where its row is.
+
+Asked for (*pose_ids*), the first 3D method also keeps each row's aligned pose, so a table can
+show every row fitted onto the reference it is most like.
 """
 
 from __future__ import annotations
@@ -74,6 +77,7 @@ def score_cells(
     search: Search,
     *,
     fingerprints: Mapping[str, Fingerprints] | None = None,
+    pose_ids: Sequence[str] | None = None,
     executor: Executor | None = None,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
@@ -82,30 +86,41 @@ def score_cells(
 
     *fingerprints* holds fingerprints of *cells* already at hand (by kind, row for row); the
     others are computed (with *executor* when given) and returned in ``Scores.fingerprints``.
+    With *pose_ids* (one per reference: the id each pose names its reference by), the first 3D
+    method's aligned poses come back in ``Scores.poses``.
 
     If *cancel* is set, raises :class:`Cancelled` whose ``partial`` is the :class:`Scores` so
     far, or None if there are none: every row when only an expensive method was cut short (its
     column blank where it did not reach), else the rows the cheap methods all finished.
     """
     check_references(references, search)
+    if pose_ids is not None and len(pose_ids) != len(references):
+        raise ValueError("give one pose id per reference")
     known = dict(fingerprints or {})
     columns: dict[str, np.ndarray] = {}
     nearest: dict[str, np.ndarray] = {}
+    poses: list = []  # the posing method's poses, once it has run
+    posing = next((m for m in search.methods if m.kind in THREE_D), None)
     order = sorted(range(len(search.methods)), key=lambda i: search.methods[i].expensive)
     for stage, index in enumerate(order):
         method = search.methods[index]
         report = _stage(progress, stage, len(order))
+        ids = pose_ids if method is posing else None
         try:
-            values, which = _score(method, cells, references, search, known, executor,
-                                   report, cancel)  # fmt: skip
+            values, which, found = _score(method, cells, references, search, known, ids,
+                                          executor, report, cancel)  # fmt: skip
         except Cancelled as stop:
             if stop.partial is not None:
-                columns[method.column], nearest[method.column] = stop.partial
-            raise Cancelled(_finish(search, columns, nearest, known)
+                columns[method.column], nearest[method.column], found = stop.partial
+                if found is not None:
+                    poses.append(found)
+            raise Cancelled(_finish(search, columns, nearest, known, poses)
                             if columns else None) from None  # fmt: skip
         columns[method.column] = values
         nearest[method.column] = which
-    return _finish(search, columns, nearest, known)
+        if found is not None:
+            poses.append(found)
+    return _finish(search, columns, nearest, known, poses)
 
 
 def _finish(
@@ -113,6 +128,7 @@ def _finish(
     columns: dict[str, np.ndarray],
     nearest: dict[str, np.ndarray],
     known: dict[str, Fingerprints],
+    poses: list,
 ) -> Scores:
     """The scores so far, in the order the methods were chosen.
 
@@ -134,7 +150,8 @@ def _finish(
                              search.consensus)  # fmt: skip
         scored = np.column_stack([np.isfinite(out[m.column]) for m in search.methods]).all(axis=1)
         combined = np.where(scored, combined, np.nan)  # every method must have scored the row
-    return Scores(out, which, combined, known)
+    kept = poses[0][:rows] if poses else None
+    return Scores(out, which, combined, known, kept)
 
 
 def _prefilter(
@@ -163,15 +180,21 @@ def _prefilter(
 
 
 def _spread(
-    found: tuple[np.ndarray, np.ndarray], rows: np.ndarray, total: int
-) -> tuple[np.ndarray, np.ndarray]:
-    """Scores for the prefiltered *rows* put back where those rows are; the rest stay blank."""
-    score, nearest = found
+    found: tuple, rows: np.ndarray, total: int
+) -> tuple[np.ndarray, np.ndarray, list | None]:
+    """Results for the prefiltered *rows* (score, nearest and, for a 3D method, poses) put
+    back where those rows are; the rest stay blank."""
+    score, nearest, poses = found
     out = np.full(total, np.nan)
     which = np.full(total, -1, dtype=np.int64)
     out[rows[: len(score)]] = score
     which[rows[: len(nearest)]] = nearest
-    return out, which
+    placed = None
+    if poses is not None:
+        placed = [None] * total
+        for row, pose in zip(rows.tolist(), poses, strict=False):
+            placed[row] = pose
+    return out, which, placed
 
 
 def _score(
@@ -180,10 +203,13 @@ def _score(
     references: Sequence[Reference],
     search: Search,
     known: dict[str, Fingerprints],
+    pose_ids: Sequence[str] | None,
     executor: Executor | None,
     progress: Progress | None,
     cancel: CancelToken | None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, list | None]:
+    """``(score, nearest, poses)`` per cell by *method*: poses only from a 3D method given
+    *pose_ids*, else None. A ``Cancelled`` carries the same triple for what was finished."""
     if method.kind in SUBSTRUCTURE or method.kind in THREE_D:
         rows = None
         if method.expensive:
@@ -197,18 +223,21 @@ def _score(
         try:
             if method.kind in THREE_D:
                 found = shape3d.score(chosen, references, method, search.fuse, mine,
-                                      executor=executor, progress=progress,
+                                      pose_ids=pose_ids, executor=executor, progress=progress,
                                       cancel=cancel)  # fmt: skip
             else:
-                found = substructure.score(chosen, references, method, search.fuse, mine,
-                                           executor=executor, progress=progress,
-                                           cancel=cancel)  # fmt: skip
+                found = (*substructure.score(chosen, references, method, search.fuse, mine,
+                                             executor=executor, progress=progress,
+                                             cancel=cancel), None)  # fmt: skip
         except Cancelled as stop:
-            if stop.partial is None or not method.expensive:
-                raise  # a cheap method's partial is its first rows, as the cheap methods' are
+            partial = stop.partial
+            if partial is not None and len(partial) == 2:
+                partial = (*partial, None)
+            if partial is None or not method.expensive:
+                raise Cancelled(partial) from None  # a cheap method's: its first rows
             # an expensive method's column is blank where it did not reach, whole rows kept
             where = rows if rows is not None else np.arange(len(cells))
-            raise Cancelled(_spread(stop.partial, where, len(cells))) from None
+            raise Cancelled(_spread(partial, where, len(cells))) from None
         return found if rows is None else _spread(found, rows, len(cells))
     if method.kind != FINGERPRINT:
         raise ValueError(f"{method.column} is not available yet")
@@ -216,5 +245,9 @@ def _score(
     if fps is None:
         fps = compute_fingerprints(cells, method.fingerprint, executor=executor, cancel=cancel)
         known[method.fingerprint] = fps
-    return fingerprint.score(fps, references, method, search.fuse, progress=progress,
-                             cancel=cancel)  # fmt: skip
+    try:
+        values, which = fingerprint.score(fps, references, method, search.fuse,
+                                          progress=progress, cancel=cancel)  # fmt: skip
+    except Cancelled as stop:
+        raise Cancelled(None if stop.partial is None else (*stop.partial, None)) from None
+    return values, which, None

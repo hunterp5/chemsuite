@@ -134,7 +134,13 @@ The dialog is split to stay well under 1,000 lines: `search.py` (dialog), `refer
    `tests/tools/similarity/test_similarity_ui.py` (table run, several references, the file run
    opens a document, keep poses). Update `docs/USER_GUIDE.md` (Similarity Search section;
    keep the `similarity-search` anchor) and ROADMAP §6 (3D similarity done). Before/after
-   screenshots of the dialog.
+   screenshots of the dialog. **Done 2026-11-17:** the
+   pose helper is `tools/superpose/poses.py`; the 3D worker returns each row's best pose onto
+   the reference it scores best against (`Scores.poses`, from the first 3D method, given
+   `pose_ids`); only the references some pose names are kept as assets. A listed reference
+   (the current row) is compared with itself, as a typed structure is; only Selected Rows
+   skips a row's own self. File screening's second stage does not stop on cancel (the hits
+   found are still opened). "Add them to a list" was left out.
 
 Before Phase 1: save this plan as `docs/SIMILARITY_PLAN.md` and link it from ROADMAP §6.
 

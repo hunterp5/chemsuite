@@ -2331,8 +2331,9 @@ document as needing a save, and they reopen as you left them.
 
 ## 12. Similarity
 
-All three tools compare compounds either by **fingerprints** or by **number columns** (scaled
-Euclidean distance). The fingerprint options are:
+Diverse Subset and Cluster compare compounds either by **fingerprints** or by **number
+columns** (scaled Euclidean distance); Similarity Search uses fingerprints and the other
+methods below. The fingerprint options are:
 
 | Fingerprint | Notes |
 |---|---|
@@ -2349,20 +2350,75 @@ cached per column, so a second run on the same column is much faster.
 
 ### Similarity Search
 
-Chemistry ▸ Similarity ▸ Similarity Search… scores **All**, **Shown** or **Selected** rows against one of two
-references (**Compare With**):
+Chemistry ▸ Similarity ▸ Similarity Search… scores compounds against one or more references,
+in several ways at once.
 
-- **A Structure** you type or paste, draw (the pencil), or take from the current row
-  (**Current Row**); or
-- **Selected Rows**. Each row gets its similarity to the nearest selected compound, and
-  a column naming that compound. A selected row is never its own nearest neighbour.
+**Search in:**
 
-Options:
+- **This Table:** **All**, **Shown** or **Selected** rows of a structure column. The scores
+  are written as columns.
+- **A File:** a library file (SDF, SMILES, CSV and the other formats File ▸ Open reads), such
+  as a vendor catalog, screened without opening it. The hits open as a new document, best
+  first.
 
-- **Sort: Most similar first** sorts the table by the new column.
-- **Select: At least** selects the rows at or above a similarity.
+**References** (**Compare with**):
 
-Cancelling keeps the rows already scored.
+- **Structures:** a list. Type or paste SMILES (or draw it with the pencil) and press **Add**.
+  **Current Row** adds the table's current row, and **Ligand** adds a ligand of a protein in
+  the document, in its bound pose. The current row is added when the dialog opens. A listed
+  row is compared with itself too, so it scores 1.000 on its own row.
+- **Selected Rows:** every selected row, followed as the selection changes. A selected row is
+  never compared with itself, so each row's score is to its nearest *other* selected compound.
+- **Fuse references** (with several): a row's score is its **Best** score against any of
+  them, or the **Mean** over all of them. A **Nearest Reference** column names the one each
+  row is most like.
+
+**Method:** tick one or more.
+
+| Method | Score column | Score |
+|---|---|---|
+| Fingerprint (any of those above), with Tanimoto, Dice, Cosine or **Tversky** | e.g. ECFP4 Tanimoto | 0–1 |
+| Pharmacophore (Gobbi 2D) | Pharmacophore 2D Tanimoto | 0–1 |
+| Substructure: Common Substructure (MCS) | MCS Tanimoto | Atoms of the largest common substructure over the heavy atoms of the two molecules, 0–1 |
+| Substructure: Same Scaffold, Same Generic Scaffold | Scaffold Match, Generic Scaffold Match | 1 when the Bemis–Murcko scaffolds match, else 0 |
+| 3D: Shape, Shape + Features, Field + Shape | Shape Tanimoto, Shape + Features, Field Similarity | As in [Superpose](#superpose): 0–1, 0–2 and up to 1 |
+
+- **Tversky** is asymmetric: **α** weighs the bits only the reference has, **β** those only the
+  row has (More Options). α 1, β 0 asks how much of the reference a row contains.
+- **3D** superposes each row onto every reference as [Superpose](#superpose) does and scores
+  the best fit. The references need 3D coordinates (a 3D structure column, or a protein's
+  ligand). A row with only 2D gets conformers first (**Conformers for 2D rows**, 30), and a row
+  with 3D is fitted as stored.
+- **Combine** (with two or more methods) adds a **Consensus** column: the **Mean** of the scores
+  (each on a 0–1 scale: Shape + Features halved, a negative field score taken as 0), the **Mean
+  Rank** of each row among the rows, or the **Normalized Mean** (each method's scores
+  stretched to fill 0–1 first). A row needs every method's score to get one.
+- **Prefilter** (More Options, 500 by default): the common substructure and 3D methods take
+  seconds a row, so they score only the rows the fingerprint ranks best, and leave the rest
+  blank. The ranking uses the first fingerprint method chosen, or ECFP4 Tanimoto. **Every
+  row** turns it off. **MCS time limit** (2 s a row) keeps the best substructure found by then.
+
+**Output** (a table):
+
+- **Sort: Most similar first** sorts by Consensus, when there is one, else by the first score.
+- **Select: At least** selects the rows scoring at least that much, by the same score, on a
+  0–1 scale.
+- **Keep aligned poses** (with 3D) writes each row's best pose, fitted onto the reference it
+  is most like, in "*column* superposed". As with Superpose, the [Browser](#browser) shows
+  each pose with its reference.
+
+**Output** (a file):
+
+- **Keep:** the best this many compounds (1,000 by default; **Every hit** for all), ranked by
+  the fingerprint while the file is read. Every method then scores just those, and the
+  prefilter applies to them as it does to a table.
+- **At least:** keeps only compounds whose fingerprint similarity reaches this.
+- The new document has the file's own columns, the score columns, Consensus and Nearest
+  Reference.
+
+Fingerprints of the table's rows are cached, so a second search is faster. Cancelling keeps
+the rows already scored. Cancelling a file screen stops reading the file and opens the hits
+found so far.
 
 ### Diverse Subset
 

@@ -19,8 +19,6 @@ superposed structure names, so the Browser can show it."""
 
 from __future__ import annotations
 
-import uuid
-
 import numpy as np
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -34,16 +32,17 @@ from rdkit import Chem
 
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, inline
-from chemsuite.core.assets import Asset, PutAsset
+from chemsuite.core.assets import Asset
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 from chemsuite.core.wording import plural
 from chemsuite.superpose import model as sp
 from chemsuite.superpose.run import align_conformers_rows, mol_of_cell, superpose_rows
 from chemsuite.superpose.substructure import MIN_ATOMS, parse_core
 
+from .poses import new_reference_id, output_name, put, reference_asset
+
 #: Below this many rows the work runs on the job's thread: starting worker processes costs more.
 POOL_MIN_ROWS = 20
-SUFFIX = " superposed"
 BEST_CONFORMER = "Best Conformer"
 ONTO_REFERENCE = "reference"
 ONTO_FIRST = "conformers"
@@ -65,10 +64,6 @@ METHOD_HELP = (
 )
 
 _last: tuple[str, sp.Settings] | None = None  # (mode, settings), remembered for the session
-
-
-def output_name(structure: str) -> str:
-    return structure if structure.endswith(SUFFIX) else structure + SUFFIX
 
 
 class SuperposeDialog(ToolDialog):
@@ -312,8 +307,7 @@ class SuperposeDialog(ToolDialog):
         meta["method"] = settings.method
         if settings.anchored:
             meta["anchor"] = settings.anchor
-        asset_id = self.ctx.table.unique_asset_id(f"superpose-{uuid.uuid4().hex[:8]}")
-        return Asset(asset_id, sp.REFERENCE_KIND, name, sp.reference_block(mol), meta)
+        return reference_asset(new_reference_id(self.ctx), name, mol, meta)
 
     def draw_into(self, field: QLineEdit, title: str) -> None:
         from chemsuite.app.sketcher import SketcherDialog
@@ -401,7 +395,7 @@ class SuperposeDialog(ToolDialog):
                 decimals = sp.DECIMALS.get(score, 3)
                 results[score] = (done_oids, NumberColumn.from_floats(values, decimals))
             names = ctx.apply_results(results, label="Superpose",
-                                      extra_ops=[PutAsset(asset.id, None, asset)])  # fmt: skip
+                                      extra_ops=[put(asset)])  # fmt: skip
             message = (
                 f"Superposed {plural(len(done_oids) - batch.failed, 'row')} onto "
                 f"{asset.name} in “{names[target]}”"
