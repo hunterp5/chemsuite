@@ -36,9 +36,18 @@ import numpy as np
 from chemsuite.analysis.fingerprints import Cell, Fingerprints, compute_fingerprints
 from chemsuite.core.jobs import Cancelled, CancelToken
 
-from . import fingerprint, substructure
+from . import fingerprint, shape3d, substructure
 from .fusion import consensus
-from .model import FINGERPRINT, SUBSTRUCTURE, Method, Reference, Scores, Search
+from .model import (
+    FINGERPRINT,
+    SUBSTRUCTURE,
+    THREE_D,
+    Method,
+    Reference,
+    Scores,
+    Search,
+    check_references,
+)
 
 Progress = Callable[[int, int], None]
 #: the progress bar's resolution: each method gets an equal share of it
@@ -77,8 +86,7 @@ def score_cells(
     If *cancel* is set, raises :class:`Cancelled` whose ``partial`` is the :class:`Scores` of
     the first rows (those every method finished), or None if there are none.
     """
-    if not references:
-        raise ValueError("add a reference to compare with")
+    check_references(references, search)
     known = dict(fingerprints or {})
     columns: dict[str, np.ndarray] = {}
     nearest: dict[str, np.ndarray] = {}
@@ -175,7 +183,7 @@ def _score(
     progress: Progress | None,
     cancel: CancelToken | None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    if method.kind in SUBSTRUCTURE:
+    if method.kind in SUBSTRUCTURE or method.kind in THREE_D:
         rows = None
         if method.expensive:
             try:
@@ -184,10 +192,15 @@ def _score(
                 raise Cancelled from None  # nothing of this method's own was scored
         chosen = cells if rows is None else [cells[i] for i in rows.tolist()]
         own = fingerprint.self_rows(references, len(cells))
+        mine = own if rows is None else own[rows]
         try:
-            found = substructure.score(chosen, references, method, search.fuse,
-                                       own if rows is None else own[rows], executor=executor,
-                                       progress=progress, cancel=cancel)  # fmt: skip
+            if method.kind in THREE_D:  # already fused: only the best reference's fit is kept
+                found = shape3d.score(chosen, references, method, mine, executor=executor,
+                                      progress=progress, cancel=cancel)  # fmt: skip
+            else:
+                found = substructure.score(chosen, references, method, search.fuse, mine,
+                                           executor=executor, progress=progress,
+                                           cancel=cancel)  # fmt: skip
         except Cancelled as stop:
             if stop.partial is None or rows is None:
                 raise

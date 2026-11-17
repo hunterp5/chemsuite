@@ -121,6 +121,31 @@ def superpose_one(mol: Chem.Mol, reference: Chem.Mol, settings: Settings) -> tup
     return out, Fit(conf_index, found.transform, found.scores)
 
 
+def best_over_references(
+    mol: Chem.Mol, references: Sequence[Chem.Mol], settings: Settings
+) -> tuple[int, Fit] | None:
+    """Which of *references* (each already prepared) *mol* fits best, and that fit.
+
+    The probe's conformers are generated once and tried against every reference, so scoring a
+    row against several references costs one embedding, not one each. None when it will not
+    embed, or when no reference gives a fit.
+    """
+    probe = probe_of(mol, settings)
+    if probe is None:
+        return None
+    found: tuple[int, Fit] | None = None
+    for index, reference in enumerate(references):
+        try:
+            fit = best(ALIGNERS[settings.method](probe, reference, settings), settings.method)
+        except _FAILURES:
+            continue
+        if fit is None:
+            continue
+        if found is None or fit.key(settings.method) > found[1].key(settings.method):
+            found = (index, fit)
+    return found
+
+
 def superpose_chunk(args: tuple[Settings, bytes, str, Sequence[Cell]]) -> list[tuple]:
     """``(blob, display, conformer number, scores)`` per cell (a picklable worker entry
     point); a blank, invalid or failed cell gives ``(b"", "", nan, nans)``."""

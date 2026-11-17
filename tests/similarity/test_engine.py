@@ -221,11 +221,73 @@ def test_the_methods_run_in_worker_processes() -> None:
         assert np.allclose(got, want, equal_nan=True), method.column
 
 
-def test_unbuilt_methods_say_so() -> None:
-    with pytest.raises(ValueError, match="not available"):
-        score_cells(CELLS, [PARACETAMOL], sm.Search((sm.Method(kind=sm.SHAPE),)))
+def _in_3d(smiles: str, name: str) -> sm.Reference:
+    from chemsuite.conformers.etkdg import generate
+
+    return sm.Reference(generate(Chem.MolFromSmiles(smiles)).mol, name)
+
+
+def test_a_flat_reference_is_turned_away_by_the_3d_methods() -> None:
+    search = sm.Search((sm.Method(kind=sm.SHAPE),))
+    with pytest.raises(ValueError, match="no 3D coordinates"):
+        score_cells(CELLS, [PARACETAMOL], search)  # from SMILES: flat
+    with pytest.raises(ValueError, match="paracetamol"):  # the message names it
+        score_cells(CELLS, [PARACETAMOL], search)
+    sm.check_references([PARACETAMOL], sm.Search((sm.Method(),)))  # 2D methods do not mind
+    sm.check_references([_in_3d(CELLS[0], "paracetamol")], search)
+
+
+def test_no_reference_is_turned_away() -> None:
     with pytest.raises(ValueError, match="reference"):
         score_cells(CELLS, [], sm.Search((sm.Method(),)))
+
+
+@pytest.mark.parametrize("kind", [sm.SHAPE, sm.COLOR, sm.FIELD])
+def test_3d_methods_score_a_molecule_against_itself_highest(kind) -> None:
+    cells = [CELLS[0], CELLS[1], "CCCCCCCCCC"]  # paracetamol, phenacetin, decane
+    reference = _in_3d(CELLS[0], "paracetamol")
+    method = sm.Method(kind=kind, conformers=3)
+    scores = score_cells(cells, [reference], sm.Search((method,), prefilter=0))
+    values = scores.columns[method.column]
+    assert np.isfinite(values[:3]).all()
+    assert values[0] == values[:3].max()  # itself fits best
+    assert values[0] > values[2]  # and decane fits worst
+    assert scores.nearest[:3].tolist() == [0, 0, 0]
+
+
+def test_3d_keeps_the_reference_each_row_fits_best() -> None:
+    cells = ["CC(=O)Nc1ccc(O)cc1", "CCCCCCCCCC"]
+    refs = [_in_3d(cells[0], "paracetamol"), _in_3d(cells[1], "decane")]
+    method = sm.Method(kind=sm.SHAPE, conformers=3)
+    scores = score_cells(cells, refs, sm.Search((method,), prefilter=0))
+    assert scores.nearest[:2].tolist() == [0, 1]  # each row fits its own shape best
+    values = scores.columns[method.column]
+    assert (values[:2] > 0.5).all()
+
+
+def test_a_3d_reference_that_is_a_row_skips_itself() -> None:
+    cells = ["CC(=O)Nc1ccc(O)cc1", "CCCCCCCCCC"]
+    refs = [sm.Reference(_in_3d(cells[0], "").mol, "paracetamol", row=0)]
+    method = sm.Method(kind=sm.SHAPE, conformers=3)
+    scores = score_cells(cells, refs, sm.Search((method,), prefilter=0))
+    values = scores.columns[method.column]
+    assert np.isnan(values[0]) and scores.nearest[0] == -1  # its only reference was itself
+    assert np.isfinite(values[1])
+
+
+def test_3d_runs_in_worker_processes_and_the_prefilter_applies() -> None:
+    from chemsuite.core.jobs.parallel import process_pool
+
+    cells = [CELLS[0], CELLS[1], "CCCCCCCCCC", "CCO"]
+    reference = _in_3d(CELLS[0], "paracetamol")
+    method = sm.Method(kind=sm.SHAPE, conformers=3)
+    search = sm.Search((sm.Method(), method), prefilter=2)
+    with process_pool(2) as pool:
+        scores = score_cells(cells, [reference], search, executor=pool)
+    shape = scores.columns[method.column]
+    assert np.isfinite(shape).sum() == 2  # only the fingerprint's two best rows
+    assert np.isfinite(shape[0])  # paracetamol itself among them
+    assert np.isfinite(scores.columns["ECFP4 Tanimoto"]).sum() == 4
 
 
 def test_mcs_tanimoto() -> None:

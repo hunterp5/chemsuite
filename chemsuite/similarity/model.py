@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -75,7 +76,9 @@ class Reference:
 class Method:
     """One way of scoring. *fingerprint* and *metric* are for the fingerprint method; *alpha*
     weighs the bits only the reference has and *beta* those only the row has (Tversky).
-    *mcs_timeout* is the seconds the common substructure of one pair may take."""
+    *mcs_timeout* is the seconds the common substructure of one pair may take. The 3D methods
+    generate *conformers* for a row that has only 2D, and weigh the pharmacophore features
+    (*color_weight*) or the electrostatic field (*field_weight*) against the shape."""
 
     kind: str = FINGERPRINT
     fingerprint: str = DEFAULT_KIND
@@ -83,6 +86,9 @@ class Method:
     alpha: float = 0.5
     beta: float = 0.5
     mcs_timeout: int = 2
+    conformers: int = 30
+    color_weight: float = 0.5
+    field_weight: float = 0.5
 
     def __post_init__(self) -> None:
         if self.kind not in METHODS:
@@ -98,6 +104,10 @@ class Method:
             raise ValueError("Tversky weights cannot both be 0")
         if self.mcs_timeout < 1:
             raise ValueError("the MCS timeout must be at least 1 second")
+        if self.conformers < 1:
+            raise ValueError("conformers must be at least 1")
+        if not 0.0 <= self.color_weight <= 1.0 or not 0.0 <= self.field_weight <= 1.0:
+            raise ValueError("the 3D weights must be between 0 and 1")
 
     @property
     def column(self) -> str:
@@ -138,6 +148,24 @@ class Search:
     @property
     def columns(self) -> tuple[str, ...]:
         return tuple(m.column for m in self.methods)
+
+
+def check_references(references: Sequence[Reference], search: Search) -> None:
+    """Raise :class:`ValueError` unless the references suit *search*'s methods: a 3D method
+    needs every reference in 3D (the dialog shows the message as the problem that blocks it)."""
+    if not references:
+        raise ValueError("add a reference to compare with")
+    if not any(m.kind in THREE_D for m in search.methods):
+        return
+    from chemsuite.superpose.model import has_3d
+
+    flat = [r.name or "a reference" for r in references if not has_3d(r.mol)]
+    if flat:
+        names = ", ".join(flat[:3]) + ("…" if len(flat) > 3 else "")
+        raise ValueError(
+            f"{names} {'has' if len(flat) == 1 else 'have'} no 3D coordinates, which the 3D "
+            "methods need: generate conformers for it first, or use a 3D structure"
+        )
 
 
 @dataclass
