@@ -59,6 +59,12 @@ from . import surface as surfaces
 #: how see-through a surface is drawn (0 opaque, 1 invisible), and the choices offered
 SURFACE_TRANSPARENCY = 0.4
 TRANSPARENCIES = (0.0, 0.2, 0.4, 0.6, 0.8)
+#: a surface's scheme for one color (``surface_rgb``) over the whole surface
+FLAT = "flat"
+FLAT_RGB = (0.85, 0.85, 0.85)
+#: how far (Å) a carved surface reaches from the atoms it was carved around, and the choices
+CARVE_DISTANCE = 5.0
+CARVE_DISTANCES = (3.0, 5.0, 8.0, 12.0)
 CARTOON_PICK_RADIUS = 1.2
 #: the parts a deferring display builds in the background
 DEFERRED = ("surface", "pocket", "interactions", "cartoon")
@@ -99,6 +105,11 @@ class Display:
     deferred: bool = False  # slow parts are built through pending() and accept()
     hydrogens: str = POLAR_H  # which hydrogens are drawn: all, polar, none
     transparency: float = SURFACE_TRANSPARENCY  # of the surface
+    surface_options: surfaces.SurfaceOptions = surfaces.DEFAULT_OPTIONS  # also the pocket's
+    surface_rgb: tuple[float, float, float] = FLAT_RGB  # the surface's color when FLAT
+    pocket_transparency: float = SURFACE_TRANSPARENCY
+    carve_points: np.ndarray | None = None  # float32 (k, 3): the surface shown near these only
+    carve_distance: float = CARVE_DISTANCE
     styles: np.ndarray = field(init=False)
     cartoon: np.ndarray = field(init=False)  # bool per residue
     surface: np.ndarray = field(init=False)  # bool per atom
@@ -109,7 +120,8 @@ class Display:
     query: np.ndarray = field(init=False)  # bool per atom: whose interactions are shown
     _cache: dict = field(default_factory=dict, init=False, repr=False)
     _latest: dict = field(default_factory=dict, init=False, repr=False)  # last built, per part
-    _rgba: dict = field(default_factory=dict, init=False, repr=False)  # surface colours, by scheme
+    _rgba: dict = field(default_factory=dict, init=False, repr=False)  # surface and pocket colors
+    _carved: tuple | None = field(default=None, init=False, repr=False)  # (whole, how, carved)
     _versions: dict = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -189,15 +201,44 @@ class Display:
         return 1.0 - self.transparency
 
     def surface_colours(self, pocket: bool = False) -> np.ndarray:
-        """Per atom, the surface's colours (a pocket's: hydrophobicity) at its alpha; kept, as
-        they change only with the scheme or the transparency (do not modify)."""
-        key = (schemes.HYDROPHOBICITY if pocket else self.surface_scheme, self.surface_alpha())
+        """Per atom, the surface's colors (a pocket's: hydrophobicity) at its alpha; kept, one
+        set each for the surface and the pocket, as they change only with the scheme, the flat
+        color or the transparency (do not modify)."""
+        if pocket:
+            key = ("pocket", schemes.HYDROPHOBICITY, None, 1.0 - self.pocket_transparency)
+        else:
+            flat = self.surface_rgb if self.surface_scheme == FLAT else None
+            key = ("surface", self.surface_scheme, flat, self.surface_alpha())
         rgba = self._rgba.get(key)
         if rgba is None:
-            rgba = schemes.colour(self.structure, key[0])
-            rgba[:, 3] = key[1]
+            if key[2] is not None:
+                rgba = np.empty((self.structure.n_atoms, 4), np.float32)
+                rgba[:, :3] = key[2]
+            else:
+                rgba = schemes.colour(self.structure, key[1])
+            rgba[:, 3] = key[3]
             self._rgba = {key: rgba, **{k: v for k, v in self._rgba.items() if k[0] != key[0]}}
         return rgba
+
+    def colour_surface(self, scheme: str, rgb: tuple[float, float, float] | None = None) -> None:
+        """Color the surface by a scheme, or (FLAT) all in *rgb* (the last one, when None)."""
+        if scheme in schemes.SCHEMES or scheme == FLAT:
+            self.surface_scheme = scheme
+            if rgb is not None:
+                self.surface_rgb = tuple(float(c) for c in rgb)
+
+    def set_surface_options(self, options: surfaces.SurfaceOptions) -> None:
+        """How the surface (and the pocket's skin) is made: rebuilt when it changes."""
+        if options != self.surface_options:
+            self.surface_options = options
+            self.touch("surface", "pocket")
+
+    def carve_surface(self, points: np.ndarray | None, distance: float = CARVE_DISTANCE) -> None:
+        """Show the surface only within *distance* Å of *points* (None or none: all of it).
+        Carving rebuilds nothing; it cuts the built surface."""
+        points = None if points is None else np.asarray(points, np.float32).reshape(-1, 3)
+        self.carve_points = points.copy() if points is not None and len(points) else None
+        self.carve_distance = float(distance)
 
     def colour_by(self, scheme: str, atoms: np.ndarray | None = None) -> None:
         coloured = schemes.colour(self.structure, scheme)
@@ -245,7 +286,7 @@ class Display:
             return cartoons.build, (s, np.flatnonzero(self.cartoon), self.model, self.active)
         if part in ("surface", "pocket"):
             atoms = self.surface if part == "surface" else self.pocket
-            return surfaces.build, (s, np.flatnonzero(atoms), self.model)
+            return surfaces.build, (s, np.flatnonzero(atoms), self.model, self.surface_options)
         if part == "trace":
             return cartoons.trace, (s, self.active)
         return contacts.find, (s, self.query.copy(), self.active, self.model)
@@ -307,7 +348,15 @@ class Display:
         return self._part("cartoon")
 
     def surface_mesh(self) -> meshes.Mesh:
-        return self._part("surface")
+        """The surface as shown: carved, when it is, from the last one built."""
+        whole = self._part("surface")
+        if self.carve_points is None:
+            return whole
+        how = (self.carve_points.tobytes(), self.carve_distance)
+        if self._carved is None or self._carved[0] is not whole or self._carved[1] != how:
+            carved = meshes.carve(whole, self.carve_points, self.carve_distance)
+            self._carved = (whole, how, carved)
+        return self._carved[2]
 
     def pocket_mesh(self) -> meshes.Mesh:
         return self._part("pocket")
@@ -347,6 +396,9 @@ class Display:
         s, o = self.structure, old.structure
         self.visible, self.scheme, self.surface_scheme = old.visible, old.scheme, old.surface_scheme
         self.hydrogens, self.transparency = old.hydrogens, old.transparency
+        self.surface_options, self.surface_rgb = old.surface_options, old.surface_rgb
+        self.pocket_transparency = old.pocket_transparency
+        self.carve_points, self.carve_distance = old.carve_points, old.carve_distance
         self.model = old.model if old.model < self.n_models else 0
         source = o.indices(s.uid)  # each atom's index in the old structure, or -1
         kept = source >= 0
@@ -380,6 +432,11 @@ class Display:
             "model": self.model,
             "hydrogens": self.hydrogens,
             "transparency": self.transparency,
+            "surface_options": self.surface_options.state(),
+            "surface_rgb": list(self.surface_rgb),
+            "pocket_transparency": self.pocket_transparency,
+            "carve": None if self.carve_points is None else np.round(self.carve_points, 3).tolist(),
+            "carve_distance": self.carve_distance,
             "styles": runs(self.styles),
             "cartoon": runs(self.cartoon.astype(np.uint8)),
             "surface": runs(self.surface.astype(np.uint8)),
@@ -404,9 +461,19 @@ class Display:
         self.model = model if isinstance(model, int) and 0 <= model < self.n_models else 0
         hydrogens = state.get("hydrogens", POLAR_H)
         self.hydrogens = hydrogens if hydrogens in HYDROGENS else POLAR_H
-        transparency = state.get("transparency", SURFACE_TRANSPARENCY)
-        valid = isinstance(transparency, int | float) and 0 <= transparency < 1
-        self.transparency = float(transparency) if valid else SURFACE_TRANSPARENCY
+        self.transparency = _fraction(state.get("transparency"), SURFACE_TRANSPARENCY)
+        self.pocket_transparency = _fraction(state.get("pocket_transparency"), self.transparency)
+        # a document saved before surfaces had kinds drew the Gaussian
+        self.surface_options = surfaces.SurfaceOptions.from_state(state.get("surface_options"))
+        rgb = state.get("surface_rgb")
+        if _numbers(rgb, 3) and all(0 <= c <= 1 for c in rgb):
+            self.surface_rgb = (float(rgb[0]), float(rgb[1]), float(rgb[2]))
+        carve = state.get("carve")
+        points = [p for p in carve if _numbers(p, 3)] if isinstance(carve, list) else []
+        self.carve_points = np.array(points, np.float32).reshape(-1, 3) if points else None
+        distance = state.get("carve_distance")
+        valid = isinstance(distance, int | float) and 0 < distance <= 50
+        self.carve_distance = float(distance) if valid else CARVE_DISTANCE
         styles = unruns(state.get("styles"), n)
         if styles is not None:
             self.styles = styles.astype(np.uint8)
@@ -427,9 +494,21 @@ class Display:
             rgb = own[given] & 0xFFFFFF
             self.colours[given, :3] = np.stack([rgb >> 16, rgb >> 8 & 255, rgb & 255], 1) / 255
         surface_scheme = str(state.get("surface_scheme", self.surface_scheme))
-        if surface_scheme in schemes.SCHEMES:
+        if surface_scheme in schemes.SCHEMES or surface_scheme == FLAT:
             self.surface_scheme = surface_scheme
-        self.touch("geometry", "cartoon", "surface", "interactions")
+        self.touch("geometry", "cartoon", "surface", "pocket", "interactions")
+
+
+def _fraction(value: object, default: float) -> float:
+    """A saved transparency: a number from 0 to under 1, else *default*."""
+    valid = isinstance(value, int | float) and not isinstance(value, bool) and 0 <= value < 1
+    return float(value) if valid else default
+
+
+def _numbers(value: object, count: int) -> bool:
+    if not isinstance(value, list) or len(value) != count:
+        return False
+    return all(isinstance(v, int | float) and not isinstance(v, bool) for v in value)
 
 
 def runs(values: np.ndarray) -> list[int]:

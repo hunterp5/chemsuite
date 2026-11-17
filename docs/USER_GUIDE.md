@@ -1671,12 +1671,12 @@ menus and the right-click menus:
 - **Select:** **All** (Ctrl+A), the usual picks (ligands, binding site, protein, backbone,
   side chains, waters, ions…), **Chain ▸**, **Around ▸**, **Saved Selections ▸**, **Save
   Selection…** and **Clear Selection**.
-- **Display:** **Show**, **Hide**, **Colour** and **Label** (on the selection), **Hydrogens**
-  and **Surface Transparency** (on every protein).
+- **Display:** **Show**, **Hide**, **Color** and **Label** (on the selection), **Hydrogens**
+  (on every protein) and **Surface ▸** (below).
 - **Tools:** **Prepare…**, **Inspect…**, **Minimise…**, **Dock…** and **Rescore Poses…**
   (below), **Measure ▸**, **Ligands to Table** and **Interactions to Table** (below).
 - **View:** **Frame Selection** (F), **Reset View**, **Ligand ▸** (**Focus ▸** a ligand in
-  its pocket, **Pocket Surface**, **Clear Focus**), **Interactions**, **Background ▸** (the
+  its pocket, **Pocket Surface ▸**, **Clear Focus**), **Interactions**, **Background ▸** (the
   theme's, white, grey or black), **Orthographic** (parallel projection: no perspective, so
   sizes compare across depth), **Depth Cue** (fade what lies further back; off draws everything
   fully), whether the **Structures List** shows, **Show Table** (brings the document's table
@@ -1760,15 +1760,31 @@ or not, with the rows you chose.
   glycans and additives as sticks, and its waters and non-polar hydrogens hidden. Ligand
   carbons are **purple** and ions amber, so a ligand reads at once against the pocket around
   it.
-- **Show, Hide, Colour** act on the selection: wire, sticks, ball and stick, spacefill,
-  cartoon, surface; colour by element, chain, secondary structure, B-factor, hydrophobicity or
-  a colour you choose.
+- **Show, Hide, Color** act on the selection: wire, sticks, ball and stick, spacefill,
+  cartoon, surface; color by element, chain, secondary structure, B-factor, hydrophobicity or
+  a color you choose.
 - **Label ▸ Residues / Atoms** labels what is selected (a residue on its Cα, a ligand in its
   middle); **Clear Labels** removes them. Labels stay legible: nearer ones win where they would
   overlap, faded and sliced-away atoms lose theirs, and at most 300 show at once.
-- **Hydrogens** (all, polar or none) and **Transparency** (of surfaces, from opaque to 80%)
-  apply to every protein. A hydrogen is drawn as the atom it is bonded to is shown, so showing
+- **Hydrogens** (all, polar or none) applies to every protein. A hydrogen is drawn as the
+  atom it is bonded to is shown, so showing
   a residue as sticks shows its hydrogens too.
+- **Surface ▸** sets how the surfaces of the proteins with a selection are made and drawn (of
+  every visible protein when nothing is selected); its checks show the first of them.
+  - **Kind:** **Molecular (SES)**, the surface a water-sized probe rolling over the atoms
+    cannot pass (Connolly's; new surfaces are this kind); **Solvent Accessible (SAS)**, where
+    the probe's center can go; **Van der Waals**, the atoms' spheres; **Gaussian**, a smooth
+    skin over the atoms (quicker, and the kind of every surface in documents saved before
+    there were kinds, which open as they were).
+  - **Color:** by any of the schemes above (by hydrophobicity at first), or **Single
+    Color…** for one color over the whole surface. **Transparency:** opaque to 80%.
+  - **Carve Around Selection ▸** 3, 5, 8 or 12 Å shows only the part of every protein's surface
+    near the selected atoms, whichever protein they belong to (a ligand or a pose); **Show
+    Whole Surface** undoes it. Carving cuts the surface already built, so it is immediate.
+  - **Probe Radius** (1–2 Å; SES and SAS), **Quality** (Coarse, Normal or Fine: how fine
+    the grid it is made on is) and **Smoothing** (Off, Low or High; not for Gaussian)
+    rebuild the surface. A molecular surface of a large protein takes a few seconds, in the
+    background.
 - **Interactions** draws dashed lines from the ligands (or the selection) to what they touch:
   hydrogen bonds (blue), salt bridges (magenta), π-stacking (green), cation–π (orange),
   hydrophobic contacts (grey), halogen bonds (cyan), metal contacts (light gold) and water bridges
@@ -1789,8 +1805,9 @@ or not, with the rows you chose.
   touching it) with its interactions and a see-through skin over the pocket coloured by
   hydrophobicity, fades the rest of the protein and hides other small molecules. A slice of
   depth around the pocket follows the camera, with the back of the pocket fading into the
-  background. **Pocket Surface** in the same menu turns the skin off or on. **Clear Focus**
-  undoes the fading.
+  background. **Pocket Surface ▸** in the same menu turns the skin off or on (**Show**) and
+  sets its **Transparency**; the skin is of its protein's surface kind. **Clear Focus** undoes
+  the fading.
 - **Measure ▸ Distance / Angle / Dihedral**, then click two, three or four atoms. Esc stops
   measuring.
 - **Editing** (the Edit menu, or **Edit Selection ▸** in the right-click menu) changes the

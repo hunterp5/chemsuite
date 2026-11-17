@@ -303,24 +303,66 @@ def test_hydrogens_follow_their_atom_and_the_choice(qtbot, monkeypatch) -> None:
     assert nmr.styles[select(s, polar)].max() == scene.STICK  # styles are never rewritten
 
 
-def test_surface_transparency_changes_only_the_look(panel, qtbot) -> None:
+def test_surface_transparency_and_color_change_only_the_look(panel, qtbot) -> None:
     from PySide6.QtWidgets import QMenu
 
-    from chemsuite.macromolecule.ui.menus import fill_transparency
+    from chemsuite.macromolecule.look import surface
+    from chemsuite.macromolecule.ui.surface_menu import fill_surface
 
     session = panel.session
     session.select_text("chain I")
+    shown = session.display("1ATP")
+    shown.set_surface_options(surface.SurfaceOptions(quality="coarse"))
     session.show_surface(True)
     assert session.scene.surface_look[:, 3] == pytest.approx(0.6)
-    with qtbot.assertNotEmitted(panel.signals.sceneChanged):
-        session.set_transparency(0.8)
-    assert session.scene.surface_look[:, 3] == pytest.approx(0.2)
     menu = QMenu()
-    fill_transparency(menu, session)
-    assert [a.text() for a in menu.actions()] == ["Opaque", "20%", "40%", "60%", "80%"]
-    assert [a.text() for a in menu.actions() if a.isChecked()] == ["80%"]
-    again = session.display("1ATP").state()
+    fill_surface(menu, session, panel)
+    titles = [a.text() for a in menu.actions() if a.text()]
+    assert titles == ["Kind", "Color", "Transparency", "Carve Around Selection",
+                      "Show Whole Surface", "Probe Radius", "Quality", "Smoothing"]  # fmt: skip
+    transparency = action_in(menu, "Transparency").menu()
+    assert [a.text() for a in transparency.actions()] == ["Opaque", "20%", "40%", "60%", "80%"]
+    kind = action_in(menu, "Kind").menu()
+    assert [a.text() for a in kind.actions() if a.isChecked()] == ["Molecular (SES)"]
+    with qtbot.assertNotEmitted(panel.signals.sceneChanged):
+        action_in(transparency, "80%").trigger()
+        action_in(action_in(menu, "Color").menu(), "By Chain").trigger()
+    assert session.scene.surface_look[:, 3] == pytest.approx(0.2)
+    assert shown.surface_scheme == "chain"
+    again = shown.state()
     assert again["transparency"] == 0.8 and again["hydrogens"] == "polar"
+
+
+def test_the_surface_menu_rebuilds_carves_and_follows_the_selection(panel, qtbot) -> None:
+    from PySide6.QtWidgets import QMenu
+
+    from chemsuite.macromolecule.look import surface
+    from chemsuite.macromolecule.ui.surface_menu import fill_surface
+
+    session = panel.session
+    shown = session.display("1ATP")
+    shown.set_surface_options(surface.SurfaceOptions(quality="coarse"))
+    session.select_text("chain I")
+    session.show_surface(True)
+    whole = len(session.scene.surface.triangles)
+    menu = QMenu()
+    fill_surface(menu, session, panel)
+    assert not action_in(menu, "Show Whole Surface").isEnabled()
+    with qtbot.waitSignal(panel.signals.sceneChanged):
+        action_in(action_in(menu, "Kind").menu(), "Van der Waals").trigger()
+    assert shown.surface_options.kind == surface.VDW
+    fill_surface(menu, session, panel)
+    assert not action_in(menu, "Probe Radius").isEnabled()  # no probe for vdW
+    session.select_text("chain I and resi 10")
+    fill_surface(menu, session, panel)
+    action_in(action_in(menu, "Carve Around Selection").menu(), "5 Å").trigger()
+    carved = session.scene.surface
+    assert 0 < len(carved.triangles) < whole
+    assert shown.carve_points is not None and shown.carve_distance == 5.0
+    fill_surface(menu, session, panel)
+    action_in(menu, "Show Whole Surface").trigger()
+    assert shown.carve_points is None
+    assert len(session.scene.surface.triangles) > len(carved.triangles)
 
 
 def test_label_layout_goes_front_to_back_and_skips_overlaps() -> None:
@@ -402,7 +444,7 @@ def test_the_context_menu_offers_what_was_clicked(panel) -> None:
     next(a for a in menu.actions() if a.text() == "Select Residues Within 5 Å").trigger()
     assert panel.session.selected_count() > 31
     empty = context_menu(panel.session, -1, panel, focus=panel.frame_selection)
-    assert [a.text() for a in empty.actions()][:3] == ["Show", "Hide", "Colour"]
+    assert [a.text() for a in empty.actions()][:3] == ["Show", "Hide", "Color"]
 
 
 def test_the_context_menu_labels_measures_and_adds_a_ligand(panel) -> None:
@@ -822,7 +864,7 @@ def test_focus_draws_a_skin_over_the_pocket(panel) -> None:
     owners = np.unique(skin.owner)
     assert (s.res_kind[s.residue_of[owners]] == 0).all()  # the protein's side of the pocket
     assert not shown.ghost[owners].any() and (s.element[owners] != 1).all()
-    assert session.scene.pocket_look[:, 3] == pytest.approx(1 - shown.transparency)
+    assert session.scene.pocket_look[:, 3] == pytest.approx(1 - shown.pocket_transparency)
     session.show_pocket_surface(False)
     assert not len(session.scene.pocket.triangles)
     session.show_pocket_surface(True)
@@ -1048,7 +1090,7 @@ def test_the_menu_bar_holds_every_command(panel) -> None:
 
     assert [a.text() for a in panel.menu_bar.actions()] == list(MENUS)
     display = [a.text() for a in menu_of(panel, "Display").actions() if a.text()]
-    assert display == ["Show", "Hide", "Colour", "Label", "Hydrogens", "Surface Transparency"]
+    assert display == ["Show", "Hide", "Color", "Label", "Hydrogens", "Surface"]
     select = menu_of(panel, "Select")
     action_in(select, "All").trigger()
     assert panel.session.selected_count() == panel.session.display("1ATP").active.sum()

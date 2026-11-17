@@ -520,16 +520,30 @@ class WorkbenchSession:
         self.touched()
         self._changed(rebuilt=True)
 
-    @property
-    def transparency(self) -> float:
-        """How see-through surfaces are (0 opaque), as the first protein has it."""
-        return self.displays[0].transparency if self.displays else displays.SURFACE_TRANSPARENCY
+    def surface_displays(self) -> list[displays.Display]:
+        """The proteins a surface setting is for: the visible ones with a selection, else
+        every visible one (the first one's settings are the ones a menu shows)."""
+        visible = [d for d in self.displays if d.visible]
+        return [d for d in visible if d.selected.any()] or visible
 
-    def set_transparency(self, transparency: float) -> None:
-        for shown in self.displays:
-            shown.transparency = transparency
+    def change_surfaces(
+        self,
+        change: Callable[[displays.Display], object],
+        every: bool = False,
+        rebuilt: bool = True,
+    ) -> None:
+        """Apply *change* to the :meth:`surface_displays` (to every protein with *every*);
+        a change of color or transparency only (not *rebuilt*) redraws the look alone."""
+        for shown in self.displays if every else self.surface_displays():
+            change(shown)
         self.touched()
-        self._changed(rebuilt=False)
+        self._changed(rebuilt=rebuilt)
+
+    def selected_points(self) -> np.ndarray:
+        """The positions of the selected atoms of every visible protein (what a surface is
+        carved around)."""
+        points = [d.xyz[d.selected] for d in self.displays if d.visible and d.selected.any()]
+        return np.concatenate(points).astype(np.float32) if points else np.zeros((0, 3))
 
     def choose_altloc(self, protein: str, residue: int, letter: str) -> None:
         shown = self.display(protein)
@@ -647,6 +661,8 @@ class WorkbenchSession:
             hydrogens=shown.hydrogens,
             altlocs={} if replaced.any() else dict(shown.altlocs),
             deferred=self.deferred,
+            surface_options=shown.surface_options,
+            pocket_transparency=shown.pocket_transparency,
         )
         display.show(~mine, scenes.HIDDEN)
         display.show(mine, scenes.STICK)

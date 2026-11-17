@@ -242,7 +242,12 @@ other machine can pick it up. Update it at the end of a session that leaves work
     `Display` builds until phase 2), and `look/mesh.py` has `edges`, `dots`, `carve`. SES of
     about 6,000 heavy atoms: 2.8–3.2 s and 220 MB on the Windows desktop, most of it in the
     distance transforms (one per atom radius); the target was 2 s, accepted since it is built
-    in the background. Phase 2 (display, saving, menus) is next. Then: try Prepare, Inspect and docking by hand in the app; a second titration
+    in the background. Phase 2 is done: `Display` holds the options, flat color, pocket
+    transparency and carve points (saved; a document without them opens as Blob; `carry` keeps
+    them through edits), `session.change_surfaces` applies a change to the selected-or-visible
+    proteins, and `ui/surface_menu.py` fills Display ▸ Surface and View ▸ Ligand ▸ Pocket
+    Surface ▸ ("Colour" menus renamed "Color"). Phase 3 (Mesh and Dots styles in the view) is
+    next, then 4 (By Electrostatics). Then: try Prepare, Inspect and docking by hand in the app; a second titration
     round (PROPKA-style H-bond determinants, His titrated for charge only) is listed in
     p2-review.md §4.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its

@@ -13,8 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The protein viewer's menus: Show, Hide, Colour and Label (on the selection), Hydrogens and
-Transparency (for every protein), Focus and Measure, and the right-click menu on an atom.
+"""The protein viewer's menus: Show, Hide, Color and Label (on the selection), Hydrogens (for
+every protein), Focus and Measure, and the right-click menu on an atom.
 
 Every menu acts on the session's selection; the right-click menu first offers to select what
 was clicked (its residue, chain or binding site), so the rest of it then applies there. Its
@@ -31,7 +31,6 @@ from PySide6.QtGui import QActionGroup, QColor, QKeySequence
 from PySide6.QtWidgets import QColorDialog, QInputDialog, QMenu, QWidget
 
 from chemsuite.macromolecule.look import colours, scene
-from chemsuite.macromolecule.look.display import TRANSPARENCIES
 from chemsuite.macromolecule.structure.io import MMCIF, PDB
 from chemsuite.macromolecule.structure.model import LIGAND
 from chemsuite.macromolecule.structure.select import SelectionError, chain_word
@@ -85,7 +84,7 @@ def fill_colour(menu: QMenu, session: WorkbenchSession, parent: QWidget) -> None
     for key, title in colours.SCHEMES.items():
         menu.addAction(f"By {title}", lambda k=key: session.colour_by(k, everything=not selected))
     menu.addSeparator()
-    pick = menu.addAction("Colour…", lambda: _pick_colour(session, parent))
+    pick = menu.addAction("Color…", lambda: _pick_colour(session, parent))
     pick.setEnabled(selected)
 
 
@@ -105,17 +104,6 @@ def fill_hydrogens(menu: QMenu, session: WorkbenchSession) -> None:
         action = menu.addAction(title, lambda k=key: session.show_hydrogens(k))
         action.setCheckable(True)
         action.setChecked(session.hydrogens == key)
-        group.addAction(action)
-
-
-def fill_transparency(menu: QMenu, session: WorkbenchSession) -> None:
-    menu.clear()
-    group = QActionGroup(menu)
-    for value in TRANSPARENCIES:
-        title = f"{value:.0%}" if value else "Opaque"
-        action = menu.addAction(title, lambda v=value: session.set_transparency(v))
-        action.setCheckable(True)
-        action.setChecked(abs(session.transparency - value) < 1e-6)
         group.addAction(action)
 
 
@@ -161,7 +149,7 @@ def _measure_from(session: WorkbenchSession, atoms: int, atom: int) -> None:
 
 
 def _pick_colour(session: WorkbenchSession, parent: QWidget) -> None:
-    colour = QColorDialog.getColor(QColor(46, 200, 74), parent, "Colour")
+    colour = QColorDialog.getColor(QColor(46, 200, 74), parent, "Color")
     if colour.isValid():
         session.colour((colour.redF(), colour.greenF(), colour.blueF()))
 
@@ -239,7 +227,7 @@ def context_menu(
     fill_show(show, session)
     hide = menu.addMenu("Hide")
     fill_hide(hide, session)
-    colour = menu.addMenu("Colour")
+    colour = menu.addMenu("Color")
     fill_colour(colour, session, parent)
     if session.interactions_shown:
         menu.addAction("Hide Interactions", lambda: session.show_interactions(False))

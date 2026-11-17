@@ -21,7 +21,8 @@ does is here (and in the right-click menus), not in toolbar buttons.
 - Edit: undo and redo the document's steps; copy the selection; delete it, give its atoms an
   element or a charge, rename or renumber its residues or chain.
 - Select: everything, kinds, chains, around the selection, saved selections.
-- Display: Show, Hide, Colour, Label (on the selection); Hydrogens, Surface Transparency.
+- Display: Show, Hide, Color, Label (on the selection); Hydrogens; Surface (kind, color,
+  transparency, carving, probe, quality, smoothing).
 - Tools: what a tool of the app does to a structure (Prepare…), each in its own dialog;
   measurements; ligands and their interactions to the table.
 - View: the camera, a ligand's pocket (focus, its surface), interactions, which areas show,
@@ -44,7 +45,7 @@ from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar
 from chemsuite.macromolecule.structure import io as protein_io
 from chemsuite.macromolecule.structure.sequence import KIND_ROWS
 
-from . import menus
+from . import menus, surface_menu
 
 if TYPE_CHECKING:
     from .panel import MacromoleculePanel
@@ -220,11 +221,11 @@ def _display(menu: QMenu, panel: MacromoleculePanel) -> None:
     session = panel.session
     menus.fill_show(menu.addMenu("Show"), session)
     menus.fill_hide(menu.addMenu("Hide"), session)
-    menus.fill_colour(menu.addMenu("Colour"), session, panel)
+    menus.fill_colour(menu.addMenu("Color"), session, panel)
     menus.fill_label(menu.addMenu("Label"), session)
     menu.addSeparator()
     menus.fill_hydrogens(menu.addMenu("Hydrogens"), session)
-    menus.fill_transparency(menu.addMenu("Surface Transparency"), session)
+    surface_menu.fill_surface(menu.addMenu("Surface"), session, panel)
 
 
 def _view(menu: QMenu, panel: MacromoleculePanel, commands: Commands) -> None:
@@ -277,12 +278,11 @@ def _ligand(menu: QMenu, panel: MacromoleculePanel) -> None:
     """View ▸ Ligand: a ligand in its pocket."""
     session = panel.session
     menus.fill_focus(menu.addMenu("Focus"), session)
-    skin = menu.addAction(
-        "Pocket Surface", lambda: session.show_pocket_surface(not session.pocket_surface)
+    skin = menu.addMenu("Pocket Surface")
+    surface_menu.fill_pocket(skin, session)
+    skin.menuAction().setToolTip(
+        "A skin over the focused pocket, colored by hydrophobicity, of its protein's surface kind"
     )
-    skin.setCheckable(True)
-    skin.setChecked(session.pocket_surface)
-    skin.setToolTip("Draw a see-through skin over the focused pocket, by hydrophobicity")
     clear = menu.addAction("Clear Focus", session.clear_focus)
     clear.setEnabled(session.focused is not None)
 
