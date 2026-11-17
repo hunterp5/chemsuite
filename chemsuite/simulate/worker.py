@@ -558,6 +558,6 @@ main()
 
 def command(python: str, wsl: bool = False, launcher: str = "wsl.exe") -> list[str]:
     """Argv that starts the worker in *python* (a Linux path run through *launcher*, the
-    ``wsl.exe`` set in Preferences, when *wsl*)."""
+    ``wsl.exe`` set in Settings, when *wsl*)."""
     native = [str(python), *ARGS, SCRIPT]
     return [launcher, "-e", *native] if wsl else native

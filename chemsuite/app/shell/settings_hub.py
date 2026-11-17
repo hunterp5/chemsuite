@@ -30,6 +30,13 @@ from .theme import apply_appearance
 
 CONFIG_ENV = "CHEMSUITE_CONFIG_DIR"  # tests and portable installs point this elsewhere
 CACHE_ENV = "CHEMSUITE_CACHE_DIR"
+#: the Settings menu's dialogs, in order: page key → title
+PAGES = {
+    "appearance": "Appearance",
+    "keyboard": "Keyboard Shortcuts",
+    "tools": "External Tools",
+    "general": "General",
+}
 
 
 def config_folder() -> Path:

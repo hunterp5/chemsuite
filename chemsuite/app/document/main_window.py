@@ -72,7 +72,7 @@ from ..shell.job_host import JobHost
 from ..shell.jobs import Job, JobRunner
 from ..shell.jobs_ui import JobsIndicator
 from ..shell.log_window import JOBS, MESSAGES, LogWindow
-from ..shell.settings_hub import settings_hub
+from ..shell.settings_hub import PAGES, settings_hub
 from ..table.advanced_search import AdvancedSearchPanel
 from ..table.column_actions import ColumnActions
 from ..table.filters.cards import FilterCard
@@ -623,21 +623,6 @@ class MainWindow(QMainWindow):
         edit.addAction(
             A("edit.delete_rows", "&Delete Selection", self.delete_rows, "Ctrl+Backspace")
         )
-        edit.addSeparator()
-        status = QAction("Status &Bar", self, checkable=True)
-        status.toggled.connect(self._set_status_bar)
-        register("view.status_bar", "Status Bar", "Edit")
-        self._commands["view.status_bar"] = status
-        self._status_bar_action = status
-        edit.addAction(status)
-        settings_action = A(
-            "app.settings",
-            "Preferences…",
-            self.open_settings,
-            [QKeySequence.StandardKey.Preferences, "Ctrl+,"],
-        )
-        settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)  # the app menu on macOS
-        edit.addAction(settings_action)
 
         self._building = "Data ▸ Search"
         search = QMenu("&Search", self)  # placed in the Data menu below
@@ -757,18 +742,29 @@ class MainWindow(QMainWindow):
         data.addSeparator()  # the Browser, in a section of its own at the bottom
         data.addAction(self._tool_actions[BROWSER_TOOL])
 
+        self._building = "Settings"  # after the tool menus (Macromolecule); there is no Help
+        settings = bar.addMenu("&Settings")
+        for page, title in PAGES.items():  # the first takes Ctrl+, (the Preferences key)
+            first = page == "appearance"
+            keys = [QKeySequence.StandardKey.Preferences, "Ctrl+,"] if first else None
+            command = "app.settings" if first else f"settings.{page}"
+            settings.addAction(A(command, f"{title}…", lambda p=page: self.open_settings(p), keys))
+        settings.addSeparator()
+        status = QAction("Status &Bar", self, checkable=True)
+        status.toggled.connect(self._set_status_bar)
+        register("view.status_bar", "Status Bar", "Settings")
+        self._commands["view.status_bar"] = self._status_bar_action = status
+        settings.addAction(status)
+        settings.addSeparator()
+        settings.addAction(A("help.guide", "chemsuite &User Guide", self.open_user_guide))
+        settings.addAction(A("help.log_folder", "Show &Log Folder", show_log_folder))
+        about = A("help.about", "&About chemsuite", self.show_about)
+        about.setMenuRole(QAction.MenuRole.AboutRole)  # the app menu on macOS
+        settings.addAction(about)
+
         self._building = "Window"
         log = A("view.log", "&Log", self.show_log)
         menu_corner.install(self, menu_corner.layout_menu(self), log)
-
-        self._building = "Help"
-        help_menu = bar.addMenu("&Help")
-        help_menu.addAction(A("help.guide", "chemsuite &User Guide", self.open_user_guide))
-        help_menu.addSeparator()
-        help_menu.addAction(A("help.log_folder", "Show &Log Folder", show_log_folder))
-        about = A("help.about", "&About chemsuite", self.show_about)
-        about.setMenuRole(QAction.MenuRole.AboutRole)  # the app menu on macOS
-        help_menu.addAction(about)
 
     def open_user_guide(self) -> None:
         from ..widgets.dialogs.kit import GUIDE
@@ -847,10 +843,10 @@ class MainWindow(QMainWindow):
         if settings_hub().user.appearance.status_bar != visible:
             settings_hub().update(lambda s: setattr(s.appearance, "status_bar", visible))
 
-    def open_settings(self):
+    def open_settings(self, page: str = "appearance"):
         from ..shell.settings_dialog import SettingsDialog
 
-        dialog = SettingsDialog(self, self.jobs)
+        dialog = SettingsDialog(self, self.jobs, page)
         dialog.open()
         return dialog
 

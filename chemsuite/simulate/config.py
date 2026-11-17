@@ -35,7 +35,7 @@ from chemsuite.core.settings import Settings
 PYTHON_TOOL = "openmm_python"
 WSL_TOOL = "openmm_wsl_python"
 TOOLS = frozenset({PYTHON_TOOL, WSL_TOOL})
-#: Preferences ▸ External Tools ▸ WSL: the wsl.exe that runs a WSL interpreter
+#: Settings ▸ External Tools ▸ WSL: the wsl.exe that runs a WSL interpreter
 WSL_EXE_TOOL = "wsl"
 
 
@@ -47,7 +47,7 @@ class Interpreter:
 
 
 def wsl_launcher(settings: Settings, text: str = "") -> str:
-    """The wsl.exe set in Preferences (*text* wins while a dialog is open), else ``wsl.exe``
+    """The wsl.exe set in Settings (*text* wins while a dialog is open), else ``wsl.exe``
     found on PATH."""
     return (text or "").strip() or settings.tool_paths.get(WSL_EXE_TOOL, "").strip() or "wsl.exe"
 
@@ -98,7 +98,7 @@ def ready_problem(settings: Settings, native_text: str = "", wsl_text: str = "")
     """Why OpenMM cannot run, or ``""`` when it can be tried. Starts no process."""
     found = interpreter(settings, native_text, wsl_text)
     if found is None:
-        return "OpenMM is not set up: set its Python under Preferences ▸ External Tools"
+        return "OpenMM is not set up: set its Python under Settings ▸ External Tools"
     if not found.wsl and is_app_python(found.python):
         return "That interpreter is the one running chemsuite: OpenMM needs its own environment"
     return ""

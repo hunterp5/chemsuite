@@ -26,7 +26,7 @@ read Ctrl as ⌘.
 12. [Similarity](#12-similarity)
 13. [SAR](#13-sar)
 14. [Chemical space](#14-chemical-space)
-15. [Preferences](#15-preferences)
+15. [Settings](#15-settings)
 16. [The log and reporting problems](#16-the-log-and-reporting-problems)
 17. [Keyboard shortcuts](#17-keyboard-shortcuts)
 
@@ -41,7 +41,7 @@ Each document has its own window. From top to bottom:
   | Menu | Holds |
   |---|---|
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close (clears the window to a new, empty document; with other windows open it closes this one) |
-  | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection), Status Bar, Preferences |
+  | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection) |
   | Tools | Utilities ▸ (Calculator, Random ▸ Random Numbers and Random Rows), Sketcher, Notepad |
   | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
   | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
@@ -50,7 +50,7 @@ Each document has its own window. From top to bottom:
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
   | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
   | Protein | Macromolecule Viewer: the workspace for proteins, with its own menus |
-  | Help | This guide, the log folder, About |
+  | Settings | Appearance, Keyboard Shortcuts, External Tools and General (each its own dialog), Status Bar, this guide, the log folder, About |
 
   - Every command that a tool adds appears in these menus. If a command is greyed out, its
     tooltip says why: for example, there is no structure column, or an external program is
@@ -112,7 +112,7 @@ Each document has its own window. From top to bottom:
     semicolon. It stays for about eight seconds.
   - At the far right: the row and selection counts ("200 rows · 3 selected").
 
-  Edit ▸ Status Bar hides or shows it.
+  Settings ▸ Status Bar hides or shows it.
 
 ### Tool dialogs
 
@@ -373,7 +373,7 @@ From Data ▸ Table:
   programs.
 - A structure that cannot be read is shown as **invalid**. Its original text is kept, so you
   can fix it.
-- Rows are taller when the table has a structure column. Change the height under Preferences ▸
+- Rows are taller when the table has a structure column. Change the height under Settings ▸
   Appearance.
 
 ### Reactions in the table
@@ -1029,7 +1029,7 @@ descriptors, conformers, clustering, maps and searches.
   - The computer is kept awake while jobs run.
   - When a job that took more than 30 seconds finishes or fails while chemsuite is not in
     front, the dock icon (taskbar on Windows) asks for attention and a desktop notification
-    names the job and its result. Preferences ▸ General ▸ **Notify when a long job finishes** turns
+    names the job and its result. Settings ▸ General ▸ **Notify when a long job finishes** turns
     the notification off.
 
 ---
@@ -1520,7 +1520,7 @@ it, so the 2D view works on any computer. On Windows, if the graphics card canno
 (common on remote desktops, virtual machines and VDI), Windows draws it in software instead:
 slower, but it works. chemsuite checks the graphics when it starts; where 3D cannot be drawn,
 the viewer stays in 2D, the 3D switch and the 3D plot types are greyed out, and their
-tooltips give the reason. Preferences ▸ General ▸ 3D graphics can force software drawing
+tooltips give the reason. Settings ▸ General ▸ 3D graphics can force software drawing
 (Windows and Linux) or turn 3D off.
 
 ### Macromolecules
@@ -1963,7 +1963,7 @@ uses it.
    example `conda env create --solver libmamba -f envs/openmm-win-64.yml -p D:\envs\openmm`.
    On Windows and macOS, the file's first lines give one more command, which installs
    `openmmforcefields`. The environment takes about 3.5 GB.
-3. In **Preferences ▸ External Tools**, set **OpenMM Python** to that environment's `python`
+3. In **Settings ▸ External Tools**, set **OpenMM Python** to that environment's `python`
    and press **Test**. It reports the OpenMM, openmmforcefields and OpenFF versions and each
    platform a calculation can run on: **CUDA** on an NVIDIA graphics card, **OpenCL**, **CPU**.
 
@@ -1991,7 +1991,7 @@ environment:
 1. Create an environment with Python 3.10–3.12, for example
    `conda create -n aizynth python=3.12`.
 2. In it, run `python -m pip install aizynthfinder "pyarrow>=19,<26"`.
-3. In **Preferences ▸ External Tools**, set **AiZynthFinder Python** to that environment's
+3. In **Settings ▸ External Tools**, set **AiZynthFinder Python** to that environment's
    `python` and press **Test**: it reports the AiZynthFinder version it found.
 4. Press **Download…** on the **AiZynthFinder config** row and choose a folder. chemsuite
    fetches AiZynthFinder's public USPTO policies, ring-breaker policy, filter and the ZINC stock
@@ -2462,19 +2462,23 @@ the same or neighbouring cells.
 
 ---
 
-## 15. Preferences
+## 15. Settings
 
-Edit ▸ Preferences… (Ctrl+,) has four pages. Changes preview immediately in every window. **OK**
-keeps them and **Cancel** puts everything back.
+The **Settings** menu (after Macromolecule) opens each group of settings in a dialog of its own:
+**Appearance…** (Ctrl+,), **Keyboard Shortcuts…**, **External Tools…** and **General…**.
+Changes preview immediately in every window. **OK** keeps them, **Cancel** puts everything
+back, and **Reset** returns that dialog's settings to their defaults. The menu also holds
+**Status Bar**, and what used to be the Help menu: **chemsuite User Guide**, **Show Log
+Folder** and **About chemsuite**.
 
-| Page | Contents |
+| Dialog | Contents |
 |---|---|
-| Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colourful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
-| Keyboard | Change any command's shortcut. |
-| External Tools | Paths to the optional programs chemsuite runs: AiZynthFinder (its Python and config), [OpenMM](#setting-up-openmm) (its Python, or on Windows a Python inside WSL) and, on Windows, the WSL that runs it, each with a **Test** button. Tools that need a missing program are greyed out, and their tooltip says why. |
+| Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colorful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
+| Keyboard Shortcuts | Change any command's shortcut. |
+| External Tools | Paths to the optional programs chemsuite runs: AiZynthFinder (its Python and config), [OpenMM](#setting-up-openmm) (its Python, or on Windows a Python inside WSL) and, on Windows, the WSL that runs it, each with a **Test** button. Tools that need a missing program are grayed out, and their tooltip says why. |
 | General | Processor cores to use (0 = automatic: all but one, so the window stays responsive), 3D graphics (Automatic, Software on Windows and Linux, or Off; takes effect after a restart), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
 
-Your IT department can fix some settings for everyone. Those are shown greyed out with a
+Your IT department can fix some settings for everyone. Those are shown grayed out with a
 padlock.
 
 ---
@@ -2485,10 +2489,10 @@ padlock.
   Log on macOS) shows the session's log. Filter it by level and text. A job's messages
   (Show Messages on the Jobs tab) show with the job's name above the list; click it to show
   every message again. Double-click a message from a job to find the job on the Jobs tab.
-- **Help ▸ Show Log Folder** opens the folder of log files to attach to a bug report. If
+- **Settings ▸ Show Log Folder** opens the folder of log files to attach to a bug report. If
   chemsuite ever closes by itself, `crash.log` there says where it was at that moment.
-- **Help ▸ chemsuite User Guide** opens this guide; **About chemsuite** (in the chemsuite menu
-  on macOS) shows the version and licence.
+- **Settings ▸ chemsuite User Guide** opens this guide; **About chemsuite** (in the chemsuite
+  menu on macOS) shows the version and license.
 - If chemsuite hits an unexpected error, it shows a report you can copy. The details are also
   written to the log.
 
@@ -2496,7 +2500,7 @@ padlock.
 
 ## 17. Keyboard shortcuts
 
-You can change any of these in Preferences ▸ Keyboard.
+You can change any of these in Settings ▸ Keyboard Shortcuts.
 
 | Action | Shortcut |
 |---|---|
@@ -2514,4 +2518,4 @@ You can change any of these in Preferences ▸ Keyboard.
 | Scatter plot | Ctrl+Shift+P |
 | Filters | Ctrl+Shift+F |
 | Browser | Ctrl+Shift+B |
-| Preferences | Ctrl+, |
+| Settings ▸ Appearance | Ctrl+, |

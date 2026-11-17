@@ -41,12 +41,11 @@ def chem(window):
 
 def test_menu_bar_order(window) -> None:
     titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
-    assert titles[:6] == ["File", "Edit", "Tools", "Chemistry", "Data", "Macromolecule"]
-    assert titles[-1] == "Help"
+    assert titles[:7] == ["File", "Edit", "Tools", "Chemistry", "Data", "Macromolecule", "Settings"]
     if window.menuBar().isNativeMenuBar():  # macOS: Layout and Log in a Window menu
-        assert titles[6:-1] == ["Window"]
+        assert titles[7:] == ["Window"]
     else:  # at the right end of the menu bar
-        assert titles[6:-1] == []
+        assert titles[7:] == []
         assert window.layout_button.text() == "Layout"
         assert window.log_button.text() == "Log"
     data = window.menuBar().actions()[4].menu()
@@ -112,8 +111,7 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
     assert visible(calculate) == ["Descriptors…", "pKa…"]
     reaction = submenu(menus["Chemistry"], "Reaction")
     assert visible(reaction) == ["Split Reactions…", "Retrosynthesis…"]
-    assert "Preferences…" in visible(menus["Edit"])
-    assert "Status Bar" in visible(menus["Edit"])
+    assert not {"Preferences…", "Status Bar"} & set(visible(menus["Edit"]))
     assert "Sketcher…" not in visible(menus["Chemistry"])
     edit = visible(menus["Edit"])
     assert "Delete Selection" in edit

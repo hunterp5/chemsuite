@@ -206,7 +206,7 @@ def ready_problem(settings: Settings, python_text: str = "", config_text: str = 
     if not python:
         return (
             "AiZynthFinder is not configured. Set its Python interpreter and config.yml "
-            "under Preferences ▸ External Tools."
+            "under Settings ▸ External Tools."
         )
     if is_app_python(python):
         return (
@@ -215,7 +215,7 @@ def ready_problem(settings: Settings, python_text: str = "", config_text: str = 
         )
     config = resolve_config(settings, config_text)
     if config is None:
-        return "Choose the AiZynthFinder config.yml under Preferences ▸ External Tools."
+        return "Choose the AiZynthFinder config.yml under Settings ▸ External Tools."
     try:
         body = config.read_text(encoding="utf-8")
     except OSError as err:

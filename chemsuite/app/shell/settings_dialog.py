@@ -40,11 +40,9 @@ from PySide6.QtWidgets import (
     QKeySequenceEdit,
     QLabel,
     QLineEdit,
-    QListWidget,
     QMessageBox,
     QPushButton,
     QSpinBox,
-    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -74,7 +72,7 @@ from chemsuite.simulate.config import TOOLS as SIMULATE_TOOLS
 
 from .commands import Portable, all_shortcuts, commands, conflicts
 from .job_host import JobHost
-from .settings_hub import settings_hub
+from .settings_hub import PAGES, settings_hub
 
 LOCK = "🔒 "
 LOCKED_TIP = "Set by your IT department (machine policy)"
@@ -83,49 +81,49 @@ THEME_TITLES = {"system": "System", "light": "Light", "dark": "Dark", "groovy": 
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None, jobs: JobHost | None = None) -> None:
+    """One page of the settings (Settings ▸ Appearance…, Keyboard Shortcuts…, …)."""
+
+    def __init__(
+        self, parent: QWidget | None = None, jobs: JobHost | None = None, page: str = "appearance"
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Preferences")
+        self.setWindowTitle(PAGES[page])
         #: runs the dialog's own work (a download) as the document window's job
         self.jobs = jobs
         self.hub = settings_hub()
         self.user = self.hub.user.copy()
         self._reroll = False
-        self.pages = QListWidget()
-        self.pages.setFixedWidth(150)
-        self.stack = QStackedWidget()
         self.appearance = AppearancePage(self)
         self.keyboard = KeyboardPage(self)
         self.tools = ToolsPage(self)
         self.general = GeneralPage(self)
-        for title, page in (
-            ("Appearance", self.appearance),
-            ("Keyboard", self.keyboard),
-            ("External Tools", self.tools),
-            ("General", self.general),
-        ):
-            self.pages.addItem(title)
-            self.stack.addWidget(page)
-        self.pages.currentRowChanged.connect(self.stack.setCurrentIndex)
-        self.pages.setCurrentRow(0)
+        shown: dict[str, QWidget] = {
+            "appearance": self.appearance,
+            "keyboard": self.keyboard,
+            "tools": self.tools,
+            "general": self.general,
+        }
+        #: the page this dialog shows (the others are made but not shown)
+        self.page = shown[page]
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel
             | QDialogButtonBox.StandardButton.RestoreDefaults
         )
-        buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults).setText("Reset Page")
+        buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults).setText("Reset")
         buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(
             self.reset_page
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        body = QHBoxLayout()
-        body.addWidget(self.pages)
-        body.addWidget(self.stack, 1)
         layout = QVBoxLayout(self)
-        layout.addLayout(body, 1)
+        layout.addWidget(self.page, 1)
         layout.addWidget(buttons)
-        self.resize(820, 560)
+        if page == "keyboard":  # a long list of commands
+            self.resize(720, 560)
+        else:  # just as big as the page
+            hint = self.sizeHint()
+            self.resize(max(hint.width(), 520 if page != "tools" else 760), hint.height())
 
     # -- helpers for the pages -------------------------------------------------------------------
     def lock(self, widget: QWidget, key: str) -> bool:
@@ -145,7 +143,7 @@ class SettingsDialog(QDialog):
         self.changed()
 
     def reset_page(self) -> None:
-        self.stack.currentWidget().reset()
+        self.page.reset()
         self.changed()
 
     # -- closing ----------------------------------------------------------------------------------
@@ -160,7 +158,6 @@ class SettingsDialog(QDialog):
     def accept(self) -> None:
         problem = self.problem()
         if problem:
-            self.pages.setCurrentRow(1)
             self.keyboard.status.setText(problem)
             return
         self.hub.save(self.user)

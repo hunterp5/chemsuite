@@ -21,7 +21,7 @@ import json
 import sys
 
 from PySide6.QtGui import QKeySequence, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog
 
 from chemsuite.app.shell.settings_hub import settings_hub
 from tests.gui import gui
@@ -123,7 +123,7 @@ def test_custom_theme_applies_from_settings(window, monkeypatch) -> None:
 
 
 def test_shortcut_change_and_conflict(window) -> None:
-    dialog = window.open_settings()
+    dialog = window.open_settings("keyboard")
     keys = dialog.keyboard
     keys.select("data.add_column")
     keys.add_recorded(QKeySequence("Ctrl+Shift+K"))
@@ -135,7 +135,7 @@ def test_shortcut_change_and_conflict(window) -> None:
     assert "Add Column" in problem and "Add Rows" in problem, problem
     assert "Add Column" in keys.status.text()
     dialog.accept()
-    assert dialog.isVisible() and dialog.pages.currentRow() == 1
+    assert dialog.isVisible()
     keys.set_shortcuts("data.add_rows", None)  # back to its default
     assert dialog.problem() == ""
     dialog.accept()
@@ -257,3 +257,20 @@ def test_status_bar_is_slim_while_a_job_runs(window, qtbot) -> None:
     qtbot.waitUntil(window.jobs_indicator.isVisible)
     assert bar.height() == idle <= bar.fontMetrics().height() + 8
     release.set()
+
+
+def test_the_settings_menu_holds_each_page_the_status_bar_and_help(window) -> None:
+    bar = window.menuBar()
+    titles = [a.text() for a in bar.actions()]
+    assert "&Help" not in titles and titles.index("&Settings") == titles.index("&Macromolecule") + 1
+    settings = next(a.menu() for a in bar.actions() if a.text() == "&Settings")
+    names = [a.text() for a in settings.actions() if not a.isSeparator()]
+    assert names == [
+        "Appearance…", "Keyboard Shortcuts…", "External Tools…", "General…", "Status &Bar",
+        "chemsuite &User Guide", "Show &Log Folder", "&About chemsuite",
+    ]  # fmt: skip
+    window.command_action("settings.tools").trigger()
+    dialog = window.findChildren(QDialog)[-1]
+    assert dialog.windowTitle() == "External Tools" and dialog.page is dialog.tools
+    assert dialog.tools.isVisible() and not dialog.keyboard.isVisible()
+    dialog.reject()
