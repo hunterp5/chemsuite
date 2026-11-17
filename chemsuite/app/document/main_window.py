@@ -657,10 +657,11 @@ class MainWindow(QMainWindow):
         search.addAction(A("data.show_all_rows", "Show &All Rows", self.show_all_rows))
 
         self._building = "Tools"
-        tools_menu = bar.addMenu("&Tools")  # Utilities first, then the tools (the Sketcher)
+        tools_menu = bar.addMenu("&Tools")  # Calculator, Random ▸ | the tools (the Sketcher)
         tools_menu.setToolTipsVisible(True)
-        utilities = tools_menu.addMenu("&Utilities")  # Calculator and Random ▸ fill it
-        utilities.setToolTipsVisible(True)
+        random_menu = tools_menu.addMenu("&Random")  # Random Numbers and Random Rows fill it
+        random_menu.setToolTipsVisible(True)
+        tools_menu.addSeparator()
 
         # the tool menus, in order (tools fill them; see chemsuite.tools.TOOL_MODULES)
         self._tool_actions: dict[str, QAction] = {}
@@ -725,7 +726,7 @@ class MainWindow(QMainWindow):
             ("File", "Export"): export_menu,
             ("Edit",): edit,
             ("Tools",): tools_menu,
-            ("Tools", "Utilities"): utilities,
+            ("Tools", "Random"): random_menu,
             ("Chemistry",): chemistry,
             ("Data",): data,
             ("Data", "Search"): search,
@@ -737,6 +738,8 @@ class MainWindow(QMainWindow):
         }
         #: tools in these menus go before this action instead of at the end
         self._tool_slots = {("Data", "Search"): search_tools, ("Data",): sar.menuAction()}
+        #: single tools that go before this action instead (the Calculator heads Tools)
+        self._tool_places = {"calculator": random_menu.menuAction()}
         for tool in registered_tools():
             self._add_tool(tool, menus)
         data.addSeparator()  # the Browser, in a section of its own at the bottom
@@ -813,7 +816,7 @@ class MainWindow(QMainWindow):
             self.addAction(action)
             return
         menu = menus[tool.menu]
-        slot = self._tool_slots.get(tool.menu)
+        slot = self._tool_places.get(tool.id) or self._tool_slots.get(tool.menu)
         order = MENU_ORDER.get(tool.menu, ())
         if tool.id in order:  # before the first tool listed after it that is already in
             later = order[order.index(tool.id) + 1 :]

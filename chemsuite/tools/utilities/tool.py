@@ -14,13 +14,13 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tools (utilities): everyday helpers in the spirit of MolManager's Tools ▸ Utilities."""
+"""Tools ▸ Calculator… and Random ▸: everyday helpers at the top of the Tools menu."""
 
 from __future__ import annotations
 
 from chemsuite.app.document.tools import Tool, ToolContext
 
-MENU = ("Tools", "Utilities")
+MENU = ("Tools",)
 RANDOM = (*MENU, "Random")
 
 

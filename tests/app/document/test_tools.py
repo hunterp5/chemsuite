@@ -82,10 +82,10 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
     def submenu(menu, title):
         return next(a.menu() for a in menu.actions() if a.text().replace("&", "") == title)
 
-    assert [t for t in visible(menus["Tools"]) if t] == ["Utilities", "Sketcher…", "Notepad"]
-    utilities = submenu(menus["Tools"], "Utilities")
-    assert [t for t in visible(utilities) if t] == ["Calculator…", "Random"]
-    assert visible(submenu(utilities, "Random")) == ["Random Numbers…", "Random Rows…"]
+    tools = visible(menus["Tools"])
+    assert tools[:3] == ["Calculator…", "Random", ""]  # then a separator before the tools
+    assert [t for t in tools if t] == ["Calculator…", "Random", "Sketcher…", "Notepad"]
+    assert visible(submenu(menus["Tools"], "Random")) == ["Random Numbers…", "Random Rows…"]
     table = [t for t in visible(submenu(menus["Data"], "Table")) if t]
     assert table == ["Add Compound…", "Add Rows…", "Add Column…", "Split Column…",
                      "Join Columns…"]  # fmt: skip

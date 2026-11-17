@@ -42,7 +42,7 @@ Each document has its own window. From top to bottom:
   |---|---|
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close (clears the window to a new, empty document; with other windows open it closes this one) |
   | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection) |
-  | Tools | Utilities ▸ (Calculator, Random ▸ Random Numbers and Random Rows), Sketcher, Notepad |
+  | Tools | Calculator, Random ▸ (Random Numbers and Random Rows), Sketcher, Notepad |
   | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
   | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
   | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
@@ -2136,7 +2136,7 @@ Data ▸ Similarity ▸ Bin Values… groups a number column into bins.
 
 ### Calculator
 
-Tools ▸ Utilities ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
+Tools ▸ Calculator… (Ctrl+Shift+=) adds a column worked out from a formula. The
 formula is checked as you type, and **Preview** shows the result for the first shown rows.
 **Insert ▸ Column** and **Insert ▸ Function** put a column name or function at the cursor.
 
@@ -2169,7 +2169,7 @@ Formulas cannot run code, open files or reach outside the table.
 
 ### Random Numbers
 
-Tools ▸ Utilities ▸ Random ▸ Random Numbers… fills a column with random values:
+Tools ▸ Random ▸ Random Numbers… fills a column with random values:
 
 | Distribution | Settings |
 |---|---|
@@ -2184,7 +2184,7 @@ Leave it empty for a new draw each time.
 
 ### Random Rows
 
-Tools ▸ Utilities ▸ Random ▸ Random Rows… picks a random sample from all, the shown or the
+Tools ▸ Random ▸ Random Rows… picks a random sample from all, the shown or the
 selected rows, either a number of rows or a percentage. It then **selects them**, **adds them
 to the selection**, or saves them as a **new list** (for example a test set). A seed picks the
 same rows again.
