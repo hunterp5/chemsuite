@@ -137,6 +137,73 @@ def open_edges(mesh: Mesh) -> int:
     return int((counts != 2).sum())
 
 
+def edges(mesh: Mesh) -> np.ndarray:
+    """Every edge of the mesh once, as vertex pairs (uint32 (e, 2)): a wire-frame drawing."""
+    t = mesh.triangles.astype(np.int64)
+    if not len(t):
+        return np.zeros((0, 2), np.uint32)
+    pairs = np.concatenate([t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]])
+    pairs.sort(axis=1)
+    n = np.int64(max(len(mesh), 1))
+    keys = np.unique(pairs[:, 0] * n + pairs[:, 1])
+    return np.stack([keys // n, keys % n], axis=1).astype(np.uint32)
+
+
+#: the dots of a dotted surface: one per this many Å of surface, each this big
+DOT_SPACING = 0.7
+DOT_RADIUS = 0.09
+_OCTAHEDRON = np.array(
+    [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], np.float32
+)
+_OCTAHEDRON_FACES = np.array(
+    [[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4], [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]],
+    np.int64,
+)
+
+
+def dots(mesh: Mesh, spacing: float = DOT_SPACING, radius: float = DOT_RADIUS) -> Mesh:
+    """The mesh as dots: a small octahedron at about one vertex per *spacing* Å (the first
+    vertex in each cube of that size), each owned as its vertex was."""
+    if not len(mesh):
+        return Mesh.empty()
+    cells = np.floor(mesh.positions / spacing).astype(np.int64)
+    _, chosen = np.unique(cells, axis=0, return_index=True)
+    chosen.sort()
+    centres = mesh.positions[chosen]
+    k = len(chosen)
+    positions = centres[:, None, :] + radius * _OCTAHEDRON[None]
+    normals = np.broadcast_to(_OCTAHEDRON[None], (k, 6, 3))
+    vertices = np.concatenate([positions, normals], axis=2).reshape(-1, VERTEX_FLOATS)
+    triangles = (_OCTAHEDRON_FACES[None] + 6 * np.arange(k)[:, None, None]).reshape(-1, 3)
+    return Mesh(
+        vertices.astype(np.float32),
+        triangles.astype(np.uint32),
+        np.repeat(mesh.owner[chosen], 6),
+    )
+
+
+def carve(mesh: Mesh, points: np.ndarray, distance: float) -> Mesh:
+    """The part of the mesh within *distance* Å of any of *points*: the triangles whose three
+    vertices all are, with only the vertices they use (an empty mesh when there are none)."""
+    points = np.asarray(points, np.float64).reshape(-1, 3)
+    if not len(mesh) or not len(points):
+        return Mesh.empty()
+    from scipy.spatial import cKDTree
+
+    near, _ = cKDTree(points).query(mesh.positions, distance_upper_bound=distance)
+    keep = np.isfinite(near)
+    t = mesh.triangles.astype(np.int64)
+    kept = t[keep[t].all(axis=1)]
+    if not len(kept):
+        return Mesh.empty()
+    used, numbered = np.unique(kept, return_inverse=True)
+    return Mesh(
+        mesh.vertices[used],
+        numbered.reshape(-1, 3).astype(np.uint32),
+        mesh.owner[used],
+    )
+
+
 DASH = 0.25  # Å of tube, then a gap
 GAP = 0.2
 DASH_RADIUS = 0.05

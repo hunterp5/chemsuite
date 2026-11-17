@@ -34,7 +34,7 @@ import numpy as np
 import pytest
 
 from chemsuite.macromolecule.chem import poses
-from chemsuite.macromolecule.look import cartoon
+from chemsuite.macromolecule.look import cartoon, surface
 from chemsuite.macromolecule.look import display as displays
 from chemsuite.macromolecule.structure import io
 from chemsuite.macromolecule.structure.model import Structure
@@ -52,6 +52,12 @@ SELECTION_S = 0.025  # a selection change: the new look of every atom and the ca
 SELECT_S = 0.05  # a distance expression over every atom
 CARTOON_S = 0.3
 COMPOSE_S = 0.5
+#: a molecular surface (SES, Normal quality) of about 6,000 heavy atoms, built in the
+#: background (Windows desktop, 2026-11: 3.2 s and 220 MB; most of it in the distance
+#: transforms, one per atom radius)
+SES_ATOMS = 5_500
+SES_S = 5.0
+SES_MB = 400
 
 
 def best_of(fn: Callable[[], object], repeat: int = 3) -> float:
@@ -144,3 +150,20 @@ def test_selecting_and_building(big) -> None:
     }
     print("\n" + ", ".join(f"{k} {s * 1000:.0f} ms" for k, (s, _) in timings.items()))
     assert all(seconds < limit for seconds, limit in timings.values())
+
+
+def test_a_molecular_surface() -> None:
+    import tracemalloc
+
+    structure = tiled(load("1atp.cif.gz"), SES_ATOMS)
+    heavy = np.flatnonzero((structure.element != 1) & ~select(structure, "water"))
+    options = surface.SurfaceOptions()
+    tracemalloc.start()
+    try:
+        surface.build(structure, heavy, 0, options)
+        peak = tracemalloc.get_traced_memory()[1] / 1e6
+    finally:
+        tracemalloc.stop()
+    seconds = best_of(lambda: surface.build(structure, heavy, 0, options), repeat=2)
+    print(f"\nSES, {len(heavy):,} heavy atoms: {seconds:.2f} s, peak {peak:.0f} MB")
+    assert seconds < SES_S and peak < SES_MB

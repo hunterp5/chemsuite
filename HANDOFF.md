@@ -237,8 +237,12 @@ other machine can pick it up. Update it at the end of a session that leaves work
     [`docs/SURFACE_PLAN.md`](docs/SURFACE_PLAN.md). Decided: SES is the default kind (saved
     documents load as Blob); Coulombic coloring uses ff14SB-style charges for the states the
     hydrogens show (united atom when unprepared), Gasteiger for ligands. Phase 0 is done (the
-    charge table from PDB2PQR's AMBER.DAT, BSD-3, approved by the user); phase 1 (geometry)
-    is next. Then: try Prepare, Inspect and docking by hand in the app; a second titration
+    charge table from PDB2PQR's AMBER.DAT, BSD-3, approved by the user). Phase 1 is done:
+    `look/surface.py` builds SES/SAS/vdW/Blob from `SurfaceOptions` (Blob is still what
+    `Display` builds until phase 2), and `look/mesh.py` has `edges`, `dots`, `carve`. SES of
+    about 6,000 heavy atoms: 2.8–3.2 s and 220 MB on the Windows desktop, most of it in the
+    distance transforms (one per atom radius); the target was 2 s, accepted since it is built
+    in the background. Phase 2 (display, saving, menus) is next. Then: try Prepare, Inspect and docking by hand in the app; a second titration
     round (PROPKA-style H-bond determinants, His titrated for charge only) is listed in
     p2-review.md §4.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
