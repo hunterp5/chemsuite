@@ -134,3 +134,13 @@ def test_edges_dots_and_carving(kinase: Structure) -> None:
     assert (np.linalg.norm(carved.positions - centre, axis=1) <= 6.0).all()
     assert int(carved.triangles.max()) < len(carved)
     assert len(mesh.carve(m, np.zeros((0, 3)), 6.0)) == 0
+
+
+def test_wire_frames_chunk_as_lines(kinase: Structure) -> None:
+    m = surface.build(kinase, np.flatnonzero(select(kinase, "ligand")), 0, SurfaceOptions())
+    lines = mesh.edges(m)
+    parts = mesh.chunks(m, 300, indices=lines)
+    assert all(c.triangles.shape[1] == 2 and len(c.vertex_map) <= 300 for c in parts)
+    together = np.concatenate([c.vertex_map[c.triangles.astype(np.int64)] for c in parts])
+    assert len(together) == len(lines)
+    assert np.array_equal(np.unique(np.sort(together, axis=1), axis=0), lines.astype(np.int64))

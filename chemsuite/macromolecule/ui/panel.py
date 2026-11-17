@@ -77,6 +77,8 @@ CARTOON = "cartoon"
 SURFACE = "surface"
 LINES = "interactions"
 POCKET = "pocket"
+SURFACE_WIRE = "surface wire"
+POCKET_WIRE = "pocket wire"
 #: Å of surroundings kept in view when a residue is framed (:meth:`MacromoleculePanel.frame_atoms`)
 AROUND = 8.0
 #: the commands a tool gives the viewer (see :mod:`.menubar`)
@@ -323,6 +325,10 @@ class MacromoleculePanel(ToolPanel):
         view.set_mesh(CARTOON, scene.cartoon, scene.cartoon_look)
         view.set_mesh(SURFACE, scene.surface, scene.surface_look, owner=ATOM, transparent=True)
         view.set_mesh(POCKET, scene.pocket, scene.pocket_look, owner=ATOM, transparent=True)
+        wires = ((SURFACE_WIRE, scene.surface_wire, scene.surface_wire_look),
+                 (POCKET_WIRE, scene.pocket_wire, scene.pocket_wire_look))  # fmt: skip
+        for name, mesh, look in wires:
+            view.set_mesh(name, mesh, look, owner=ATOM, transparent=True, lines=True)
         view.set_mesh(LINES, scene.lines, scene.lines_look, owner=ATOM)
         new = {d.id for d in scene.displays if d is not self.session.pose} - self._fitted
         view.set_scene(scene.geometry, scene.sphere_look, scene.cylinder_look)
@@ -341,6 +347,8 @@ class MacromoleculePanel(ToolPanel):
         self.view.set_mesh_look(CARTOON, scene.cartoon_look)
         self.view.set_mesh_look(SURFACE, scene.surface_look)
         self.view.set_mesh_look(POCKET, scene.pocket_look)
+        self.view.set_mesh_look(SURFACE_WIRE, scene.surface_wire_look)
+        self.view.set_mesh_look(POCKET_WIRE, scene.pocket_wire_look)
 
     def _proteins_changed(self) -> None:
         self._fitted &= {d.id for d in self.session.displays if d.visible}

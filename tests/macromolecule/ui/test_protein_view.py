@@ -468,3 +468,95 @@ def test_turning_a_large_protein_keeps_its_frame_rate() -> None:
     print(f"\n{lines['ATOMS'][0]} atoms on {backend}: median {median} ms, 95% {p95} ms a frame")
     if backend == "Metal":
         assert median < FRAME_MS, out.stdout
+
+
+def test_a_wire_frame_layer_draws_the_mesh_s_edges(qtbot) -> None:
+    from chemsuite.macromolecule.look import mesh, surface
+    from chemsuite.macromolecule.ui.view import ATOM, MacromoleculeView
+
+    structure = io.read(KINASE)
+    view = MacromoleculeView()
+    qtbot.addWidget(view)
+    view.set_scene(*_scene(structure))
+    ligand = np.flatnonzero(structure.atom_kind == 2)
+    skin = surface.build(structure, ligand, 0, surface.SurfaceOptions(quality="coarse"))
+    look = mesh.look(skin, np.ones((structure.n_atoms, 4)), np.zeros(structure.n_atoms))
+    view.set_mesh("wire", skin, look, owner=ATOM, transparent=True, lines=True)
+    view.set_mesh("solid", skin, look, owner=ATOM)
+    wire, solid = view._layers["wire"], view._layers["solid"]
+    assert wire.indices.shape == (len(mesh.edges(skin)), 2)
+    assert np.array_equal(solid.indices, skin.triangles)
+    view.set_hover(ligand[:2])  # a wire frame lights up by its owners as a solid one does
+    assert np.array_equal(wire.look[:, 4] == scene.HOVER, np.isin(skin.owner, ligand[:2]))
+
+
+RENDER_STYLES = """
+import sys
+import numpy as np
+from PySide6.QtWidgets import QApplication
+app = QApplication([])
+from chemsuite.macromolecule.ui import view as views
+from chemsuite.macromolecule.look import mesh, scene, surface
+from chemsuite.macromolecule.structure import io
+if sys.argv[2] == "short":
+    create = views.MacromoleculeView.create_pipelines
+    def without_wide_indices(self):
+        ok = create(self)
+        self._wide_indices = False
+        return ok
+    views.MacromoleculeView.create_pipelines = without_wide_indices
+s = io.read(sys.argv[1])
+ligand = np.flatnonzero(s.atom_kind == 2)
+skin = surface.build(s, ligand, 0, surface.SurfaceOptions())
+red = np.tile(np.array([0.95, 0.1, 0.1, 1.0], np.float32), (s.n_atoms, 1))
+view = views.MacromoleculeView()
+view.resize(400, 400)
+nothing = scene.geometry(s, np.zeros(s.n_atoms, np.uint8))
+view.set_scene(nothing, np.zeros((0, 5)), np.zeros((0, 10)))
+centres = s.coords[0][ligand]
+view.set_pick_points(ligand, centres, np.full(len(ligand), 3.0))
+view.reset_view()
+try:
+    view.show()
+    for _ in range(20):
+        app.processEvents()
+except Exception as error:
+    print("NO-RHI", type(error).__name__)
+    sys.exit(0)
+if view.grabFramebuffer().isNull():
+    print("NO-RHI")
+    sys.exit(0)
+for style, shown, lines in (("SOLID", skin, False), ("MESH", skin, True),
+                            ("DOTS", mesh.dots(skin), False)):
+    view.set_mesh("surface", shown, mesh.look(shown, red, np.zeros(s.n_atoms)),
+                  owner=views.ATOM, lines=lines)
+    for _ in range(10):
+        app.processEvents()
+    image = view.grabFramebuffer()
+    pixels = np.array([[image.pixelColor(x, y).getRgb()[:3] for x in range(0, 400, 2)]
+                       for y in range(0, 400, 2)])
+    reddish = (pixels[..., 0] > 120) & (pixels[..., 0] > pixels[..., 1] + 60)
+    print(style, int(reddish.sum()))
+"""
+
+
+@pytest.mark.skipif(
+    sys.platform.startswith("linux") and not os.environ.get("DISPLAY"),
+    reason="needs a display for the GPU",
+)
+@pytest.mark.parametrize("indices", ["wide", "short"])
+def test_surfaces_draw_solid_as_a_mesh_and_as_dots(indices) -> None:
+    """A wire frame and dots cover less of the screen than the solid surface, but draw."""
+    env = {k: v for k, v in os.environ.items() if k != "QT_QPA_PLATFORM"}
+    out = subprocess.run(
+        [sys.executable, "-c", RENDER_STYLES, str(KINASE), indices], capture_output=True,
+        text=True, env=env, cwd=ROOT, timeout=120,
+    )  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    if "NO-RHI" in out.stdout:
+        if os.environ.get("CHEMSUITE_REQUIRE_GPU"):
+            pytest.fail("no GPU drawing: " + out.stderr)
+        pytest.skip("no GPU drawing on this machine")
+    counts = {line.split()[0]: int(line.split()[1]) for line in out.stdout.splitlines()}
+    assert counts["SOLID"] > counts["MESH"] > 0, counts
+    assert counts["SOLID"] > counts["DOTS"] > 0, counts

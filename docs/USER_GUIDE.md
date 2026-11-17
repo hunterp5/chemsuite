@@ -1801,6 +1801,7 @@ or not, with the rows you chose.
     the probe's center can go; **Van der Waals**, the atoms' spheres; **Gaussian**, a smooth
     skin over the atoms (quicker, and the kind of every surface in documents saved before
     there were kinds, which open as they were).
+  - **Style:** **Solid**, **Mesh** (its wire frame) or **Dots**.
   - **Color:** by any of the schemes above (by hydrophobicity at first), or **Single
     Color…** for one color over the whole surface. **Transparency:** opaque to 80%.
   - **Carve Around Selection ▸** 3, 5, 8 or 12 Å shows only the part of every protein's surface
@@ -1831,8 +1832,8 @@ or not, with the rows you chose.
   hydrophobicity, fades the rest of the protein and hides other small molecules. A slice of
   depth around the pocket follows the camera, with the back of the pocket fading into the
   background. **Pocket Surface ▸** in the same menu turns the skin off or on (**Show**) and
-  sets its **Transparency**; the skin is of its protein's surface kind. **Clear Focus** undoes
-  the fading.
+  sets its **Style** and **Transparency**; the skin is of its protein's surface kind. **Clear
+  Focus** undoes the fading.
 - **Measure ▸ Distance / Angle / Dihedral**, then click two, three or four atoms. Esc stops
   measuring.
 - **Editing** (the Edit menu, or **Edit Selection ▸** in the right-click menu) changes the

@@ -318,7 +318,7 @@ def test_surface_transparency_and_color_change_only_the_look(panel, qtbot) -> No
     menu = QMenu()
     fill_surface(menu, session, panel)
     titles = [a.text() for a in menu.actions() if a.text()]
-    assert titles == ["Kind", "Color", "Transparency", "Carve Around Selection",
+    assert titles == ["Kind", "Style", "Color", "Transparency", "Carve Around Selection",
                       "Show Whole Surface", "Probe Radius", "Quality", "Smoothing"]  # fmt: skip
     transparency = action_in(menu, "Transparency").menu()
     assert [a.text() for a in transparency.actions()] == ["Opaque", "20%", "40%", "60%", "80%"]

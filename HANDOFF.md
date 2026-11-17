@@ -246,8 +246,9 @@ other machine can pick it up. Update it at the end of a session that leaves work
     transparency and carve points (saved; a document without them opens as Blob; `carry` keeps
     them through edits), `session.change_surfaces` applies a change to the selected-or-visible
     proteins, and `ui/surface_menu.py` fills Display ▸ Surface and View ▸ Ligand ▸ Pocket
-    Surface ▸ ("Colour" menus renamed "Color"). Phase 3 (Mesh and Dots styles in the view) is
-    next, then 4 (By Electrostatics). Then: try Prepare, Inspect and docking by hand in the app; a second titration
+    Surface ▸ ("Colour" menus renamed "Color"). Phase 3 is done: Style (Solid, Mesh, Dots) for
+    surfaces and the pocket skin; Mesh draws the edges as a Lines layer (`lines=True`, also in
+    16-bit chunks), Dots are small octahedra. Phase 4 (By Electrostatics) is next. Then: try Prepare, Inspect and docking by hand in the app; a second titration
     round (PROPKA-style H-bond determinants, His titrated for charge only) is listed in
     p2-review.md §4.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its

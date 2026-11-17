@@ -128,3 +128,39 @@ def test_surface_and_pocket_colors_are_kept_apart(kinase) -> None:
     assert shown.surface_colours()[:, :3] == pytest.approx(by_chain)
     shown.colour_surface("nope")
     assert shown.surface_scheme == colours.CHAIN
+
+
+def test_styles_route_surfaces_to_filled_and_wire_meshes(kinase) -> None:
+    from chemsuite.macromolecule.look import mesh
+
+    shown = _surfaced(kinase)
+    other = _surfaced(kinase)  # a second copy of the protein, drawn as a wire frame
+    other.set_surface_style(displays.MESH)
+    scene = displays.compose([shown, other])
+    whole = shown.surface_mesh()
+    assert len(scene.surface) == len(whole) and len(scene.surface_wire) == len(whole)
+    assert (scene.surface_wire.owner >= kinase.n_atoms).all()  # the second protein's atoms
+    assert len(scene.surface_wire_look) == len(scene.surface_wire)
+    shown.set_surface_style(displays.DOTS)
+    dotted = displays.compose([shown, other])
+    assert len(dotted.surface) == len(mesh.dots(whole))
+    assert shown.drawn_mesh()[0] is shown.drawn_mesh()[0]  # the dots are kept
+    shown.selected[:] = True
+    again = displays.relook(dotted)
+    assert (again.surface_look[:, 4] > 0).all() and (again.surface_wire_look[:, 4] == 0).all()
+    shown.set_surface_style("nope")
+    assert shown.surface_style == displays.DOTS
+
+
+def test_styles_are_saved_and_kept_by_edits(kinase) -> None:
+    shown = _surfaced(kinase)
+    shown.set_surface_style(displays.MESH)
+    shown.set_surface_style(displays.DOTS, pocket=True)
+    again = Display("1ATP", "1ATP", kinase)
+    again.set_state(shown.state())
+    assert (again.surface_style, again.pocket_style) == (displays.MESH, displays.DOTS)
+    again.set_state({**shown.state(), "surface_style": 3})
+    assert again.surface_style == displays.SOLID
+    edited = Display("1ATP", "1ATP", kinase.subset(np.arange(kinase.n_atoms) > 0))
+    edited.carry(shown)
+    assert (edited.surface_style, edited.pocket_style) == (displays.MESH, displays.DOTS)

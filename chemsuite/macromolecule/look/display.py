@@ -65,6 +65,9 @@ FLAT_RGB = (0.85, 0.85, 0.85)
 #: how far (Å) a carved surface reaches from the atoms it was carved around, and the choices
 CARVE_DISTANCE = 5.0
 CARVE_DISTANCES = (3.0, 5.0, 8.0, 12.0)
+#: how a surface is drawn: filled, as its wire frame, or as dots
+SOLID, MESH, DOTS = "solid", "mesh", "dots"
+SURFACE_STYLES = {SOLID: "Solid", MESH: "Mesh", DOTS: "Dots"}
 CARTOON_PICK_RADIUS = 1.2
 #: the parts a deferring display builds in the background
 DEFERRED = ("surface", "pocket", "interactions", "cartoon")
@@ -110,6 +113,8 @@ class Display:
     pocket_transparency: float = SURFACE_TRANSPARENCY
     carve_points: np.ndarray | None = None  # float32 (k, 3): the surface shown near these only
     carve_distance: float = CARVE_DISTANCE
+    surface_style: str = SOLID
+    pocket_style: str = SOLID
     styles: np.ndarray = field(init=False)
     cartoon: np.ndarray = field(init=False)  # bool per residue
     surface: np.ndarray = field(init=False)  # bool per atom
@@ -122,6 +127,7 @@ class Display:
     _latest: dict = field(default_factory=dict, init=False, repr=False)  # last built, per part
     _rgba: dict = field(default_factory=dict, init=False, repr=False)  # surface and pocket colors
     _carved: tuple | None = field(default=None, init=False, repr=False)  # (whole, how, carved)
+    _dotted: dict = field(default_factory=dict, init=False, repr=False)  # per part: (mesh, dots)
     _versions: dict = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -361,6 +367,25 @@ class Display:
     def pocket_mesh(self) -> meshes.Mesh:
         return self._part("pocket")
 
+    def drawn_mesh(self, pocket: bool = False) -> tuple[meshes.Mesh, str]:
+        """The surface (or the pocket's skin) and its style, as drawn: a dotted one as its
+        dots (kept until the surface changes); a wire frame is drawn from the mesh itself."""
+        part, style = ("pocket", self.pocket_style) if pocket else ("surface", self.surface_style)
+        mesh = self.pocket_mesh() if pocket else self.surface_mesh()
+        if style != DOTS or not len(mesh):
+            return mesh, style
+        kept = self._dotted.get(part)
+        if kept is None or kept[0] is not mesh:
+            kept = self._dotted[part] = (mesh, meshes.dots(mesh))
+        return kept[1], style
+
+    def set_surface_style(self, style: str, pocket: bool = False) -> None:
+        if style in SURFACE_STYLES:
+            if pocket:
+                self.pocket_style = style
+            else:
+                self.surface_style = style
+
     def trace(self) -> tuple[np.ndarray, np.ndarray]:
         """Cartoon residues and their trace atoms (what picks the cartoon)."""
         residues, atoms = self._part("trace")
@@ -399,6 +424,7 @@ class Display:
         self.surface_options, self.surface_rgb = old.surface_options, old.surface_rgb
         self.pocket_transparency = old.pocket_transparency
         self.carve_points, self.carve_distance = old.carve_points, old.carve_distance
+        self.surface_style, self.pocket_style = old.surface_style, old.pocket_style
         self.model = old.model if old.model < self.n_models else 0
         source = o.indices(s.uid)  # each atom's index in the old structure, or -1
         kept = source >= 0
@@ -437,6 +463,8 @@ class Display:
             "pocket_transparency": self.pocket_transparency,
             "carve": None if self.carve_points is None else np.round(self.carve_points, 3).tolist(),
             "carve_distance": self.carve_distance,
+            "surface_style": self.surface_style,
+            "pocket_style": self.pocket_style,
             "styles": runs(self.styles),
             "cartoon": runs(self.cartoon.astype(np.uint8)),
             "surface": runs(self.surface.astype(np.uint8)),
@@ -474,6 +502,9 @@ class Display:
         distance = state.get("carve_distance")
         valid = isinstance(distance, int | float) and 0 < distance <= 50
         self.carve_distance = float(distance) if valid else CARVE_DISTANCE
+        style, pocket_style = state.get("surface_style"), state.get("pocket_style")
+        self.surface_style = style if style in SURFACE_STYLES else SOLID
+        self.pocket_style = pocket_style if pocket_style in SURFACE_STYLES else SOLID
         styles = unruns(state.get("styles"), n)
         if styles is not None:
             self.styles = styles.astype(np.uint8)
@@ -552,6 +583,11 @@ class Scene:
     interactions: tuple[contacts.Interactions, ...] = ()  # per display
     lines: meshes.Mesh = field(default_factory=meshes.Mesh.empty)  # owners: global atoms
     lines_look: np.ndarray = field(default_factory=lambda: np.zeros((0, meshes.LOOK_FLOATS)))
+    #: the surfaces and pocket skins drawn as wire frames (owners: global atoms)
+    surface_wire: meshes.Mesh = field(default_factory=meshes.Mesh.empty)
+    surface_wire_look: np.ndarray = field(default_factory=lambda: _no_look())
+    pocket_wire: meshes.Mesh = field(default_factory=meshes.Mesh.empty)
+    pocket_wire_look: np.ndarray = field(default_factory=lambda: _no_look())
 
     def locate(self, atom: int) -> tuple[Display, int] | None:
         """The display and its own atom index for a global atom index."""
@@ -588,11 +624,9 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
     looks = [d.residue_look() for d in shown]
     residue_colours = _cat([c for c, _ in looks], np.float32, 4)
     residue_flags = _cat([f for _, f in looks], np.float32)
-    surface = meshes.join([_shifted(d.surface_mesh(), o) for d, o in
-                           zip(shown, atom_offsets, strict=False)])  # fmt: skip
+    surface, surface_wire = _drawn(shown, atom_offsets, pocket=False)
     surface_colours = _surface_colours(shown, surface)
-    pocket = meshes.join([_shifted(d.pocket_mesh(), o) for d, o in
-                          zip(shown, atom_offsets, strict=False)])  # fmt: skip
+    pocket, pocket_wire = _drawn(shown, atom_offsets, pocket=True)
     pocket_colours = _surface_colours(shown, pocket, pocket=True)
     traces = [d.trace()[1] for d in shown]
     pick_atoms = _cat([t + o for t, o in zip(traces, atom_offsets, strict=False)], np.int64)
@@ -617,7 +651,29 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
         interactions=found,
         lines=lines,
         lines_look=lines_look,
+        surface_wire=surface_wire,
+        surface_wire_look=meshes.look(surface_wire, _surface_colours(shown, surface_wire), flags),
+        pocket_wire=pocket_wire,
+        pocket_wire_look=meshes.look(
+            pocket_wire, _surface_colours(shown, pocket_wire, pocket=True), flags
+        ),
     )
+
+
+def _drawn(
+    shown: tuple[Display, ...], atom_offsets: np.ndarray, pocket: bool
+) -> tuple[meshes.Mesh, meshes.Mesh]:
+    """The displays' surfaces (or pocket skins) as two meshes: those drawn filled (solid or
+    dotted), and those drawn as wire frames."""
+    filled, wire = [], []
+    for d, offset in zip(shown, atom_offsets, strict=False):
+        mesh, style = d.drawn_mesh(pocket)
+        (wire if style == MESH else filled).append(_shifted(mesh, offset))
+    return meshes.join(filled), meshes.join(wire)
+
+
+def _no_look() -> np.ndarray:
+    return np.zeros((0, meshes.LOOK_FLOATS), np.float32)
 
 
 def interaction_lines(found, atom_offsets) -> tuple[meshes.Mesh, np.ndarray]:
@@ -658,6 +714,14 @@ def relook(scene: Scene) -> Scene:
         surface_look=meshes.look(scene.surface, surface_colours, flags),
         pocket_look=meshes.look(
             scene.pocket, _surface_colours(scene.displays, scene.pocket, pocket=True), flags
+        ),
+        surface_wire_look=meshes.look(
+            scene.surface_wire, _surface_colours(scene.displays, scene.surface_wire), flags
+        ),
+        pocket_wire_look=meshes.look(
+            scene.pocket_wire,
+            _surface_colours(scene.displays, scene.pocket_wire, pocket=True),
+            flags,
         ),
     )
 

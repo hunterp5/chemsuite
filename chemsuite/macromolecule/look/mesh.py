@@ -78,10 +78,12 @@ class Chunk:
     and its triangles numbered within those."""
 
     vertex_map: np.ndarray  # int64 (k,), k <= the limit: the mesh's vertex for each
-    triangles: np.ndarray  # uint16 (t, 3)
+    triangles: np.ndarray  # uint16 (t, 3); or (t, 2), the lines of a wire frame
 
 
-def chunks(mesh: Mesh, limit: int = SHORT_INDICES) -> list[Chunk]:
+def chunks(
+    mesh: Mesh, limit: int = SHORT_INDICES, indices: np.ndarray | None = None
+) -> list[Chunk]:
     """The mesh cut into chunks of at most ``limit`` vertices each, for GPUs without 32-bit
     indices. Together the chunks hold every triangle once, though not in the mesh's order
     (the view tests depth, so the order of triangles does not change the picture).
@@ -91,9 +93,10 @@ def chunks(mesh: Mesh, limit: int = SHORT_INDICES) -> list[Chunk]:
     vertex, ``limit // 2`` vertex numbers to a bucket: a triangle spanning fewer than that
     reaches at most into the next bucket, so each bucket's vertices fit in one chunk. The rare
     triangle that spans more (a cap closing a long tube) goes with others like it, ``limit //
-    3`` triangles to a chunk. Any mesh can so be drawn.
+    3`` triangles to a chunk. Any mesh can so be drawn. *indices* in place of the triangles
+    chunks other primitives over the mesh's vertices (its :func:`edges`, as lines).
     """
-    tri = np.asarray(mesh.triangles, np.int64)
+    tri = np.asarray(mesh.triangles if indices is None else indices, np.int64)
     if not len(tri):
         return []
     width = max(limit // 2, 1)
@@ -117,7 +120,7 @@ def chunks(mesh: Mesh, limit: int = SHORT_INDICES) -> list[Chunk]:
 
 def _chunk(triangles: np.ndarray) -> Chunk:
     vertices, numbered = np.unique(triangles, return_inverse=True)
-    return Chunk(vertices, numbered.reshape(-1, 3).astype(np.uint16))
+    return Chunk(vertices, numbered.reshape(triangles.shape).astype(np.uint16))
 
 
 def look(mesh: Mesh, colours: np.ndarray, flags: np.ndarray) -> np.ndarray:

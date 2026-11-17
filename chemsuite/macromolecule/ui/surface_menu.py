@@ -63,6 +63,12 @@ def fill_surface(menu: QMenu, session: WorkbenchSession, parent: QWidget) -> Non
                     lambda k: options_to(kind=k))  # fmt: skip
     for action in kind.actions():
         action.setToolTip(KIND_TIPS[action.data()])
+    _choices(
+        menu.addMenu("Style"),
+        displays.SURFACE_STYLES.items(),
+        first.surface_style,
+        lambda s: session.change_surfaces(lambda d: d.set_surface_style(s)),
+    )
     _colour(menu.addMenu("Color"), session, parent, first)
     _choices(
         menu.addMenu("Transparency"),
@@ -103,6 +109,14 @@ def fill_pocket(menu: QMenu, session: WorkbenchSession) -> None:
     shown.setChecked(session.pocket_surface)
     first = session.displays[0] if session.displays else None
     current = first.pocket_transparency if first else displays.SURFACE_TRANSPARENCY
+    _choices(
+        menu.addMenu("Style"),
+        displays.SURFACE_STYLES.items(),
+        first.pocket_style if first else displays.SOLID,
+        lambda s: session.change_surfaces(
+            lambda d: d.set_surface_style(s, pocket=True), every=True
+        ),
+    )
     _choices(
         menu.addMenu("Transparency"),
         _transparencies(),

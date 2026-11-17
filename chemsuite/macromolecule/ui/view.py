@@ -22,8 +22,9 @@ rebuilt on a pick: picking is a screen-space search
 (:mod:`chemsuite.macromolecule.look.pick`) made again only after the camera has moved.
 
 Meshes (cartoon, surface) are layers by name, drawn after the atoms; each vertex has an owner
-(a residue or an atom) and a look row like the atoms'. A transparent layer draws without
-writing depth, after the opaque ones. Meshes use 32-bit indices; where the GPU lacks them
+(a residue or an atom) and a look row like the atoms'. A *lines* layer draws its mesh's edges
+(a surface's wire frame) instead of its triangles. A transparent layer draws without writing
+depth, after the opaque ones. Meshes use 32-bit indices; where the GPU lacks them
 (OpenGL ES 2 without the extension) each mesh is drawn in chunks small enough for 16-bit ones
 (:func:`~chemsuite.macromolecule.look.mesh.chunks`), its look uploaded whole when it changes.
 
@@ -62,11 +63,16 @@ class _Layer:
     look: np.ndarray
     owner: str  # RESIDUE or ATOM
     transparent: bool
+    lines: bool = False  # draw the mesh's edges, not its triangles
+    indices: np.ndarray = field(init=False)  # uint32: the triangles, or the edges
     buffers: dict = field(default_factory=dict)
     dirty: set = field(default_factory=lambda: {"vertices", "indices", "look"})
     rows: list = field(default_factory=list)
     chunks: list | None = None  # without 32-bit indices: the mesh's chunks, made when drawn
     parts: list = field(default_factory=list)  # and each chunk's buffers
+
+    def __post_init__(self) -> None:
+        self.indices = meshes.edges(self.mesh) if self.lines else self.mesh.triangles
 
     @property
     def uploaded(self) -> bool:
@@ -152,13 +158,16 @@ class MacromoleculeView(RhiView):
         *,
         owner: str = RESIDUE,
         transparent: bool = False,
+        lines: bool = False,
     ) -> None:
-        """Draw ``mesh`` as layer ``name`` (replacing one of that name)."""
+        """Draw ``mesh`` as layer ``name`` (replacing one of that name); ``lines`` draws its
+        edges."""
         old = self._layers.pop(name, None)
         if old is not None:
             self._release_layer(old)
         if len(mesh):
-            self._layers[name] = _Layer(mesh, np.array(look, np.float32), owner, transparent)
+            look = np.array(look, np.float32)
+            self._layers[name] = _Layer(mesh, look, owner, transparent, lines)
             self._flag_layers(self._hovered, self._hovered_residues, HOVER)
         self.update()
 
@@ -260,22 +269,27 @@ class MacromoleculeView(RhiView):
             ],
         )
         self._wide_indices = self.rhi().isFeatureSupported(QRhi.Feature.ElementIndexUint)
-        self._mesh_pipes = {mode: self._mesh_pipeline(mode) for mode in _MESH_MODES}
+        self._mesh_pipes = {
+            (mode, lines): self._mesh_pipeline(mode, lines)
+            for mode in _MESH_MODES
+            for lines in (False, True)
+        }
         return (
             self._sphere_pipe is not None
             and self._cylinder_pipe is not None
             and None not in self._mesh_pipes.values()
         )
 
-    def _mesh_pipeline(self, mode: str):
+    def _mesh_pipeline(self, mode: str, lines: bool):
         """``opaque``; or for a transparent layer ``depth`` (its nearest depth only, no
-        colour) then ``blend`` (only its nearest layer, blended), so it never speckles."""
-        triangles = QRhiGraphicsPipeline.Topology.Triangles
+        colour) then ``blend`` (only its nearest layer, blended), so it never speckles. With
+        ``lines``, of a lines layer."""
+        topology = QRhiGraphicsPipeline.Topology
         pipe = self.pipeline(
             "pro_mesh",
             (meshes.VERTEX_FLOATS * 4, meshes.LOOK_FLOATS * 4),
             [(0, 0, FLOAT3, 0), (0, 1, FLOAT3, 12), (1, 2, FLOAT4, 0), (1, 3, FLOAT, 16)],
-            topology=triangles,
+            topology=topology.Lines if lines else topology.Triangles,
             per_vertex=True,
             build=False,
         )
@@ -333,7 +347,7 @@ class MacromoleculeView(RhiView):
     def _upload_chunks(self, layer: _Layer, batch) -> None:
         """A layer in chunks with 16-bit indices: geometry once, the look whole on a change."""
         if layer.chunks is None:
-            layer.chunks = meshes.chunks(layer.mesh)
+            layer.chunks = meshes.chunks(layer.mesh, indices=layer.indices)
         vertex = QRhiBuffer.UsageFlag.VertexBuffer
         index = QRhiBuffer.UsageFlag.IndexBuffer
         restyled = "look" in layer.dirty or bool(layer.rows)
@@ -354,7 +368,7 @@ class MacromoleculeView(RhiView):
     def _upload_layer(self, layer: _Layer, batch) -> None:
         arrays = {
             "vertices": layer.mesh.vertices,
-            "indices": layer.mesh.triangles,
+            "indices": layer.indices,
             "look": layer.look,
         }
         for name in layer.dirty:
@@ -406,11 +420,11 @@ class MacromoleculeView(RhiView):
                 self._draw_mesh(cb, viewport, layer, "blend")
 
     def _draw_mesh(self, cb, viewport, layer: _Layer, mode: str) -> None:
-        cb.setGraphicsPipeline(self._mesh_pipes[mode])
+        cb.setGraphicsPipeline(self._mesh_pipes[mode, layer.lines])
         cb.setViewport(viewport)
         cb.setShaderResources()
         if not layer.parts:
-            self._draw_indexed(cb, layer.buffers, layer.mesh.triangles.size, wide=True)
+            self._draw_indexed(cb, layer.buffers, layer.indices.size, wide=True)
         for part, chunk in zip(layer.parts, layer.chunks or (), strict=False):
             self._draw_indexed(cb, part, chunk.triangles.size, wide=False)
 
