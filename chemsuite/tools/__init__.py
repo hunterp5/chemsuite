@@ -23,6 +23,7 @@ Keep these modules light: heavy imports belong inside the function that opens th
 
 TOOL_MODULES: tuple[str, ...] = (
     "chemsuite.tools.sketcher.tool",
+    "chemsuite.tools.notepad.tool",
     "chemsuite.tools.descriptors.tool",
     "chemsuite.tools.standardize.tool",
     "chemsuite.tools.pka.tool",

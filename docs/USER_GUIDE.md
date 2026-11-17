@@ -42,7 +42,7 @@ Each document has its own window. From top to bottom:
   |---|---|
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close (clears the window to a new, empty document; with other windows open it closes this one) |
   | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection), Status Bar, Preferences |
-  | Tools | Utilities ▸ (Calculator, Random ▸ Random Numbers and Random Rows), Sketcher |
+  | Tools | Utilities ▸ (Calculator, Random ▸ Random Numbers and Random Rows), Sketcher, Notepad |
   | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
   | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
   | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
@@ -79,7 +79,7 @@ Each document has its own window. From top to bottom:
   - **Tabbed panels.** Panels that share a space show their tabs in the header, where the
     title would be, so no extra row is taken below the plot. The current panel's tab is
     raised. Click another tab to bring that panel forward. Drag the current tab (or the
-    header's empty space) to move the panel. Double-click the current tab to rename a plot.
+    header's empty space) to move the panel. Double-click the current tab to rename a plot or a note.
     When the header is narrow, long tab titles are shortened with "…"; hover over a tab to
     see its full title.
   - Plots leave a little space between the axis titles and the panel's edges.
@@ -2187,6 +2187,22 @@ Tools ▸ Utilities ▸ Random ▸ Random Rows… picks a random sample from all
 selected rows, either a number of rows or a percentage. It then **selects them**, **adds them
 to the selection**, or saves them as a **new list** (for example a test set). A seed picks the
 same rows again.
+
+### Notepad
+
+Tools ▸ Notepad opens a new note in a pane of its own, docked beside the table like a plot.
+Open it again for another note: they are titled Notepad, Notepad 2, …, and double-clicking
+the current tab renames it. The notes are saved with the document, so typing in one marks the
+document as needing a save, and they reopen as you left them.
+
+- **Toolbar:** Undo and Redo; font and size; **Bold** (Ctrl+B), *Italic* (Ctrl+I), Underline
+  (Ctrl+U) and Strikethrough; Text Color and Highlight; align left, center, right or justify;
+  Bullets and Numbering (pressed again, the paragraphs leave the list); Decrease and Increase
+  Indent (a list item moves a level out or in); Clear Formatting.
+- The buttons show the format where the cursor is. With text selected they change it;
+  otherwise they change what you type next.
+- Pasting keeps the text's formatting but leaves out pictures.
+- Closing a note's pane (its ✕) deletes the note; when it has text, you are asked first.
 
 ## 12. Similarity
 

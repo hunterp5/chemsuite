@@ -147,12 +147,11 @@ class ListActions:
         return dialog
 
     # -- menu ---------------------------------------------------------------------------------
-    def fill_menu(self, menu: QMenu, add_action, remove_action, visible_action=None) -> None:
-        """Rebuild *menu* (called just before it shows)."""
+    def fill_menu(self, menu: QMenu, add_actions, remove_action) -> None:
+        """Rebuild *menu* (called just before it shows): *add_actions* (Add Selected, Add
+        Visible), then *remove_action*, then the lists."""
         menu.clear()
-        menu.addAction(add_action)
-        if visible_action is not None:
-            menu.addAction(visible_action)
+        menu.addActions(list(add_actions))
         menu.addAction(remove_action)
         remove_action.setEnabled(bool(len(self.lists)))
         menu.addSeparator()

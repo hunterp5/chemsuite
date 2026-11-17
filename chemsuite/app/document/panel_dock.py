@@ -466,7 +466,7 @@ class PanelHeader(QWidget):
         undockable = dock.allowedAreas() == Qt.DockWidgetArea.NoDockWidgetArea
         self.float_button.setVisible(not pinned and not undockable)
         self.arrange_button.setVisible(not pinned and not undockable)
-        self.close_button.clicked.connect(dock.close)
+        self.close_button.clicked.connect(lambda: _close_by_user(dock))
 
         self.tabs = HeaderTabs(dock)
         self.tabs.setVisible(False)
@@ -554,6 +554,14 @@ class PanelHeader(QWidget):
         super().changeEvent(event)
         if event.type() == QEvent.Type.PaletteChange and self._built:
             self._restyle()
+
+
+def _close_by_user(dock: QDockWidget) -> None:
+    """A header's ✕: a tool's pane may refuse; the window's own panes (Filters) just close."""
+    widget = dock.widget()
+    if isinstance(widget, ToolPanel) and not widget.user_closing():
+        return
+    dock.close()
 
 
 class PanelDock(QDockWidget):

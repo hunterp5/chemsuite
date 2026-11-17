@@ -149,6 +149,6 @@ def test_add_visible_adds_only_the_rows_shown(window, monkeypatch) -> None:
     window.workspace.selection.clear("test")
     answer_item(monkeypatch, "shown")
     assert "Add &Visible to List…" in [a.text() for a in lists_menu(window).actions()]
-    window._add_visible_to_list.trigger()
+    window._add_visible.trigger()
     table = window.workspace.table
     assert sorted(table.cell("ID", o) for o in window.workspace.lists.oids("shown")) == ["A", "C"]

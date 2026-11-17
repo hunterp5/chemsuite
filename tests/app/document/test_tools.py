@@ -83,7 +83,7 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
     def submenu(menu, title):
         return next(a.menu() for a in menu.actions() if a.text().replace("&", "") == title)
 
-    assert [t for t in visible(menus["Tools"]) if t] == ["Utilities", "Sketcher…"]
+    assert [t for t in visible(menus["Tools"]) if t] == ["Utilities", "Sketcher…", "Notepad"]
     utilities = submenu(menus["Tools"], "Utilities")
     assert [t for t in visible(utilities) if t] == ["Calculator…", "Random"]
     assert visible(submenu(utilities, "Random")) == ["Random Numbers…", "Random Rows…"]

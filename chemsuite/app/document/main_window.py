@@ -700,7 +700,7 @@ class MainWindow(QMainWindow):
             lambda: self.lists.add_selected(),
             "Ctrl+L",
         )
-        self._add_visible_to_list = A(
+        self._add_visible = A(
             "lists.add_visible",
             "Add &Visible to List…",
             lambda: self.lists.add_visible(),
@@ -712,10 +712,7 @@ class MainWindow(QMainWindow):
         )
         self._lists_menu.aboutToShow.connect(
             lambda: self.lists.fill_menu(
-                self._lists_menu,
-                self._add_to_list,
-                self._remove_from_list,
-                self._add_visible_to_list,
+                self._lists_menu, (self._add_to_list, self._add_visible), self._remove_from_list
             )
         )
         self._lists_menu.addAction(self._add_to_list)  # so the shortcut works before first show
@@ -1550,8 +1547,7 @@ class MainWindow(QMainWindow):
 
     # -- closing -----------------------------------------------------------------------------
     def close_document(self) -> None:
-        """File ▸ Close: another document window just closes; the last one is cleared to the
-        fresh, empty document the app starts with, and stays open."""
+        """File ▸ Close: the last document window is cleared to a new document; others close."""
         if _windows != [self]:
             self.close()
             return

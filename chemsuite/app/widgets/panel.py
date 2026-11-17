@@ -72,5 +72,9 @@ class ToolPanel(QWidget):
     def attach_header(self, attached: bool) -> None:
         """The panel's header moved into the dock's title bar (or back)."""
 
+    def user_closing(self) -> bool:
+        """The user pressed the pane's ✕ (not the document closing): False keeps it open."""
+        return True
+
     def close_panel(self) -> None:
         """The dock or window is closing for good: stop work, let go of the document."""
