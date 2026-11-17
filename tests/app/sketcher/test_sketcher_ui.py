@@ -842,3 +842,21 @@ def test_template_library_picks_a_drawing_tool(dialog, qapp) -> None:
     assert Chem.MolToSmiles(convert.to_rdkit(dialog.canvas.sketch)) == Chem.MolToSmiles(
         Chem.MolFromSmiles("C1C2CC3CC1CC(C2)C3")
     )
+
+
+def test_the_edit_keys_still_reach_the_canvas_under_the_menu_bar(qapp, qtbot) -> None:
+    """The Edit menu shows the canvas's keys; pressing them acts once, not twice."""
+    dlg = SketcherDialog("CCO", menus=True, ok_text="Add to Table")
+    qtbot.addWidget(dlg)
+    dlg.show()
+    dlg.canvas.setFocus()
+    dlg.canvas.set_sketch(from_text("CCCO"), "Draw")
+    dlg.canvas.set_sketch(from_text("CCCCO"), "Draw")
+    qtbot.keyClick(dlg.canvas, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert to_smiles(dlg.canvas.sketch) == "CCCO"  # one step back
+    qtbot.keyClick(dlg.canvas, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert len(dlg.canvas.selected_atoms) == 4
+    invert = next(a for a in dlg.actions() if a.text() == "Invert Selection")
+    assert invert.shortcut().toString() == "Ctrl+I"  # a window shortcut: the canvas has none
+    invert.trigger()
+    assert not dlg.canvas.selected_atoms

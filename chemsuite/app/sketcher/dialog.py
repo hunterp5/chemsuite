@@ -27,6 +27,7 @@ way to edit a structure in the app; there is no text editor.
 
 from __future__ import annotations
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -50,7 +51,14 @@ class SketcherDialog(QDialog):
     With ``reactions=True`` a drawing with an arrow is accepted as a reaction: :attr:`rxn`
     holds it as an RXN file and :attr:`molblock` stays "". Otherwise OK on a reaction says
     that only a structure can go there.
+
+    With ``menus=True`` (Tools ▸ Sketcher) there are no buttons: a File menu saves the
+    drawing or gives it back (*ok_text*, emitting :attr:`submitted` and staying open), and an
+    Edit menu holds the main window's Edit items.
     """
+
+    #: the drawing was given back from File (``menus=True``); the window stays open
+    submitted = Signal()
 
     def __init__(
         self,
@@ -61,6 +69,7 @@ class SketcherDialog(QDialog):
         ok_text: str = "",
         reactions: bool = False,
         reaction_only: bool = False,
+        menus: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
@@ -86,6 +95,15 @@ class SketcherDialog(QDialog):
             self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText(ok_text)
 
         layout = QVBoxLayout(self)
+        self.menu_bar = self.save_action = self.add_action = None
+        if menus:
+            from chemsuite.app.sketcher import menus as sketch_menus
+
+            self.menu_bar, self.save_action, self.add_action = sketch_menus.build(
+                self, self.canvas, ok_text or "OK", self.submit
+            )
+            layout.setMenuBar(self.menu_bar)
+            self.buttons.hide()
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
         grid = QGridLayout()  # rings line up with the canvas edge, elements to its left
@@ -140,6 +158,9 @@ class SketcherDialog(QDialog):
         report = self.canvas.report
         ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
         ok.setEnabled(report.valid)
+        if self.add_action is not None:
+            self.add_action.setEnabled(report.valid and not self.canvas.sketch.is_empty())
+            self.save_action.setEnabled(report.valid and not self.canvas.sketch.is_empty())
         wedges = len(self.canvas.wedge_problems)
         if report.valid and wedges:
             self._show_message(
@@ -160,28 +181,38 @@ class SketcherDialog(QDialog):
         self.info.setVisible(bool(text))
 
     def accept(self) -> None:
+        if self._take():
+            super().accept()
+
+    def submit(self) -> None:
+        """Give the drawing back without closing (File ▸ Add to Table)."""
+        if self._take():
+            self.submitted.emit()
+
+    def _take(self) -> bool:
+        """Set :attr:`molblock` (or :attr:`rxn`) from the drawing; False, with a message,
+        if it cannot be given back."""
         self.canvas.cancel_preview()
         if not self.canvas.report.valid:
-            return
+            return False
         sketch = self.canvas.sketch
         if sketch.is_reaction or sketch.pluses:
             if not self.reactions:
                 self._show_message(
                     "This holds one structure, not a reaction: delete the arrow and plus signs."
                 )
-                return
+                return False
             try:
                 self.rxn = reaction.to_rxn_block(sketch)
             except (reaction.ReactionError, convert.SketchError) as err:
                 self._show_message(str(err))
-                return
+                return False
             self.molblock = ""
-            super().accept()
-            return
+            return True
         if self.reaction_only and not sketch.is_empty():
             self._show_message(
                 "This holds a reaction: draw an arrow from the reactants to the products."
             )
-            return
+            return False
         self.molblock = "" if sketch.is_empty() else convert.to_molblock(sketch)
-        super().accept()
+        return True

@@ -568,8 +568,18 @@ as Reaction Search, applied as a filter together with the other cards.
 
 Opened by double-clicking a structure cell, F2, **Add Compound…**,
 **Draw…** in the structure fields of Structure Search and Similarity Search, or
-blank with **Tools ▸ Sketcher…**, whose **Add to Table** adds the drawing as a new,
-selected row.
+blank with **Tools ▸ Sketcher…**.
+
+The Sketcher opened from Tools is a window of its own with two menus instead of buttons:
+
+- **File:** **Save…** (Ctrl/⌘+S) writes the drawing to a file: an MDL Molfile (.mol), SD
+  file (.sdf) or SMILES (.smi), or for a reaction an RXN file (.rxn) or reaction SMILES.
+  **Add to Table** (Ctrl/⌘+Enter) adds the drawing as a new, selected row and leaves the
+  window open for the next drawing. Both need a drawing with valid valences.
+- **Edit:** the main window's Edit items for the drawing: Undo, Redo, Cut, Copy, Paste,
+  Select All, Invert Selection (Ctrl/⌘+I), Clear Selection and Delete Selection.
+
+Close the window when you are done.
 
 Drawing tools are along the top, elements down the left and rings along the bottom. OK is
 available only when every atom has a valid valence; a line under the drawing says what is

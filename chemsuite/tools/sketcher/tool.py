@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tools ▸ Sketcher: a blank sketcher; Add to Table appends the drawing as a new row."""
+"""Tools ▸ Sketcher: a blank sketcher with File and Edit menus; File ▸ Add to Table appends
+the drawing as a new row and leaves the window open."""
 
 from __future__ import annotations
 
@@ -24,13 +25,13 @@ from chemsuite.app.document.tools import Tool, ToolContext
 def _open(ctx: ToolContext):
     from chemsuite.app.sketcher import SketcherDialog
 
-    dialog = SketcherDialog("", "Sketcher", ctx.parent, ok_text="Add to Table")
+    dialog = SketcherDialog("", "Sketcher", ctx.parent, ok_text="Add to Table", menus=True)
 
-    def accepted() -> None:
+    def added() -> None:
         if dialog.molblock and ctx.add_compound(dialog.molblock) is not None:
             ctx.show_message("Added the drawing as a new row")
 
-    dialog.accepted.connect(accepted)
+    dialog.submitted.connect(added)
     ctx.show_dialog(dialog)
     return dialog
 

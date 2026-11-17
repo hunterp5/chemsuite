@@ -389,27 +389,43 @@ def test_colour_is_not_offered_for_structures(structures) -> None:
 # -- Tools ▸ Sketcher -------------------------------------------------------------------------
 
 
-def test_chemistry_sketcher_adds_the_drawing_as_a_row(window) -> None:
-    from PySide6.QtWidgets import QPushButton
-
+def test_the_sketcher_window_has_file_and_edit_menus(window, tmp_path) -> None:
     from chemsuite.app.sketcher import SketcherDialog
+    from chemsuite.app.sketcher import menus as sketch_menus
     from chemsuite.sketch.convert import from_text
 
     table = window.workspace.table
     dialog = window.open_tool("sketcher")
     assert isinstance(dialog, SketcherDialog) and dialog.canvas.sketch.is_empty()
-    assert dialog.buttons.button(dialog.buttons.StandardButton.Ok).text() == "Add to Table"
-    # Only OK and Cancel: undo, copy and the rest are on the keyboard and right-click menu.
-    assert len(dialog.findChildren(QPushButton)) == 2
-    assert not dialog.info.isVisible()
+    assert not dialog.buttons.isVisible()  # no Add to Table or Cancel buttons
+    menus = {a.text(): a.menu() for a in dialog.menu_bar.actions()}
+    assert list(menus) == ["&File", "&Edit"]
+    assert [a.text() for a in menus["&File"].actions()] == ["&Save…", "Add to Table"]
+    edit = [a.text() for a in menus["&Edit"].actions() if not a.isSeparator()]
+    main_edit = next(a.menu() for a in window.menuBar().actions() if a.text() == "&Edit")
+    assert [t for t in edit if t != "Cu&t"] == [
+        a.text() for a in main_edit.actions() if not a.isSeparator()
+    ]
+    assert not dialog.add_action.isEnabled() and not dialog.save_action.isEnabled()
     # Elements run down the left of the canvas.
     assert dialog.toolbar.side.geometry().right() < dialog.canvas.geometry().left()
+
     dialog.canvas.set_sketch(from_text("c1ccccc1O"), "Draw")
-    dialog.accept()
-    assert len(table) == 4
-    assert "Structure" in table.column_names
+    assert dialog.add_action.isEnabled()
+    dialog.add_action.trigger()
+    assert len(table) == 4 and dialog.isVisible()  # added; the window stays open
     assert Chem.MolToSmiles(table.column("Structure").mol(3)) == "Oc1ccccc1"
     assert window.workspace.selection.oids == {int(table.oids[3])}
+
+    path = tmp_path / "phenol.mol"
+    assert sketch_menus.save_drawing(dialog, dialog.canvas, str(path))
+    assert Chem.MolToSmiles(Chem.MolFromMolFile(str(path))) == "Oc1ccccc1"
+
+    canvas = dialog.canvas
+    canvas.select_atoms([next(iter(canvas.sketch.atoms))])
+    sketch_menus.invert_selection(canvas)
+    assert len(canvas.selected_atoms) == len(canvas.sketch.atoms) - 1
+    dialog.close()
 
 
 def test_frozen_columns_stay_put_and_follow_the_table(window, qtbot) -> None:
