@@ -180,7 +180,7 @@ LONG_FILES = {
     "chemsuite/app/document/main_window.py": 1596,
     "chemsuite/app/sketcher/canvas.py": 1341,
     "chemsuite/app/table/table_view.py": 1139,
-    "chemsuite/app/viewer/panel.py": 1021,
+    "chemsuite/app/viewer/panel.py": 1012,
 }
 
 

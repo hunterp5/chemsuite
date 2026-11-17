@@ -215,7 +215,7 @@ modified.
 | Feature | Notes |
 |---|---|
 | Confab conformers | Through the Open Babel path in Settings. (CONFORGE is in: a Generator choice in Generate Conformers, from the optional `cdpkit` package.) |
-| Superpose conformers, pharmacophore screen | RDKit only. The Browser's 3D view (Data ▸ Browser) is done and aligns a molecule's conformers; superposing different molecules is next. |
+| Superpose conformers, pharmacophore screen | **Superpose done (2026-11-16):** Chemistry ▸ 3D ▸ Superpose (`chemsuite/superpose`) fits rows onto a row or a protein's ligand by MCS or a core, O3A, shape, shape + features (RDKit's `rdShapeAlign`) or field (our own Gaussian ESP overlap), keeps each row's best conformer and its scores, and the Browser shows the reference. **Next: 3D similarity** on the same engine: shape, color and field scores against one or more references, with pharmacophore point alignment (perhaps CDPKit's `PharmacophoreAlignment` where it is installed). |
 | PubChem, ChEMBL, vendor, patent and SQL queries | Network access, off by default under policy. Plain HTTPS REST calls, not MolManager's client libraries. SQL through the standard library or an optional driver. |
 | Retrosynthesis | AiZynthFinder through its own Python interpreter (path in Settings). |
 | Sketcher | **Decided: needed.** A robust drawing sketcher that works with the table: edit a structure cell in place, draw a query for structure search and filters, and add new compounds. Plan: [SKETCHER_PLAN.md](SKETCHER_PLAN.md) (native, Ketcher rules as reference, verified; no MolManager iupac_* code). |
