@@ -258,13 +258,13 @@ def test_copy_as_reports_an_invalid_structure(structures) -> None:
 
 def test_menu_has_the_new_column_items(window) -> None:
     titles = menu_titles(window.columns.build_menu("pIC50", [], 1))
-    for title in ("Duplicate Column", "Logarithmic (log₁₀)", "Number Format…", "Colour Column…"):
+    for title in ("Duplicate “pIC50”", "Logarithmic (log₁₀)", "Number Format…", "Color…"):
         assert title in titles
 
 
 def test_duplicate_column(window) -> None:
     table = window.workspace.table
-    trigger(window.columns.build_menu("pIC50", [], 1), "Duplicate Column")
+    trigger(window.columns.build_menu("pIC50", [], 1), "Duplicate “pIC50”")
     assert table.column_names == ["ID", "pIC50", "pIC50 copy"]
 
 
@@ -382,7 +382,7 @@ def test_colour_is_not_offered_for_structures(structures) -> None:
     model = structures.workspace.model
     col = model.column_index("SMILES")
     menu = structures.columns.build_menu("SMILES", [], col)
-    action = next(a for a in menu.actions() if a.text() == "Colour Column…")
+    action = next(a for a in menu.actions() if a.text() == "Color…")
     assert not action.isEnabled()
 
 
@@ -600,12 +600,17 @@ def _menu_layout(menu) -> list[str]:
 
 def test_column_menu_order(window, structures) -> None:
     window.workspace.table.convert_column("IC50", "number")
-    common = ["Rename…", "Duplicate Column", "Delete Column", "--", "Filter", "Search"]
+
+    def common(name: str) -> list[str]:
+        return [f"Rename “{name}”…", f"Duplicate “{name}”", f"Delete “{name}”", "--"]
+
     assert _menu_layout(window.columns.build_menu("IC50", [], 2)) == [
-        "Select", "Sort", "Colour Column…", "--", *common, "Freeze Columns up to Here",
+        "Select", "Sort", "Search", "Filter", "Color…", "--", *common("IC50"),
+        "Freeze Columns up to Here",
         "Column Type", "--", "Logarithmic (log₁₀)", "Number Format…",
     ]  # fmt: skip
     assert _menu_layout(window.columns.build_menu("SMILES", [], 1)) == [
-        "Select", "Sort", "Colour Column…", "--", *common, "Freeze Columns up to Here",
-        "Align Drawings…", "Column Type", "--", "Logarithmic (log₁₀)", "Number Format…",
+        "Select", "Sort", "Search", "Filter", "Color…", "--", *common("SMILES"),
+        "Freeze Columns up to Here", "Align Drawings…", "Column Type", "--",
+        "Logarithmic (log₁₀)", "Number Format…",
     ]  # fmt: skip

@@ -75,7 +75,7 @@ def test_sort_submenu_offers_then_sort_only_with_an_existing_sort(window) -> Non
 
 def test_the_menu_holds_no_insert_split_or_join(window) -> None:
     titles = menu_titles(window.columns.build_menu("ID", ["ID", "pIC50"], 0))
-    assert titles[:3] == ["Select", "Sort", "Colour Column…"]
+    assert titles[:5] == ["Select", "Sort", "Search", "Filter", "Color…"]
     assert not [t for t in titles if t.startswith(("Insert", "Split", "Join"))]
 
 
@@ -110,9 +110,9 @@ def test_select_picks_rows_by_value(window) -> None:
 def test_rename_and_delete_are_undoable(window, monkeypatch) -> None:
     table = window.workspace.table
     answer_text(monkeypatch, "Potency")
-    trigger(window.columns.build_menu("pIC50", [], 1), "Rename…")
+    trigger(window.columns.build_menu("pIC50", [], 1), "Rename “pIC50”…")
     assert table.column_names == ["ID", "Potency"]
-    trigger(window.columns.build_menu("ID", [], 0), "Delete Column")
+    trigger(window.columns.build_menu("ID", [], 0), "Delete “ID”")
     assert table.column_names == ["Potency"]
     table.undo()
     table.undo()
@@ -136,7 +136,7 @@ def test_delete_uses_fully_selected_columns(window) -> None:
     assert table.column_names == ["ID", "pIC50", "Notes"]
     # right-clicking a column outside the selection deletes just that column
     menu = window.columns.build_menu("pIC50", ["ID", "Notes"], 1)
-    assert "Delete Column" in menu_titles(menu)
+    assert "Delete “pIC50”" in menu_titles(menu)
 
 
 @pytest.mark.parametrize(

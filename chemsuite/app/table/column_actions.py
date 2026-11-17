@@ -18,7 +18,7 @@
 
 Each operation asks for what it needs (a name, a confirmation) and then makes one undoable change
 to the table. The dialogs are plain ``QInputDialog``/``QMessageBox`` calls so tests can answer
-them by monkeypatching (Colour Column… has its own dialog, :mod:`.column_colour`).
+them by monkeypatching (Color… has its own dialog, :mod:`.column_colour`).
 """
 
 from __future__ import annotations
@@ -252,31 +252,32 @@ class ColumnActions:
             then.setToolTip("Sort by this column within the current sort")
         sort.addSeparator()
         add("Clear", self.clear_sort, bool(table.sort_keys), sort)
-        colour = add("Colour Column…", lambda: self.colour(name), not drawn)
-        colour.setToolTip(
-            "Colour the cells by value (gradient) or by category."
-            if not drawn
-            else f"{KIND_TITLES[table.kind(name)]} columns cannot be coloured."
-        )
-        menu.addSeparator()
-
-        add("Rename…", lambda: self.rename(name))
-        add("Duplicate Column", lambda: self.duplicate(name))
-        targets = list(selected) if name in selected else [name]
-        add(
-            "Delete Column" if len(targets) == 1 else f"Delete {len(targets)} Columns",
-            lambda: self.delete(targets),
-        )
-        menu.addSeparator()
-
-        if self._add_filter is not None:
-            add_filter = self._add_filter
-            add("Filter", lambda: add_filter(name))
         if self._search is not None:
             search = self._search
             add("Search", lambda: search(name)).setToolTip(
                 "Open the search bar to search this column"
             )
+        if self._add_filter is not None:
+            add_filter = self._add_filter
+            add("Filter", lambda: add_filter(name))
+        color = add("Color…", lambda: self.colour(name), not drawn)
+        color.setToolTip(
+            "Color the cells by value (gradient) or by category."
+            if not drawn
+            else f"{KIND_TITLES[table.kind(name)]} columns cannot be colored."
+        )
+        menu.addSeparator()
+
+        quoted = f"“{name if len(name) <= 30 else name[:29] + '…'}”"
+        add(f"Rename {quoted}…", lambda: self.rename(name))
+        add(f"Duplicate {quoted}", lambda: self.duplicate(name))
+        targets = list(selected) if name in selected else [name]
+        add(
+            f"Delete {quoted}" if len(targets) == 1 else f"Delete {len(targets)} Columns",
+            lambda: self.delete(targets),
+        )
+        menu.addSeparator()
+
         if self._freeze is not None:
             freeze = self._freeze
             frozen = self._frozen()

@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Colour Column…: cell backgrounds from a column's values (header menu).
+"""Color…: cell backgrounds from a column's values (header menu).
 
 Numbers can run along a two- or three-colour gradient; any column can give each distinct value
 its own colour. Range boxes left empty follow the data, so the colours stay right as values
@@ -45,12 +45,12 @@ MODES = (
     (OFF, "None"),
     (GRADIENT, "Low → high"),
     (GRADIENT3, "Low → middle → high"),
-    (CATEGORIES, "One colour per value"),
+    (CATEGORIES, "One color per value"),
 )
 
 
 class ColourButton(QPushButton):
-    """A button showing a colour; clicking it opens the colour picker."""
+    """A button showing a color; clicking it opens the color picker."""
 
     def __init__(self, title: str, rgb: int) -> None:
         super().__init__(title)
@@ -69,14 +69,14 @@ class ColourButton(QPushButton):
         )
 
     def _pick(self) -> None:
-        chosen = QColorDialog.getColor(QColor.fromRgb(self.rgb), self, f"{self.title} Colour")
+        chosen = QColorDialog.getColor(QColor.fromRgb(self.rgb), self, f"{self.title} Color")
         if chosen.isValid():
             self.set_rgb(chosen.rgb() & 0xFFFFFF)
 
 
 class ColumnColourDialog(ToolDialog):
     def __init__(self, parent: QWidget | None, table: Table, name: str) -> None:
-        super().__init__(parent, f"Colour Column — {name}", guide="columns")
+        super().__init__(parent, f"Color Column — {name}", guide="columns")
         self.table = table
         self.name = name
         column = table.column(name)
@@ -85,7 +85,7 @@ class ColumnColourDialog(ToolDialog):
         rule = column.style.colour or ColourRule(mode=GRADIENT if self.is_number else CATEGORIES)
         current = rule.mode  # a column without colours starts on the suggested mode
 
-        self.colours = colours = self.section("Colours")
+        self.colours = colours = self.section("Colors")
         self.mode = QComboBox()
         for key, title in MODES:
             if key in (GRADIENT, GRADIENT3) and not self.is_number:
@@ -93,10 +93,10 @@ class ColumnColourDialog(ToolDialog):
             self.mode.addItem(title, key)
         self.mode.setCurrentIndex(max(0, self.mode.findData(current)))
         colours.row(
-            "Colour by",
+            "Color by",
             self.mode,
-            "Gradients follow numbers (Number columns only); one colour per value works for any "
-            "column, and the same value always gets the same colour.",
+            "Gradients follow numbers (Number columns only); one color per value works for any "
+            "column, and the same value always gets the same color.",
         )
         self.low = ColourButton("Low", rule.low if rule.numeric else LOW)
         self.mid = ColourButton("Middle", rule.mid if rule.numeric else MID)
@@ -107,18 +107,18 @@ class ColumnColourDialog(ToolDialog):
         for button in (self.low, self.mid, self.high):
             row.addWidget(button)
         row.addStretch(1)
-        self.swatches = colours.row("Colours", swatches, "Click a colour to change it.")
+        self.swatches = colours.row("Colors", swatches, "Click a color to change it.")
         self.opacity = QSpinBox()
         self.opacity.setRange(10, 100)
         self.opacity.setSuffix(" %")
         self.opacity.setValue(round(rule.opacity * 100 / 255))
-        colours.row("Strength", self.opacity, "How strongly the colour covers the cell.")
+        colours.row("Strength", self.opacity, "How strongly the color covers the cell.")
 
         self.range = self.section("Range")
         self.minimum = self._bound(rule.minimum, 0)
         self.middle = self._bound(rule.middle, None)
         self.maximum = self._bound(rule.maximum, 1)
-        tip = "Leave empty to follow the data. Values beyond the range take the end colour."
+        tip = "Leave empty to follow the data. Values beyond the range take the end color."
         self.range.row("Low at", self.minimum, tip)
         self.range.row("Middle at", self.middle, "Leave empty for halfway between low and high.")
         self.range.row("High at", self.maximum, tip)
@@ -199,10 +199,10 @@ class ColumnColourDialog(ToolDialog):
         return ""
 
     def verb(self) -> str:
-        return "Remove Colours" if self.chosen_mode() == OFF else "Apply Colours"
+        return "Remove Colors" if self.chosen_mode() == OFF else "Apply Colors"
 
     def run(self):
         column = self.table.column(self.name)
         style = column.style.with_(colour=self.rule())
-        self.table.set_style(self.name, style, label=f"Colour {self.name}")
+        self.table.set_style(self.name, style, label=f"Color {self.name}")
         return None

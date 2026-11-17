@@ -285,14 +285,15 @@ Right-click a column header for:
   the same molecule, however they were written.
 - **Sort ▸ Ascending / Descending.** **Then Ascending / Then Descending** add a second (third…)
   sort key; **Clear** returns rows to their original order.
-- **Colour Column…** Colours cell backgrounds: **Low → high** or **Low → middle → high**
-  gradients for numbers, or **One colour per value** for any column (the same value always gets
-  the same colour). Range ends left empty follow the data. Choose **None** to remove the
-  colours.
-- **Rename…**, **Duplicate Column** (a copy, with its formatting, to the right),
-  **Delete Column**. Delete acts on all selected columns when you right-click one of them.
-- **Filter.** Adds a filter card for the column (see [Filters](#7-filters)).
 - **Search.** Opens the search bar set to this column, ready to type.
+- **Filter.** Adds a filter card for the column (see [Filters](#7-filters)).
+- **Color…** Colors cell backgrounds: **Low → high** or **Low → middle → high**
+  gradients for numbers, or **One color per value** for any column (the same value always gets
+  the same color). Range ends left empty follow the data. Choose **None** to remove the
+  colors.
+- **Rename “column”…**, **Duplicate “column”** (a copy, with its formatting, to the right),
+  **Delete “column”**, each naming the column you right-clicked. Delete acts on all selected
+  columns when you right-click one of them (**Delete 3 Columns**).
 - **Freeze Columns up to Here** keeps that column and every column left of it in place while
   the rest of the table scrolls sideways; **Unfreeze Columns** lets them scroll again. Drag the
   columns you want to keep in view (ID, Structure) to the front first. Frozen columns are saved
