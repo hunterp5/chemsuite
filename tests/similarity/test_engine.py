@@ -133,6 +133,94 @@ def test_cancel_keeps_the_finished_rows(monkeypatch) -> None:
     assert len(partial) == 3 and partial.columns["ECFP4 Tanimoto"][0] == pytest.approx(1.0)
 
 
+def _cancel_in_the_mcs(cells, references, search, monkeypatch, after: int = 2):
+    """Run *search* and cancel part way through its MCS stage; the Cancelled it raises."""
+    from chemsuite.similarity import substructure
+
+    monkeypatch.setitem(substructure.CHUNK_ROWS, sm.MCS, 1)
+    token = CancelToken()
+    calls = []
+
+    def progress(done: int, total: int) -> None:
+        calls.append(done)
+        if len(calls) == after:
+            token.cancel()
+
+    with pytest.raises(Cancelled) as stopped:
+        score_cells(cells, references, search, progress=progress, cancel=token)
+    return stopped.value
+
+
+def test_a_cancelled_expensive_method_keeps_its_scores_on_their_own_rows(monkeypatch) -> None:
+    # the two rows the fingerprint ranks best are the last two, not the first
+    cells = ["c1ccccc1", "CCO", "CCCCN", "CC(=O)Oc1ccccc1C(=O)O", "O=C(O)c1ccccc1O"]
+    aspirin = sm.Reference(Chem.MolFromSmiles(cells[3]), "aspirin")
+    search = sm.Search((sm.Method(), sm.Method(kind=sm.MCS)), prefilter=2)
+    whole = score_cells(cells, [aspirin], search)
+    assert np.flatnonzero(np.isfinite(whole.columns["MCS Tanimoto"])).tolist() == [3, 4]
+    partial = _cancel_in_the_mcs(cells, [aspirin], search, monkeypatch).partial
+    assert len(partial) == len(cells)  # every row of the finished cheap method is kept
+    assert np.isfinite(partial.columns["ECFP4 Tanimoto"]).all()
+    mcs = partial.columns["MCS Tanimoto"]
+    scored = np.flatnonzero(np.isfinite(mcs))
+    assert 0 < len(scored) < 2 and scored.tolist() == [3]  # the best row, where it belongs
+    assert mcs[3] == pytest.approx(whole.columns["MCS Tanimoto"][3])
+
+
+def test_a_cancelled_cheap_method_keeps_its_first_rows(monkeypatch) -> None:
+    from chemsuite.analysis import fingerprints as module
+
+    monkeypatch.setattr(module, "TILE_ROWS", 3)
+    token = CancelToken()
+    calls = []
+
+    def progress(done: int, total: int) -> None:
+        calls.append(done)
+        if len(calls) == 1:
+            token.cancel()
+
+    with pytest.raises(Cancelled) as stopped:
+        score_cells(CELLS, [PARACETAMOL], sm.Search((sm.Method(), sm.Method(kind=sm.MCS)),),
+                    progress=progress, cancel=token)  # fmt: skip
+    partial = stopped.value.partial
+    assert len(partial) == 3 and "MCS Tanimoto" not in partial.columns
+    assert partial.consensus is None  # the other method never ran
+
+
+def test_the_consensus_needs_every_method_to_have_scored_the_row() -> None:
+    methods = (sm.Method(), sm.Method(kind=sm.MCS))
+    scores = score_cells(CELLS, [PARACETAMOL], sm.Search(methods, prefilter=2, consensus="rank"))
+    mcs = scores.columns["MCS Tanimoto"]
+    assert np.isfinite(scores.consensus).sum() == 2  # not the rows the MCS skipped
+    assert np.isfinite(scores.consensus).tolist() == np.isfinite(mcs).tolist()
+    top = np.nanargmax(scores.consensus)  # no skipped row outranks a scored one
+    assert np.isfinite(mcs[top])
+
+
+def test_nearest_falls_back_when_the_primary_method_skipped_the_row() -> None:
+    methods = (sm.Method(kind=sm.MCS), sm.Method())  # the expensive one is primary
+    scores = score_cells(CELLS, [PARACETAMOL, ASPIRIN], sm.Search(methods, prefilter=2))
+    mcs = scores.columns["MCS Tanimoto"]
+    assert np.isfinite(mcs).sum() == 2
+    assert (scores.nearest[:6] >= 0).all()  # every scored row still names a reference
+    skipped = np.flatnonzero(~np.isfinite(mcs[:6]))
+    fingerprint_nearest = score_cells(CELLS, [PARACETAMOL, ASPIRIN], sm.Search((sm.Method(),)))
+    assert scores.nearest[skipped].tolist() == fingerprint_nearest.nearest[skipped].tolist()
+
+
+def test_the_methods_run_in_worker_processes() -> None:
+    from chemsuite.core.jobs.parallel import process_pool
+
+    methods = (sm.Method(), sm.Method(kind=sm.MCS), sm.Method(kind=sm.SCAFFOLD))
+    search = sm.Search(methods, prefilter=0)
+    inline = score_cells(CELLS, [PARACETAMOL], search)
+    with process_pool(2) as pool:
+        pooled = score_cells(CELLS, [PARACETAMOL], search, executor=pool)
+    for method in methods:  # the worker entry points pickle and give the same answers
+        got, want = pooled.columns[method.column], inline.columns[method.column]
+        assert np.allclose(got, want, equal_nan=True), method.column
+
+
 def test_unbuilt_methods_say_so() -> None:
     with pytest.raises(ValueError, match="not available"):
         score_cells(CELLS, [PARACETAMOL], sm.Search((sm.Method(kind=sm.SHAPE),)))
