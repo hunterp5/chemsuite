@@ -130,15 +130,20 @@ def fill_pocket(menu: QMenu, session: WorkbenchSession) -> None:
 def _colour(
     menu: QMenu, session: WorkbenchSession, parent: QWidget, first: displays.Display
 ) -> None:
+    menu.setToolTipsVisible(True)
     group = QActionGroup(menu)
-    for key, title in colours.SCHEMES.items():
-        action = menu.addAction(
-            f"By {title}",
-            lambda k=key: session.change_surfaces(lambda d: d.colour_surface(k), rebuilt=False),
-        )
+    choices = [(key, f"By {title}") for key, title in colours.SCHEMES.items()]
+    choices.append((displays.ELECTROSTATICS, "By Electrostatics"))
+    for key, title in choices:
+        action = menu.addAction(title, lambda k=key: _colour_by(session, k))
         action.setCheckable(True)
         action.setChecked(first.surface_scheme == key)
         group.addAction(action)
+        if key == displays.ELECTROSTATICS:
+            action.setToolTip(
+                "Coulomb potential 1.4 Å above the surface, red (−10) to blue (+10 kcal/mol/e), "
+                "from Amber charges for the protonation states the hydrogens show"
+            )
     menu.addSeparator()
     single = menu.addAction("Single Color…", lambda: _pick(session, parent, first.surface_rgb))
     single.setCheckable(True)
@@ -146,11 +151,24 @@ def _colour(
     group.addAction(single)
 
 
+def _colour_by(session: WorkbenchSession, scheme: str) -> None:
+    """Color the surfaces; by electrostatics, or from it, the scene is composed again (the
+    potential is built, or dropped), else only the look changes."""
+    electric = displays.ELECTROSTATICS
+    rebuilt = scheme == electric or any(
+        d.surface_scheme == electric for d in session.surface_displays()
+    )
+    session.change_surfaces(lambda d: d.colour_surface(scheme), rebuilt=rebuilt)
+
+
 def _pick(session: WorkbenchSession, parent: QWidget, rgb: tuple[float, float, float]) -> None:
     chosen = QColorDialog.getColor(QColor.fromRgbF(*rgb), parent, "Surface Color")
     if chosen.isValid():
         picked = (chosen.redF(), chosen.greenF(), chosen.blueF())
-        session.change_surfaces(lambda d: d.colour_surface(displays.FLAT, picked), rebuilt=False)
+        electric = any(
+            d.surface_scheme == displays.ELECTROSTATICS for d in session.surface_displays()
+        )
+        session.change_surfaces(lambda d: d.colour_surface(displays.FLAT, picked), rebuilt=electric)
 
 
 def _carve(session: WorkbenchSession, distance: float) -> None:

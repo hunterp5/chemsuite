@@ -52,6 +52,7 @@ from ..chem import interactions as contacts
 from ..structure.model import AMINO, NUCLEIC, Structure
 from . import cartoon as cartoons
 from . import colours as schemes
+from . import electrostatics
 from . import mesh as meshes
 from . import scene as scenes
 from . import surface as surfaces
@@ -62,6 +63,8 @@ TRANSPARENCIES = (0.0, 0.2, 0.4, 0.6, 0.8)
 #: a surface's scheme for one color (``surface_rgb``) over the whole surface
 FLAT = "flat"
 FLAT_RGB = (0.85, 0.85, 0.85)
+#: a surface's scheme for its electrostatic potential, per vertex (the ``potential`` part)
+ELECTROSTATICS = "electrostatics"
 #: how far (Å) a carved surface reaches from the atoms it was carved around, and the choices
 CARVE_DISTANCE = 5.0
 CARVE_DISTANCES = (3.0, 5.0, 8.0, 12.0)
@@ -70,7 +73,7 @@ SOLID, MESH, DOTS = "solid", "mesh", "dots"
 SURFACE_STYLES = {SOLID: "Solid", MESH: "Mesh", DOTS: "Dots"}
 CARTOON_PICK_RADIUS = 1.2
 #: the parts a deferring display builds in the background
-DEFERRED = ("surface", "pocket", "interactions", "cartoon")
+DEFERRED = ("surface", "pocket", "interactions", "cartoon", "potential")
 #: a cartoon of more residues than this is built in the background
 LARGE_CARTOON = 2000
 _EMPTY: dict[str, Callable[[], Any]] = {
@@ -78,6 +81,7 @@ _EMPTY: dict[str, Callable[[], Any]] = {
     "pocket": meshes.Mesh.empty,
     "cartoon": meshes.Mesh.empty,
     "interactions": contacts.Interactions.empty,
+    "potential": lambda: electrostatics.Potential(meshes.Mesh.empty(), np.zeros(0, np.float32)),
 }
 
 
@@ -126,8 +130,10 @@ class Display:
     _cache: dict = field(default_factory=dict, init=False, repr=False)
     _latest: dict = field(default_factory=dict, init=False, repr=False)  # last built, per part
     _rgba: dict = field(default_factory=dict, init=False, repr=False)  # surface and pocket colors
-    _carved: tuple | None = field(default=None, init=False, repr=False)  # (whole, how, carved)
-    _dotted: dict = field(default_factory=dict, init=False, repr=False)  # per part: (mesh, dots)
+    #: (whole, how, carved, each carved vertex's in the whole)
+    _carved: tuple | None = field(default=None, init=False, repr=False)
+    #: per part: (mesh, dots, each dot vertex's in the mesh)
+    _dotted: dict = field(default_factory=dict, init=False, repr=False)
     _versions: dict = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -142,12 +148,14 @@ class Display:
         self.ghost = np.zeros(s.n_atoms, bool)
         self.query = np.zeros(s.n_atoms, bool)
         self._versions = {"geometry": 0, "cartoon": 0, "surface": 0, "pocket": 0, "trace": 0,
-                          "interactions": 0}  # fmt: skip
+                          "interactions": 0, "potential": 0}  # fmt: skip
 
     # what changed
     def touch(self, *parts: str) -> None:
         for part in parts:
             self._versions[part] += 1
+            if part == "surface":  # the potential is of the surface's vertices
+                self._versions["potential"] += 1
 
     @property
     def active(self) -> np.ndarray:
@@ -213,7 +221,10 @@ class Display:
         if pocket:
             key = ("pocket", schemes.HYDROPHOBICITY, None, 1.0 - self.pocket_transparency)
         else:
-            flat = self.surface_rgb if self.surface_scheme == FLAT else None
+            # one color: the flat one, or white under an electrostatic potential's colors
+            flat = {FLAT: self.surface_rgb, ELECTROSTATICS: (1.0, 1.0, 1.0)}.get(
+                self.surface_scheme
+            )
             key = ("surface", self.surface_scheme, flat, self.surface_alpha())
         rgba = self._rgba.get(key)
         if rgba is None:
@@ -228,7 +239,7 @@ class Display:
 
     def colour_surface(self, scheme: str, rgb: tuple[float, float, float] | None = None) -> None:
         """Color the surface by a scheme, or (FLAT) all in *rgb* (the last one, when None)."""
-        if scheme in schemes.SCHEMES or scheme == FLAT:
+        if scheme in schemes.SCHEMES or scheme in (FLAT, ELECTROSTATICS):
             self.surface_scheme = scheme
             if rgb is not None:
                 self.surface_rgb = tuple(float(c) for c in rgb)
@@ -295,6 +306,9 @@ class Display:
             return surfaces.build, (s, np.flatnonzero(atoms), self.model, self.surface_options)
         if part == "trace":
             return cartoons.trace, (s, self.active)
+        if part == "potential":
+            return electrostatics.surface_potential, (s, self._part("surface"), self.model,
+                                                      self.active)  # fmt: skip
         return contacts.find, (s, self.query.copy(), self.active, self.model)
 
     def _inline(self, part: str, args: tuple) -> bool:
@@ -303,7 +317,7 @@ class Display:
             return True
         if part == "cartoon":
             return len(args[1]) <= LARGE_CARTOON
-        if part in ("surface", "pocket"):
+        if part in ("surface", "pocket", "potential"):
             return not len(args[1])
         return False
 
@@ -331,6 +345,8 @@ class Display:
         for part in DEFERRED:
             if part == "interactions" and not self.query.any():
                 continue
+            if part == "potential" and not self._potential_due():
+                continue
             version = self._versions[part]
             if (part, version) in self._cache:
                 continue
@@ -355,14 +371,19 @@ class Display:
 
     def surface_mesh(self) -> meshes.Mesh:
         """The surface as shown: carved, when it is, from the last one built."""
+        return self._carve()[0]
+
+    def _carve(self) -> tuple[meshes.Mesh, np.ndarray | None]:
+        """The surface as shown, and each of its vertices' in the whole surface (None when it
+        is the whole)."""
         whole = self._part("surface")
         if self.carve_points is None:
-            return whole
+            return whole, None
         how = (self.carve_points.tobytes(), self.carve_distance)
         if self._carved is None or self._carved[0] is not whole or self._carved[1] != how:
-            carved = meshes.carve(whole, self.carve_points, self.carve_distance)
-            self._carved = (whole, how, carved)
-        return self._carved[2]
+            carved, used = meshes.carved(whole, self.carve_points, self.carve_distance)
+            self._carved = (whole, how, carved, used)
+        return self._carved[2], self._carved[3]
 
     def pocket_mesh(self) -> meshes.Mesh:
         return self._part("pocket")
@@ -370,14 +391,37 @@ class Display:
     def drawn_mesh(self, pocket: bool = False) -> tuple[meshes.Mesh, str]:
         """The surface (or the pocket's skin) and its style, as drawn: a dotted one as its
         dots (kept until the surface changes); a wire frame is drawn from the mesh itself."""
+        mesh, style, _source = self._drawn(pocket)
+        return mesh, style
+
+    def _drawn(self, pocket: bool) -> tuple[meshes.Mesh, str, np.ndarray | None]:
+        """:meth:`drawn_mesh`, and each vertex's in the whole surface (None: the same)."""
         part, style = ("pocket", self.pocket_style) if pocket else ("surface", self.surface_style)
-        mesh = self.pocket_mesh() if pocket else self.surface_mesh()
+        mesh, source = (self.pocket_mesh(), None) if pocket else self._carve()
         if style != DOTS or not len(mesh):
-            return mesh, style
+            return mesh, style, source
         kept = self._dotted.get(part)
         if kept is None or kept[0] is not mesh:
-            kept = self._dotted[part] = (mesh, meshes.dots(mesh))
-        return kept[1], style
+            kept = self._dotted[part] = (mesh, *meshes.dotted(mesh))
+        dots, of = kept[1], kept[2]
+        return dots, style, of if source is None else source[of]
+
+    def drawn_potential(self, pocket: bool = False) -> np.ndarray | None:
+        """Per vertex of the drawn surface, its electrostatic potential when the surface is
+        colored by it (0, white, until it is computed); None otherwise."""
+        if pocket or self.surface_scheme != ELECTROSTATICS:
+            return None
+        mesh, _style, source = self._drawn(False)
+        whole = self._part("surface")
+        found = self._part("potential")
+        values = found.values if found.mesh is whole else np.zeros(len(whole), np.float32)
+        return values if source is None else values[source]
+
+    def _potential_due(self) -> bool:
+        """Whether the potential is wanted and its surface is built (it is of that surface)."""
+        if self.surface_scheme != ELECTROSTATICS:
+            return False
+        return ("surface", self._versions["surface"]) in self._cache
 
     def set_surface_style(self, style: str, pocket: bool = False) -> None:
         if style in SURFACE_STYLES:
@@ -525,7 +569,7 @@ class Display:
             rgb = own[given] & 0xFFFFFF
             self.colours[given, :3] = np.stack([rgb >> 16, rgb >> 8 & 255, rgb & 255], 1) / 255
         surface_scheme = str(state.get("surface_scheme", self.surface_scheme))
-        if surface_scheme in schemes.SCHEMES or surface_scheme == FLAT:
+        if surface_scheme in schemes.SCHEMES or surface_scheme in (FLAT, ELECTROSTATICS):
             self.surface_scheme = surface_scheme
         self.touch("geometry", "cartoon", "surface", "pocket", "interactions")
 
@@ -588,6 +632,9 @@ class Scene:
     surface_wire_look: np.ndarray = field(default_factory=lambda: _no_look())
     pocket_wire: meshes.Mesh = field(default_factory=meshes.Mesh.empty)
     pocket_wire_look: np.ndarray = field(default_factory=lambda: _no_look())
+    #: per vertex of surface and surface_wire, the potential that colors it (NaN: by scheme)
+    surface_potential: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
+    surface_wire_potential: np.ndarray = field(default_factory=lambda: np.zeros(0, np.float32))
 
     def locate(self, atom: int) -> tuple[Display, int] | None:
         """The display and its own atom index for a global atom index."""
@@ -624,10 +671,8 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
     looks = [d.residue_look() for d in shown]
     residue_colours = _cat([c for c, _ in looks], np.float32, 4)
     residue_flags = _cat([f for _, f in looks], np.float32)
-    surface, surface_wire = _drawn(shown, atom_offsets, pocket=False)
-    surface_colours = _surface_colours(shown, surface)
-    pocket, pocket_wire = _drawn(shown, atom_offsets, pocket=True)
-    pocket_colours = _surface_colours(shown, pocket, pocket=True)
+    surface, surface_wire, potential, wire_potential = _drawn(shown, atom_offsets, pocket=False)
+    pocket, pocket_wire, _, _ = _drawn(shown, atom_offsets, pocket=True)
     traces = [d.trace()[1] for d in shown]
     pick_atoms = _cat([t + o for t, o in zip(traces, atom_offsets, strict=False)], np.int64)
     pick_centres = _cat([d.xyz[t] for d, t in zip(shown, traces, strict=True)], np.float32, 3)
@@ -643,33 +688,57 @@ def compose(displays: list[Display] | tuple[Display, ...]) -> Scene:
         cartoon=cartoon,
         cartoon_look=meshes.look(cartoon, residue_colours, residue_flags),
         surface=surface,
-        surface_look=meshes.look(surface, surface_colours, flags),
+        surface_look=_surface_look(shown, surface, flags, potential),
         pocket=pocket,
-        pocket_look=meshes.look(pocket, pocket_colours, flags),
+        pocket_look=_surface_look(shown, pocket, flags, pocket=True),
         pick_atoms=pick_atoms,
         pick_centres=pick_centres,
         interactions=found,
         lines=lines,
         lines_look=lines_look,
         surface_wire=surface_wire,
-        surface_wire_look=meshes.look(surface_wire, _surface_colours(shown, surface_wire), flags),
+        surface_wire_look=_surface_look(shown, surface_wire, flags, wire_potential),
         pocket_wire=pocket_wire,
-        pocket_wire_look=meshes.look(
-            pocket_wire, _surface_colours(shown, pocket_wire, pocket=True), flags
-        ),
+        pocket_wire_look=_surface_look(shown, pocket_wire, flags, pocket=True),
+        surface_potential=potential,
+        surface_wire_potential=wire_potential,
     )
 
 
 def _drawn(
     shown: tuple[Display, ...], atom_offsets: np.ndarray, pocket: bool
-) -> tuple[meshes.Mesh, meshes.Mesh]:
-    """The displays' surfaces (or pocket skins) as two meshes: those drawn filled (solid or
-    dotted), and those drawn as wire frames."""
-    filled, wire = [], []
+) -> tuple[meshes.Mesh, meshes.Mesh, np.ndarray, np.ndarray]:
+    """The displays' surfaces (or pocket skins) as two meshes, those drawn filled (solid or
+    dotted) and those drawn as wire frames, and each one's per-vertex potential (NaN where a
+    surface is colored by a scheme)."""
+    filled: tuple[list, list] = ([], [])
+    wire: tuple[list, list] = ([], [])
     for d, offset in zip(shown, atom_offsets, strict=False):
         mesh, style = d.drawn_mesh(pocket)
-        (wire if style == MESH else filled).append(_shifted(mesh, offset))
-    return meshes.join(filled), meshes.join(wire)
+        if not len(mesh):
+            continue
+        values = d.drawn_potential(pocket)
+        into = wire if style == MESH else filled
+        into[0].append(_shifted(mesh, offset))
+        into[1].append(np.full(len(mesh), np.nan, np.float32) if values is None else values)
+    return (meshes.join(filled[0]), meshes.join(wire[0]),
+            _cat(filled[1], np.float32), _cat(wire[1], np.float32))  # fmt: skip
+
+
+def _surface_look(
+    shown: tuple[Display, ...],
+    mesh: meshes.Mesh,
+    flags: np.ndarray,
+    potential: np.ndarray | None = None,
+    pocket: bool = False,
+) -> np.ndarray:
+    """A surface's look: its atoms' surface colors, or where it has a *potential*, that."""
+    look = meshes.look(mesh, _surface_colours(shown, mesh, pocket), flags)
+    if potential is not None and len(potential):
+        known = np.isfinite(potential)
+        if known.any():
+            look[known, :3] = electrostatics.colour(potential[known])
+    return look
 
 
 def _no_look() -> np.ndarray:
@@ -701,7 +770,7 @@ def relook(scene: Scene) -> Scene:
     colours = _cat([d.colours for d in scene.displays], np.float32, 4)
     flags = _cat([d.flags() for d in scene.displays], np.float32)
     looks = [d.residue_look() for d in scene.displays]
-    surface_colours = _surface_colours(scene.displays, scene.surface)
+    shown = scene.displays
     return replace(
         scene,
         sphere_look=scenes.sphere_look(scene.geometry, colours, flags),
@@ -711,18 +780,12 @@ def relook(scene: Scene) -> Scene:
             _cat([c for c, _ in looks], np.float32, 4),
             _cat([f for _, f in looks], np.float32),
         ),
-        surface_look=meshes.look(scene.surface, surface_colours, flags),
-        pocket_look=meshes.look(
-            scene.pocket, _surface_colours(scene.displays, scene.pocket, pocket=True), flags
+        surface_look=_surface_look(shown, scene.surface, flags, scene.surface_potential),
+        pocket_look=_surface_look(shown, scene.pocket, flags, pocket=True),
+        surface_wire_look=_surface_look(
+            shown, scene.surface_wire, flags, scene.surface_wire_potential
         ),
-        surface_wire_look=meshes.look(
-            scene.surface_wire, _surface_colours(scene.displays, scene.surface_wire), flags
-        ),
-        pocket_wire_look=meshes.look(
-            scene.pocket_wire,
-            _surface_colours(scene.displays, scene.pocket_wire, pocket=True),
-            flags,
-        ),
+        pocket_wire_look=_surface_look(shown, scene.pocket_wire, flags, pocket=True),
     )
 
 

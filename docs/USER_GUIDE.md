@@ -1802,8 +1802,21 @@ or not, with the rows you chose.
     skin over the atoms (quicker, and the kind of every surface in documents saved before
     there were kinds, which open as they were).
   - **Style:** **Solid**, **Mesh** (its wire frame) or **Dots**.
-  - **Color:** by any of the schemes above (by hydrophobicity at first), or **Single
-    Color…** for one color over the whole surface. **Transparency:** opaque to 80%.
+  - **Color:** by any of the schemes above (by hydrophobicity at first), **By
+    Electrostatics** (below), or **Single Color…** for one color over the whole surface.
+    **Transparency:** opaque to 80%.
+  - **By Electrostatics** colors the surface by the Coulomb potential 1.4 Å above it (as
+    ChimeraX does), red at −10 through white to blue at +10 kcal/(mol·e), with a dielectric of
+    4r and the charges within 15 Å. Amino acids and nucleotides take Amber's charges (Cornell
+    et al. 1995, as kept by ff14SB, from PDB2PQR's table) for the protonation states their
+    hydrogens show: a prepared His with HD1 and HE2 is charged, Asp with HD2 or Glu with HE2
+    neutral, Lys missing a hydrogen neutral. An unprepared protein takes the usual states
+    (His neutral, on NE2), its hydrogens' charges on their heavy atoms. Chain ends are charged.
+    Ligands, glycans and residues the table lacks take Gasteiger charges: a prepared ligand in
+    the protomer [Prepare](#prepare) chose, else in the form of its template, which may be
+    neutral (ATP's phosphates are protonated there). Ions take their charge, or their usual
+    one when the file gives none (Na⁺, Mg²⁺, Zn²⁺, Cl⁻ …); waters none. The surface is white until the potential arrives (a
+    few seconds for a large protein, in the background); carving and Dots keep it.
   - **Carve Around Selection ▸** 3, 5, 8 or 12 Å shows only the part of every protein's surface
     near the selected atoms, whichever protein they belong to (a ligand or a pose); **Show
     Whole Surface** undoes it. Carving cuts the surface already built, so it is immediate.

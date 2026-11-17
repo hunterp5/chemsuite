@@ -363,6 +363,11 @@ def test_the_surface_menu_rebuilds_carves_and_follows_the_selection(panel, qtbot
     action_in(menu, "Show Whole Surface").trigger()
     assert shown.carve_points is None
     assert len(session.scene.surface.triangles) > len(carved.triangles)
+    fill_surface(menu, session, panel)  # electrostatics: the scene is composed again
+    with qtbot.waitSignal(panel.signals.sceneChanged):
+        action_in(action_in(menu, "Color").menu(), "By Electrostatics").trigger()
+    assert shown.surface_scheme == "electrostatics"
+    qtbot.waitUntil(lambda: np.abs(session.scene.surface_potential).max() > 1, timeout=20000)
 
 
 def test_label_layout_goes_front_to_back_and_skips_overlaps() -> None:

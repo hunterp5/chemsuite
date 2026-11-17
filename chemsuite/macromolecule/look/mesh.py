@@ -167,8 +167,15 @@ _OCTAHEDRON_FACES = np.array(
 def dots(mesh: Mesh, spacing: float = DOT_SPACING, radius: float = DOT_RADIUS) -> Mesh:
     """The mesh as dots: a small octahedron at about one vertex per *spacing* Å (the first
     vertex in each cube of that size), each owned as its vertex was."""
+    return dotted(mesh, spacing, radius)[0]
+
+
+def dotted(
+    mesh: Mesh, spacing: float = DOT_SPACING, radius: float = DOT_RADIUS
+) -> tuple[Mesh, np.ndarray]:
+    """:func:`dots`, and for each of its vertices the mesh's vertex it stands for."""
     if not len(mesh):
-        return Mesh.empty()
+        return Mesh.empty(), np.zeros(0, np.int64)
     cells = np.floor(mesh.positions / spacing).astype(np.int64)
     _, chosen = np.unique(cells, axis=0, return_index=True)
     chosen.sort()
@@ -178,19 +185,22 @@ def dots(mesh: Mesh, spacing: float = DOT_SPACING, radius: float = DOT_RADIUS) -
     normals = np.broadcast_to(_OCTAHEDRON[None], (k, 6, 3))
     vertices = np.concatenate([positions, normals], axis=2).reshape(-1, VERTEX_FLOATS)
     triangles = (_OCTAHEDRON_FACES[None] + 6 * np.arange(k)[:, None, None]).reshape(-1, 3)
-    return Mesh(
-        vertices.astype(np.float32),
-        triangles.astype(np.uint32),
-        np.repeat(mesh.owner[chosen], 6),
-    )
+    source = np.repeat(chosen, 6)
+    made = Mesh(vertices.astype(np.float32), triangles.astype(np.uint32), mesh.owner[source])
+    return made, source
 
 
 def carve(mesh: Mesh, points: np.ndarray, distance: float) -> Mesh:
     """The part of the mesh within *distance* Å of any of *points*: the triangles whose three
     vertices all are, with only the vertices they use (an empty mesh when there are none)."""
+    return carved(mesh, points, distance)[0]
+
+
+def carved(mesh: Mesh, points: np.ndarray, distance: float) -> tuple[Mesh, np.ndarray]:
+    """:func:`carve`, and for each vertex kept its index in the mesh."""
     points = np.asarray(points, np.float64).reshape(-1, 3)
     if not len(mesh) or not len(points):
-        return Mesh.empty()
+        return Mesh.empty(), np.zeros(0, np.int64)
     from scipy.spatial import cKDTree
 
     near, _ = cKDTree(points).query(mesh.positions, distance_upper_bound=distance)
@@ -198,13 +208,10 @@ def carve(mesh: Mesh, points: np.ndarray, distance: float) -> Mesh:
     t = mesh.triangles.astype(np.int64)
     kept = t[keep[t].all(axis=1)]
     if not len(kept):
-        return Mesh.empty()
+        return Mesh.empty(), np.zeros(0, np.int64)
     used, numbered = np.unique(kept, return_inverse=True)
-    return Mesh(
-        mesh.vertices[used],
-        numbered.reshape(-1, 3).astype(np.uint32),
-        mesh.owner[used],
-    )
+    triangles = numbered.reshape(-1, 3).astype(np.uint32)
+    return Mesh(mesh.vertices[used], triangles, mesh.owner[used]), used
 
 
 DASH = 0.25  # Å of tube, then a gap

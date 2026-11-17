@@ -47,6 +47,7 @@ TITLES = {
     "pocket": "Building a pocket surface",
     "interactions": "Finding interactions",
     "cartoon": "Building a cartoon",
+    "potential": "Coloring a surface by electrostatics",
 }
 
 

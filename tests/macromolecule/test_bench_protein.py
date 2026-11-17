@@ -34,7 +34,7 @@ import numpy as np
 import pytest
 
 from chemsuite.macromolecule.chem import poses
-from chemsuite.macromolecule.look import cartoon, surface
+from chemsuite.macromolecule.look import cartoon, electrostatics, surface
 from chemsuite.macromolecule.look import display as displays
 from chemsuite.macromolecule.structure import io
 from chemsuite.macromolecule.structure.model import Structure
@@ -58,6 +58,9 @@ COMPOSE_S = 0.5
 SES_ATOMS = 5_500
 SES_S = 5.0
 SES_MB = 400
+#: its electrostatic potential at every vertex (about 185,000), also in the background
+#: (the same desktop: 6 s; the 15 Å neighbor sums)
+POTENTIAL_S = 12.0
 
 
 def best_of(fn: Callable[[], object], repeat: int = 3) -> float:
@@ -167,3 +170,7 @@ def test_a_molecular_surface() -> None:
     seconds = best_of(lambda: surface.build(structure, heavy, 0, options), repeat=2)
     print(f"\nSES, {len(heavy):,} heavy atoms: {seconds:.2f} s, peak {peak:.0f} MB")
     assert seconds < SES_S and peak < SES_MB
+    mesh = surface.build(structure, heavy, 0, options)
+    potential = best_of(lambda: electrostatics.surface_potential(structure, mesh), repeat=1)
+    print(f"potential at {len(mesh):,} vertices: {potential:.2f} s")
+    assert potential < POTENTIAL_S
