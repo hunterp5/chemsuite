@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from rdkit import Chem
+from rdkit import Chem, rdBase
 
 #: the methods, in the order the dialog lists them
 MCS = "mcs"
@@ -59,6 +59,8 @@ MAX_RMSD = "Max Conformer RMSD (Å)"
 
 #: the private molecule property naming the reference asset a superposed molecule was fitted to
 REFERENCE_PROP = "_superposeReference"
+#: the kind of that asset, whose payload is the reference's MOL block
+REFERENCE_KIND = "superpose-reference"
 #: blobs that keep that property (chemsuite's usual blobs keep none)
 _PICKLE = Chem.PropertyPickleOptions.MolProps | Chem.PropertyPickleOptions.PrivateProps
 
@@ -157,6 +159,17 @@ def reference_id_of(mol: Chem.Mol | None) -> str | None:
     if mol is None or not mol.HasProp(REFERENCE_PROP):
         return None
     return mol.GetProp(REFERENCE_PROP) or None
+
+
+def reference_block(mol: Chem.Mol) -> bytes:
+    """The reference asset's payload: *mol*'s first conformer as a MOL block."""
+    return Chem.MolToMolBlock(first_conformer(mol)).encode()
+
+
+def reference_from_block(payload: bytes) -> Chem.Mol | None:
+    """The reference molecule read back from :func:`reference_block` (None if damaged)."""
+    with rdBase.BlockLogs():
+        return Chem.MolFromMolBlock(payload.decode(errors="replace"), removeHs=False)
 
 
 def apply_transform(conf: Chem.Conformer, transform: np.ndarray) -> None:

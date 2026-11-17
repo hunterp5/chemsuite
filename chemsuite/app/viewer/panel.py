@@ -80,6 +80,8 @@ from ..shell.glyphs import glyph
 from ..widgets.panel import OptionsPopup, ToolPanel
 from .caption import CaptionOverlay, caption_columns, default_caption, paint_caption
 from .depiction import Depiction2D, structure_image
+from .scene3d import PALETTE, make_3d, reference_part
+from .scene3d import is_3d as _is_3d
 
 TWO_D, THREE_D = "2d", "3d"
 MODES = {TWO_D: "2D", THREE_D: "3D"}
@@ -90,30 +92,6 @@ PREFETCH_AROUND = 2  # rows either side made ahead
 ELEMENT = "element"
 BY_ROW = "row"
 COLOURS = {ELEMENT: "Element", BY_ROW: "Carbons by Conformer"}
-#: carbon colours for overlays (distinct on white and on dark backgrounds)
-PALETTE = [
-    (0.55, 0.55, 0.55), (0.12, 0.47, 0.71), (1.0, 0.5, 0.05), (0.17, 0.63, 0.17),
-    (0.58, 0.4, 0.74), (0.55, 0.34, 0.29), (0.89, 0.47, 0.76), (0.74, 0.74, 0.13),
-    (0.09, 0.75, 0.81), (0.84, 0.15, 0.16),
-]  # fmt: skip
-
-
-def _is_3d(mol: Chem.Mol | None) -> bool:
-    return mol is not None and mol.GetNumConformers() > 0 and mol.GetConformer().Is3D()
-
-
-def make_3d(mols: dict[int, Chem.Mol]) -> dict[int, Chem.Mol | None]:
-    """A quick conformer for each structure that has none (None when embedding fails)."""
-    from chemsuite.conformers.etkdg import ConformerSettings, generate
-
-    settings = ConformerSettings(count=1, energy_window=None, timeout=10)
-    out: dict[int, Chem.Mol | None] = {}
-    for oid, mol in mols.items():
-        try:
-            out[oid] = generate(mol, settings).mol
-        except Exception:  # noqa: BLE001 - one bad structure must not stop the rest
-            out[oid] = None
-    return out
 
 
 class StructureViewer(ToolPanel):
@@ -127,9 +105,11 @@ class StructureViewer(ToolPanel):
         move_to: Callable[[int], bool] | None = None,
         watch_current: Callable[[Callable[[int | None], None]], Callable[[], None]] | None = None,
         mode: str = TWO_D,
+        reference_of: Callable[[Chem.Mol], Chem.Mol | None] = lambda _mol: None,
     ) -> None:
         """*current* gives the table's current row, *move_to* moves it and *watch_current*
-        calls back when it moves (returning the function that stops that)."""
+        calls back when it moves (returning the function that stops that). *reference_of*
+        gives the reference a superposed molecule was fitted to, drawn with it in 3D."""
         super().__init__()
         self.table = table
         self.selection = selection
@@ -137,6 +117,7 @@ class StructureViewer(ToolPanel):
         self._current = current
         self._run = run
         self._move_to = move_to
+        self._reference_of = reference_of
         self.mode = mode if mode in MODES else TWO_D  # (set_mode below makes it so)
         self._oids = np.empty(0, dtype=np.int64)  # the browsed rows, in the table's order
         self._index = -1
@@ -233,6 +214,9 @@ class StructureViewer(ToolPanel):
         self.align = QCheckBox("Align Conformers")
         self.align.setChecked(True)
         self.align.setToolTip("Fit every conformer onto the first, on the heavy atoms")
+        self.show_reference = QCheckBox("Show Reference")
+        self.show_reference.setChecked(True)
+        self.show_reference.setToolTip("Draw the reference a superposed row was fitted to")
         self.options = OptionsPopup(self)
         form = self.options.form
         form.addRow("", self.browse_selected)
@@ -243,11 +227,14 @@ class StructureViewer(ToolPanel):
         form.addRow("Hydrogens:", self.hydrogens)
         form.addRow("Color:", self.colour)
         form.addRow("", self.align)
-        self._three_d_rows = [self.style_box, self.hydrogens, self.colour, self.align]
+        form.addRow("", self.show_reference)
+        self._three_d_rows = [self.style_box, self.hydrogens, self.colour, self.align,
+                              self.show_reference]  # fmt: skip
         for box in (self.style_box, self.hydrogens, self.colour):
             box.currentIndexChanged.connect(self._schedule)
         self.column.currentIndexChanged.connect(self._schedule)
         self.align.toggled.connect(self._schedule)
+        self.show_reference.toggled.connect(self._schedule)
         self.browse_selected.toggled.connect(self._rescope_later)
         self.browse_visible.toggled.connect(self._rescope_later)
         self._show_caption_names()
@@ -662,6 +649,11 @@ class StructureViewer(ToolPanel):
                     molecule_part(mol, conf_id, style=style, hydrogens=hydrogens, carbon=carbon)
                 )
                 rows.append(oid)
+        if self.show_reference.isChecked() and molecules and len(parts) < MAX_PARTS:
+            reference = reference_part(self._reference_of(molecules[0][1]))
+            if reference is not None:
+                parts.append(reference)
+                rows.append(-1)  # not a row
         return parts, rows
 
     # -- drawing --------------------------------------------------------------------------------
@@ -884,6 +876,7 @@ class StructureViewer(ToolPanel):
             "hydrogens": self.hydrogens.currentData(),
             "colour": self.colour.currentData(),
             "align": self.align.isChecked(),
+            "reference": self.show_reference.isChecked(),
             "overlay": self.overlay_action.isChecked(),
             "conformer": self.conformer,
             "camera": camera,
@@ -905,6 +898,7 @@ class StructureViewer(ToolPanel):
             if index >= 0:
                 box.setCurrentIndex(index)
         self.align.setChecked(bool(state.get("align", True)))
+        self.show_reference.setChecked(bool(state.get("reference", True)))
         self.browse_selected.setChecked(bool(state.get("browse_selected", False)))
         self.browse_visible.setChecked(bool(state.get("browse_visible", True)))
         if isinstance(state.get("caption"), list):

@@ -43,8 +43,6 @@ from chemsuite.superpose.substructure import parse_core
 
 #: Below this many rows the work runs on the job's thread: starting worker processes costs more.
 POOL_MIN_ROWS = 20
-#: the asset kind of a superposition's reference (a MOL block)
-REFERENCE_KIND = "superpose-reference"
 SUFFIX = " superposed"
 BEST_CONFORMER = "Best Conformer"
 ONTO_REFERENCE = "reference"
@@ -296,8 +294,7 @@ class SuperposeDialog(ToolDialog):
             meta = {"source": "protein", "protein": ref.protein, "ligand": ref.label}
         meta["method"] = settings.method
         asset_id = self.ctx.table.unique_asset_id(f"superpose-{uuid.uuid4().hex[:8]}")
-        block = Chem.MolToMolBlock(sp.first_conformer(mol))
-        return Asset(asset_id, REFERENCE_KIND, name, block.encode(), meta)
+        return Asset(asset_id, sp.REFERENCE_KIND, name, sp.reference_block(mol), meta)
 
     def draw_core(self) -> None:
         from chemsuite.app.sketcher import SketcherDialog

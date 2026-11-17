@@ -1556,6 +1556,9 @@ they are, and a 3D view you turned is still turned when you come back to it.
   through them; the counter shows which one. **Overlay** draws every conformer at once as thin
   sticks with polar hydrogens. **Align Conformers** (on by default) fits them onto the first on
   heavy atoms.
+- **Show Reference** (on by default, in the options menu): a row written by
+  [Superpose](#superpose) is drawn with the reference it was fitted to, as thin sticks with
+  blue carbons.
 - **Mouse:** drag to turn, right-drag, middle-drag or Shift-drag to move, wheel to zoom. Pointing
   at an atom names it (for example "N4"). Ctrl-click (⌘-click on macOS) an atom to add or remove
   the row from the selection.

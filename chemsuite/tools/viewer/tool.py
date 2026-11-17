@@ -23,6 +23,25 @@ from chemsuite.app.shell.jobs import QUICK
 TOOL_ID = "viewer"
 
 
+def reference_finder(ctx: ToolContext):
+    """For the Browser: the reference a superposed molecule names, read from the document's
+    assets (kept per asset: assets never change in place)."""
+    from chemsuite.superpose.model import REFERENCE_KIND, reference_from_block, reference_id_of
+
+    read: dict[int, object] = {}
+
+    def find(mol):
+        asset = ctx.table.assets.get(reference_id_of(mol) or "")
+        if asset is None or asset.kind != REFERENCE_KIND:
+            return None
+        if id(asset) not in read:
+            read.clear()  # one reference at a time is the usual case
+            read[id(asset)] = (asset, reference_from_block(asset.data()))
+        return read[id(asset)][1]
+
+    return find
+
+
 def open_viewer(
     ctx: ToolContext, mode: str | None, state: dict | None = None, at: int | None = None
 ):
@@ -51,6 +70,7 @@ def open_viewer(
         move_to=ctx.set_current_oid,
         watch_current=ctx.watch_current,
         mode=mode or "2d",
+        reference_of=reference_finder(ctx),
     )
     if state is not None:
         panel.set_state(state)

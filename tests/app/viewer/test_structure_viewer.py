@@ -663,3 +663,37 @@ def test_3d_known_unavailable_at_start_up_is_never_tried(chem, qtbot, gpu, monke
     viewer = chem.open_tool("viewer")
     assert viewer.mode == "2d" and viewer.renderer is None
     assert viewer.mode_buttons["3d"].toolTip() == f"⚠ {graphics.TURNED_OFF}"
+
+
+def test_a_superposed_row_shows_its_reference(window, qtbot) -> None:
+    """A row Superpose wrote names its reference; 3D draws it too, as thin sticks without the
+    hydrogens on carbon, until Show Reference is turned off."""
+    from chemsuite.app.document.main_window import Workspace
+    from chemsuite.app.document.tools import ToolContext
+    from chemsuite.core.assets import Asset, PutAsset
+    from chemsuite.core.table import Table
+    from chemsuite.core.table.columns import StructureColumn
+    from chemsuite.superpose.model import REFERENCE_KIND, blob_with_reference, reference_block
+    from chemsuite.tools.viewer.tool import open_viewer
+
+    table = Table()
+    blob = blob_with_reference(_conformers("c1ccccc1", 1), "ref-1")
+    table.add_rows({"ID": ["A"]}, undoable=False)
+    table.add_column("Aligned", StructureColumn.from_parsed([blob], ["c1ccccc1"]))
+    reference = Asset(
+        "ref-1", REFERENCE_KIND, "Row 1", reference_block(_conformers("Cc1ccccc1", 1))
+    )
+    table.edit("Superpose", [PutAsset("ref-1", None, reference)])
+    window._install(Workspace(table))
+    window.show()
+    _current(window, int(table.oids[0]))
+    panel = open_viewer(ToolContext(window), "3d")
+    qtbot.waitUntil(
+        lambda: len(panel.renderer.scene) == 12 + 7, timeout=30_000
+    )  # benzene + toluene
+    panel.show_reference.setChecked(False)
+    qtbot.waitUntil(lambda: len(panel.renderer.scene) == 12, timeout=5_000)
+    assert panel.state()["reference"] is False
+    table.undo()  # the reference asset goes: nothing to draw even with Show Reference on
+    panel.show_reference.setChecked(True)
+    qtbot.waitUntil(lambda: len(panel.renderer.scene) == 12, timeout=5_000)
