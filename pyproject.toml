@@ -54,6 +54,7 @@ include = ["chemsuite*"]
 "chemsuite.sketch" = ["data/*"]  # Ketcher licence and notice; templates from P2
 "chemsuite.macromolecule.structure" = ["data/*"]  # residue templates from the wwPDB CCD (public domain)
 "chemsuite.macromolecule.prepare" = ["data/*"]  # ideal residue geometry from the wwPDB CCD (public domain)
+"chemsuite.macromolecule.look" = ["data/*"]  # Amber RESP charges from PDB2PQR (BSD-3) and its licence
 "chemsuite.macromolecule.dock" = ["bin/*", "bin/*/*"]  # the AutoDock Vina binaries, their licence and notice
 "chemsuite.app.render3d" = ["shaders/*"]  # 3D Viewer shaders: sources and compiled .qsb
 "chemsuite.macromolecule.ui" = ["shaders/*"]  # Protein Viewer shaders

@@ -233,11 +233,12 @@ other machine can pick it up. Update it at the end of a session that leaves work
       hydroxyl/thiol/ammonium whose H points elsewhere, judged on heavy atoms.
     - Ligands draw as purple sticks; ions amber; metal-contact lines light gold.
     - Not done: the PanelWindow's dock arrangement is not saved; nothing tried by hand yet.
-  - **Next (protein):** surface options (kind vdW/SAS/SES with probe and quality, colour by any
-    scheme or flat, opacity per surface and pocket skin, solid/mesh/dots, carve, smoothing) —
-    asked for 2026-11-15, needs plan mode. Open questions for the user: the default kind
-    (SES vs today's Blob; saved documents load as Blob) and the charges for Coulombic
-    colouring. Then: try Prepare, Inspect and docking by hand in the app; a second titration
+  - **In progress (protein): surface options**, plan approved 2026-11-17 in
+    [`docs/SURFACE_PLAN.md`](docs/SURFACE_PLAN.md). Decided: SES is the default kind (saved
+    documents load as Blob); Coulombic coloring uses ff14SB-style charges for the states the
+    hydrogens show (united atom when unprepared), Gasteiger for ligands. Phase 0 is done (the
+    charge table from PDB2PQR's AMBER.DAT, BSD-3, approved by the user); phase 1 (geometry)
+    is next. Then: try Prepare, Inspect and docking by hand in the app; a second titration
     round (PROPKA-style H-bond determinants, His titrated for charge only) is listed in
     p2-review.md §4.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
@@ -375,7 +376,7 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - Still owed: gate 1 on the Mac (osx-arm64 env and its platforms), and the choice between
     OpenMM 8.4.0 with this driver and 8.6.1 with a newer one.
 
-1. Protein surface options (see In progress), in plan mode.
+1. Protein surface options: [`docs/SURFACE_PLAN.md`](docs/SURFACE_PLAN.md) (in progress).
 2. Graceful exit (ROADMAP §7.0).
 3. Bioactive conformers (§7.0b) or protein Phase 1, Alignment (§7a), each starting in plan mode.
 

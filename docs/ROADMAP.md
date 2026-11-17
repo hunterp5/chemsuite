@@ -372,6 +372,10 @@ the same polish as the table and the dockable plots and tools.
   light/dark, the viewer's own ⌘A/⌘C/F, a keyboard sequence cursor, selection shown in the
   proteins list. Benchmarks at 100,000 atoms: an 8 MB mmCIF read in under a second, a selection
   redrawn in 13 ms, 60 fps turning on Metal.
+- **Next: surface options** (plan approved 2026-11-17, [SURFACE_PLAN.md](SURFACE_PLAN.md)):
+  SES (the new default), SAS, van der Waals and Gaussian surfaces with probe, quality and
+  smoothing; solid, mesh and dots; color by any scheme, one color or electrostatics (ff14SB
+  charges); transparency per surface and pocket skin; carving around the selection.
 - **Still to polish:** ghosted ribbons in front of a focused pocket can cross the ligand (cut
   them with a front slab or fade them further); marking a kept row whose protein was removed in
   the table itself.

@@ -116,6 +116,10 @@ changes.
   cited source and tests.
 - Proteins: PDBFixer and pdb2pqr are dropped; there is no `chemsuite[protein]` extra; propka
   and meeko are light pip dependencies; OpenMM and openfe never share the app's interpreter.
+- Surface electrostatics use Amber's RESP charges (Cornell et al. 1995, kept by ff14SB) from
+  PDB2PQR's `AMBER.DAT` (BSD-3), shipped as `macromolecule/look/data/amber_charges.json` with
+  PDB2PQR's licence beside it (`scripts/build_amber_charges.py`); only the numbers, never
+  pdb2pqr itself.
 - The user's email is private; never put it in requests to outside services.
 
 ## Two machines
