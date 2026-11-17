@@ -195,7 +195,7 @@ def potencies(window):
 
 def test_standardize_converts_units_and_keeps_qualifiers(potencies, qtbot):
     table = potencies.workspace.table
-    assert potencies.tool_action("standardize_values").text() == "Standardize…"
+    assert potencies.tool_action("standardize_values").text() == "Standardize Values…"
     dialog = potencies.open_tool("standardize_values")
     assert dialog.values.currentText() == "IC50" and dialog.units.currentText() == "Unit"
     assert dialog.target.currentData() == "nM"

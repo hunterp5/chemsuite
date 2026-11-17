@@ -42,7 +42,7 @@ Each document has its own window. From top to bottom:
   |---|---|
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close (clears the window to a new, empty document; with other windows open it closes this one) |
   | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection) |
-  | Tools | Calculator, Standardize (values to one unit), Random ▸ (Random Numbers and Random Rows), Sketcher, Notepad |
+  | Tools | Calculator, Standardize Values, Random ▸ (Random Numbers and Random Rows), Sketcher, Notepad |
   | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, 3D ▸ (Generate Conformers, Superpose), Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
   | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
   | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
@@ -1019,7 +1019,7 @@ descriptors, conformers, clustering, maps and searches.
   | MedChem plots (descriptor step) | Dimensionality Reduction |
   | Generate Conformers | Self-Organizing Map |
   | Superpose | |
-  | Standardize values | |
+  | Standardize Values | |
   | Similarity Search | Free-Wilson |
   | R-Groups (numbered core) | Hansch |
   | Diverse Subset (the picks made so far) | Matched Pairs |
@@ -2233,10 +2233,10 @@ column is one undoable step. Large tables are calculated in the background; canc
 the rows already done, except for formulas with statistics, which need every row at once.
 Formulas cannot run code, open files or reach outside the table.
 
-### Standardize values
+### Standardize Values
 
-**Tools ▸ Standardize…** puts values given with a unit, such as assay potencies in one column
-and nM, µM or mg/mL in the next, into one new column in a single unit. (Chemistry ▸
+**Tools ▸ Standardize Values…** puts values given with a unit, such as assay potencies in one
+column and nM, µM or mg/mL in the next, into one new column in a single unit. (Chemistry ▸
 Standardize is a different tool: it cleans up structures.)
 
 - **Input:** **Values** (a number column, or a text column with values such as `>10`),

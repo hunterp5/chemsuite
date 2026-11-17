@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Concentrations in one unit (Tools ▸ Standardize): potencies given as a value and a unit
+"""Concentrations in one unit (Tools ▸ Standardize Values): potencies given as a value and a unit
 (nM, µM, mg/mL…) row by row, converted to the unit chosen.
 
 Molar units convert among themselves by powers of ten, and mass per volume units likewise; a

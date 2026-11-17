@@ -61,7 +61,7 @@ TOOLS = (
     ),
     Tool(
         id="standardize_values",
-        title="Standardize…",
+        title="Standardize Values…",
         menu=MENU,
         open=_standardize,
         tip="Values given with a unit column (nM, µM, mg/mL…) as one new column in the unit "

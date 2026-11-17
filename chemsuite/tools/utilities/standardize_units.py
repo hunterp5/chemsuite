@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Tools ▸ Standardize…: a value column and its unit column (nM, µM, mg/mL…) as one new
+"""Tools ▸ Standardize Values…: a value column and its unit column (nM, µM, mg/mL…) as one new
 column, every row in the unit chosen."""
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def output_name(values: str, unit: str) -> str:
 
 class StandardizeUnitsDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(ctx.parent, "Standardize", guide="standardize-values")
+        super().__init__(ctx.parent, "Standardize Values", guide="standardize-values")
         self.ctx = ctx
         table = ctx.table
         numbers = [n for n in table.column_names if table.kind(n) in (NUMBER, TEXT)]
