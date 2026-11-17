@@ -86,6 +86,10 @@ changes.
 
 ## Dialogs and panels
 
+- **American English only**, in everything the user sees (menus, dialogs, tooltips, messages,
+  `docs/USER_GUIDE.md`) and in new code, comments and docs: color, center, gray, minimize,
+  optimize, behavior, favorite, license (noun and verb). Saved names (file keys, ids) keep
+  their spelling so old documents still open.
 - **No helper text.** No explanatory text in dialogs, popups or settings menus: no footer
   sentence describing what will happen, no grey heads-up notes ("may take minutes"), no
   summaries under the fields, no "about" paragraphs. Explanations go in tooltips
