@@ -13,7 +13,14 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Running a similarity search over a list of structure cells (a table's rows)."""
+"""Running a similarity search over a list of structure cells (a table's rows).
+
+The cheap methods (fingerprints, scaffolds) score every row. An expensive one (the common
+substructure) scores only the rows a fingerprint ranks best, as many as ``Search.prefilter``
+(0: every row); the rest of its column stays blank. The ranking comes from the search's own
+first fingerprint method, or, when it has none, from a plain ECFP4 Tanimoto computed for the
+purpose.
+"""
 
 from __future__ import annotations
 
@@ -25,13 +32,15 @@ import numpy as np
 from chemsuite.analysis.fingerprints import Cell, Fingerprints, compute_fingerprints
 from chemsuite.core.jobs import Cancelled, CancelToken
 
-from . import fingerprint
+from . import fingerprint, substructure
 from .fusion import consensus
-from .model import FINGERPRINT, Method, Reference, Scores, Search
+from .model import FINGERPRINT, SUBSTRUCTURE, Method, Reference, Scores, Search
 
 Progress = Callable[[int, int], None]
 #: the progress bar's resolution: each method gets an equal share of it
 STEPS = 1000
+#: what ranks the rows for an expensive method when no fingerprint method is chosen
+RANKING = Method()
 
 
 def _stage(progress: Progress | None, index: int, stages: int) -> Progress | None:
@@ -106,6 +115,43 @@ def _finish(
     return Scores(columns, nearest[:rows], combined, known)
 
 
+def _prefilter(
+    cells: Sequence[Cell],
+    references: Sequence[Reference],
+    search: Search,
+    known: dict[str, Fingerprints],
+    executor: Executor | None,
+    cancel: CancelToken | None,
+) -> np.ndarray | None:
+    """The rows an expensive method should score, best first (None: every row).
+
+    Ranked by the search's first fingerprint method, else by :data:`RANKING`; rows that could
+    not be fingerprinted come last, so they are dropped first.
+    """
+    if not search.prefilter or search.prefilter >= len(cells):
+        return None
+    method = next((m for m in search.methods if m.kind == FINGERPRINT), RANKING)
+    fps = known.get(method.fingerprint)
+    if fps is None:
+        fps = compute_fingerprints(cells, method.fingerprint, executor=executor, cancel=cancel)
+        known[method.fingerprint] = fps
+    ranking, _which = fingerprint.score(fps, references, method, search.fuse, cancel=cancel)
+    order = np.argsort(-np.nan_to_num(ranking, nan=-np.inf), kind="stable")
+    return np.sort(order[: search.prefilter])
+
+
+def _spread(
+    found: tuple[np.ndarray, np.ndarray], rows: np.ndarray, total: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Scores for the prefiltered *rows* put back where those rows are; the rest stay blank."""
+    score, nearest = found
+    out = np.full(total, np.nan)
+    which = np.full(total, -1, dtype=np.int64)
+    out[rows[: len(score)]] = score
+    which[rows[: len(nearest)]] = nearest
+    return out, which
+
+
 def _score(
     method: Method,
     cells: Sequence[Cell],
@@ -116,6 +162,15 @@ def _score(
     progress: Progress | None,
     cancel: CancelToken | None,
 ) -> tuple[np.ndarray, np.ndarray]:
+    if method.kind in SUBSTRUCTURE:
+        rows = _prefilter(cells, references, search, known, executor, cancel) if method.expensive \
+            else None  # fmt: skip
+        chosen = cells if rows is None else [cells[i] for i in rows.tolist()]
+        own = fingerprint.self_rows(references, len(cells))
+        found = substructure.score(chosen, references, method, search.fuse,
+                                   own if rows is None else own[rows], executor=executor,
+                                   progress=progress, cancel=cancel)  # fmt: skip
+        return found if rows is None else _spread(found, rows, len(cells))
     if method.kind != FINGERPRINT:
         raise ValueError(f"{method.column} is not available yet")
     fps = known.get(method.fingerprint)

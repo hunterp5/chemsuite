@@ -135,6 +135,50 @@ def test_cancel_keeps_the_finished_rows(monkeypatch) -> None:
 
 def test_unbuilt_methods_say_so() -> None:
     with pytest.raises(ValueError, match="not available"):
-        score_cells(CELLS, [PARACETAMOL], sm.Search((sm.Method(kind=sm.MCS),)))
+        score_cells(CELLS, [PARACETAMOL], sm.Search((sm.Method(kind=sm.SHAPE),)))
     with pytest.raises(ValueError, match="reference"):
         score_cells(CELLS, [], sm.Search((sm.Method(),)))
+
+
+def test_mcs_tanimoto() -> None:
+    from chemsuite.similarity.substructure import mcs_tanimoto
+
+    scores = score_cells(CELLS, [PARACETAMOL], sm.Search((sm.Method(kind=sm.MCS),), prefilter=0))
+    values = scores.columns["MCS Tanimoto"]
+    assert values[0] == pytest.approx(1.0)  # itself
+    paracetamol = Chem.MolFromSmiles(CELLS[0])
+    expected = mcs_tanimoto(Chem.MolFromSmiles(CELLS[1]), paracetamol, 2)
+    assert values[1] == pytest.approx(expected) and 0.5 < values[1] < 1.0
+    assert values[1] > values[4]  # phenacetin shares more than nicotine does
+    assert np.isnan(values[6:]).all() and scores.nearest[:6].tolist() == [0] * 6
+
+
+def test_scaffold_match() -> None:
+    cells = ["c1ccc2ccccc2c1", "Cc1ccc2ccccc2c1", "c1ccccc1", "CCO", None]
+    naphthalene = sm.Reference(Chem.MolFromSmiles(cells[0]), "naphthalene")
+    for kind in (sm.SCAFFOLD, sm.GENERIC_SCAFFOLD):
+        method = sm.Method(kind=kind)
+        values = score_cells(cells, [naphthalene], sm.Search((method,))).columns[method.column]
+        assert values[:4].tolist() == [1.0, 1.0, 0.0, 0.0], kind  # the methyl is a side chain
+        assert np.isnan(values[4]), kind
+    pyridine = sm.Reference(Chem.MolFromSmiles("c1ccncc1"), "pyridine")
+    exact, generic = (sm.Method(kind=k) for k in (sm.SCAFFOLD, sm.GENERIC_SCAFFOLD))
+    rings = ["c1ccccc1", "c1ccncc1"]
+    strict = score_cells(rings, [pyridine], sm.Search((exact,))).columns[exact.column]
+    assert strict.tolist() == [0.0, 1.0]
+    loose = score_cells(rings, [pyridine], sm.Search((generic,))).columns[generic.column]
+    assert loose.tolist() == [1.0, 1.0]  # generic: every atom a carbon, every bond single
+
+
+def test_the_prefilter_limits_the_expensive_method() -> None:
+    method = sm.Method(kind=sm.MCS)
+    scores = score_cells(CELLS, [PARACETAMOL], sm.Search((sm.Method(), method), prefilter=2))
+    mcs = scores.columns["MCS Tanimoto"]
+    ecfp = scores.columns["ECFP4 Tanimoto"]
+    assert np.isfinite(mcs).sum() == 2  # only the two the fingerprint ranked best
+    best = np.argsort(-np.nan_to_num(ecfp, nan=-np.inf))[:2]
+    assert np.isfinite(mcs[best]).all()
+    assert np.isfinite(ecfp).sum() == 6  # the cheap method still scores every row
+    whole = score_cells(CELLS, [PARACETAMOL], sm.Search((method,), prefilter=0))
+    assert np.isfinite(whole.columns["MCS Tanimoto"]).sum() == 6
+    assert np.isfinite(mcs).sum() < np.isfinite(whole.columns["MCS Tanimoto"]).sum()

@@ -41,6 +41,7 @@ FIELD = "field"
 METHODS = (FINGERPRINT, MCS, SCAFFOLD, GENERIC_SCAFFOLD, SHAPE, COLOR, FIELD)
 #: methods too slow to run on every row of a big table or file (see ``Search.prefilter``)
 EXPENSIVE = frozenset({MCS, SHAPE, COLOR, FIELD})
+SUBSTRUCTURE = frozenset({MCS, SCAFFOLD, GENERIC_SCAFFOLD})
 THREE_D = frozenset({SHAPE, COLOR, FIELD})
 
 #: how one row's scores against several references become one
@@ -73,13 +74,15 @@ class Reference:
 @dataclass(frozen=True)
 class Method:
     """One way of scoring. *fingerprint* and *metric* are for the fingerprint method; *alpha*
-    weighs the bits only the reference has and *beta* those only the row has (Tversky)."""
+    weighs the bits only the reference has and *beta* those only the row has (Tversky).
+    *mcs_timeout* is the seconds the common substructure of one pair may take."""
 
     kind: str = FINGERPRINT
     fingerprint: str = DEFAULT_KIND
     metric: str = "tanimoto"
     alpha: float = 0.5
     beta: float = 0.5
+    mcs_timeout: int = 2
 
     def __post_init__(self) -> None:
         if self.kind not in METHODS:
@@ -93,6 +96,8 @@ class Method:
             raise ValueError("Tversky weights must be between 0 and 1")
         if self.alpha == self.beta == 0.0:
             raise ValueError("Tversky weights cannot both be 0")
+        if self.mcs_timeout < 1:
+            raise ValueError("the MCS timeout must be at least 1 second")
 
     @property
     def column(self) -> str:

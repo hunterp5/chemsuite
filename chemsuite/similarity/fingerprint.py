@@ -35,12 +35,17 @@ from chemsuite.core.jobs import CancelToken
 from .model import Method, Reference
 
 
-def reference_fingerprints(references: Sequence[Reference], key: str) -> Fingerprints:
-    """The references' fingerprints, as the searched molecules get theirs (explicit hydrogens
-    removed, so a 3D reference matches its 2D form); a reference that fails is flagged."""
+def reference_smiles(references: Sequence[Reference]) -> list[str]:
+    """The references as SMILES without explicit hydrogens, so a 3D reference matches its 2D
+    form (and a reference travels to a worker process as text)."""
     with rdBase.BlockLogs():
-        smiles = [Chem.MolToSmiles(Chem.RemoveHs(r.mol, sanitize=False)) for r in references]
-    packed, valid = fingerprint_chunk((key, smiles))
+        return [Chem.MolToSmiles(Chem.RemoveHs(r.mol, sanitize=False)) for r in references]
+
+
+def reference_fingerprints(references: Sequence[Reference], key: str) -> Fingerprints:
+    """The references' fingerprints, as the searched molecules get theirs; a reference that
+    fails is flagged."""
+    packed, valid = fingerprint_chunk((key, reference_smiles(references)))
     return Fingerprints(KINDS[key], packed, valid)
 
 

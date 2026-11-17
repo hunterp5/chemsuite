@@ -45,6 +45,25 @@ def unit(method: Method, values: np.ndarray) -> np.ndarray:
     return values
 
 
+def fuse(matrix: np.ndarray, how: str) -> tuple[np.ndarray, np.ndarray]:
+    """``(score, nearest)`` per row of a rows × references *matrix*: the best (``max``) or the
+    ``mean`` of the row's scores, NaN skipped, and the index of its best reference (-1 and NaN
+    for a row with no score)."""
+    matrix = np.asarray(matrix, dtype=np.float64).reshape(len(matrix), -1)
+    finite = np.isfinite(matrix)
+    scored = finite.any(axis=1)
+    filled = np.where(finite, matrix, -np.inf)
+    nearest = np.where(scored, filled.argmax(axis=1), -1)
+    if how == "max":
+        score = filled.max(axis=1)
+    elif how == "mean":
+        with np.errstate(invalid="ignore", divide="ignore"):
+            score = np.where(finite, matrix, 0.0).sum(axis=1) / finite.sum(axis=1)
+    else:
+        raise ValueError(f"unknown fusion: {how!r}")
+    return np.where(scored, score, np.nan), nearest.astype(np.int64)
+
+
 def percentile_ranks(values: np.ndarray) -> np.ndarray:
     """Each finite value's rank among the finite values, 0 (lowest) to 1 (highest), ties
     averaged; NaN stays NaN. A single finite value ranks 1."""
