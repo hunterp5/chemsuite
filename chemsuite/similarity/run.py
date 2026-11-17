@@ -83,8 +83,9 @@ def score_cells(
     *fingerprints* holds fingerprints of *cells* already at hand (by kind, row for row); the
     others are computed (with *executor* when given) and returned in ``Scores.fingerprints``.
 
-    If *cancel* is set, raises :class:`Cancelled` whose ``partial`` is the :class:`Scores` of
-    the first rows (those every method finished), or None if there are none.
+    If *cancel* is set, raises :class:`Cancelled` whose ``partial`` is the :class:`Scores` so
+    far, or None if there are none: every row when only an expensive method was cut short (its
+    column blank where it did not reach), else the rows the cheap methods all finished.
     """
     check_references(references, search)
     known = dict(fingerprints or {})
@@ -194,17 +195,20 @@ def _score(
         own = fingerprint.self_rows(references, len(cells))
         mine = own if rows is None else own[rows]
         try:
-            if method.kind in THREE_D:  # already fused: only the best reference's fit is kept
-                found = shape3d.score(chosen, references, method, mine, executor=executor,
-                                      progress=progress, cancel=cancel)  # fmt: skip
+            if method.kind in THREE_D:
+                found = shape3d.score(chosen, references, method, search.fuse, mine,
+                                      executor=executor, progress=progress,
+                                      cancel=cancel)  # fmt: skip
             else:
                 found = substructure.score(chosen, references, method, search.fuse, mine,
                                            executor=executor, progress=progress,
                                            cancel=cancel)  # fmt: skip
         except Cancelled as stop:
-            if stop.partial is None or rows is None:
-                raise
-            raise Cancelled(_spread(stop.partial, rows, len(cells))) from None
+            if stop.partial is None or not method.expensive:
+                raise  # a cheap method's partial is its first rows, as the cheap methods' are
+            # an expensive method's column is blank where it did not reach, whole rows kept
+            where = rows if rows is not None else np.arange(len(cells))
+            raise Cancelled(_spread(stop.partial, where, len(cells))) from None
         return found if rows is None else _spread(found, rows, len(cells))
     if method.kind != FINGERPRINT:
         raise ValueError(f"{method.column} is not available yet")

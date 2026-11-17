@@ -116,13 +116,21 @@ The dialog is split to stay well under 1,000 lines: `search.py` (dialog), `refer
    asymmetry, several-reference max/mean, consensus ranks, Cancelled partial.
 2. **Substructure:** MCS Tanimoto (timeout), scaffold and generic scaffold; the prefilter.
    Tests on known pairs.
-3. **3D:** `best_over_references` in `superpose/run.py` and `similarity/shape3d.py`; the
-   shared pose-writing helper. Tests: a molecule against itself ≈ 1, the best of two
-   references is chosen, and the superpose tests still pass.
+3. **3D:** `fits_over_references` in `superpose/run.py` (one embedding for all the
+   references) and `similarity/shape3d.py`. **Done 2026-11-16:** shape, shape + features and
+   field, fused over the references as the search asks, with a flat reference turned away up
+   front by `check_references`. Tests: a molecule against itself scores highest, the best of
+   two references is chosen, stored conformers give exactly Superpose's score, and the
+   superpose tests still pass. **Keeping the aligned poses moved to phase 5**: it needs the
+   worker to carry the winning conformer and the reference's asset id, which belongs with the
+   dialog's Keep Aligned Poses option and the helper lifted out of `tools/superpose/dialog.py`.
 4. **File screening:** `screen_file` with the heap, two stages and the hits `Table`. Tests on a
    small SDF and SMILES file in `tmp_path`: top K is exact, the threshold works, and cancel
    keeps the hits so far.
-5. **Dialog:** replace `tools/similarity/search.py`, update `tool.py` and its tip, and update
+5. **Dialog, and the aligned poses:** the shared pose-writing helper out of
+   `tools/superpose/dialog.py` (`blob_with_reference`, `PutAsset`), the 3D worker carrying the
+   winning pose, and Keep Aligned Poses writing "<column> superposed" so the Browser shows the
+   reference. Then replace `tools/similarity/search.py`, update `tool.py` and its tip, and update
    `tests/tools/similarity/test_similarity_ui.py` (table run, several references, the file run
    opens a document, keep poses). Update `docs/USER_GUIDE.md` (Similarity Search section;
    keep the `similarity-search` anchor) and ROADMAP §6 (3D similarity done). Before/after

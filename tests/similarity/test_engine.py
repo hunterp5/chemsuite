@@ -167,6 +167,20 @@ def test_a_cancelled_expensive_method_keeps_its_scores_on_their_own_rows(monkeyp
     assert mcs[3] == pytest.approx(whole.columns["MCS Tanimoto"][3])
 
 
+def test_a_cancelled_expensive_method_keeps_every_row_without_a_prefilter(monkeypatch) -> None:
+    search = sm.Search((sm.Method(), sm.Method(kind=sm.MCS)))  # the default prefilter: 500 > 8
+    whole = score_cells(CELLS, [PARACETAMOL], search)
+    partial = _cancel_in_the_mcs(CELLS, [PARACETAMOL], search, monkeypatch).partial
+    assert len(partial) == len(CELLS)  # the finished fingerprint rows are all kept
+    ecfp = partial.columns["ECFP4 Tanimoto"]
+    assert np.isfinite(ecfp).sum() == 6
+    assert np.allclose(ecfp, whole.columns["ECFP4 Tanimoto"], equal_nan=True)
+    mcs = partial.columns["MCS Tanimoto"]
+    scored = np.flatnonzero(np.isfinite(mcs))
+    assert 0 < len(scored) < 6  # blank where it did not reach, right where it did
+    assert np.allclose(mcs[scored], whole.columns["MCS Tanimoto"][scored])
+
+
 def test_a_cancelled_cheap_method_keeps_its_first_rows(monkeypatch) -> None:
     from chemsuite.analysis import fingerprints as module
 
@@ -244,25 +258,57 @@ def test_no_reference_is_turned_away() -> None:
 
 @pytest.mark.parametrize("kind", [sm.SHAPE, sm.COLOR, sm.FIELD])
 def test_3d_methods_score_a_molecule_against_itself_highest(kind) -> None:
-    cells = [CELLS[0], CELLS[1], "CCCCCCCCCC"]  # paracetamol, phenacetin, decane
+    cells = [CELLS[0], CELLS[1], "C1C2CC3CC1CC(C2)C3"]  # paracetamol, phenacetin, adamantane
     reference = _in_3d(CELLS[0], "paracetamol")
     method = sm.Method(kind=kind, conformers=3)
     scores = score_cells(cells, [reference], sm.Search((method,), prefilter=0))
     values = scores.columns[method.column]
     assert np.isfinite(values[:3]).all()
     assert values[0] == values[:3].max()  # itself fits best
-    assert values[0] > values[2]  # and decane fits worst
+    assert values[0] > values[2]  # and adamantane fits worst
     assert scores.nearest[:3].tolist() == [0, 0, 0]
 
 
 def test_3d_keeps_the_reference_each_row_fits_best() -> None:
-    cells = ["CC(=O)Nc1ccc(O)cc1", "CCCCCCCCCC"]
-    refs = [_in_3d(cells[0], "paracetamol"), _in_3d(cells[1], "decane")]
+    # rigid molecules, so the fit does not turn on which conformers were generated
+    cells = ["CC(=O)Nc1ccc(O)cc1", "C1C2CC3CC1CC(C2)C3"]  # paracetamol, adamantane
+    refs = [_in_3d(cells[0], "paracetamol"), _in_3d(cells[1], "adamantane")]
     method = sm.Method(kind=sm.SHAPE, conformers=3)
     scores = score_cells(cells, refs, sm.Search((method,), prefilter=0))
     assert scores.nearest[:2].tolist() == [0, 1]  # each row fits its own shape best
     values = scores.columns[method.column]
     assert (values[:2] > 0.5).all()
+
+
+def test_3d_fuses_over_the_references_as_asked() -> None:
+    cells = ["CC(=O)Nc1ccc(O)cc1", "C1C2CC3CC1CC(C2)C3"]  # paracetamol, adamantane
+    refs = [_in_3d(cells[0], "paracetamol"), _in_3d(cells[1], "adamantane")]
+    method = sm.Method(kind=sm.SHAPE, conformers=3)
+    best = score_cells(cells, refs, sm.Search((method,), prefilter=0, fuse="max"))
+    mean = score_cells(cells, refs, sm.Search((method,), prefilter=0, fuse="mean"))
+    each = [
+        score_cells(cells, [r], sm.Search((method,), prefilter=0)).columns[method.column]
+        for r in refs
+    ]
+    pairs = np.column_stack(each)
+    assert np.allclose(best.columns[method.column], pairs.max(axis=1))
+    assert np.allclose(mean.columns[method.column], pairs.mean(axis=1))
+    assert (mean.columns[method.column] < best.columns[method.column]).all()
+
+
+def test_3d_uses_a_row_s_own_stored_conformers() -> None:
+    from chemsuite.core.mols import mol_to_blob
+    from chemsuite.superpose.model import Settings
+    from chemsuite.superpose.run import prepare_reference, superpose_one
+
+    reference = _in_3d("CC(=O)Nc1ccc(O)cc1", "paracetamol")
+    stored = _in_3d("CC(=O)Nc1ccc(OC)cc1", "phenacetin").mol  # a row that already has 3D
+    method = sm.Method(kind=sm.SHAPE, conformers=3)
+    scores = score_cells([mol_to_blob(stored)], [reference], sm.Search((method,), prefilter=0))
+    settings = Settings(method="shape", conformers=3)
+    _moved, fit = superpose_one(stored, prepare_reference(reference.mol), settings)
+    # the stored conformers are used as they are, so the score is exactly Superpose's
+    assert scores.columns[method.column][0] == pytest.approx(fit.scores["Shape Tanimoto"])
 
 
 def test_a_3d_reference_that_is_a_row_skips_itself() -> None:

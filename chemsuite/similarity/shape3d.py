@@ -17,8 +17,8 @@
 (its conformers generated once and tried against them all) and scored by the fit it gets.
 
 The score is the fit's own: a shape Tanimoto, a shape + features combo, or a field similarity.
-Only the best reference's score is kept, so this is already fused: a row's "nearest reference"
-is the one it fits best.
+A row is scored against every reference and the scores are fused as the search asks (the best
+or the mean), as the 2D methods' are.
 """
 
 from __future__ import annotations
@@ -29,13 +29,14 @@ from concurrent.futures import Executor
 import numpy as np
 from rdkit import rdBase
 
-from chemsuite.analysis.fingerprints import Cell, cell_mol
+from chemsuite.analysis.fingerprints import Cell
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob
 from chemsuite.superpose import model as sp
-from chemsuite.superpose.run import best_over_references, prepare_reference
+from chemsuite.superpose.run import fits_over_references, mol_of_cell, prepare_reference
 
+from .fusion import fuse
 from .model import COLOR, FIELD, SHAPE, Method, Reference
 
 NAN = float("nan")
@@ -55,34 +56,37 @@ def settings_for(kind: str, conformers: int, color_weight: float, field_weight: 
     )
 
 
-def score_chunk(args: tuple[str, object, Sequence[bytes], Sequence[int], Sequence[Cell]]):
-    """Per cell, ``(score, the reference it fits best)`` (a picklable worker entry point).
+def score_chunk(
+    args: tuple[str, object, Sequence[bytes], Sequence[int], Sequence[Cell]],
+) -> list[tuple[float, ...]]:
+    """Per cell, its score against each reference (a picklable worker entry point).
 
     *args* is ``(method, superpose settings, the prepared references as blobs, the reference
-    each cell is (-1: none), cells)``. ``(NaN, -1)`` for a blank or invalid cell, for a cell
-    that will not embed in 3D, and where every reference fails.
+    each cell is (-1: none), cells)``. NaN for a blank or invalid cell, for a cell that will
+    not embed in 3D, for the cell's own reference, and where a reference gives no fit.
     """
     kind, settings, reference_blobs, own, cells = args
     name = SCORES[kind]
-    out: list[tuple[float, int]] = []
+    blank = tuple(NAN for _ in reference_blobs)
+    out: list[tuple[float, ...]] = []
     with rdBase.BlockLogs():
         references = [mol_from_blob(blob) for blob in reference_blobs]
         for cell, skip in zip(cells, own, strict=True):
-            mol = cell_mol(cell)
+            mol = mol_of_cell(cell)
             if mol is None:
-                out.append((NAN, -1))
+                out.append(blank)
                 continue
-            usable = [r for i, r in enumerate(references) if i != skip and r is not None]
-            keep = [i for i in range(len(references)) if i != skip and references[i] is not None]
-            if not usable:
-                out.append((NAN, -1))
+            # a reference the cell itself is, or one that would not load, is not compared with
+            wanted = [i for i, r in enumerate(references) if i != skip and r is not None]
+            fits = fits_over_references(mol, [references[i] for i in wanted], settings)
+            if fits is None:
+                out.append(blank)
                 continue
-            found = best_over_references(mol, usable, settings)
-            if found is None:
-                out.append((NAN, -1))
-                continue
-            index, fit = found
-            out.append((float(fit.scores[name]), keep[index]))
+            row = list(blank)
+            for index, fit in zip(wanted, fits, strict=True):
+                if fit is not None:
+                    row[index] = float(fit.scores[name])
+            out.append(tuple(row))
     return out
 
 
@@ -110,6 +114,7 @@ def score(
     cells: Sequence[Cell],
     references: Sequence[Reference],
     method: Method,
+    fuse_how: str,
     own: np.ndarray,
     *,
     executor: Executor | None = None,
@@ -125,7 +130,7 @@ def score(
     settings = settings_for(method.kind, method.conformers, method.color_weight,
                             method.field_weight)  # fmt: skip
     blobs = prepared_references([r.mol for r in references])
-    rows: list[tuple[float, int]] = []
+    rows: list[tuple[float, ...]] = []
     done = [0]
 
     def finished(part: list) -> None:
@@ -133,17 +138,14 @@ def score(
         if progress is not None:
             progress(done[0], len(cells))
 
-    def split(found: list[tuple[float, int]]) -> tuple[np.ndarray, np.ndarray]:
-        if not found:
-            return np.empty(0), np.empty(0, dtype=np.int64)
-        values = np.array([f[0] for f in found], dtype=np.float64)
-        which = np.array([f[1] for f in found], dtype=np.int64)
-        return values, which
+    def fused(found: list[tuple[float, ...]]) -> tuple[np.ndarray, np.ndarray]:
+        matrix = np.array(found, dtype=np.float64).reshape(len(found), len(references))
+        return fuse(matrix, fuse_how)
 
     chunks = _chunks(method.kind, settings, blobs, own, cells, CHUNK_ROWS)
     try:
         for part in ordered_map(score_chunk, chunks, executor, cancel=cancel, finished=finished):
             rows.extend(part)
     except Cancelled:
-        raise Cancelled(split(rows) if rows else None) from None
-    return split(rows)
+        raise Cancelled(fused(rows) if rows else None) from None
+    return fused(rows)

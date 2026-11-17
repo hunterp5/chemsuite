@@ -121,29 +121,38 @@ def superpose_one(mol: Chem.Mol, reference: Chem.Mol, settings: Settings) -> tup
     return out, Fit(conf_index, found.transform, found.scores)
 
 
-def best_over_references(
+def fits_over_references(
     mol: Chem.Mol, references: Sequence[Chem.Mol], settings: Settings
-) -> tuple[int, Fit] | None:
-    """Which of *references* (each already prepared) *mol* fits best, and that fit.
+) -> list[Fit | None] | None:
+    """*mol*'s best fit onto each of *references* (each already prepared), in their order.
 
     The probe's conformers are generated once and tried against every reference, so scoring a
-    row against several references costs one embedding, not one each. None when it will not
-    embed, or when no reference gives a fit.
+    row against several references costs one embedding, not one each. An entry is None where
+    that reference gives no fit; the result itself is None when the molecule will not embed.
     """
     probe = probe_of(mol, settings)
     if probe is None:
         return None
-    found: tuple[int, Fit] | None = None
-    for index, reference in enumerate(references):
+    out: list[Fit | None] = []
+    for reference in references:
         try:
-            fit = best(ALIGNERS[settings.method](probe, reference, settings), settings.method)
+            out.append(best(ALIGNERS[settings.method](probe, reference, settings), settings.method))
         except _FAILURES:
-            continue
-        if fit is None:
-            continue
-        if found is None or fit.key(settings.method) > found[1].key(settings.method):
-            found = (index, fit)
-    return found
+            out.append(None)
+    return out
+
+
+def best_over_references(
+    mol: Chem.Mol, references: Sequence[Chem.Mol], settings: Settings
+) -> tuple[int, Fit] | None:
+    """Which of *references* *mol* fits best, and that fit (None: none of them, or no embed)."""
+    fits = fits_over_references(mol, references, settings)
+    if fits is None:
+        return None
+    found = [(i, f) for i, f in enumerate(fits) if f is not None]
+    if not found:
+        return None
+    return max(found, key=lambda pair: pair[1].key(settings.method))
 
 
 def superpose_chunk(args: tuple[Settings, bytes, str, Sequence[Cell]]) -> list[tuple]:
