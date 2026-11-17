@@ -156,7 +156,7 @@ class SettingsDialog(QDialog):
         return ""
 
     def accept(self) -> None:
-        problem = self.problem()
+        problem = self.problem() if self.page is self.keyboard else ""
         if problem:
             self.keyboard.status.setText(problem)
             return

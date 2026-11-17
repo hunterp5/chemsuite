@@ -42,6 +42,8 @@ class Notes:
                         "html": html if isinstance(html, str) else "",
                     }
         self._live: dict[str, Callable[[], str]] = {}
+        #: notes worth saving: those the document had, and those typed in or renamed since
+        self._kept: set[str] = set(self._notes)
         self._revision = 0
 
     # -- the document part ---------------------------------------------------------------------
@@ -81,8 +83,7 @@ class Notes:
         while title in titles:
             number += 1
             title = f"{TITLE} {number}"
-        self._notes[note_id] = {"title": title, "html": ""}
-        self._revision += 1
+        self._notes[note_id] = {"title": title, "html": ""}  # unchanged until written in
         return note_id
 
     def title(self, note_id: str) -> str:
@@ -93,7 +94,7 @@ class Notes:
         title = (title or "").strip() or TITLE
         if self._notes[note_id]["title"] != title:
             self._notes[note_id]["title"] = title
-            self._revision += 1
+            self.touch(note_id)
 
     def html(self, note_id: str) -> str:
         live = self._live.get(note_id)
@@ -112,11 +113,14 @@ class Notes:
     def is_open(self, note_id: str) -> bool:
         return note_id in self._live
 
-    def touch(self) -> None:
+    def touch(self, note_id: str) -> None:
         """A note's text changed (the document needs saving)."""
+        self._kept.add(note_id)
         self._revision += 1
 
     def remove(self, note_id: str) -> None:
+        """Delete a note; one never written in (opened and closed empty) changes nothing."""
         self._live.pop(note_id, None)
-        if self._notes.pop(note_id, None) is not None:
+        if self._notes.pop(note_id, None) is not None and note_id in self._kept:
+            self._kept.discard(note_id)
             self._revision += 1

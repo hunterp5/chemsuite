@@ -57,8 +57,16 @@ from .notes import Notes
 TOOL_ID = "notepad"
 SIZES = (8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72)
 _IMAGE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_BODY = re.compile(r"<body\b[^>]*>")
+_DEFAULT_FONT = re.compile(r"\s*font-(?:family|size):[^;]*;")
 #: Ctrl+B, I and U format here before the window sees them (Ctrl+I is Invert Selection there)
 _FORMAT_KEYS = {Qt.Key.Key_B: "bold", Qt.Key.Key_I: "italic", Qt.Key.Key_U: "underline"}
+
+
+def portable(html: str) -> str:
+    """*html* without the editor's default font in ``<body>`` (Segoe UI 9 pt on Windows): the
+    note opens in each machine's own font. Fonts chosen for text are kept on the text."""
+    return _BODY.sub(lambda m: _DEFAULT_FONT.sub("", m.group(0)), html, count=1)
 
 
 class NoteEdit(QTextEdit):
@@ -112,8 +120,8 @@ class NotepadPanel(ToolPanel):
         self.editor.format_key = lambda name: self.actions[name].trigger()
         self.editor.setHtml(notes.html(note_id))
         self.editor.document().setModified(False)
-        notes.attach(note_id, self.editor.toHtml)
-        self.editor.textChanged.connect(notes.touch)
+        notes.attach(note_id, lambda: portable(self.editor.toHtml()))
+        self.editor.textChanged.connect(lambda: notes.touch(note_id))
         self.actions: dict[str, QAction] = {}
         self.toolbar_row = self._toolbar()
         layout = QVBoxLayout(self)

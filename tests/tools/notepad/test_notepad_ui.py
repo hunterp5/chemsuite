@@ -31,7 +31,9 @@ pytestmark = gui
 
 
 def notepads(window) -> list[NotepadPanel]:
-    return [d.widget() for d in window.tool_panels.docks if isinstance(d.widget(), NotepadPanel)]
+    """The open note panes (a closed one's dock is hidden until Qt deletes it)."""
+    docks = [d for d in window.tool_panels.docks if not d.isHidden()]
+    return [d.widget() for d in docks if isinstance(d.widget(), NotepadPanel)]
 
 
 def notes(window) -> Notes:
@@ -59,7 +61,10 @@ def test_typing_marks_the_document_modified(window, qtbot) -> None:
     assert not workspace.is_modified
     qtbot.keyClicks(panel.editor, "hello")
     assert workspace.is_modified
-    assert "hello" in notes(window).capture()["notes"][panel.note_id]["html"]
+    html = notes(window).capture()["notes"][panel.note_id]["html"]
+    assert "hello" in html
+    body = html[html.index("<body") : html.index(">", html.index("<body"))]
+    assert "font-family" not in body and "font-size" not in body  # each machine's own font
 
 
 def test_formatting_survives_save_and_reopen(window, qtbot, tmp_path: Path) -> None:
@@ -105,6 +110,10 @@ def test_formatting_survives_save_and_reopen(window, qtbot, tmp_path: Path) -> N
 
 
 def test_closing_a_pane_deletes_its_note_asking_when_it_has_text(window, qtbot, monkeypatch):
+    before = notes(window).revision
+    window.open_tool("notepad")
+    notepads(window)[0].parentWidget().title_bar.close_button.click()
+    assert notes(window).ids == [] and notes(window).revision == before  # nothing to save
     window.open_tool("notepad")
     window.open_tool("notepad")
     empty, written = notepads(window)
@@ -126,18 +135,24 @@ def test_closing_a_pane_deletes_its_note_asking_when_it_has_text(window, qtbot, 
 
 
 def test_format_keys_and_undo_stay_in_the_note(window, qtbot) -> None:
+    table = window.workspace.table
+    table.set_cells("ID", [1], ["Z"], label="Edit ID")  # something the window could undo
+    window.workspace.selection.set([1], "test")
     window.open_tool("notepad")
     panel = notepads(window)[0]
     window.show()
+    window.activateWindow()
+    qtbot.waitActive(window)
     panel.editor.setFocus()
+    qtbot.waitUntil(panel.editor.hasFocus)
     qtbot.keyClicks(panel.editor, "ab")
-    selected_before = window.workspace.selection.as_array().tolist()
-    qtbot.keyClick(panel.editor, Qt.Key.Key_I, Qt.KeyboardModifier.ControlModifier)
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    qtbot.keyClick(panel.editor, Qt.Key.Key_I, ctrl)
     assert panel.actions["italic"].isChecked()  # not the window's Invert Selection
-    assert window.workspace.selection.as_array().tolist() == selected_before
-    panel.editor.undo()
-    assert panel.editor.toPlainText() == ""
-    assert len(window.workspace.table) == 3
+    assert window.workspace.selection.as_array().tolist() == [1]
+    qtbot.keyClick(panel.editor, Qt.Key.Key_Z, ctrl)
+    assert panel.editor.toPlainText() == ""  # the note's typing is undone…
+    assert table.cell("ID", 1) == "Z"  # …not the table's edit
 
 
 def test_color_is_applied(window, qtbot, monkeypatch) -> None:
