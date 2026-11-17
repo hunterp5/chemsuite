@@ -87,6 +87,10 @@ MOVE_MODE = {
 REBUILD_DELAY_MS = 150
 #: left, top, right, bottom space round the plot, so the axis titles do not touch the edges
 AXIS_MARGINS = (6, 6, 10, 6)
+#: the plot area is light in every theme, so the fixed point, line and label colors stay
+#: legible (white, as the 3D view and an exported figure)
+PLOT_BACKGROUND = QColor(255, 255, 255)
+PLOT_INK = QColor(40, 40, 40)
 
 
 #: what draws each 2D kind
@@ -448,9 +452,8 @@ class PlotPanel(ToolPanel):
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
         if event.type() == QEvent.Type.PaletteChange and hasattr(self, "plot"):
-            self._apply_palette()
             self._style_toolbar()
-            self._rebuild_timer.start()  # guide labels and marker outlines use the palette
+            self._rebuild_timer.start()  # hover cards follow the theme
 
     def _style_toolbar(self) -> None:
         """Toolbar and frame colours from the palette (called again when the theme changes)."""
@@ -481,9 +484,9 @@ class PlotPanel(ToolPanel):
         )
 
     def _apply_palette(self) -> None:
-        palette = self.palette()
-        self.plot_widget.setBackground(palette.base().color())
-        pen = pg.mkPen(palette.text().color())
+        """The plot area's light colors (the same in every theme)."""
+        self.plot_widget.setBackground(PLOT_BACKGROUND)
+        pen = pg.mkPen(PLOT_INK)
         for axis in ("left", "bottom"):
             self.plot.getAxis(axis).setPen(pen)
             self.plot.getAxis(axis).setTextPen(pen)

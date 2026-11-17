@@ -74,6 +74,23 @@ def test_scatter_opens_in_a_dock_with_defaults(data) -> None:
     assert data.findChild(type(data.tool_panels.docks[0])).windowTitle() == "pIC50 vs MW"
 
 
+def test_the_plot_area_stays_light_in_a_dark_theme(data, qtbot) -> None:
+    from PySide6.QtGui import QColor, QPalette
+
+    from chemsuite.app.plots.panel import PLOT_BACKGROUND, PLOT_INK
+
+    panel = data.open_tool("scatter")
+    dark = QPalette(panel.palette())
+    for role in (QPalette.ColorRole.Base, QPalette.ColorRole.Window):
+        dark.setColor(role, QColor(30, 30, 30))
+    dark.setColor(QPalette.ColorRole.Text, QColor(230, 230, 230))
+    panel.setPalette(dark)
+    qtbot.wait(10)
+    assert panel.plot_widget.backgroundBrush().color() == PLOT_BACKGROUND
+    assert panel.plot.getAxis("left").pen().color() == PLOT_INK
+    assert PLOT_BACKGROUND.lightness() > 200 and PLOT_INK.lightness() < 80
+
+
 def test_box_lasso_and_modifiers_select_rows(data) -> None:
     panel = data.open_tool("scatter")
     selection = data.workspace.selection

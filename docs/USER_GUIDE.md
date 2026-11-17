@@ -1070,7 +1070,9 @@ descriptors, conformers, clustering, maps and searches.
 
 ## 9. Plots
 
-Open a plot from the **Plot** menu. It opens to the right of the table.
+Open a plot from the **Plot** menu. It opens to the right of the table. The plot area is
+white with dark axes in every theme, so points, lines and labels stay legible in dark mode;
+the toolbar and hover cards follow the theme.
 
 | Plot | Shows |
 |---|---|
