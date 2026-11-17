@@ -45,6 +45,10 @@ Cell = bytes | str | None
 CHUNK_ROWS = 2000
 TILE_ROWS = 2048  # rows per BLAS tile: 2048 × 2048 bits as float32 is 16 MB
 METRICS = {"tanimoto": "Tanimoto", "dice": "Dice", "cosine": "Cosine"}
+#: metrics where the order matters (row against reference): offered only by Similarity Search
+ASYMMETRIC_METRICS = {"tversky": "Tversky"}
+#: Gobbi 2D pharmacophore keys are folded onto this many bits
+PHARM2D_BITS = 4096
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,7 @@ class FingerprintKind:
     help: str = ""
     listed: bool = True  # offered in the similarity tools' fingerprint menus
     short: str = ""  # the column name when written to the table (default: the title)
+    pool_min_rows: int = 5000  # fewer rows are fingerprinted quicker in the job's own thread
 
     @property
     def column(self) -> str:
@@ -98,6 +103,15 @@ KINDS: dict[str, FingerprintKind] = {
             "Screens out rows that cannot contain a query; not meant for similarity.",
             listed=False,
         ),
+        FingerprintKind(
+            "pharm2d",
+            f"Gobbi 2D pharmacophore, {PHARM2D_BITS} bits",
+            PHARM2D_BITS,
+            "Pairs and triplets of pharmacophore features and their topological distances.",
+            listed=False,
+            short="Pharmacophore 2D",
+            pool_min_rows=300,  # about 1 ms a molecule, so the pool pays off sooner
+        ),
     )
 }
 DEFAULT_KIND = "morgan2"
@@ -140,6 +154,13 @@ def mol_bits(mol: Chem.Mol, key: str, generator=None) -> np.ndarray:
         out = np.zeros(vector.GetNumBits(), dtype=np.uint8)
         DataStructs.ConvertToNumpyArray(vector, out)
         return out.astype(np.bool_)
+    if key == "pharm2d":
+        from rdkit.Chem.Pharm2D import Generate, Gobbi_Pharm2D
+
+        out = np.zeros(PHARM2D_BITS, dtype=np.bool_)
+        keys = Generate.Gen2DFingerprint(mol, Gobbi_Pharm2D.factory).GetOnBits()
+        out[np.fromiter(keys, np.int64) % PHARM2D_BITS] = True
+        return out
     generator = generator or _generator(key)
     return generator.GetFingerprintAsNumPy(mol).astype(np.bool_)
 
@@ -275,11 +296,25 @@ def query_fingerprint(mol: Chem.Mol, key: str = DEFAULT_KIND) -> Fingerprints:
 
 
 # -- similarity --------------------------------------------------------------------------------
-def from_counts(common: np.ndarray, a: np.ndarray, b: np.ndarray, metric: str) -> np.ndarray:
-    """Similarity from shared bits and each side's bit count (0 when both are empty)."""
+def from_counts(
+    common: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    metric: str,
+    alpha: float = 0.5,
+    beta: float = 0.5,
+) -> np.ndarray:
+    """Similarity from shared bits and each side's bit count (0 when both are empty).
+
+    Tversky weighs the bits only *b* has (the reference) by *alpha* and those only *a* has (the
+    row) by *beta*: c / (alpha (b - c) + beta (a - c) + c). alpha = 1, beta = 0 is the share of
+    the reference's bits the row has; 0.5 and 0.5 is Dice; 1 and 1 is Tanimoto.
+    """
     common = common.astype(np.float64)
     with np.errstate(invalid="ignore", divide="ignore"):
-        if metric == "tanimoto":
+        if metric == "tversky":
+            out = common / (alpha * (b - common) + beta * (a - common) + common)
+        elif metric == "tanimoto":
             out = common / (a + b - common)
         elif metric == "dice":
             out = 2 * common / (a + b)
@@ -310,11 +345,17 @@ def at_least(
     return hits & (common > 0) if threshold <= 0 else hits
 
 
-def similarity(fps: Fingerprints, query: Fingerprints, metric: str = "tanimoto") -> np.ndarray:
+def similarity(
+    fps: Fingerprints,
+    query: Fingerprints,
+    metric: str = "tanimoto",
+    alpha: float = 0.5,
+    beta: float = 0.5,
+) -> np.ndarray:
     """Similarity of every row to the first row of *query*; NaN for invalid rows."""
     q = query.words[0]
     common = np.bitwise_count(fps.words & q).sum(axis=1, dtype=np.int32)
-    out = from_counts(common, fps.counts, query.counts[0], metric)
+    out = from_counts(common, fps.counts, query.counts[0], metric, alpha, beta)
     return np.where(fps.valid, out, np.nan)
 
 
@@ -329,6 +370,8 @@ def max_similarity(
     metric: str = "tanimoto",
     *,
     exclude_self: np.ndarray | None = None,
+    alpha: float = 0.5,
+    beta: float = 0.5,
     progress: Callable[[int, int], None] | None = None,
     cancel: CancelToken | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -341,12 +384,53 @@ def max_similarity(
     If *cancel* is set, raises :class:`Cancelled` whose ``partial`` is ``(best, which)`` for
     the first rows (those finished), or None if none were.
     """
+    return _scan(fps, refs, metric, exclude_self, alpha, beta, False, progress, cancel)
+
+
+def mean_similarity(
+    fps: Fingerprints,
+    refs: Fingerprints,
+    metric: str = "tanimoto",
+    *,
+    exclude_self: np.ndarray | None = None,
+    alpha: float = 0.5,
+    beta: float = 0.5,
+    progress: Callable[[int, int], None] | None = None,
+    cancel: CancelToken | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """``(mean similarity over the refs, index of the best ref)`` per row, as
+    :func:`max_similarity` (a row's own ref, when excluded, is left out of its mean)."""
+    return _scan(fps, refs, metric, exclude_self, alpha, beta, True, progress, cancel)
+
+
+def _scan(
+    fps: Fingerprints,
+    refs: Fingerprints,
+    metric: str,
+    exclude_self: np.ndarray | None,
+    alpha: float,
+    beta: float,
+    mean: bool,
+    progress: Callable[[int, int], None] | None,
+    cancel: CancelToken | None,
+) -> tuple[np.ndarray, np.ndarray]:
     n = len(fps)
     best = np.full(n, -1.0)
     which = np.full(n, -1, dtype=np.int64)
+    total = np.zeros(n)
+    count = np.zeros(n)
     ref_ok = np.flatnonzero(refs.valid)
     if not len(ref_ok) or not n:
         return np.full(n, np.nan), which
+
+    def result(stop: int) -> tuple[np.ndarray, np.ndarray]:
+        if mean:
+            with np.errstate(invalid="ignore", divide="ignore"):
+                score = np.where(count[:stop] > 0, total[:stop] / count[:stop], -1.0)
+        else:
+            score = best[:stop]
+        return _best(fps.take(np.arange(stop)), score, which[:stop])
+
     refs = refs.take(ref_ok)
     tiles = _tiles(n)
     finished = 0  # rows done
@@ -354,21 +438,24 @@ def max_similarity(
         if cancel is not None and cancel.cancelled:
             if not finished:
                 raise Cancelled
-            raise Cancelled(_best(fps.take(np.arange(finished)), best[:finished], which[:finished]))
+            raise Cancelled(result(finished))
         block = fps.unpacked(start, stop)
         for r_start, r_stop in _tiles(len(refs)):
             common = block @ refs.unpacked(r_start, r_stop).T
-            sim = from_counts(
-                common, fps.counts[start:stop, None], refs.counts[None, r_start:r_stop], metric
-            )
+            sim = from_counts(common, fps.counts[start:stop, None],
+                              refs.counts[None, r_start:r_stop], metric, alpha, beta)  # fmt: skip
+            own = np.zeros(sim.shape, dtype=np.bool_)
             if exclude_self is not None:
-                own = exclude_self[start:stop]
-                mapped = np.searchsorted(ref_ok, own)
-                hit = (own >= 0) & (mapped < len(ref_ok))
-                hit &= ref_ok[np.minimum(mapped, len(ref_ok) - 1)] == own
+                mine = exclude_self[start:stop]
+                mapped = np.searchsorted(ref_ok, mine)
+                hit = (mine >= 0) & (mapped < len(ref_ok))
+                hit &= ref_ok[np.minimum(mapped, len(ref_ok) - 1)] == mine
                 local = mapped - r_start
                 rows = np.flatnonzero(hit & (local >= 0) & (local < r_stop - r_start))
-                sim[rows, local[rows]] = -1.0
+                own[rows, local[rows]] = True
+                sim[own] = -1.0
+            total[start:stop] += np.where(own, 0.0, sim).sum(axis=1)
+            count[start:stop] += (~own).sum(axis=1)
             arg = sim.argmax(axis=1)
             top = sim[np.arange(len(sim)), arg]
             better = top > best[start:stop]
@@ -377,7 +464,7 @@ def max_similarity(
         finished = stop
         if progress is not None:
             progress(done + 1, len(tiles))
-    return _best(fps, best, which)
+    return result(n)
 
 
 def _best(fps: Fingerprints, best: np.ndarray, which: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -556,9 +643,6 @@ def cache_for(table: Table) -> FingerprintCache:
     return cache
 
 
-POOL_MIN_ROWS = 5000  # fingerprints for fewer rows are quicker in the job's own thread
-
-
 def fingerprint_task(
     table: Table,
     column: str,
@@ -583,7 +667,7 @@ def fingerprint_task(
             blob if blob is not None else (text or None)
             for blob, text in zip(structures.blobs(slots), structures.displays(slots), strict=True)
         ]
-    use_pool = cells is not None and len(cells) >= POOL_MIN_ROWS
+    use_pool = cells is not None and len(cells) >= KINDS[key].pool_min_rows
 
     def compute(job) -> Fingerprints:
         if cached is not None:

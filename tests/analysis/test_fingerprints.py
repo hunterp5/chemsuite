@@ -29,6 +29,7 @@ from chemsuite.analysis.fingerprints import (
     cache_for,
     compute_fingerprints,
     max_similarity,
+    mean_similarity,
     neighbours,
     query_fingerprint,
     similarity,
@@ -74,7 +75,8 @@ def test_every_kind_and_blobs_and_3d() -> None:
     for key in KINDS:
         out = compute_fingerprints([blob, "CCOc1ccccc1"], key)
         assert out.valid.all() and (out.packed[0] == out.packed[1]).all(), key
-        assert out.counts[0] > 0 and out.packed.shape[1] % 8 == 0, key
+        assert out.packed.shape[1] % 8 == 0, key
+        assert out.counts[0] > 0 or key == "pharm2d", key  # anisole has too few features
     maccs = compute_fingerprints(["CCOc1ccccc1"], "maccs")
     assert (
         maccs.counts[0] == MACCSkeys.GenMACCSKeys(Chem.MolFromSmiles("CCOc1ccccc1")).GetNumOnBits()
@@ -111,6 +113,35 @@ def test_max_similarity_and_neighbours(fps) -> None:
         expected = sorted(j for j in range(20) if j != i and full[i, j] >= 0.3)
         assert indices[indptr[i] : indptr[i + 1]].tolist() == expected
     assert indptr[21] == indptr[22] == indptr[20]  # invalid rows have none
+
+
+def test_tversky_and_mean_similarity(fps) -> None:
+    ref = fps.take(np.array([9]))
+    common = np.bitwise_count(fps.words & ref.words[0]).sum(axis=1)
+    covered = similarity(fps, ref, "tversky", alpha=1.0, beta=0.0)
+    assert np.allclose(covered[:20], common[:20] / ref.counts[0])  # share of the ref's bits
+    assert np.allclose(similarity(fps, ref, "tversky", 1.0, 1.0)[:20], similarity(fps, ref)[:20])
+    assert np.allclose(similarity(fps, ref, "tversky")[:20], similarity(fps, ref, "dice")[:20])
+    refs = np.array([0, 4, 9])
+    exclude = np.full(22, -1)
+    exclude[[0, 4]] = [0, 1]
+    mean, which = mean_similarity(fps, fps.take(refs), exclude_self=exclude)
+    singles = np.column_stack([similarity(fps, fps.take(np.array([r]))) for r in refs])
+    assert np.allclose(mean[1:4], singles[1:4].mean(axis=1))
+    assert mean[0] == pytest.approx(singles[0, 1:].mean())  # its own ref left out
+    assert which.tolist() == max_similarity(fps, fps.take(refs), exclude_self=exclude)[1].tolist()
+    assert np.isnan(mean[20:]).all() and which[20] == -1
+
+
+def test_pharmacophore_2d() -> None:
+    from rdkit.Chem.Pharm2D import Generate, Gobbi_Pharm2D
+
+    paracetamol = "CC(=O)Nc1ccc(O)cc1"
+    out = compute_fingerprints([paracetamol, "CC(=O)Nc1ccc(OC)cc1"], "pharm2d")  # phenacetin
+    keys = Generate.Gen2DFingerprint(Chem.MolFromSmiles(paracetamol), Gobbi_Pharm2D.factory)
+    folded = {k % KINDS["pharm2d"].bits for k in keys.GetOnBits()}
+    assert out.valid.all() and out.counts[0] == len(folded) > 0
+    assert 0 < similarity(out, out.take(np.array([0])))[1] < 1
 
 
 def test_tiles_give_the_same_answer(fps, monkeypatch) -> None:
