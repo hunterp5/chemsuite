@@ -337,6 +337,12 @@ def _overlay(p: QPainter) -> None:
     p.drawEllipse(QPointF(9.8, 8), 3.8, 3.8)
 
 
+def _overlay_rows(p: QPainter) -> None:
+    """Three offset rings in a diagonal: show many rows on top of each other."""
+    for x, y in ((5.2, 10.8), (8, 8), (10.8, 5.2)):
+        p.drawEllipse(QPointF(x, y), 3.4, 3.4)
+
+
 def _play(p: QPainter) -> None:
     """A triangle pointing right: play."""
     path = QPainterPath()
@@ -384,6 +390,7 @@ GLYPHS: dict[str, Draw] = {
     "export": _export,
     "ruler": _ruler,
     "overlay": _overlay,
+    "overlay_rows": _overlay_rows,
 }
 
 

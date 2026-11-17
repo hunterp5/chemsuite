@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QLabel, QSizePolicy
 from rdkit import Chem
 
@@ -35,6 +35,19 @@ def structure_image(mol: Chem.Mol, width: int, height: int, dpr: float, dark: bo
     png = render_png(mol, int(width * dpr), int(height * dpr), scale=dpr * SCALE, dark=dark)
     image = QImage.fromData(png, "PNG")
     image.setDevicePixelRatio(dpr)
+    return image
+
+
+def flat_picture(mol: Chem.Mol | None, width: int, height: int, dpr: float, base: QColor) -> QImage:
+    """The 2D page as an image: *mol* (if any) drawn on the *base* color."""
+    image = QImage(int(width * dpr), int(height * dpr), QImage.Format.Format_ARGB32)
+    image.setDevicePixelRatio(dpr)
+    image.fill(base)
+    if mol is not None:
+        drawing = structure_image(mol, width, height, dpr, base.lightness() < 128)
+        painter = QPainter(image)
+        painter.drawImage(0, 0, drawing)
+        painter.end()
     return image
 
 

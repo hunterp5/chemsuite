@@ -1591,17 +1591,23 @@ they are, and a 3D view you turned is still turned when you come back to it.
   shown, in 2D as well, so switching to 3D or stepping on usually finds them ready.
 - **Style:** Ball and Stick, Stick, Spacefill or Wire. **Hydrogens:** All, Polar (on atoms
   other than carbon) or None. **Color:** by element, or each conformer's carbons in a colour of
-  its own. These options show in the options menu in 3D.
+  its own (with Overlay Rows, each row's). These options show in the options menu in 3D.
 - **Conformers:** for a row with several, ‹ and › in the panel's header (or ↑ and ↓) step
   through them; the counter shows which one. **Overlay** draws every conformer at once as thin
   sticks with polar hydrogens. **Align Conformers** (on by default) fits them onto the first on
   heavy atoms.
+- **Overlay Rows** draws every row being browsed at once (all, shown or selected, as
+  **Browse Selected** and **Browse Visible** set; up to 200), as thin sticks, each at the
+  conformer shown, or all of its conformers with **Overlay** on too. On a column written by
+  [Superpose](#superpose) it shows the poses a series takes on the reference; **Color ▸
+  Carbons by Conformer or Row** gives each its own carbon color. Rows with only a 2D structure
+  are left out, except the one browsed to. Stepping through rows keeps the view.
 - **Show Reference** (on by default, in the options menu): a row written by
   [Superpose](#superpose) is drawn with the reference it was fitted to, as thin sticks with
   blue carbons.
 - **Mouse:** drag to turn, right-drag, middle-drag or Shift-drag to move, wheel to zoom. Pointing
   at an atom names it (for example "N4"). Ctrl-click (⌘-click on macOS) an atom to add or remove
-  the row from the selection.
+  its row from the selection (with Overlay Rows, the row that atom belongs to).
 - **Measure** (ruler): click two atoms for a distance, three for an angle, four for a dihedral; a
   fifth click starts again.
 - **Each row browsed to** is turned square on (its longest direction along the panel's longer

@@ -60,27 +60,21 @@ from rdkit import Chem
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Changed, Table
 from chemsuite.core.table.columns import STRUCTURE
-from chemsuite.molview.align import aligned_conformers
 from chemsuite.molview.geometry import (
     ALL_H,
     BALL_AND_STICK,
     HYDROGENS,
-    NO_H,
-    POLAR_H,
     STYLES,
-    THIN,
-    WIRE,
     Scene,
     combine,
-    molecule_part,
 )
 
 from ..shell import graphics
 from ..shell.glyphs import glyph
 from ..widgets.panel import OptionsPopup, ToolPanel
 from .caption import CaptionOverlay, caption_columns, default_caption, paint_caption
-from .depiction import Depiction2D, structure_image
-from .scene3d import PALETTE, make_3d, reference_part
+from .depiction import Depiction2D, flat_picture
+from .scene3d import Look, make_3d, scene_parts
 from .scene3d import is_3d as _is_3d
 
 TWO_D, THREE_D = "2d", "3d"
@@ -91,7 +85,7 @@ PREFETCH_MS = 300  # resting on a row this long makes 3D for the rows around it
 PREFETCH_AROUND = 2  # rows either side made ahead
 ELEMENT = "element"
 BY_ROW = "row"
-COLOURS = {ELEMENT: "Element", BY_ROW: "Carbons by Conformer"}
+COLOURS = {ELEMENT: "Element", BY_ROW: "Carbons by Conformer or Row"}
 
 
 class StructureViewer(ToolPanel):
@@ -127,6 +121,7 @@ class StructureViewer(ToolPanel):
         self._made: dict[tuple[str, int], Chem.Mol | None] = {}  # conformers made here
         self._waiting: set[tuple[str, int]] = set()
         self._ahead: set[tuple[str, int]] = set()  # being made ahead (one batch at a time)
+        self._atom_rows = np.zeros(0, dtype=np.int64)  # each atom's row, as last drawn
         self._shown: tuple = ()  # (column, oid, drawn) last shown in 3D: a new one is fitted
         self._look: tuple = ()  # (style, hydrogens, overlay) last drawn
         self._drawn_2d: tuple = ()  # (column, oid) last drawn in 2D
@@ -292,6 +287,14 @@ class StructureViewer(ToolPanel):
             self._schedule,
             checkable=True,
         )
+        self.rows_action = add(
+            "overlay_rows",
+            "Overlay Rows",
+            f"every row browsed at once (up to {MAX_PARTS}), as thin sticks: superposed rows "
+            "show the conformations a series takes",
+            self._rows_toggled,
+            checkable=True,
+        )
         self.measure_action = add(
             "ruler",
             "Measure",
@@ -304,6 +307,7 @@ class StructureViewer(ToolPanel):
         )
         self._three_d_actions += [
             self.overlay_action,
+            self.rows_action,
             self.measure_action,
             self.reset_action,
             bar.addSeparator(),
@@ -423,8 +427,17 @@ class StructureViewer(ToolPanel):
         return self.style_box.currentData()
 
     def rows(self) -> list[int]:
-        """The rows to draw: the one browsed to."""
-        return [] if self.oid is None else [self.oid]
+        """The rows to draw: the one browsed to, then with Overlay Rows the others browsed."""
+        if self.oid is None:
+            return []
+        if not self.rows_action.isChecked():
+            return [self.oid]
+        others = [int(o) for o in self._oids[: MAX_PARTS + 1] if o != self.oid]
+        return [self.oid, *others[: MAX_PARTS - 1]]
+
+    def _rows_toggled(self, _on: bool) -> None:
+        self._shown = ()  # turn and fit the new set of molecules
+        self._schedule()
 
     def caption_lines(self) -> list[tuple[str, str]]:
         """(column, value as the table shows it) for the caption, for the row shown."""
@@ -558,6 +571,8 @@ class StructureViewer(ToolPanel):
             if mol is None:
                 continue
             if not _is_3d(mol):
+                if oid != self.oid:
+                    continue  # Overlay Rows draws rows with 3D only: no embedding hundreds
                 key = (name, oid)
                 if key in self._made:
                     mol = self._made[key]
@@ -625,36 +640,22 @@ class StructureViewer(ToolPanel):
             self._schedule()
 
     def scene_parts(self, molecules: list[tuple[int, Chem.Mol]]):
-        style, hydrogens = self.style(), self.hydrogens.currentData()
-        by_row = self.colour.currentData() == BY_ROW
-        overlay = self.overlay_action.isChecked()
-        if overlay:  # as 3Dmol overlays read best: thin sticks, no hydrogens on carbon
-            style = WIRE if style == WIRE else THIN
-            hydrogens = NO_H if hydrogens == NO_H else POLAR_H
         counts = [m.GetNumConformers() for _, m in molecules]
         self._conformers = max(counts, default=0)
         if counts:  # nothing shown yet (a document reopening) keeps the saved conformer
             self.conformer = min(self.conformer, self._conformers - 1)
-        parts, rows = [], []
-        for oid, mol in molecules:
-            if self.align.isChecked() and mol.GetNumConformers() > 1:
-                mol = aligned_conformers(mol)
-            ids = [c.GetId() for c in mol.GetConformers()]
-            chosen = ids if overlay else [ids[min(self.conformer, len(ids) - 1)]]
-            for conf_id in chosen:
-                if len(parts) >= MAX_PARTS:
-                    break
-                carbon = PALETTE[len(parts) % len(PALETTE)] if by_row else None
-                parts.append(
-                    molecule_part(mol, conf_id, style=style, hydrogens=hydrogens, carbon=carbon)
-                )
-                rows.append(oid)
-        if self.show_reference.isChecked() and molecules and len(parts) < MAX_PARTS:
-            reference = reference_part(self._reference_of(molecules[0][1]))
-            if reference is not None:
-                parts.append(reference)
-                rows.append(-1)  # not a row
-        return parts, rows
+        look = Look(
+            style=self.style(),
+            hydrogens=self.hydrogens.currentData(),
+            by_color=self.colour.currentData() == BY_ROW,
+            align=self.align.isChecked(),
+            overlay=self.overlay_action.isChecked(),
+            rows=self.rows_action.isChecked(),
+            conformer=self.conformer,
+            reference=self.show_reference.isChecked(),
+            limit=MAX_PARTS,
+        )
+        return scene_parts(molecules, look, self._reference_of)
 
     # -- drawing --------------------------------------------------------------------------------
     def refresh(self) -> None:
@@ -673,14 +674,17 @@ class StructureViewer(ToolPanel):
 
     def _refresh_3d(self) -> None:
         molecules = self.molecules()
-        parts, _rows = self.scene_parts(molecules)
+        parts, rows = self.scene_parts(molecules)
+        # the row of each atom drawn (-1: the reference), for Ctrl-click with Overlay Rows
+        self._atom_rows = np.repeat(rows, [len(part.atom_index) for part in parts]).astype(np.int64)
         scene = combine(parts) if parts else Scene.empty()
         # A new molecule (another row or column, or its 3D structure just made) is turned to
         # its principal axes, centred and fitted; new drawing settings refit only a view the
         # user has not moved. Stepping through conformers keeps the view, to compare them, and
         # a trip to 2D and back keeps it too.
-        shown = (self.column_name(), self.oid, bool(parts))
-        look = (self.style(), self.hydrogens.currentData(), self.overlay_action.isChecked())
+        many = self.rows_action.isChecked()  # stepping rows keeps the view of them all
+        shown = (self.column_name(), None if many else self.oid, bool(parts))
+        look = (self.style(), self.hydrogens.currentData(), self.overlay_action.isChecked(), many)
         new = shown != self._shown
         restyled = look != self._look
         self._shown, self._look = shown, look
@@ -794,8 +798,9 @@ class StructureViewer(ToolPanel):
             self._marked = marked
             self.overlay.set_marked(marked)
             return
-        oid = self.oid
-        if atom < 0 or oid is None:
+        owners = self._atom_rows
+        oid = int(owners[atom]) if 0 <= atom < len(owners) else self.oid
+        if atom < 0 or oid is None or oid < 0:
             return
         if modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier):
             self.selection.set(self.selection.oids ^ {oid}, self._origin)
@@ -878,6 +883,7 @@ class StructureViewer(ToolPanel):
             "align": self.align.isChecked(),
             "reference": self.show_reference.isChecked(),
             "overlay": self.overlay_action.isChecked(),
+            "overlay_rows": self.rows_action.isChecked(),
             "conformer": self.conformer,
             "camera": camera,
         }
@@ -909,6 +915,7 @@ class StructureViewer(ToolPanel):
         if len(hit):
             self._set_index(int(hit[0]))
         self.overlay_action.setChecked(bool(state.get("overlay", False)))
+        self.rows_action.setChecked(bool(state.get("overlay_rows", False)))
         self.conformer = max(0, int(state.get("conformer", 0) or 0))
         camera = state.get("camera") if isinstance(state.get("camera"), dict) else None
         if self.renderer is not None and camera is not None:
@@ -932,19 +939,9 @@ class StructureViewer(ToolPanel):
             image.setDevicePixelRatio(self.renderer.devicePixelRatioF())
         else:
             size = self.depiction.size()
+            base = self.palette().base().color()
             dpr = self.devicePixelRatioF()
-            image = QImage(
-                int(size.width() * dpr), int(size.height() * dpr), QImage.Format.Format_ARGB32
-            )
-            image.setDevicePixelRatio(dpr)
-            image.fill(self.palette().base().color())
-            mol = self.depiction.mol
-            if mol is not None:
-                dark = self.palette().base().color().lightness() < 128
-                drawing = structure_image(mol, size.width(), size.height(), dpr, dark)
-                painter = QPainter(image)
-                painter.drawImage(0, 0, drawing)
-                painter.end()
+            image = flat_picture(self.depiction.mol, size.width(), size.height(), dpr, base)
         if not image.isNull() and self.caption.lines:
             painter = QPainter(image)
             width = image.width() / image.devicePixelRatio()

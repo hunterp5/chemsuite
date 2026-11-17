@@ -18,9 +18,13 @@ reference a superposed row was fitted to (Chemistry ▸ 3D ▸ Superpose)."""
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+
 from rdkit import Chem
 
-from chemsuite.molview.geometry import POLAR_H, THIN, molecule_part
+from chemsuite.molview.align import aligned_conformers
+from chemsuite.molview.geometry import NO_H, POLAR_H, THIN, WIRE, molecule_part
 
 #: carbon colors for overlays (distinct on white and on dark backgrounds)
 PALETTE = [
@@ -48,6 +52,54 @@ def make_3d(mols: dict[int, Chem.Mol]) -> dict[int, Chem.Mol | None]:
         except Exception:  # noqa: BLE001 - one bad structure must not stop the rest
             out[oid] = None
     return out
+
+
+@dataclass(frozen=True)
+class Look:
+    """How the Browser draws its 3D molecules. *conformer* is the one shown of each row, unless
+    *overlay* draws every conformer; *rows* draws several rows at once. Either makes the
+    drawing thin sticks without the hydrogens on carbon, as 3Dmol overlays read best."""
+
+    style: str
+    hydrogens: str
+    by_color: bool
+    align: bool
+    overlay: bool
+    rows: bool
+    conformer: int
+    reference: bool
+    limit: int
+
+
+def scene_parts(
+    molecules: Sequence[tuple[int, Chem.Mol]],
+    look: Look,
+    reference_of: Callable[[Chem.Mol], Chem.Mol | None],
+) -> tuple[list, list[int]]:
+    """The parts to draw and the row each belongs to (-1 for the reference)."""
+    style, hydrogens = look.style, look.hydrogens
+    if look.overlay or look.rows:
+        style = WIRE if style == WIRE else THIN
+        hydrogens = NO_H if hydrogens == NO_H else POLAR_H
+    parts, rows = [], []
+    for oid, mol in molecules:
+        if look.align and mol.GetNumConformers() > 1:
+            mol = aligned_conformers(mol)
+        ids = [c.GetId() for c in mol.GetConformers()]
+        chosen = ids if look.overlay else [ids[min(look.conformer, len(ids) - 1)]]
+        for conf_id in chosen:
+            if len(parts) >= look.limit:
+                break
+            carbon = PALETTE[len(parts) % len(PALETTE)] if look.by_color else None
+            parts.append(molecule_part(mol, conf_id, style=style, hydrogens=hydrogens,
+                                       carbon=carbon))  # fmt: skip
+            rows.append(oid)
+    if look.reference and molecules and len(parts) < look.limit:
+        reference = reference_part(reference_of(molecules[0][1]))
+        if reference is not None:
+            parts.append(reference)
+            rows.append(-1)  # not a row
+    return parts, rows
 
 
 def reference_part(reference: Chem.Mol | None):

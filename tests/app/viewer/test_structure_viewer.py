@@ -194,6 +194,24 @@ def test_conformer_stepper_and_overlay(chem, qtbot) -> None:
     assert not panel.previous.isEnabled() and not panel.next.isEnabled()
 
 
+def test_overlay_rows_draws_every_browsed_row_with_3d(chem, qtbot) -> None:
+    """Thin sticks, hydrogens only on the oxygen: benzene's 6 atoms, butanol's 5 + 1 at its
+    shown conformer (all 3 with Overlay too); piperidine has only 2D and is not embedded."""
+    panel = _open(chem, qtbot, 2)
+    panel.rows_action.setChecked(True)
+    qtbot.waitUntil(lambda: panel._atom_rows.tolist() == [2] * 6 + [1] * 6, timeout=5_000)
+    assert len(panel.renderer.scene) == 6 + 6
+    assert panel.rows() == [2, 1, 3] and ("SMILES 3D", 3) not in panel._made
+    panel._clicked(6, Qt.KeyboardModifier.ControlModifier)  # butanol's first atom: row 1
+    assert chem.workspace.selection.oids == {1}
+    panel.overlay_action.setChecked(True)
+    qtbot.waitUntil(lambda: len(panel.renderer.scene) == 6 + 3 * 6, timeout=5_000)
+    assert panel.state()["overlay_rows"] is True
+    panel.rows_action.setChecked(False)
+    panel.overlay_action.setChecked(False)
+    _shows(panel, qtbot, 2)
+
+
 def test_keys_step_rows_and_conformers(chem, qtbot) -> None:
     from PySide6.QtCore import Qt
 
