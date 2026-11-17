@@ -141,6 +141,7 @@ PANEL_MIN_WIDTH = 360
 MENU_ORDER: dict[tuple[str, ...], tuple[str, ...]] = {
     ("Data",): ("space_map", "som", "statistics"),
     ("Data", "Similarity"): ("cluster", "binning", "similarity", "diverse_subset"),
+    ("Chemistry", "3D"): ("conformers", "superpose"),
     ("Chemistry", "Reaction"): ("split-reaction", "retrosynthesis", "enumerate-products"),
     ("Chemistry", "Decompose"): ("rgroups", "fragments", "central-ring"),
     ("Chemistry", "Enumerate"): ("enumerate-products", "rgroup-library", "recombine"),

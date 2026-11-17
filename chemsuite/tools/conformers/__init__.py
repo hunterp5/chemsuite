@@ -13,4 +13,4 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Chemistry ▸ Generate Conformers and Export Conformers to SDF."""
+"""Chemistry ▸ 3D ▸ Generate Conformers and Export Conformers to SDF."""

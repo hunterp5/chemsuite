@@ -309,8 +309,10 @@ class ToolContext:
         *,
         label: str,
         overwrite: bool | Collection[str] = False,
+        extra_ops: Sequence[Op] = (),
     ) -> dict[str, str]:
-        """Write result columns as one undoable step, skipping rows deleted meanwhile.
+        """Write result columns as one undoable step, skipping rows deleted meanwhile, with
+        *extra_ops* (run first) such as adding an asset the results refer to.
 
         Returns ``{requested name: actual name}``.
         """
@@ -328,7 +330,7 @@ class ToolContext:
                 )
                 oids = oids[present]
             kept[name] = (oids, values)
-        return table.apply_results(kept, label=label, overwrite=overwrite)
+        return table.apply_results(kept, label=label, overwrite=overwrite, extra_ops=extra_ops)
 
     def add_rows(
         self,

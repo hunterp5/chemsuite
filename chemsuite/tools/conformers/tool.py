@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Chemistry ▸ Generate Conformers… and Export Conformers to SDF…"""
+"""Chemistry ▸ 3D ▸ Generate Conformers… and Export Conformers to SDF…"""
 
 from __future__ import annotations
 
@@ -40,12 +40,11 @@ TOOLS = (
     Tool(
         id="conformers",
         title="Generate Conformers…",
-        menu=("Chemistry",),
+        menu=("Chemistry", "3D"),
         open=_open_generate,
         requires=("rdkit",),
         needs_structures=True,
-        tip="3D conformers with ETKDG and MMFF94, stored lowest energy first in a new column.",
-        separator_after=True,
+        tip="3D conformers with CONFORGE or ETKDG, stored lowest energy first in a new column.",
     ),
     Tool(
         id="export_conformers",

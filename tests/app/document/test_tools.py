@@ -107,6 +107,9 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
         "Recombine Fragments…",
     ]
     assert not {"Structure Viewer", "Browser"} & set(visible(menus["Chemistry"]))
+    three_d = submenu(menus["Chemistry"], "3D")
+    assert visible(three_d) == ["Generate Conformers…", "Superpose…"]
+    assert "Generate Conformers…" not in visible(menus["Chemistry"])
     calculate = submenu(menus["Chemistry"], "Calculate")
     assert visible(calculate) == ["Descriptors…", "pKa…"]
     reaction = submenu(menus["Chemistry"], "Reaction")

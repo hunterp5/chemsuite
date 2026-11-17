@@ -84,7 +84,7 @@ def conformer_settings(count: int) -> ConformerSettings:
     return ConformerSettings(count=count, energy_window=None)
 
 
-def _mol(cell: Cell) -> Chem.Mol | None:
+def mol_of_cell(cell: Cell) -> Chem.Mol | None:
     if isinstance(cell, bytes):
         return mol_from_blob(cell) if cell else None
     if isinstance(cell, str):
@@ -129,7 +129,7 @@ def superpose_chunk(args: tuple[Settings, bytes, str, Sequence[Cell]]) -> list[t
     blank = tuple(np.nan for _ in settings.scores)
     out = []
     for cell in cells:
-        mol = _mol(cell)
+        mol = mol_of_cell(cell)
         if mol is None:
             out.append((b"", "", np.nan, blank))
             continue
@@ -241,7 +241,7 @@ def conformers_chunk(args: tuple[bool, Sequence[Cell]]) -> list[tuple]:
     heavy_only, cells = args
     out = []
     for cell in cells:
-        mol = _mol(cell)
+        mol = mol_of_cell(cell)
         if not has_3d(mol):
             out.append((b"", "", np.nan, (np.nan, np.nan)))
             continue

@@ -96,7 +96,9 @@ def _shape(fn: Callable[..., float]) -> Callable[[Chem.Mol], float]:
 
 
 SHAPE_GROUP = "3D Shape"
-_SHAPE_HELP = " Needs 3D structures (Chemistry ▸ Generate Conformers); uses the first conformer."
+_SHAPE_HELP = (
+    " Needs 3D structures (Chemistry ▸ 3D ▸ Generate Conformers); uses the first conformer."
+)
 
 _SHAPES = (
     ("PMI1", "PMI 1", rdMolDescriptors.CalcPMI1, 1, "Smallest principal moment of inertia."),

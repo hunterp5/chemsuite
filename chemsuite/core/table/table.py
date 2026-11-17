@@ -670,8 +670,10 @@ class Table:
         label: str = "Add results",
         position: int | None = None,
         overwrite: bool | Collection[str] = False,
+        extra_ops: Sequence[Op] = (),
     ) -> dict[str, str]:
-        """Write a tool's output columns as one undoable step.
+        """Write a tool's output columns as one undoable step (with *extra_ops*, run first,
+        such as adding the asset the results refer to).
 
         *results* maps a requested column name to ``(oids, values)``. An existing column is
         reused when every cell in it is blank, or always with *overwrite* (rerunning a tool
@@ -681,7 +683,7 @@ class Table:
         to a new column named ``name (2)``, ``name (3)``…, inserted at *position* (default: the
         end). Returns ``{requested name: actual name}``.
         """
-        ops: list[Op] = []
+        ops: list[Op] = list(extra_ops)
         names: dict[str, str] = {}
         taken: set[str] = set()
 

@@ -43,7 +43,7 @@ Each document has its own window. From top to bottom:
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close (clears the window to a new, empty document; with other windows open it closes this one) |
   | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection) |
   | Tools | Calculator, Random ▸ (Random Numbers and Random Rows), Sketcher, Notepad |
-  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, Generate Conformers, Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
+  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, 3D ▸ (Generate Conformers, Superpose), Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
   | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
   | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
   | Data ▸ Similarity | Cluster, Bin Values, Similarity Search, Diverse Subset |
@@ -1008,6 +1008,7 @@ descriptors, conformers, clustering, maps and searches.
   | Predict pKa | |
   | MedChem plots (descriptor step) | Dimensionality Reduction |
   | Generate Conformers | Self-Organizing Map |
+  | Superpose | |
   | Similarity Search | Free-Wilson |
   | R-Groups (numbered core) | Hansch |
   | Diverse Subset (the picks made so far) | Matched Pairs |
@@ -1423,7 +1424,7 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 
 ### Generate Conformers
 
-Generates 3D conformers with one of two **Generators**:
+**Chemistry ▸ 3D ▸ Generate Conformers…** generates 3D conformers with one of two **Generators**:
 
 - **CONFORGE (CDPKit)**, the default: builds conformers from fragment and torsion libraries
   and scores them with MMFF94s (Seidel et al., *J. Chem. Inf. Model.* 2023, 63, 5549). It
@@ -1461,6 +1462,57 @@ Generates 3D conformers with one of two **Generators**:
 Writes every conformer as its own SD record, carrying the row's other columns. Choose **All**,
 **Shown** or **Selected** rows (Selected when rows are selected), then **Export** asks for the
 file.
+
+### Superpose
+
+**Chemistry ▸ 3D ▸ Superpose…** moves molecules onto a reference in 3D, or lines up each
+row's conformers on its first.
+
+- **Input:**
+  - **Structures:** the column to superpose (a 3D column, if there is one, at first), and
+    **All**, **Shown** or **Selected** rows.
+  - Every 3D conformer a row holds is tried, and the one that fits best is kept. A row with
+    only a 2D structure gets conformers first, as Generate Conformers makes them (CONFORGE
+    where it is installed, else ETKDG; how many is under **More Options**).
+  - **Superpose:** **Onto a reference**, or **Each row's conformers onto its first**.
+  - **Reference:** **Current row** (the table's current row: click another row while the
+    dialog is open to change it), or a ligand of a protein in the document, in its bound pose
+    ("1ATP ▸ E/ATP 355"). For a row, **Reference from** is the column its 3D structure is read
+    from; its first conformer is used.
+- **Method:**
+
+  | Method | Fits | Scores |
+  |---|---|---|
+  | Substructure (MCS) | the largest common substructure of each row and the reference, atom on atom | **Core RMSD (Å)**, **Core Atoms** |
+  | Substructure (core) | a core you type (SMILES or SMARTS) or draw (**Draw…**) | **Core RMSD (Å)**, **Core Atoms** |
+  | Atoms (O3A) | atoms paired by type without a common core (Open3DALIGN; Tosco et al., *J. Comput.-Aided Mol. Des.* 2011, 25, 777) | **O3A Score** (higher is better), **RMSD (Å)** of the paired atoms |
+  | Shape | the overlap of the two molecules' volumes (Gaussian atoms, as ROCS; RDKit's shape alignment, from PubChem) | **Shape Tanimoto** (0–1) |
+  | Shape + Features | volume plus pharmacophore features: donors, acceptors, rings, charges | **Combo** (0–2: the two Tanimotos added), **Shape Tanimoto**, **Color Tanimoto** |
+  | Field (Electrostatics + Shape) | the overlap of the two molecules' electrostatic potentials, with shape | **Field Similarity** (−1 to 1), **Shape Tanimoto** |
+
+  - Symmetric cores are tried every way round, so a phenyl fits whichever way its atoms are
+    numbered.
+  - Field: each atom's partial charge (Gasteiger, or MMFF94 under **More Options**) gives a
+    potential, and the overlap of the two potentials, as a Carbó index, is the field
+    similarity. It starts from the best shape fits of the three best-fitting conformers,
+    and from each turned half over about its axes, so it can tell a pyridine's nitrogen from
+    its carbons where shape cannot.
+  - **More Options:** the MCS settings (rings match rings only, complete rings only, compare
+    elements, a time limit per row), the O3A atom typing (MMFF94 or Crippen), the **Feature
+    weight** (Shape + Features) and **Field weight** (Field), each the share of the
+    optimization given to features or field, and **Conformers for 2D rows**.
+- **Output** (one undo step):
+  - a new structure column, "<column> superposed", with each row's best conformer moved onto
+    the reference;
+  - **Best Conformer** (1 is the first stored) and a column for each score;
+  - the reference itself, kept with the document so the [Browser](#browser) can show it
+    with each superposed row. Rename or copy the column and the link stays.
+  - A row with no structure, or that cannot be fitted (the core is not in it), is left blank;
+    the message says how many.
+- **Each row's conformers onto its first** fits every conformer of a row onto its first, on
+  heavy atoms (**Heavy atoms only**, under **More Options**), and writes **Mean Conformer RMSD
+  (Å)** and **Max Conformer RMSD (Å)**.
+- **Cancelling** keeps the rows already done.
 
 ### Browser
 
