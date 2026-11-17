@@ -171,3 +171,50 @@ def test_random_rows_select_or_save_a_list(data):
     dialog.list_name.setText("Test set")
     assert "already exists" in dialog.status.text()
     dialog.reject()
+
+
+@pytest.fixture
+def potencies(window):
+    from chemsuite.app.document.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    table = Table()
+    table.add_rows(
+        {
+            "SMILES": ["CC(=O)Oc1ccccc1C(=O)O", "CCO", "c1ccccc1", "CCN", ""],
+            "IC50": ["1", "250", ">10", "0.5", "3"],
+            "Unit": ["uM", "nM", "µM", "mg/mL", "mg/mL"],
+        },
+        undoable=False,
+    )
+    table.convert_column("SMILES", "structure")
+    table.history.mark_clean()
+    window._install(Workspace(table))
+    return window
+
+
+def test_standardize_converts_units_and_keeps_qualifiers(potencies, qtbot):
+    table = potencies.workspace.table
+    assert potencies.tool_action("standardize_values").text() == "Standardize…"
+    dialog = potencies.open_tool("standardize_values")
+    assert dialog.values.currentText() == "IC50" and dialog.units.currentText() == "Unit"
+    assert dialog.target.currentData() == "nM"
+    assert dialog.structure.isEnabled()  # mg/mL rows need a molecular weight
+    dialog.accept()
+    finish(qtbot, dialog)
+    values = cells(table, "IC50 (nM)")
+    assert values[:3] == ["1000", "250", "10000"]
+    assert float(values[3]) == pytest.approx(0.5 / 45.085 * 1e9, rel=1e-3)  # ethylamine
+    assert values[4] == ""  # no structure: no molecular weight
+    assert cells(table, "IC50 (nM) Qualifier")[:3] == ["", "", ">"]
+    assert table.history.undo_label == "Standardize values"
+
+
+def test_standardize_needs_a_structure_only_for_mass_units(potencies):
+    dialog = potencies.open_tool("standardize_values")
+    dialog.structure.clear()
+    assert "structure column" in dialog.problem()
+    dialog.rows.set_value("selected")
+    oids = [int(o) for o in potencies.workspace.table.oids[:3]]  # molar units only
+    potencies.workspace.selection.set(oids, "test")  # the dialog follows the selection
+    assert dialog.problem() == "" and not dialog.structure.isEnabled()

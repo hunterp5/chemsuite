@@ -50,13 +50,18 @@ def test_ok_saves_and_survives_reload(window, tmp_path) -> None:
     page = dialog.appearance
     page.theme.setCurrentIndex(page.theme.findData("dark"))
     page.row_height.setValue(150)
-    page.status_bar.setChecked(False)
-    assert not window.statusBar().isVisible()
     dialog.accept()
     saved = json.loads((tmp_path / "config" / "settings.json").read_text())
     assert saved["appearance"]["theme"] == "dark"
     assert saved["appearance"]["structure_row_height"] == 150
     assert window.view._structure_row_height == 150
+    general = window.open_settings("general")  # the status bar is a General setting
+    assert general.windowTitle() == "General" and general.page is general.general
+    general.general.status_bar.setChecked(False)
+    assert not window.statusBar().isVisible()
+    general.accept()
+    saved = json.loads((tmp_path / "config" / "settings.json").read_text())
+    assert saved["appearance"]["status_bar"] is False
 
 
 def test_groovy_reroll(window) -> None:
@@ -266,11 +271,29 @@ def test_the_settings_menu_holds_each_page_the_status_bar_and_help(window) -> No
     settings = next(a.menu() for a in bar.actions() if a.text() == "&Settings")
     names = [a.text() for a in settings.actions() if not a.isSeparator()]
     assert names == [
-        "Appearance…", "Keyboard Shortcuts…", "External Tools…", "General…", "Status &Bar",
-        "chemsuite &User Guide", "Show &Log Folder", "&About chemsuite",
+        "Theme…", "Hotkeys…", "External…", "General…", "Status &Bar",
+        "&User Guide", "&Log Folder", "&About",
     ]  # fmt: skip
     window.command_action("settings.tools").trigger()
     dialog = window.findChildren(QDialog)[-1]
-    assert dialog.windowTitle() == "External Tools" and dialog.page is dialog.tools
+    separators = [a.isSeparator() for a in settings.actions()]
+    assert separators.index(True) == 5  # Status Bar with the pages, then the help items
+    assert dialog.windowTitle() == "External" and dialog.page is dialog.tools
     assert dialog.tools.isVisible() and not dialog.keyboard.isVisible()
     dialog.reject()
+
+
+def test_a_new_theme_repaints_what_the_last_one_painted(window, qtbot) -> None:
+    """Light, Dark and Groovy all use Fusion; widgets under a style sheet (the main window's
+    holds nearly all of them) must still take each new palette."""
+    from chemsuite.app.shell import theme
+
+    window.show()
+    qtbot.waitExposed(window)
+    hub = settings_hub()
+    for name, palette in (("dark", theme.dark_palette()), ("light", theme.light_palette())):
+        hub.update(lambda s, n=name: setattr(s.appearance, "theme", n))
+        viewport = window.view.viewport()
+        image = viewport.grab().toImage()
+        corner = image.pixelColor(image.width() - 4, image.height() - 4)  # below the rows
+        assert corner.name() == palette.color(QPalette.ColorRole.Base).name(), name

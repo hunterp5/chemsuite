@@ -30,6 +30,14 @@ def _calculator(ctx: ToolContext):
     return open_calculator(ctx)
 
 
+def _standardize(ctx: ToolContext):
+    from .standardize_units import StandardizeUnitsDialog
+
+    dialog = StandardizeUnitsDialog(ctx)
+    ctx.show_dialog(dialog)
+    return dialog
+
+
 def _dialog(name: str):
     def open_(ctx: ToolContext):
         from . import random_dialogs
@@ -50,6 +58,14 @@ TOOLS = (
         shortcut="Ctrl+Shift+=",
         tip="A new column from a formula: math, text, statistics and chemistry functions "
         "over other columns, e.g. 9 - log10([IC50 (nM)]) or MW([Structure]).",
+    ),
+    Tool(
+        id="standardize_values",
+        title="Standardize…",
+        menu=MENU,
+        open=_standardize,
+        tip="Values given with a unit column (nM, µM, mg/mL…) as one new column in the unit "
+        "you choose; molar and mass units convert through the molecular weight.",
     ),
     Tool(
         id="random_numbers",

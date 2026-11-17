@@ -17,7 +17,7 @@
 """Retrosynthesis with a local AiZynthFinder install (docs/RETRO_PLAN.md).
 
 AiZynthFinder needs RDKit 2023 and NumPy 1.26, so it is never imported here: it runs in its
-own interpreter (``Settings ▸ External Tools``), driven by the worker in :mod:`.worker` and
+own interpreter (``Settings ▸ External``), driven by the worker in :mod:`.worker` and
 kept warm between jobs by :class:`.runner.Worker`. The search is local — the models, templates
 and stock come from a ``config.yml`` on this machine, and :func:`.config.config_problem`
 refuses a config that would reach a model server or a remote stock database.

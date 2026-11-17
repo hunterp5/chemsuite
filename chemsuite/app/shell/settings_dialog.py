@@ -81,7 +81,7 @@ THEME_TITLES = {"system": "System", "light": "Light", "dark": "Dark", "groovy": 
 
 
 class SettingsDialog(QDialog):
-    """One page of the settings (Settings ▸ Appearance…, Keyboard Shortcuts…, …)."""
+    """One page of the settings (Settings ▸ Theme…, Hotkeys…, …)."""
 
     def __init__(
         self, parent: QWidget | None = None, jobs: JobHost | None = None, page: str = "appearance"
@@ -198,7 +198,6 @@ class AppearancePage(QWidget):
         self.row_height = QSpinBox()
         self.row_height.setRange(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT)
         self.row_height.setSuffix(" px")
-        self.status_bar = QCheckBox("Show the status bar")
         for combo in (self.align_h, self.align_v):
             combo.setToolTip("Applies to text cells; numbers stay right-aligned.")
         align = QHBoxLayout()
@@ -210,7 +209,6 @@ class AppearancePage(QWidget):
         form.addRow("Table font:", self.table_font)
         form.addRow("Text alignment:", align)
         form.addRow("Structure row height:", self.row_height)
-        form.addRow("", self.status_bar)
         self.load(a)
         for widget, key in (
             (self.theme, "appearance.theme"),
@@ -221,7 +219,6 @@ class AppearancePage(QWidget):
             (self.align_h, "appearance.table_align_h"),
             (self.align_v, "appearance.table_align_v"),
             (self.row_height, "appearance.structure_row_height"),
-            (self.status_bar, "appearance.status_bar"),
         ):
             dialog.lock(widget, key)
         self.theme.currentIndexChanged.connect(self._store)
@@ -229,7 +226,6 @@ class AppearancePage(QWidget):
             spin.valueChanged.connect(self._store)
         for combo in (self.align_h, self.align_v):
             combo.currentIndexChanged.connect(self._store)
-        self.status_bar.toggled.connect(self._store)
 
     def _fill_themes(self, current: str) -> None:
         self.theme.blockSignals(True)
@@ -246,7 +242,7 @@ class AppearancePage(QWidget):
 
     def load(self, a) -> None:
         widgets = (self.app_font, self.table_font, self.row_height, self.align_h, self.align_v)
-        for w in (*widgets, self.status_bar):
+        for w in widgets:
             w.blockSignals(True)
         self._fill_themes(a.theme)
         self.app_font.setValue(a.app_font_pt or MIN_FONT_PT - 1)
@@ -254,8 +250,7 @@ class AppearancePage(QWidget):
         self.align_h.setCurrentIndex(self.align_h.findData(a.table_align_h))
         self.align_v.setCurrentIndex(self.align_v.findData(a.table_align_v))
         self.row_height.setValue(a.structure_row_height)
-        self.status_bar.setChecked(a.status_bar)
-        for w in (*widgets, self.status_bar):
+        for w in widgets:
             w.blockSignals(False)
         self.reroll.setVisible(a.theme == GROOVY)
 
@@ -267,7 +262,6 @@ class AppearancePage(QWidget):
         a.table_align_h = self.align_h.currentData()
         a.table_align_v = self.align_v.currentData()
         a.structure_row_height = self.row_height.value()
-        a.status_bar = self.status_bar.isChecked()
         self.reroll.setVisible(a.theme == GROOVY)
         self.dialog.changed()
 
@@ -292,7 +286,7 @@ class AppearancePage(QWidget):
         a = self.dialog.user.appearance
         fresh = Appearance(custom_themes=a.custom_themes)  # keep saved custom themes
         for key in ("theme", "app_font_pt", "table_font_pt", "table_align_h", "table_align_v",
-                    "structure_row_height", "status_bar"):  # fmt: skip
+                    "structure_row_height"):  # fmt: skip
             setattr(a, key, getattr(fresh, key))
         self.load(a)
 
@@ -661,7 +655,9 @@ class GeneralPage(QWidget):
             "A desktop notification when a background job of more than 30 seconds ends "
             "while chemsuite is not in front."
         )
+        self.status_bar = QCheckBox("Show the status bar")
         form = QFormLayout(self)
+        form.addRow("Window:", self.status_bar)
         form.addRow("Processor cores:", self.workers)
         form.addRow("3D graphics:", self.graphics)
         form.addRow("Recent files to keep:", self.recent_limit)
@@ -672,13 +668,22 @@ class GeneralPage(QWidget):
         dialog.lock(self.graphics, "performance.graphics")
         dialog.lock(self.recent_limit, "files.recent_limit")
         dialog.lock(self.notify, "jobs.notify")
+        dialog.lock(self.status_bar, "appearance.status_bar")
         self.workers.valueChanged.connect(self._store)
         self.graphics.currentIndexChanged.connect(self._store)
         self.recent_limit.valueChanged.connect(self._store)
         self.notify.toggled.connect(self._store)
+        self.status_bar.toggled.connect(self._show_status_bar)
+
+    def _show_status_bar(self, on: bool) -> None:
+        self.dialog.user.appearance.status_bar = on
+        self.dialog.changed()  # shown at once, as the menu's Status Bar does
 
     def load(self) -> None:
         user = self.dialog.user
+        self.status_bar.blockSignals(True)
+        self.status_bar.setChecked(user.appearance.status_bar)
+        self.status_bar.blockSignals(False)
         self.workers.setValue(user.performance.max_workers)
         self.graphics.setCurrentIndex(max(0, self.graphics.findData(user.performance.graphics)))
         self.recent_limit.setValue(user.files.recent_limit)
@@ -696,6 +701,10 @@ class GeneralPage(QWidget):
         self.dialog.user.files.recent = []
 
     def reset(self) -> None:
+        from chemsuite.core.settings import Appearance
+
+        self.dialog.user.appearance.status_bar = Appearance().status_bar
+        self.load()
         self.workers.setValue(0)
         self.graphics.setCurrentIndex(0)
         self.recent_limit.setValue(10)

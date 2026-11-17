@@ -68,7 +68,7 @@ class StatusBar(QStatusBar):
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
-        if event.type() == QEvent.Type.FontChange:  # Settings ▸ Appearance ▸ font size
+        if event.type() == QEvent.Type.FontChange:  # Settings ▸ Theme ▸ font size
             self._fit_height()
 
     # QStatusBar's message API, redirected to our own label (Python callers only; the window

@@ -232,7 +232,7 @@ def close_workers() -> None:
 
 
 def probe(where: Interpreter) -> tuple[bool, str]:
-    """``(ok, message)`` for the Settings ▸ External Tools **Test** button: a throwaway worker
+    """``(ok, message)`` for the Settings ▸ External **Test** button: a throwaway worker
     reports the versions and the platforms that work."""
     from chemsuite.core.jobs.lines import is_app_python
 

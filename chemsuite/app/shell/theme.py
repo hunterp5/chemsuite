@@ -319,12 +319,27 @@ def apply_appearance(app: QApplication, appearance: Appearance, *, reroll: bool 
             _set_style(app, "Fusion")
             app.setPalette(palette)
         _set_colour_scheme(app, None if palette is None else palette)
+        if _applied is not None:
+            _repolish(app)
     font = QFont(_original["font"])
     if appearance.app_font_pt:
         font.setPointSize(appearance.app_font_pt)
     if app.font() != font:
         app.setFont(font)
     _applied = (key,)
+
+
+def _repolish(app: QApplication) -> None:
+    """Make every widget styled by a style sheet take the new palette.
+
+    A widget under a style sheet (the main window has one, so nearly every widget does) keeps
+    the palette it was polished with: Qt repolishes it on a new style but not on a new palette,
+    and Light, Dark, Groovy and custom themes all use Fusion. Setting a sheet again repolishes
+    the widget and its children."""
+    for widget in app.allWidgets():
+        sheet = widget.styleSheet()
+        if sheet:
+            widget.setStyleSheet(sheet)
 
 
 def _set_colour_scheme(app: QApplication, palette: QPalette | None) -> None:

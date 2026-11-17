@@ -74,7 +74,7 @@ class MinimiseFields:
         self.platform.setCurrentIndex(max(found, 0))
         section.row("Platform", self.platform,
                     help="Where OpenMM runs: Auto takes the fastest that works. The others "
-                    "are listed once OpenMM has run (or Settings ▸ External Tools ▸ "
+                    "are listed once OpenMM has run (or Settings ▸ External ▸ "
                     "Test).")  # fmt: skip
 
     def settings(self) -> MinimiseSettings:

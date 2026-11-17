@@ -739,8 +739,9 @@ class MainWindow(QMainWindow):
         }
         #: tools in these menus go before this action instead of at the end
         self._tool_slots = {("Data", "Search"): search_tools, ("Data",): sar.menuAction()}
-        #: single tools that go before this action instead (the Calculator heads Tools)
-        self._tool_places = {"calculator": random_menu.menuAction()}
+        #: single tools that go before this action instead (Calculator, Standardize head Tools)
+        heads = ("calculator", "standardize_values")
+        self._tool_places = dict.fromkeys(heads, random_menu.menuAction())
         for tool in registered_tools():
             self._add_tool(tool, menus)
         data.addSeparator()  # the Browser, in a section of its own at the bottom
@@ -753,16 +754,15 @@ class MainWindow(QMainWindow):
             keys = [QKeySequence.StandardKey.Preferences, "Ctrl+,"] if first else None
             command = "app.settings" if first else f"settings.{page}"
             settings.addAction(A(command, f"{title}…", lambda p=page: self.open_settings(p), keys))
-        settings.addSeparator()
         status = QAction("Status &Bar", self, checkable=True)
         status.toggled.connect(self._set_status_bar)
         register("view.status_bar", "Status Bar", "Settings")
         self._commands["view.status_bar"] = self._status_bar_action = status
         settings.addAction(status)
         settings.addSeparator()
-        settings.addAction(A("help.guide", "chemsuite &User Guide", self.open_user_guide))
-        settings.addAction(A("help.log_folder", "Show &Log Folder", show_log_folder))
-        about = A("help.about", "&About chemsuite", self.show_about)
+        settings.addAction(A("help.guide", "&User Guide", self.open_user_guide))
+        settings.addAction(A("help.log_folder", "&Log Folder", show_log_folder))
+        about = A("help.about", "&About", self.show_about)
         about.setMenuRole(QAction.MenuRole.AboutRole)  # the app menu on macOS
         settings.addAction(about)
 

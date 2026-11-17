@@ -42,7 +42,7 @@ Each document has its own window. From top to bottom:
   |---|---|
   | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close (clears the window to a new, empty document; with other windows open it closes this one) |
   | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection) |
-  | Tools | Calculator, Random ▸ (Random Numbers and Random Rows), Sketcher, Notepad |
+  | Tools | Calculator, Standardize (values to one unit), Random ▸ (Random Numbers and Random Rows), Sketcher, Notepad |
   | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, 3D ▸ (Generate Conformers, Superpose), Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
   | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
   | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
@@ -50,7 +50,7 @@ Each document has its own window. From top to bottom:
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
   | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
   | Protein | Macromolecule Viewer: the workspace for proteins, with its own menus |
-  | Settings | Appearance, Keyboard Shortcuts, External Tools and General (each its own dialog), Status Bar, this guide, the log folder, About |
+  | Settings | Theme, Hotkeys, External and General (each its own dialog), Status Bar, User Guide (this guide), Log Folder, About |
 
   - Every command that a tool adds appears in these menus. If a command is greyed out, its
     tooltip says why: for example, there is no structure column, or an external program is
@@ -374,7 +374,7 @@ From Data ▸ Table:
 - A structure that cannot be read is shown as **invalid**. Its original text is kept, so you
   can fix it.
 - Rows are taller when the table has a structure column. Change the height under Settings ▸
-  Appearance.
+  Theme.
 
 ### Reactions in the table
 
@@ -2018,7 +2018,7 @@ uses it.
    example `conda env create --solver libmamba -f envs/openmm-win-64.yml -p D:\envs\openmm`.
    On Windows and macOS, the file's first lines give one more command, which installs
    `openmmforcefields`. The environment takes about 3.5 GB.
-3. In **Settings ▸ External Tools**, set **OpenMM Python** to that environment's `python`
+3. In **Settings ▸ External**, set **OpenMM Python** to that environment's `python`
    and press **Test**. It reports the OpenMM, openmmforcefields and OpenFF versions and each
    platform a calculation can run on: **CUDA** on an NVIDIA graphics card, **OpenCL**, **CPU**.
 
@@ -2046,7 +2046,7 @@ environment:
 1. Create an environment with Python 3.10–3.12, for example
    `conda create -n aizynth python=3.12`.
 2. In it, run `python -m pip install aizynthfinder "pyarrow>=19,<26"`.
-3. In **Settings ▸ External Tools**, set **AiZynthFinder Python** to that environment's
+3. In **Settings ▸ External**, set **AiZynthFinder Python** to that environment's
    `python` and press **Test**: it reports the AiZynthFinder version it found.
 4. Press **Download…** on the **AiZynthFinder config** row and choose a folder. chemsuite
    fetches AiZynthFinder's public USPTO policies, ring-breaker policy, filter and the ZINC stock
@@ -2221,6 +2221,27 @@ whether to replace a column of that name. Comparisons give True / False text col
 column is one undoable step. Large tables are calculated in the background; cancelling keeps
 the rows already done, except for formulas with statistics, which need every row at once.
 Formulas cannot run code, open files or reach outside the table.
+
+### Standardize values
+
+**Tools ▸ Standardize…** puts values given with a unit, such as assay potencies in one column
+and nM, µM or mg/mL in the next, into one new column in a single unit. (Chemistry ▸
+Standardize is a different tool: it cleans up structures.)
+
+- **Input:** **Values** (a number column, or a text column with values such as `>10`),
+  **Units** (a text column) and **All**, **Shown** or **Selected** rows. A column named like
+  "IC50" or "Unit" is chosen at first.
+- **Units read**, in any case: M, mM, µM (also uM, μM, mcM), nM, pM, fM, mol/L and the words
+  (micromolar…); g/L, mg/mL, mg/L, µg/mL, µg/L, ng/mL, ng/L and pg/mL.
+- **Method:** **Convert to** the unit you choose (nM at first). Molar units convert among
+  themselves, and mass units among themselves, by powers of ten. Between molar and mass units
+  each row uses its molecular weight, from the structure in **Molecular weight from** (as
+  drawn, so a salt's counterion counts): g/L = mol/L × g/mol. That field is only active when
+  the rows mix the two kinds.
+- **Output:** a new number column, "<values> (<unit>)", in one undo step. A qualifier read
+  with a value (`>`, `<`, `>=`, `<=`, `~`) goes in a column of its own, "<values> (<unit>)
+  Qualifier", next to the number. Rows with no number, a unit that is not read, or no
+  structure to weigh are left blank; the message says how many.
 
 ### Random Numbers
 
@@ -2520,18 +2541,17 @@ the same or neighbouring cells.
 ## 15. Settings
 
 The **Settings** menu (after Macromolecule) opens each group of settings in a dialog of its own:
-**Appearance…** (Ctrl+,), **Keyboard Shortcuts…**, **External Tools…** and **General…**.
+**Theme…** (Ctrl+,), **Hotkeys…**, **External…** and **General…**, then **Status Bar**.
 Changes preview immediately in every window. **OK** keeps them, **Cancel** puts everything
-back, and **Reset** returns that dialog's settings to their defaults. The menu also holds
-**Status Bar**, and what used to be the Help menu: **chemsuite User Guide**, **Show Log
-Folder** and **About chemsuite**.
+back, and **Reset** returns that dialog's settings to their defaults. Below them is what used
+to be the Help menu: **User Guide**, **Log Folder** and **About**.
 
 | Dialog | Contents |
 |---|---|
-| Appearance | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colorful palette) or a custom theme. Also the application and table fonts, text alignment, structure row height, and whether to show the status bar. |
-| Keyboard Shortcuts | Change any command's shortcut. |
-| External Tools | Paths to the optional programs chemsuite runs: AiZynthFinder (its Python and config), [OpenMM](#setting-up-openmm) (its Python, or on Windows a Python inside WSL) and, on Windows, the WSL that runs it, each with a **Test** button. Tools that need a missing program are grayed out, and their tooltip says why. |
-| General | Processor cores to use (0 = automatic: all but one, so the window stays responsive), 3D graphics (Automatic, Software on Windows and Linux, or Off; takes effect after a restart), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
+| Theme | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colorful palette) or a custom theme. Switching repaints every open window and panel in the new colors. Also the application and table fonts, text alignment and structure row height. |
+| Hotkeys | Change any command's shortcut. |
+| External | Paths to the optional programs chemsuite runs: AiZynthFinder (its Python and config), [OpenMM](#setting-up-openmm) (its Python, or on Windows a Python inside WSL) and, on Windows, the WSL that runs it, each with a **Test** button. Tools that need a missing program are grayed out, and their tooltip says why. |
+| General | Whether to show the status bar, processor cores to use (0 = automatic: all but one, so the window stays responsive), 3D graphics (Automatic, Software on Windows and Linux, or Off; takes effect after a restart), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
 
 Your IT department can fix some settings for everyone. Those are shown grayed out with a
 padlock.
@@ -2544,10 +2564,10 @@ padlock.
   Log on macOS) shows the session's log. Filter it by level and text. A job's messages
   (Show Messages on the Jobs tab) show with the job's name above the list; click it to show
   every message again. Double-click a message from a job to find the job on the Jobs tab.
-- **Settings ▸ Show Log Folder** opens the folder of log files to attach to a bug report. If
+- **Settings ▸ Log Folder** opens the folder of log files to attach to a bug report. If
   chemsuite ever closes by itself, `crash.log` there says where it was at that moment.
-- **Settings ▸ chemsuite User Guide** opens this guide; **About chemsuite** (in the chemsuite
-  menu on macOS) shows the version and license.
+- **Settings ▸ User Guide** opens this guide; **About** (in the chemsuite menu on macOS) shows
+  the version and license.
 - If chemsuite hits an unexpected error, it shows a report you can copy. The details are also
   written to the log.
 
@@ -2555,7 +2575,7 @@ padlock.
 
 ## 17. Keyboard shortcuts
 
-You can change any of these in Settings ▸ Keyboard Shortcuts.
+You can change any of these in Settings ▸ Hotkeys.
 
 | Action | Shortcut |
 |---|---|
@@ -2573,4 +2593,4 @@ You can change any of these in Settings ▸ Keyboard Shortcuts.
 | Scatter plot | Ctrl+Shift+P |
 | Filters | Ctrl+Shift+F |
 | Browser | Ctrl+Shift+B |
-| Settings ▸ Appearance | Ctrl+, |
+| Settings ▸ Theme | Ctrl+, |

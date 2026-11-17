@@ -32,9 +32,9 @@ CONFIG_ENV = "CHEMSUITE_CONFIG_DIR"  # tests and portable installs point this el
 CACHE_ENV = "CHEMSUITE_CACHE_DIR"
 #: the Settings menu's dialogs, in order: page key → title
 PAGES = {
-    "appearance": "Appearance",
-    "keyboard": "Keyboard Shortcuts",
-    "tools": "External Tools",
+    "appearance": "Theme",
+    "keyboard": "Hotkeys",
+    "tools": "External",
     "general": "General",
 }
 

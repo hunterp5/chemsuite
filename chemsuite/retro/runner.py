@@ -160,7 +160,7 @@ def search(
 
 
 def probe(python: str, config: Path | str | None) -> tuple[bool, str]:
-    """``(ok, message)`` for the Settings ▸ External Tools **Test** button.
+    """``(ok, message)`` for the Settings ▸ External **Test** button.
 
     Checks the path, refuses chemsuite's own interpreter, then asks a throwaway worker for the
     AiZynthFinder version: no models are loaded and no warm worker is left behind.

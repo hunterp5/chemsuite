@@ -416,7 +416,7 @@ def test_the_route_is_fitted_again_on_resize_until_moved(chem, qtbot) -> None:
     assert canvas.zoom < 1.0
 
 
-# -- Settings ▸ External Tools ▸ Download… ---------------------------------------------------
+# -- Settings ▸ External ▸ Download… ---------------------------------------------------
 class _Response:
     def __init__(self, body: bytes) -> None:
         import io

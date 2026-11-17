@@ -16,7 +16,7 @@
 
 """Where AiZynthFinder is, what its ``config.yml`` offers, and the settings for one search.
 
-Two paths come from ``Settings ▸ External Tools``: the interpreter that has AiZynthFinder
+Two paths come from ``Settings ▸ External``: the interpreter that has AiZynthFinder
 installed (``aizynthfinder_python``) and its ``config.yml`` (``aizynthfinder_config``). The
 config is read here only to list the policy, filter and stock names for the dialog and to
 refuse a config that would leave this machine; the worker reads the file itself with
@@ -206,7 +206,7 @@ def ready_problem(settings: Settings, python_text: str = "", config_text: str = 
     if not python:
         return (
             "AiZynthFinder is not configured. Set its Python interpreter and config.yml "
-            "under Settings ▸ External Tools."
+            "under Settings ▸ External."
         )
     if is_app_python(python):
         return (
@@ -215,7 +215,7 @@ def ready_problem(settings: Settings, python_text: str = "", config_text: str = 
         )
     config = resolve_config(settings, config_text)
     if config is None:
-        return "Choose the AiZynthFinder config.yml under Settings ▸ External Tools."
+        return "Choose the AiZynthFinder config.yml under Settings ▸ External."
     try:
         body = config.read_text(encoding="utf-8")
     except OSError as err:

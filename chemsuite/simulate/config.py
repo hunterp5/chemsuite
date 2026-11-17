@@ -16,7 +16,7 @@
 
 """Where OpenMM's interpreter is.
 
-Two paths come from ``Settings ▸ External Tools``: the Python of a native OpenMM environment
+Two paths come from ``Settings ▸ External``: the Python of a native OpenMM environment
 (``openmm_python``) and, on Windows, the Python of one inside WSL (``openmm_wsl_python``, a Linux
 path). The native one is used when it is set; the WSL one otherwise. Neither is looked up on
 ``PATH``: the ``python`` there is almost never the OpenMM environment.
@@ -35,7 +35,7 @@ from chemsuite.core.settings import Settings
 PYTHON_TOOL = "openmm_python"
 WSL_TOOL = "openmm_wsl_python"
 TOOLS = frozenset({PYTHON_TOOL, WSL_TOOL})
-#: Settings ▸ External Tools ▸ WSL: the wsl.exe that runs a WSL interpreter
+#: Settings ▸ External ▸ WSL: the wsl.exe that runs a WSL interpreter
 WSL_EXE_TOOL = "wsl"
 
 
@@ -98,7 +98,7 @@ def ready_problem(settings: Settings, native_text: str = "", wsl_text: str = "")
     """Why OpenMM cannot run, or ``""`` when it can be tried. Starts no process."""
     found = interpreter(settings, native_text, wsl_text)
     if found is None:
-        return "OpenMM is not set up: set its Python under Settings ▸ External Tools"
+        return "OpenMM is not set up: set its Python under Settings ▸ External"
     if not found.wsl and is_app_python(found.python):
         return "That interpreter is the one running chemsuite: OpenMM needs its own environment"
     return ""
