@@ -2061,7 +2061,8 @@ uses it.
 
 1. Install [Miniforge](https://conda-forge.org/download/) (or any conda).
 2. Create the environment from the file for your system in chemsuite's `envs` folder, for
-   example `conda env create --solver libmamba -f envs/openmm-win-64.yml -p D:\envs\openmm`.
+   example `conda env create --solver libmamba -f envs/openmm-win-64.yml`, which makes
+   `chemsuite-openmm` in Miniforge's `envs` folder.
    On Windows and macOS, the file's first lines give one more command, which installs
    `openmmforcefields`. The environment takes about 3.5 GB.
 3. In **Settings ▸ External**, set **OpenMM Python** to that environment's `python`

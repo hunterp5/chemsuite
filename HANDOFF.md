@@ -276,7 +276,9 @@ other machine can pick it up. Update it at the end of a session that leaves work
   converts all five folds to `samples/unipka/weights/e20.npz` and writes
   `samples/unipka/e20.eval.txt` and `e20.enum.eval.txt` (log `logs/e20_after.log`, ends
   `E20_AFTER_DONE`). Both run detached from Claude Code. Then: pick the app's conformer/fold
-  count, U4.
+  count, U4. The PC hard-reset again under training (Kernel-Power 41, bugcheck 0) on
+  2026-11-15 at 19:54 in fold 1's epoch 19; both jobs restarted 2026-11-16 08:35 (rerunning
+  `e20_rest.sh` resumes a fold from its `checkpoint_last.pt`).
 - **CONFORGE conformers** (§7.0b, plan approved 2026-11-14): the default Generator in Generate
   Conformers since 2026-11-15 (`conformers/conforge.py`); `cdpkit` is a base dependency with
   platform markers (no wheel on Windows 3.11/3.13 or Intel Macs: ETKDG there).
@@ -343,7 +345,7 @@ other machine can pick it up. Update it at the end of a session that leaves work
   run with the real env (Prepare + Minimise on 181L) is still owed. Two constraints for M4
   found in M3 are in the plan's M4 section (`built` is kept and unioned across re-prepares;
   minimise only from the prepared model). To run the real-env tests
-  here: `$env:CHEMSUITE_OPENMM_PYTHON = "D:\chemsuite-envs\cs-sim-m0\python.exe"` then
+  here: `$env:CHEMSUITE_OPENMM_PYTHON = "$HOME\miniforge3\envs\cs-sim-m0\python.exe"` then
   `pytest -m openmm` (about 5 minutes). On the Mac, before the merge: `pytest tests/retro`
   (its fake worker is a shell script, so it skips on Windows) and gate 1. The P1 neutron marks hold after M1 (Asn 86.2, Gln 80.3, His 89.6,
   tautomer 63.8%; Reduce 85.4/78.9/88.3/62.5).
@@ -359,8 +361,8 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - Miniforge 26.9.4-2 is installed per user at `C:\Users\hunte\miniforge3` (not on PATH, not
     the registered Python). `~/.condarc` sets `solver: classic`, so pass `--solver libmamba`.
   - The spike envs (openmm 8.4.0, openmmforcefields 0.15.1, CPU pytorch, `cuda-version=12.6`):
-    native at `D:\chemsuite-envs\cs-sim-m0` (package cache in `D:\chemsuite-envs\pkgs`; C: was
-    full, which was the earlier "unexpected error"), and WSL at
+    native at `C:\Users\hunte\miniforge3\envs\cs-sim-m0` (moved off D: 2026-11-16; it is
+    Settings ▸ External ▸ OpenMM Python, and passes Test with CUDA on the RTX 4070), and WSL at
     `~/miniconda3/envs/cs-sim-m0`. Recipes are in the review.
   - Hardware: RTX 4070 (driver 560.94, CUDA 12.6 at most; OpenMM 8.6 needs a newer driver).
   - Still owed: gate 1 on the Mac (osx-arm64 env and its platforms), and the choice between

@@ -1,10 +1,10 @@
 # OpenMM environment for chemsuite's minimisation worker, Windows (x86-64, NVIDIA GPU optional).
 #
-#   conda env create --solver libmamba -f envs/openmm-win-64.yml -p D:\chemsuite-envs\openmm
-#   D:\chemsuite-envs\openmm\python.exe -m pip install --no-deps ^
+#   conda env create --solver libmamba -f envs/openmm-win-64.yml
+#   %USERPROFILE%\miniforge3\envs\chemsuite-openmm\python.exe -m pip install --no-deps ^
 #       git+https://github.com/openmm/openmmforcefields@0.15.1
 #
-# Then set D:\chemsuite-envs\openmm\python.exe as Preferences > External Tools > OpenMM Python
+# Then set %USERPROFILE%\miniforge3\envs\chemsuite-openmm\python.exe as Settings > External > OpenMM Python
 # and press Test.
 #
 # - openmmforcefields is installed by pip, without dependencies: conda-forge's builds all require
