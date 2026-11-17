@@ -793,6 +793,8 @@ with the document.
 
 - **Data ▸ Lists ▸ Add Selected to List… (Ctrl+L)** adds the selected rows to a new or existing
   list.
+- **Data ▸ Lists ▸ Add Visible to List…** adds every row the table shows (after filters,
+  searches and Show Only These Rows) to a new or existing list.
 - Each list has its own submenu:
 
   | Command | What it does |

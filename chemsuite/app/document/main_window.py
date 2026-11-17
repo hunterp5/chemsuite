@@ -293,6 +293,7 @@ class MainWindow(QMainWindow):
             workspace.selection,
             workspace.lists,
             lambda message: self.statusBar().showMessage(message, 4000),
+            visible=lambda: workspace.model.visible_oids,
         )
         workspace.lists.subscribe(self._update_title)
         self._view.apply_appearance(settings_hub().settings.appearance)
@@ -699,6 +700,11 @@ class MainWindow(QMainWindow):
             lambda: self.lists.add_selected(),
             "Ctrl+L",
         )
+        self._add_visible_to_list = A(
+            "lists.add_visible",
+            "Add &Visible to List…",
+            lambda: self.lists.add_visible(),
+        )
         self._remove_from_list = A(
             "lists.remove_selected",
             "&Remove Selected from List…",
@@ -706,7 +712,10 @@ class MainWindow(QMainWindow):
         )
         self._lists_menu.aboutToShow.connect(
             lambda: self.lists.fill_menu(
-                self._lists_menu, self._add_to_list, self._remove_from_list
+                self._lists_menu,
+                self._add_to_list,
+                self._remove_from_list,
+                self._add_visible_to_list,
             )
         )
         self._lists_menu.addAction(self._add_to_list)  # so the shortcut works before first show

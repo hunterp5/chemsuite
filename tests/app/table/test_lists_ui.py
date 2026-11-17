@@ -139,3 +139,16 @@ def test_opening_a_document_restores_lists(qtbot, window, tmp_path: Path) -> Non
     qtbot.waitUntil(lambda: "x" in window.workspace.lists, timeout=10_000)
     assert window.workspace.lists.count("x") == 2
     assert not window.isWindowModified()
+
+
+def test_add_visible_adds_only_the_rows_shown(window, monkeypatch) -> None:
+    select(window, ["A", "C"])
+    answer_item(monkeypatch, "hits")
+    window.lists.add_selected()
+    trigger(lists_menu(window), "Show Only These Rows")
+    window.workspace.selection.clear("test")
+    answer_item(monkeypatch, "shown")
+    assert "Add &Visible to List…" in [a.text() for a in lists_menu(window).actions()]
+    window._add_visible_to_list.trigger()
+    table = window.workspace.table
+    assert sorted(table.cell("ID", o) for o in window.workspace.lists.oids("shown")) == ["A", "C"]

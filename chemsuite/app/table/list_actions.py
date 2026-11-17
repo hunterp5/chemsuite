@@ -54,12 +54,15 @@ class ListActions:
         selection: Selection,
         lists: RowLists,
         show_message: Callable[[str], None],
+        visible: Callable[[], np.ndarray] | None = None,
     ) -> None:
         self.parent = parent
         self.table = table
         self.selection = selection
         self.lists = lists
         self.show_message = show_message
+        #: the rows the table shows (after filters, searches and Show Only a List)
+        self.visible = visible or (lambda: np.asarray(table.oids))
 
     # -- commands -----------------------------------------------------------------------------
     def add_selected(self) -> str | None:
@@ -68,11 +71,22 @@ class ListActions:
         if not len(oids):
             self.show_message("Select some rows first")
             return None
+        return self._add(oids, "selected")
+
+    def add_visible(self) -> str | None:
+        """Ask for a list name (new or existing) and add the rows the table shows to it."""
+        oids = np.asarray(self.visible())
+        if not len(oids):
+            self.show_message("No rows are shown")
+            return None
+        return self._add(oids, "visible")
+
+    def _add(self, oids: np.ndarray, which: str) -> str | None:
         names = self.lists.names
         name, ok = QInputDialog.getItem(
             self.parent,
             "Add to List",
-            f"Add {len(oids):,} selected row(s) to list (pick one or type a new name):",
+            f"Add {len(oids):,} {which} row(s) to list (pick one or type a new name):",
             names,
             0,
             True,
@@ -133,10 +147,12 @@ class ListActions:
         return dialog
 
     # -- menu ---------------------------------------------------------------------------------
-    def fill_menu(self, menu: QMenu, add_action, remove_action) -> None:
+    def fill_menu(self, menu: QMenu, add_action, remove_action, visible_action=None) -> None:
         """Rebuild *menu* (called just before it shows)."""
         menu.clear()
         menu.addAction(add_action)
+        if visible_action is not None:
+            menu.addAction(visible_action)
         menu.addAction(remove_action)
         remove_action.setEnabled(bool(len(self.lists)))
         menu.addSeparator()
