@@ -1009,6 +1009,7 @@ descriptors, conformers, clustering, maps and searches.
   | MedChem plots (descriptor step) | Dimensionality Reduction |
   | Generate Conformers | Self-Organizing Map |
   | Superpose | |
+  | Standardize values | |
   | Similarity Search | Free-Wilson |
   | R-Groups (numbered core) | Hansch |
   | Diverse Subset (the picks made so far) | Matched Pairs |
@@ -2242,6 +2243,7 @@ Standardize is a different tool: it cleans up structures.)
   with a value (`>`, `<`, `>=`, `<=`, `~`) goes in a column of its own, "<values> (<unit>)
   Qualifier", next to the number. Rows with no number, a unit that is not read, or no
   structure to weigh are left blank; the message says how many.
+- **Cancelling** keeps the rows already done.
 
 ### Random Numbers
 

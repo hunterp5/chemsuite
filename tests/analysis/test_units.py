@@ -79,3 +79,21 @@ def test_molecular_weights_of_structure_cells() -> None:
     weights = molecular_weights(["CC(=O)Oc1ccccc1C(=O)O", "", None, "not a smiles"])
     assert weights[0] == pytest.approx(180.159, abs=0.01)
     assert np.isnan(weights[1:]).all()
+
+
+def test_cancel_keeps_the_rows_already_converted(monkeypatch) -> None:
+    from chemsuite.analysis import units
+    from chemsuite.core.jobs import Cancelled, CancelToken
+
+    monkeypatch.setattr(units, "CHUNK_ROWS", 2)
+    token = CancelToken()
+
+    def progress(done: int, _total: int) -> None:
+        if done == 2:
+            token.cancel()
+
+    with pytest.raises(Cancelled) as stopped:
+        units.convert_rows([1, 2, 3, 4, 5], ["µM"] * 5, "nM", progress=progress, cancel=token)
+    np.testing.assert_allclose(stopped.value.partial.values, [1000.0, 2000.0])
+    done = units.convert_rows([1, ">2"], ["nM", "mg/mL"], "nM", ["", "CCO"])
+    assert done.values[0] == 1 and done.qualifiers == ["", ">"] and done.values[1] > 0

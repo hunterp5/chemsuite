@@ -141,7 +141,7 @@ PANEL_MIN_WIDTH = 360
 MENU_ORDER: dict[tuple[str, ...], tuple[str, ...]] = {
     ("Data",): ("space_map", "som", "statistics"),
     ("Data", "Similarity"): ("cluster", "binning", "similarity", "diverse_subset"),
-    ("Chemistry", "3D"): ("conformers", "superpose"),
+    ("Chemistry", "3D"): ("conformers", "superpose"),  # set off by a separator (_add_tool)
     ("Chemistry", "Reaction"): ("split-reaction", "retrosynthesis", "enumerate-products"),
     ("Chemistry", "Decompose"): ("rgroups", "fragments", "central-ring"),
     ("Chemistry", "Enumerate"): ("enumerate-products", "rgroup-library", "recombine"),
@@ -739,8 +739,7 @@ class MainWindow(QMainWindow):
         }
         #: tools in these menus go before this action instead of at the end
         self._tool_slots = {("Data", "Search"): search_tools, ("Data",): sar.menuAction()}
-        #: single tools that go before this action instead (Calculator, Standardize head Tools)
-        heads = ("calculator", "standardize_values")
+        heads = ("calculator", "standardize_values")  # these go first in Tools, before Random
         self._tool_places = dict.fromkeys(heads, random_menu.menuAction())
         for tool in registered_tools():
             self._add_tool(tool, menus)
@@ -754,8 +753,7 @@ class MainWindow(QMainWindow):
             keys = [QKeySequence.StandardKey.Preferences, "Ctrl+,"] if first else None
             command = "app.settings" if first else f"settings.{page}"
             settings.addAction(A(command, f"{title}…", lambda p=page: self.open_settings(p), keys))
-        status = QAction("Status &Bar", self, checkable=True)
-        status.toggled.connect(self._set_status_bar)
+        status = QAction("Status &Bar", self, checkable=True, toggled=self._set_status_bar)
         register("view.status_bar", "Status Bar", "Settings")
         self._commands["view.status_bar"] = self._status_bar_action = status
         settings.addAction(status)
@@ -798,6 +796,8 @@ class MainWindow(QMainWindow):
                 parent = self.menuBar() if depth == 1 else menus[path[:-1]]
                 menus[path] = parent.addMenu(f"&{path[-1]}" if depth == 1 else path[-1])
                 menus[path].setToolTipsVisible(True)
+                if path == ("Chemistry", "3D"):
+                    parent.addSeparator()
         action = QAction(tool.title, self)
         register(
             f"tool.{tool.id}",

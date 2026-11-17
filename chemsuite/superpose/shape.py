@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Shape superposition: atom-centred Gaussians, the overlap volume maximised (Grant and
+"""Shape superposition: atom-centered Gaussians, the overlap volume maximized (Grant and
 Pickup, J. Phys. Chem. 1995, 99, 3503; the method of ROCS), with RDKit's ``rdShapeAlign``
 (PubChem's shape code). With features, pharmacophore points (donors, acceptors, rings,
 charges) overlap too ("color"), and Combo is shape plus color Tanimoto (0–2), as ROCS's

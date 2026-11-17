@@ -71,7 +71,7 @@ class Settings:
 
     *core* is a SMARTS or SMILES (the ``core`` method); the ``mcs_*`` fields tune the
     maximum common substructure. *o3a_typing* is ``"mmff"`` or ``"crippen"``. *color_weight*
-    is the share of the pharmacophore features in the shape + features optimisation (0–1).
+    is the share of the pharmacophore features in the shape + features optimization (0–1).
     *charges* is ``"gasteiger"`` or ``"mmff"``; *field_weight* the share of the field in the
     field method (0–1). *conformers* is how many to generate for a row that has only 2D.
     *heavy_only* fits a molecule's own conformers on heavy atoms only.
@@ -111,7 +111,7 @@ class Settings:
 class Fit:
     """One conformer's best pose: the 4×4 transform that moves it onto the reference, and its
     scores (named as in :data:`SCORES`). *rank*, when given, orders fits instead of the
-    method's first score (the field method ranks by what it optimised)."""
+    method's first score (the field method ranks by what it optimized)."""
 
     conf_id: int
     transform: np.ndarray

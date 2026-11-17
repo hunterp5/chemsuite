@@ -23,8 +23,7 @@ from PySide6.QtWidgets import QComboBox
 from chemsuite.analysis.units import (
     MASS,
     MOLAR,
-    convert,
-    molecular_weights,
+    convert_rows,
     needs_weight,
     parse_unit,
 )
@@ -156,15 +155,16 @@ class StandardizeUnitsDialog(ToolDialog):
         cells = ctx.structure_inputs(self.structure.currentText(), oids) if (
             self._needs_weight()) else None  # fmt: skip
 
-        def work(_job):
-            weights = molecular_weights(cells) if cells is not None else None
-            return convert(values, units, target, weights)
+        def work(job):
+            return convert_rows(values, units, target, cells, progress=job.report,
+                                cancel=job.cancel_token)  # fmt: skip
 
         def done(result) -> None:
             name = output_name(values_name, target)
-            results: dict = {name: (oids, NumberColumn.from_floats(result.values))}
+            done_oids = oids[: len(result.values)]  # after a cancel: only the first rows
+            results: dict = {name: (done_oids, NumberColumn.from_floats(result.values))}
             if any(result.qualifiers):
-                results[f"{name} Qualifier"] = (oids, result.qualifiers)
+                results[f"{name} Qualifier"] = (done_oids, result.qualifiers)
             names = ctx.apply_results(results, label="Standardize values")
             made = int((result.values == result.values).sum())
             message = f"Wrote {plural(made, 'value')} in {target} to “{names[name]}”"
@@ -174,4 +174,4 @@ class StandardizeUnitsDialog(ToolDialog):
                 message += f"; {plural(result.no_weight, 'row')} with no molecular weight"
             ctx.show_message(message)
 
-        return ctx.run("Standardizing values…", work, done)
+        return ctx.run("Standardizing values…", work, done, keep_partial=True)

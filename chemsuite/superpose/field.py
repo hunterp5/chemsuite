@@ -22,7 +22,7 @@ of two such potentials is then an analytic sum of Gaussian integrals, and the Ca
 ``F_AB / sqrt(F_AA F_BB)`` (−1…1) is the field similarity. Shape is the first-order Gaussian
 overlap volume (Grant and Pickup, J. Phys. Chem. 1995, 99, 3503) as a Tanimoto.
 
-The rigid pose maximises ``(1 − w) · shape + w · (field + 1) / 2``. It starts from the best
+The rigid pose maximizes ``(1 − w) · shape + w · (field + 1) / 2``. It starts from the best
 shape poses of the best-fitting conformers and from those poses turned 180° about each of the
 probe's principal axes (where shape alone cannot tell, e.g. a pyridine ring flipped), then
 refines with L-BFGS. Hydrogens' charges are added to the atoms they are bonded to.

@@ -110,6 +110,8 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
     assert not {"Structure Viewer", "Browser"} & set(visible(menus["Chemistry"]))
     three_d = submenu(menus["Chemistry"], "3D")
     assert visible(three_d) == ["Generate Conformers…", "Superpose…"]
+    top = [a.text().replace("&", "") or "—" for a in menus["Chemistry"].actions()]
+    assert top[top.index("3D") + 1] == "—"  # set off from the reaction tools, as before
     assert "Generate Conformers…" not in visible(menus["Chemistry"])
     calculate = submenu(menus["Chemistry"], "Calculate")
     assert visible(calculate) == ["Descriptors…", "pKa…"]

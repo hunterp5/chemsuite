@@ -24,10 +24,12 @@ molar value converts to a mass per volume one (or back) through the row's molecu
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
+
+from chemsuite.core.jobs import Cancelled, CancelToken, check
 
 #: molar units, in mol/L
 MOLAR = {"M": 1.0, "mM": 1e-3, "µM": 1e-6, "nM": 1e-9, "pM": 1e-12, "fM": 1e-15}
@@ -70,7 +72,7 @@ def parse_unit(text: str | None) -> str | None:
     found = _MASS_RE.match(key)
     if found:
         prefix, per = _PREFIX[found.group(1)], found.group(2) or ""
-        if per == "d":  # per decilitre: as many per litre times ten (mg/dL = 10 mg/L)
+        if per == "d":  # per deciliter: not read (mg/dL is rare for potencies)
             return None
         unit = f"{prefix}g/{per}L" if per else f"{prefix}g/L"
         return unit if unit in MASS else None
@@ -160,3 +162,43 @@ def molecular_weights(cells: Sequence[bytes | str | None]) -> np.ndarray:
         if mol is not None:
             out[i] = Descriptors.MolWt(mol)
     return out
+
+
+#: rows weighed and converted between checks for a cancel
+CHUNK_ROWS = 500
+
+
+def convert_rows(
+    values: Sequence[object],
+    units: Sequence[str | None],
+    target: str,
+    cells: Sequence[bytes | str | None] | None = None,
+    *,
+    progress: Callable[[int, int], None] | None = None,
+    cancel: CancelToken | None = None,
+) -> Converted:
+    """:func:`convert` with molecular weights from structure *cells* (None: no row needs
+    one), a chunk at a time. If *cancel* is set, raises :class:`Cancelled` whose ``partial``
+    holds the first rows done (None if none were)."""
+    total = len(values)
+    parts: list[Converted] = []
+
+    def joined() -> Converted:
+        return Converted(
+            np.concatenate([p.values for p in parts]) if parts else np.empty(0),
+            [q for p in parts for q in p.qualifiers],
+            sum(p.unknown_units for p in parts),
+            sum(p.no_weight for p in parts),
+        )
+
+    for start in range(0, total, CHUNK_ROWS):
+        try:
+            check(cancel)
+        except Cancelled:
+            raise Cancelled(joined() if parts else None) from None
+        stop = min(total, start + CHUNK_ROWS)
+        weights = molecular_weights(cells[start:stop]) if cells is not None else None
+        parts.append(convert(values[start:stop], units[start:stop], target, weights))
+        if progress is not None:
+            progress(stop, total)
+    return joined() if parts else convert([], [], target)
