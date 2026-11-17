@@ -100,7 +100,7 @@ class Simulator(LineWorker):
     def __init__(self, where: Interpreter) -> None:
         self.where = where
         super().__init__(
-            worker_script.command(where.python, where.wsl),
+            worker_script.command(where.python, where.wsl, where.launcher),
             name="The OpenMM worker",
             env=None if where.wsl else child_environment(where.python),
             start_timeout=START_TIMEOUT_S,

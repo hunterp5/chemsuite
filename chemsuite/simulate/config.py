@@ -35,12 +35,21 @@ from chemsuite.core.settings import Settings
 PYTHON_TOOL = "openmm_python"
 WSL_TOOL = "openmm_wsl_python"
 TOOLS = frozenset({PYTHON_TOOL, WSL_TOOL})
+#: Preferences ▸ External Tools ▸ WSL: the wsl.exe that runs a WSL interpreter
+WSL_EXE_TOOL = "wsl"
 
 
 @dataclass(frozen=True)
 class Interpreter:
     python: str
     wsl: bool = False  # a Linux path, run through wsl.exe
+    launcher: str = "wsl.exe"  # the wsl.exe that runs it (a WSL interpreter only)
+
+
+def wsl_launcher(settings: Settings, text: str = "") -> str:
+    """The wsl.exe set in Preferences (*text* wins while a dialog is open), else ``wsl.exe``
+    found on PATH."""
+    return (text or "").strip() or settings.tool_paths.get(WSL_EXE_TOOL, "").strip() or "wsl.exe"
 
 
 def native_python(settings: Settings, text: str = "") -> str:
@@ -82,7 +91,7 @@ def interpreter(
     if native:
         return Interpreter(native)
     wsl = wsl_python(settings, wsl_text)
-    return Interpreter(wsl, wsl=True) if wsl else None
+    return Interpreter(wsl, wsl=True, launcher=wsl_launcher(settings)) if wsl else None
 
 
 def ready_problem(settings: Settings, native_text: str = "", wsl_text: str = "") -> str:

@@ -22,7 +22,7 @@ unreadable file is set aside as ``settings.json.bad`` so the user starts from de
 
 The **policy file** is JSON that IT places on the machine (or points ``CHEMSUITE_POLICY`` at)::
 
-    {"settings": {"appearance.theme": "light", "tool_paths.obabel": "C:/Tools/obabel.exe"},
+    {"settings": {"appearance.theme": "light", "tool_paths.wsl": "C:/Tools/wsl.exe"},
      "network_allowed": false}
 
 Every key under ``settings`` replaces the user's value and is *locked* (shown greyed with a

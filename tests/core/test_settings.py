@@ -41,7 +41,7 @@ def test_defaults_round_trip(tmp_path) -> None:
     settings.appearance.theme = GROOVY
     settings.appearance.custom_themes["Ocean"] = {"window": "#102030", "text": "#ffffff"}
     settings.shortcuts["tool.descriptors"] = ["Ctrl+Alt+D"]
-    settings.tool_paths["obabel"] = "/opt/obabel"
+    settings.tool_paths["openmm_python"] = "/opt/python"
     store.save(settings)
     again = SettingsStore(tmp_path, Policy())
     assert again.user == settings
@@ -87,7 +87,7 @@ def test_policy_overrides_and_locks(tmp_path) -> None:
                 "settings": {
                     "appearance.theme": DARK,
                     "performance.max_workers": 2,
-                    "tool_paths": {"gnina": "/shared/gnina"},
+                    "tool_paths": {"aizynthfinder_python": "/shared/python"},
                     "appearance.app_font_pt": "big",  # refused
                 },
                 "network_allowed": False,
@@ -99,13 +99,16 @@ def test_policy_overrides_and_locks(tmp_path) -> None:
     store = SettingsStore(tmp_path / "user", policy)
     user = store.user.copy()
     user.appearance.theme = GROOVY
-    user.tool_paths["obabel"] = "/mine/obabel"
+    user.tool_paths["openmm_python"] = "/mine/python"
     store.save(user)
     effective = store.effective()
     assert effective.appearance.theme == DARK and effective.performance.max_workers == 2
-    assert effective.tool_paths == {"obabel": "/mine/obabel", "gnina": "/shared/gnina"}
+    assert effective.tool_paths == {
+        "openmm_python": "/mine/python",
+        "aizynthfinder_python": "/shared/python",
+    }
     assert store.user.appearance.theme == GROOVY  # the user's own choice is kept underneath
-    assert store.locked("appearance.theme") and store.locked("tool_paths.obabel")
+    assert store.locked("appearance.theme") and store.locked("tool_paths.openmm_python")
     assert not store.locked("appearance.table_font_pt")
     assert policy.get("network_allowed") is False
 
@@ -122,8 +125,8 @@ def test_dotted_access_and_recent() -> None:
     settings = Settings()
     settings.set("appearance.theme", custom_theme_id("Ocean"))
     assert settings.get("appearance.theme") == "custom:Ocean"
-    settings.set("tool_paths.mafft", "/usr/bin/mafft")
-    assert settings.get("tool_paths.mafft") == "/usr/bin/mafft"
+    settings.set("tool_paths.wsl", "/usr/bin/wsl")
+    assert settings.get("tool_paths.wsl") == "/usr/bin/wsl"
     for name in ("a", "b", "c", "a"):
         add_recent(settings, name)
     assert settings.files.recent == ["a", "c", "b"]
@@ -131,10 +134,10 @@ def test_dotted_access_and_recent() -> None:
 
 def test_external_tools(tmp_path) -> None:
     settings = Settings()
-    settings.tool_paths["obabel"] = "/configured/obabel"
-    assert et.resolve("obabel", settings) == "/configured/obabel"
+    settings.tool_paths["openmm_python"] = "/configured/python"
+    assert et.resolve("openmm_python", settings) == "/configured/python"
     assert et.resolve("aizynthfinder_config", settings) is None  # a file: nothing to look up
-    ok, message = et.test_tool("mafft", str(tmp_path / "missing"))
+    ok, message = et.test_tool("wsl", str(tmp_path / "missing"))
     assert not ok and "No such file" in message
     config = tmp_path / "config.yml"
     config.write_text("")

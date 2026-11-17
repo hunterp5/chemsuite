@@ -155,7 +155,9 @@ def test_search_filters_commands(window) -> None:
 def test_policy_locks_settings(tmp_path, monkeypatch, qtbot) -> None:
     policy = tmp_path / "policy.json"
     policy.write_text(
-        json.dumps({"settings": {"appearance.theme": "dark", "tool_paths": {"obabel": "/x"}}})
+        json.dumps(
+            {"settings": {"appearance.theme": "dark", "tool_paths": {"openmm_python": "/x"}}}
+        )
     )
     monkeypatch.setenv("CHEMSUITE_POLICY", str(policy))
     from chemsuite.app.shell.settings_dialog import SettingsDialog
@@ -166,21 +168,21 @@ def test_policy_locks_settings(tmp_path, monkeypatch, qtbot) -> None:
     qtbot.addWidget(dialog)
     assert not dialog.appearance.theme.isEnabled()
     assert dialog.appearance.row_height.isEnabled()
-    assert not dialog.tools.edits["obabel"].isEnabled()
+    assert not dialog.tools.edits["openmm_python"].isEnabled()
     assert settings_hub().settings.appearance.theme == "dark"
-    assert settings_hub().settings.tool_paths["obabel"] == "/x"
+    assert settings_hub().settings.tool_paths["openmm_python"] == "/x"
     dialog.reject()
 
 
 def test_external_tool_test_button(window, tmp_path) -> None:
     dialog = window.open_settings()
     tools = dialog.tools
-    tools.edits["mafft"].setText(str(tmp_path / "nope"))
-    ok, _message = tools.test("mafft")
+    tools.edits["aizynthfinder_config"].setText(str(tmp_path / "nope"))
+    ok, _message = tools.test("aizynthfinder_config")
     assert not ok
-    assert tools.results["mafft"].text().startswith("✗")
+    assert tools.results["aizynthfinder_config"].text().startswith("✗")
     dialog.accept()
-    assert settings_hub().settings.tool_paths["mafft"] == str(tmp_path / "nope")
+    assert settings_hub().settings.tool_paths["aizynthfinder_config"] == str(tmp_path / "nope")
 
 
 def test_the_openmm_test_button_asks_the_worker(window, monkeypatch) -> None:
@@ -200,6 +202,13 @@ def test_the_openmm_test_button_asks_the_worker(window, monkeypatch) -> None:
     assert tools.test("openmm_python") == (True, "OpenMM 8.4")
     assert asked == [Interpreter("C:/envs/sim/python.exe")]
     assert tools.results["openmm_python"].text() == "✓ OpenMM 8.4"
+
+
+def test_external_tools_are_only_the_ones_chemsuite_runs(window) -> None:
+    wanted = {"aizynthfinder_python", "aizynthfinder_config", "openmm_python"}
+    if sys.platform == "win32":
+        wanted |= {"openmm_wsl_python", "wsl"}
+    assert set(window.open_settings().tools.edits) == wanted
 
 
 def test_open_recent_and_last_folder(window, tmp_path) -> None:

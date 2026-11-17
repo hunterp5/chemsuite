@@ -140,6 +140,17 @@ def test_on_windows_a_wsl_interpreter_is_used_when_no_native_one_is_set() -> Non
     assert config.linux_path(r"\\wsl$\Ubuntu\opt\py") == "/opt/py"
 
 
+def test_the_wsl_set_in_preferences_runs_a_wsl_interpreter(monkeypatch) -> None:
+    monkeypatch.setattr(config.sys, "platform", "win32")
+    chosen = Settings(tool_paths={config.WSL_TOOL: "/opt/py", config.WSL_EXE_TOOL: "D:/wsl.exe"})
+    found = config.interpreter(chosen)
+    assert found == Interpreter("/opt/py", wsl=True, launcher="D:/wsl.exe")
+    argv = worker.command(found.python, found.wsl, found.launcher)
+    assert argv[:3] == ["D:/wsl.exe", "-e", "/opt/py"]
+    plain = config.interpreter(Settings(tool_paths={config.WSL_TOOL: "/opt/py"}))
+    assert plain is not None and plain.launcher == "wsl.exe"
+
+
 def test_the_worker_script_is_python_this_interpreter_reads() -> None:
     compile(worker.SCRIPT, "<openmm worker>", "exec")
     assert worker.command("python")[:3] == ["python", "-I", "-c"]

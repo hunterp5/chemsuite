@@ -526,16 +526,20 @@ class ToolsPage(QWidget):
     def _test_openmm(self, tool_id: str) -> tuple[bool, str]:
         """Test the OpenMM environment itself: a worker reports the versions and the platforms
         a context can be made on."""
-        from chemsuite.simulate.config import WSL_TOOL, Interpreter
+        from chemsuite.simulate.config import WSL_EXE_TOOL, WSL_TOOL, Interpreter, wsl_launcher
         from chemsuite.simulate.runner import probe
 
         python = self.edits[tool_id].text().strip()
         if not python:
             return False, "Not set."
+        wsl = tool_id == WSL_TOOL
+        launcher = self.edits.get(WSL_EXE_TOOL)
+        found = Interpreter(python, wsl=wsl, launcher=wsl_launcher(
+            self.dialog.user, launcher.text() if launcher is not None else ""))  # fmt: skip
         guard = QGuiApplication.setOverrideCursor, QGuiApplication.restoreOverrideCursor
         guard[0](Qt.CursorShape.WaitCursor)  # OpenMM tries each platform: a few seconds
         try:
-            return probe(Interpreter(python, wsl=tool_id == WSL_TOOL))
+            return probe(found)
         finally:
             guard[1]()
 

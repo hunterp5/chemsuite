@@ -17,8 +17,9 @@
 """External programs chemsuite can use, and where to find them.
 
 A path set in Settings (or forced by the IT policy) wins; otherwise the program is looked up on
-``PATH`` under its usual name. Tools come from MolManager's Configure menu; the features that use
-most of them arrive later, but their paths can be set now.
+``PATH`` under its usual name. Only programs a feature runs are listed: AiZynthFinder
+(retrosynthesis), OpenMM (minimisation and simulation) and, on Windows, WSL for an OpenMM
+inside it.
 """
 
 from __future__ import annotations
@@ -45,26 +46,6 @@ class ExternalTool:
 
 
 TOOLS: tuple[ExternalTool, ...] = (
-    ExternalTool(
-        "obabel",
-        "Open Babel",
-        "obabel, for Confab systematic conformers.",
-        ("obabel",),
-        version_args=("-V",),
-    ),
-    ExternalTool(
-        "gnina", "Gnina", "Gnina docking; on Windows the Linux binary run through WSL.", ("gnina",)
-    ),
-    ExternalTool(
-        "ambertools",
-        "AmberTools",
-        "antechamber, for GAFF parameters.",
-        ("antechamber",),
-        version_args=("-h",),
-    ),
-    ExternalTool(
-        "mafft", "MAFFT", "MAFFT sequence alignment (executable or install folder).", ("mafft",)
-    ),
     ExternalTool(
         "aizynthfinder_python",
         "AiZynthFinder Python",
