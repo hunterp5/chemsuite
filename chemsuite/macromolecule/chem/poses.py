@@ -85,6 +85,7 @@ def from_mol(mol: Chem.Mol, name: str = POSE_NAME) -> Structure:
         entity=np.full(1, -1, np.int16),
         chain_start=np.array([0, 1], np.int32),
         chain_name=np.array([POSE_CHAIN], dtype="<U4"),
+        chain_segment=np.array([""], dtype="<U4"),
         entity_id=np.zeros(0, dtype="<U8"),
         entity_seq=np.zeros(0, dtype="<U5"),
         entity_seq_start=np.zeros(1, np.int32),
@@ -122,6 +123,7 @@ def merged(protein: Structure, pose: Structure) -> Structure:
             np.int32
         ),
         chain_name=np.concatenate([protein.chain_name, pose.chain_name]),
+        chain_segment=np.concatenate([protein.chain_segment, pose.chain_segment]),
         entity_id=protein.entity_id,
         entity_seq=protein.entity_seq,
         entity_seq_start=protein.entity_seq_start,

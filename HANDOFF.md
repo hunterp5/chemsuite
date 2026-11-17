@@ -32,8 +32,11 @@ other machine can pick it up. Update it at the end of a session that leaves work
     assembly files); a blank chain could not be selected (`chain ''` now, PyMOL's spelling);
     two residues modelled at one place (1EJG PRO/SER 22) were both shown and both kept by
     Prepare (now one group, one letter). Open, not fixed (the user's call):
-    - Segment ids are dropped: an MD PDB with blank chains and segids (PROA, PROB, MEMB)
-      becomes one chain with residue numbers repeated; PyMOL keeps `segi`. Matters for MD.
+    - Segment ids: done (2026-11-16). `Structure.chain_segment`, one per chain; a chain whose
+      residues change segment is cut into one chain per run (`io._split_segments`, every
+      model, before the entities); `segi`/`segment` select; labels `PROB/THR 1`; PDB writes
+      them back, mmCIF does not (no standard field). Still keyed by chain name alone, as
+      before: `ligands.py` ligand ids and `simulate/build.py` residues.
     - A model whose atoms differ from the first is dropped with only a log line (PyMOL and
       ChimeraX keep it).
     - Kinds differ by design: a glycan-only chain (2RH1 B) is listed under Glycans, not as a

@@ -1643,6 +1643,9 @@ or not, with the rows you chose.
   it (a text field keeps its own). The structures list highlights a chain or ligand that is wholly selected and puts
   one partly selected in bold. Type in the selection field (point at it for the syntax): `chain A` (`chain ''` for a
   chain without a name, as docking and MD files often have; the list calls it unnamed),
+  `segi PROA` (an MD file's segment: chains told apart only by segment are listed apart, as
+  `Chain PROA`, or `Chain PROA/A` when the chain has a name too; a PDB save keeps the
+  segments, an mmCIF save does not),
   `resi 10-50`, `resn HIS+ASP`, `name CA`, `ligand`, `water`, `byres (polymer within 5 of
   ligand)` (whole residues near a ligand; `byres` takes what follows it, hence the brackets),
   `and`, `or`, `not`. The **Select** menu has the usual picks (each shows its expression in the

@@ -57,9 +57,10 @@ _GROUPS = ((ION, "Ions", "ion"), (WATER, "Waters", "water"), (ADDITIVE, "Additiv
 
 
 def residue_expression(structure: Structure, residue: int) -> str:
-    chain = structure.chain_name[structure.chain_of[residue]]
+    c = int(structure.chain_of[residue])
+    chain = chain_word(str(structure.chain_name[c]), str(structure.chain_segment[c]))
     number = f"{structure.res_seq[residue]}{structure.icode[residue]}"
-    return f"{chain_word(str(chain))} and resi {number} and resn {structure.res_name[residue]}"
+    return f"{chain} and resi {number} and resn {structure.res_name[residue]}"
 
 
 class StructureTree(QTreeWidget):
@@ -159,13 +160,13 @@ class StructureTree(QTreeWidget):
             span = structure.residues_of(c)
             polymer = int((np.isin(kinds[span], (AMINO, NUCLEIC)) & first[span]).sum())
             if polymer:
-                name = str(structure.chain_name[c])
-                self._child(top, protein, f"Chain {chain_title(name)} ({polymer})",
-                            f"{chain_word(name)} and polymer")  # fmt: skip
+                name, segment = str(structure.chain_name[c]), str(structure.chain_segment[c])
+                self._child(top, protein, f"Chain {chain_title(name, segment)} ({polymer})",
+                            f"{chain_word(name, segment)} and polymer")  # fmt: skip
         asset = self.session.store.assets.get(protein)
         guessed = set(asset.meta.get(GUESSED, "").splitlines()) if asset is not None else set()
         for residue in np.flatnonzero(kinds == LIGAND):
-            chain = structure.chain_name[structure.chain_of[residue]]
+            chain = structure.chain_label(int(structure.chain_of[residue]))
             label = f"{structure.res_name[residue]} {chain}{structure.res_seq[residue]}"
             ligand_id = structure.residue_label(int(residue))
             if ligand_id in guessed:

@@ -76,6 +76,8 @@ def unpack(data: bytes) -> Structure:
             values["meta"] = json.loads(arrays[_META_KEY].tobytes().decode())
         elif f.name in _SCALARS:
             values[f.name] = int(arrays[f.name])
+        elif f.name == "chain_segment" and f.name not in arrays:  # stored before segments
+            values[f.name] = np.full(len(arrays["chain_start"]) - 1, "", dtype="<U4")
         elif f.name not in arrays:
             raise StoreError(f"stored structure has no {f.name}")
         else:

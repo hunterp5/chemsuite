@@ -62,9 +62,9 @@ AROUND_KINDS = (
     ("Atoms", "within {} of $selection"),
 )
 _SYNTAX = (
-    "chain A (chain '' unnamed), resi 10-50, resn HIS+ASP, name CA, elem Fe; protein, ligand, "
-    "water, ion, backbone, sidechain, helix, sheet; byres S, within 5 of S; and, or, not, ( ); "
-    "$saved"
+    "chain A (chain '' unnamed), segi PROA, resi 10-50, resn HIS+ASP, name CA, elem Fe; protein, "
+    "ligand, water, ion, backbone, sidechain, helix, sheet; byres S, within 5 of S; and, or, "
+    "not, ( ); $saved"
 )
 
 
@@ -137,10 +137,12 @@ class SelectionBar(QWidget):
             action.triggered.connect(lambda _=False, e=expression: self.pick(e))
             menu.addAction(action)
         chains = menu.addMenu("Chain")
-        names = sorted({str(n) for d in self.session.displays if d.visible
-                        for n in d.structure.chain_name})  # fmt: skip
-        for name in names:
-            chains.addAction(chain_title(name), lambda n=name: self.pick(chain_word(n)))
+        names = sorted({(str(n), str(g)) for d in self.session.displays if d.visible
+                        for n, g in zip(d.structure.chain_name, d.structure.chain_segment,
+                                        strict=True)})  # fmt: skip
+        for name, segment in names:
+            chains.addAction(chain_title(name, segment),
+                             lambda n=name, g=segment: self.pick(chain_word(n, g)))  # fmt: skip
         chains.setEnabled(bool(names))
         around = menu.addMenu("Around")
         for kind, template in AROUND_KINDS:

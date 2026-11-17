@@ -150,3 +150,40 @@ def test_a_chain_without_a_name_is_selected_as_chain_quotes(tmp_path) -> None:
     assert count(s, "chain ''") == count(s, 'chain ""') == s.n_atoms
     assert count(s, "chain ''+A") == s.n_atoms and count(s, "chain A") == 0
     assert count(s, f"{chain_word('')} and polymer") == 327
+
+
+def segmented(path) -> Structure:
+    """Two crambins in one blank chain, told apart only by segment (PROA, PROB), as an MD
+    program writes them; two models, the second moved."""
+    import gzip
+
+    from chemsuite.macromolecule.structure import io
+
+    from ..conftest import DATA
+
+    with gzip.open(DATA / "1crn.pdb.gz", "rt") as source:
+        lines = source.readlines()
+    links = [line[:15] + " " + line[16:29] + " " + line[30:] for line in lines
+             if line.startswith("SSBOND")]  # fmt: skip
+    atoms = [line for line in lines if line.startswith("ATOM")]
+
+    def moved(line: str, segment: str, dx: float) -> str:
+        x = float(line[30:38]) + dx
+        return f"{line[:21]} {line[22:30]}{x:8.3f}{line[38:72]}{segment}{line[76:]}"
+
+    models = [
+        f"MODEL     {k + 1:4d}\n"
+        + "".join(moved(line, g, dx + k) for g, dx in (("PROA", 0), ("PROB", 40)) for line in atoms)
+        + "ENDMDL\n"
+        for k in range(2)
+    ]
+    path.write_text("".join(links + models) + "END\n")
+    return io.read(path)
+
+
+def test_a_segment_is_picked_with_segi(tmp_path) -> None:
+    s = segmented(tmp_path / "md.pdb")
+    assert count(s, "segi PROB") == count(s, "segment PROB") == 327
+    assert count(s, "chain ''") == count(s, "segi PROA+PROB") == 654
+    assert count(s, f"{chain_word('', 'PROB')} and resi 1") == 7  # THR 1 of PROB only
+    assert count(s, f"not {chain_word('', 'PROB')}") == 327

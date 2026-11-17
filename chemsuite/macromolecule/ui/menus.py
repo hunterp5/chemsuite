@@ -195,7 +195,8 @@ def context_menu(
         title = menu.addAction(structure.atom_label(index))
         title.setEnabled(False)
         here = residue_expression(structure, residue)
-        chain = chain_word(str(structure.chain_name[structure.chain_of[residue]]))
+        c = int(structure.chain_of[residue])
+        chain = chain_word(str(structure.chain_name[c]), str(structure.chain_segment[c]))
 
         def pick(expression: str, mode: str = SET) -> None:
             try:

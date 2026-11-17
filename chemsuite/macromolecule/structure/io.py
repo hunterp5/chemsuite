@@ -24,6 +24,7 @@ are for import and export only.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import os
 import string
@@ -84,11 +85,49 @@ def _names(values: list[str]) -> np.ndarray:
     return np.array(values, dtype=f"<U{max([4, *map(len, values)])}")
 
 
+def _split_segments(st: gemmi.Structure) -> dict[str, tuple[str, str]]:
+    """Cut each chain whose residues change segment (MD files leave the chain blank and tell
+    chains apart by segment) into one chain per run, in every model, in place and in order.
+    The pieces get names of their own, so the entities and subchains are set up for each;
+    returns ``{that name: (chain name, segment)}``."""
+    named: dict[str, tuple[str, str]] = {}
+    for model in st:
+        used = {chain.name for chain in model}
+        k = 0
+        while k < len(model):
+            chain = model[k]
+            segments = [residue.segment for residue in chain]
+            cuts = [i for i in range(1, len(segments)) if segments[i] != segments[i - 1]]
+            if not cuts:
+                k += 1
+                continue
+            bounds = [0, *cuts, len(segments)]
+            pieces = []
+            for start, stop in itertools.pairwise(bounds):
+                name = base = f"{chain.name}{segments[start]}"
+                number = 1
+                while name in used:
+                    number += 1
+                    name = f"{base}{number}"
+                used.add(name)
+                named[name] = (chain.name, segments[start])
+                piece = gemmi.Chain(name)
+                for i in range(start, stop):
+                    piece.add_residue(chain[i])
+                pieces.append(piece)
+            del model[k]
+            for j, piece in enumerate(pieces):
+                model.add_chain(piece, pos=k + j)
+            k += len(pieces)
+    return named
+
+
 def from_gemmi(st: gemmi.Structure, block: gemmi.cif.Block | None = None) -> Structure:
     """``st`` as a Structure; ``block``, the mmCIF block it was read from, gives the bond
     orders of its ligands (its chemical component tables)."""
     if not len(st) or not st[0].count_atom_sites():
         raise ProteinFileError("the file has no atoms")
+    pieces = _split_segments(st)
     st.setup_entities()
     st.assign_label_seq_id(False)
     entity_index = {e.name: i for i, e in enumerate(st.entities)}
@@ -98,11 +137,14 @@ def from_gemmi(st: gemmi.Structure, block: gemmi.cif.Block | None = None) -> Str
     res: dict[str, list] = {k: [] for k in ("start", "name", "seq", "icode", "kind", "seqres",
                                             "asym", "entity")}  # fmt: skip
     chain_names: list[str] = []
+    chain_segments: list[str] = []
     chain_start = [0]
     for chain in st[0]:
         if not len(chain):
             continue
-        chain_names.append(chain.name)
+        name, segment = pieces.get(chain.name, (chain.name, chain[0].segment))
+        chain_names.append(name)
+        chain_segments.append(segment)
         for residue in chain:
             res["start"].append(len(xyz))
             heavy: list[str] = []
@@ -157,6 +199,7 @@ def from_gemmi(st: gemmi.Structure, block: gemmi.cif.Block | None = None) -> Str
         entity=np.array(res["entity"], dtype=np.int16),
         chain_start=np.array(chain_start, dtype=np.int32),
         chain_name=_names(chain_names),  # "AA-10" in an assembly file
+        chain_segment=_names(chain_segments),
         entity_id=np.array([e.name for e in st.entities], dtype="<U8"),
         entity_seq=np.array([m for s in sequences for m in s], dtype="<U5"),
         entity_seq_start=np.cumsum([0] + [len(s) for s in sequences]).astype(np.int32),
@@ -201,11 +244,17 @@ def _meta(st: gemmi.Structure) -> dict[str, str]:
 
 
 def _residue_lookup(structure: Structure) -> dict[tuple[str, int, str], int]:
+    """Residues by (chain name, number, insertion code), as the file's records name them; one
+    that two chains share (two segments of a blank chain) names neither."""
     chains = structure.chain_name[structure.chain_of]
-    return {
-        (str(c), int(s), str(i)): r
-        for r, (c, s, i) in enumerate(zip(chains, structure.res_seq, structure.icode, strict=True))
-    }
+    found: dict[tuple[str, int, str], int] = {}
+    shared = set()
+    for r, (c, s, i) in enumerate(zip(chains, structure.res_seq, structure.icode, strict=True)):
+        key = (str(c), int(s), str(i))
+        if key in found and structure.chain_of[found[key]] != structure.chain_of[r]:
+            shared.add(key)
+        found[key] = r
+    return {key: r for key, r in found.items() if key not in shared}
 
 
 def _address(address: gemmi.AtomAddress) -> tuple[str, int, str]:
@@ -299,6 +348,7 @@ def _model(structure: Structure, k: int) -> gemmi.Model:
             residue.name = str(structure.res_name[r])
             residue.seqid = gemmi.SeqId(int(structure.res_seq[r]), structure.icode[r] or " ")
             residue.subchain = str(structure.label_asym[r])
+            residue.segment = str(structure.chain_segment[c])
             polymer = structure.res_kind[r] in (AMINO, NUCLEIC)
             residue.het_flag = "A" if polymer else "H"
             if structure.seqres[r] >= 0:
@@ -346,15 +396,16 @@ def to_text_many(
     st.name = "chemsuite"
     model = gemmi.Model(1)
     renamed: dict[tuple[int, str], str] = {}
-    used: set[str] = set()
+    used: set[tuple[str, str]] = set()  # (name, segment): segments tell blank chains apart
     for k, (structure, keep) in enumerate(parts):
         for chain in to_gemmi(structure, keep)[0]:
-            name = chain.name
-            if name in used:
-                name = next((c for c in CHAIN_IDS if c not in used), f"{len(used)}")
+            name, segment = chain.name, chain[0].segment if len(chain) else ""
+            if (name, segment) in used:
+                taken = {n for n, g in used if g == segment}
+                name = next((c for c in CHAIN_IDS if c not in taken), f"{len(used)}")
                 renamed[(k, chain.name)] = name
                 chain.name = name
-            used.add(name)
+            used.add((name, segment))
             model.add_chain(chain)
     st.add_model(model)
     st.add_entity_types(True)

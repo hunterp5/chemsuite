@@ -96,9 +96,10 @@ class Structure:
     seqres: np.ndarray  # int32: position in the entity's full sequence, -1 if not in one
     label_asym: np.ndarray  # str mmCIF label_asym_id (subchain), as wide as the longest
     entity: np.ndarray  # int16: index into the entities, -1 if none
-    # chains (c), by author chain name
+    # chains (c), by author chain name and segment
     chain_start: np.ndarray  # int32 (c + 1)
     chain_name: np.ndarray  # str, as wide as the longest name
+    chain_segment: np.ndarray  # str: the PDB segment id (MD files), "" if none
     # entities (e): the full (SEQRES) sequence of each, as residue names
     entity_id: np.ndarray  # <U8
     entity_seq: np.ndarray  # <U5, all sequences one after the other
@@ -178,9 +179,14 @@ class Structure:
         start, end = self.entity_seq_start[entity], self.entity_seq_start[entity + 1]
         return self.entity_seq[start:end]
 
+    def chain_label(self, chain: int) -> str:
+        """Chain *chain* named as in labels: ``A``, ``PROA/A`` with a segment, ``PROA`` when
+        only the segment has a name."""
+        return chain_label(str(self.chain_name[chain]), str(self.chain_segment[chain]))
+
     def residue_label(self, residue: int) -> str:
-        """``A/HIS 57`` (with the insertion code, if any)."""
-        chain = self.chain_name[self.chain_of[residue]]
+        """``A/HIS 57`` (with the insertion code, if any; the segment too, if any)."""
+        chain = self.chain_label(int(self.chain_of[residue]))
         return f"{chain}/{self.res_name[residue]} {self.res_seq[residue]}{self.icode[residue]}"
 
     def atom_label(self, atom: int) -> str:
@@ -308,6 +314,7 @@ class Structure:
             entity=self.entity[residues],
             chain_start=chain_start,
             chain_name=self.chain_name[chains],
+            chain_segment=self.chain_segment[chains],
             bonds=bonds,
             order=self.order[both],
         )
@@ -316,6 +323,13 @@ class Structure:
         from .store import pack  # the store reads this module; imported when first needed
 
         return pack(self)
+
+
+def chain_label(name: str, segment: str) -> str:
+    """A chain named by its name and segment (see :meth:`Structure.chain_label`)."""
+    if not segment:
+        return name
+    return f"{segment}/{name}" if name else segment
 
 
 def empty() -> Structure:
@@ -340,6 +354,7 @@ def empty() -> Structure:
         entity=np.zeros(0, np.int16),
         chain_start=np.zeros(1, np.int32),
         chain_name=np.zeros(0, "<U4"),
+        chain_segment=np.zeros(0, "<U4"),
         entity_id=np.zeros(0, "<U8"),
         entity_seq=np.zeros(0, "<U5"),
         entity_seq_start=np.zeros(1, np.int32),

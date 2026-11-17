@@ -92,6 +92,35 @@ def test_long_chain_names_stay_apart() -> None:
     assert store.unpack(s.to_bytes()).chain_name.tolist() == ["AA-10", "AA-11"]
 
 
+def test_segments_tell_chains_apart(tmp_path) -> None:
+    from .test_select import segmented
+
+    s = segmented(tmp_path / "md.pdb")
+    assert list(s.chain_name) == ["", ""] and list(s.chain_segment) == ["PROA", "PROB"]
+    assert s.n_residues == 92 and s.n_models == 2
+    assert np.allclose(s.coords[1] - s.coords[0], [1, 0, 0])  # every model in the same order
+    assert s.residue_label(46) == "PROB/THR 1"
+    disulfides = [(s.residue_label(int(s.residue_of[a])), s.residue_label(int(s.residue_of[b])))
+                  for a, b in s.bonds if s.name[a] == s.name[b] == "SG"]  # fmt: skip
+    assert len(disulfides) == 6
+    assert all(a.split("/")[0] == b.split("/")[0] for a, b in disulfides)  # each in its segment
+    back = io.parse(io.to_text(s, io.PDB), io.PDB)
+    assert list(back.chain_segment) == ["PROA", "PROB"] and back.n_residues == 92
+    _, renamed = io.to_text_many([(s, None), (load("1crn.pdb.gz"), None)], io.PDB)
+    assert renamed == {}  # the blank chains differ by segment; crambin's A is free
+
+
+def test_structures_stored_before_segments_open(kinase: Structure) -> None:
+    import io as bytes_io
+
+    with np.load(bytes_io.BytesIO(kinase.to_bytes())) as npz:
+        arrays = {key: npz[key] for key in npz.files if key != "chain_segment"}
+    old = bytes_io.BytesIO()
+    np.savez(old, **arrays)
+    back = store.unpack(old.getvalue())
+    assert list(back.chain_segment) == ["", ""] and list(back.chain_name) == ["E", "I"]
+
+
 def test_metadata_is_read(lysozyme: Structure) -> None:
     assert lysozyme.meta["id"] == "3HTB"
     assert lysozyme.meta["method"] == "X-RAY DIFFRACTION"

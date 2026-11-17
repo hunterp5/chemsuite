@@ -17,7 +17,7 @@
 
 Words (case does not matter; several values join with ``+`` or ``,``)::
 
-    chain A+B           resi 10-50+60  resi 52A    resn HIS+ASP    name CA+C*   elem Fe
+    chain A+B    segi PROA    resi 10-50+60  resi 52A    resn HIS+ASP    name CA+C*   elem Fe
     protein  nucleic  polymer  ligand  water  ion  additive  glycan  hetero  organic
     backbone  sidechain  hydrogen  helix  sheet  altloc  all  none
     byres S    bychain S    within 5 of S    around 5 of S (within, without S itself)
@@ -25,7 +25,8 @@ Words (case does not matter; several values join with ``+`` or ``,``)::
     $name (a saved selection)
 
 ``organic`` is ligands, additives and glycans; ``hetero`` is everything not in a polymer.
-``chain ''`` is a chain without a name (PyMOL's spelling), as docking and MD files often have.
+``chain ''`` is a chain without a name (PyMOL's spelling), as docking and MD files often have;
+``segi`` (or ``segment``) picks by the PDB segment id, which MD files use to tell chains apart.
 ``name`` and ``resn`` accept ``*`` and ``?`` wildcards.
 """
 
@@ -53,6 +54,7 @@ from .model import (
     STRAND,
     WATER,
     Structure,
+    chain_label,
 )
 
 
@@ -110,14 +112,15 @@ def _values(text: str) -> list[str]:
     return ["" if v in ("''", '""') else v for v in re.split(r"[+,]", text) if v]
 
 
-def chain_word(name: str) -> str:
-    """The words that select chain *name*, a blank one included."""
-    return f"chain {name}" if name else "chain ''"
+def chain_word(name: str, segment: str = "") -> str:
+    """The words that select chain *name* (a blank one included) in *segment*, if any."""
+    chain = f"chain {name}" if name else "chain ''"
+    return f"(segi {segment} and {chain})" if segment else chain
 
 
-def chain_title(name: str) -> str:
-    """How a chain is named on screen: its name, or "unnamed"."""
-    return name if name else "unnamed"
+def chain_title(name: str, segment: str = "") -> str:
+    """How a chain is named on screen: its label (with the segment), or "unnamed"."""
+    return chain_label(name, segment) or "unnamed"
 
 
 def _matches(column: np.ndarray, patterns: list[str], upper: bool = True) -> Mask:
@@ -252,6 +255,9 @@ class _Parser:
         if word == "chain":
             values = _values(self.take("a chain").text)
             return lambda c: np.isin(c.structure.chain_name, values)[c.structure.atom_chain]
+        if word in ("segi", "segment"):
+            values = _values(self.take("a segment").text)
+            return lambda c: np.isin(c.structure.chain_segment, values)[c.structure.atom_chain]
         if word == "resn":
             values = _values(self.take("a residue name").text)
             return lambda c: _matches(c.structure.res_name, values)[c.structure.residue_of]

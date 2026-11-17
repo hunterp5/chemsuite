@@ -258,11 +258,12 @@ def insert_residue(
 
 
 def rename_chain(s: Structure, chain: int, name: str) -> Structure:
-    """Chain *chain* (an index) renamed *name*, which no other chain may have."""
+    """Chain *chain* (an index) renamed *name*, which no other chain of its segment may have."""
     name = name.strip()
     if not _CHAIN.fullmatch(name):
         raise EditError("A chain name is 1 to 4 letters or digits")
-    others = np.delete(s.chain_name, chain)
+    segment = s.chain_segment[chain]
+    others = s.chain_name[(s.chain_segment == segment) & (np.arange(s.n_chains) != chain)]
     if name in others:
         raise EditError(f"There is already a chain {name}")
     names = s.chain_name.astype(f"<U{max(4, s.chain_name.itemsize // 4, len(name))}")

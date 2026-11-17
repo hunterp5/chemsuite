@@ -127,7 +127,7 @@ class SequenceStrip(QWidget):
                 self._cache[key] = (chain_sequences(structure), kind_rows(structure))
             chains, kinds = self._cache[key]
             for sequence in chains:
-                chain = structure.chain_name[sequence.chain]
+                chain = structure.chain_label(sequence.chain)
                 numbers = np.where(
                     sequence.modelled, structure.res_seq[np.maximum(sequence.residue_at, 0)], 0
                 )

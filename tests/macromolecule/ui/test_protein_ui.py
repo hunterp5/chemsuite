@@ -191,6 +191,17 @@ def test_tree_entries_of_a_chain_without_a_name_select_it(tmp_path) -> None:
     assert picked.sum() == 2 and (s.residue_of[picked] == ligand).all()  # not THR 1
 
 
+def test_tree_entries_of_a_segment_select_it(tmp_path) -> None:
+    from chemsuite.macromolecule.structure.select import select
+    from chemsuite.macromolecule.ui.tree import residue_expression
+
+    from ..structure.test_select import segmented
+
+    s = segmented(tmp_path / "md.pdb")
+    picked = select(s, residue_expression(s, 46))  # THR 1 of PROB
+    assert picked.sum() == 7 and (s.residue_of[picked] == 46).all()
+
+
 def test_clicking_letters_selects_residues(panel, qtbot) -> None:
     strip = panel.sequence.strip
     row = strip.rows[0]
