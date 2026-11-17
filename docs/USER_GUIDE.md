@@ -42,11 +42,10 @@ Each document has its own window. From top to bottom:
   |---|---|
   | File | New, New from Shown Rows, Open, Append, Merge, Save, Export ▸ Table, Visible Rows, Selected Rows or Conformers (SDF), Close (clears the window to a new, empty document; with other windows open it closes this one) |
   | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection) |
-  | Tools | Calculator, Standardize Values, Random ▸ (Random Numbers and Random Rows), Sketcher, Notepad |
-  | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, 3D ▸ (Generate Conformers, Superpose), Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
-  | Data | Table ▸ and Lists ▸; Scoring ▸ and Similarity ▸; Dimensionality Reduction and Self-Organizing Map; Statistics, SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
-  | Data ▸ Table | Add Compound, Add Rows, Add Column, Split Column, Join Columns |
-  | Data ▸ Similarity | Cluster, Bin Values, Similarity Search, Diverse Subset |
+  | Tools | Random ▸ (Random Numbers and Random Rows) and Standardize Values; Calculator and Notepad; Sketcher |
+  | Chemistry | Standardize; Calculate ▸ (Descriptors, pKa) and 3D ▸ (Generate Conformers, Superpose); Similarity ▸ (Similarity Search, Diverse Subset), Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Decompose ▸ (R-Group Decomposition, Fragments, Central Ring), Routes |
+  | Data | Table ▸ and Lists ▸; Scoring ▸, Cluster and Bin Values; Dimensionality Reduction and Self-Organizing Map; SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
+  | Data ▸ Table | Operations ▸ (Add Compound, Add Rows, Add Column, Split Column, Join Columns), Statistics |
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
   | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
   | Protein | Macromolecule Viewer: the workspace for proteins, with its own menus |
@@ -352,7 +351,7 @@ Right-click a column header for:
   blank, and for numbers the range, mean ± standard deviation and median, or for text the
   number of distinct values and the commonest one.
 
-From Data ▸ Table:
+From Data ▸ Table ▸ Operations:
 
 | Command | What it does |
 |---|---|
@@ -2160,7 +2159,7 @@ reopened file still has its routes.
 
 ### Statistics
 
-Data ▸ Statistics… opens a panel with five tabs. It works on the shown rows, all rows, or the
+Data ▸ Table ▸ Statistics… opens a panel with five tabs. It works on the shown rows, all rows, or the
 selected rows, and recalculates as the data, filters or selection change.
 
 | Tab | What it gives |
@@ -2211,7 +2210,7 @@ log selectivity (1 = 10-fold).
 
 ### Bin Values
 
-Data ▸ Similarity ▸ Bin Values… groups a number column into bins.
+Data ▸ Bin Values… groups a number column into bins.
 
 - **Methods:** equal width, equal count, or custom edges.
 - **Options:** a fixed width, from/to limits, and open-ended bins below the first edge and above
@@ -2336,7 +2335,7 @@ cached per column, so a second run on the same column is much faster.
 
 ### Similarity Search
 
-Data ▸ Similarity ▸ Similarity Search… scores **All**, **Shown** or **Selected** rows against one of two
+Chemistry ▸ Similarity ▸ Similarity Search… scores **All**, **Shown** or **Selected** rows against one of two
 references (**Compare With**):
 
 - **A Structure** you type or paste, draw (the pencil), or take from the current row
@@ -2353,7 +2352,7 @@ Cancelling keeps the rows already scored.
 
 ### Diverse Subset
 
-Data ▸ Similarity ▸ Diverse Subset… picks *N* compounds that cover the chemistry, using MaxMin:
+Chemistry ▸ Similarity ▸ Diverse Subset… picks *N* compounds that cover the chemistry, using MaxMin:
 each pick is the compound farthest from all the earlier picks.
 
 - **Pick from** all, shown or selected rows, and set **How many**.
@@ -2365,7 +2364,7 @@ each pick is the compound farthest from all the earlier picks.
 
 ### Cluster
 
-Data ▸ Similarity ▸ Cluster… groups compounds using one of three methods:
+Data ▸ Cluster… groups compounds using one of three methods:
 
 | Method | You set |
 |---|---|

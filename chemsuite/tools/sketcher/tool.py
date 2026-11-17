@@ -43,5 +43,4 @@ TOOL = Tool(
     open=_open,
     requires=("rdkit",),
     tip="Draw a structure and add it to the table as a new row.",
-    separator_after=True,
 )

@@ -58,9 +58,9 @@ def test_menu_bar_order(window) -> None:
     # every group in order, the Browser in a section of its own at the bottom
     assert groups == [
         ["Table", "Lists"],
-        ["Scoring", "Similarity"],
+        ["Scoring", "Cluster…", "Bin Values…"],
         ["Dimensionality Reduction…", "Self-Organizing Map…"],
-        ["Statistics…", "SAR", "Plot"],
+        ["SAR", "Plot"],
         ["Filters", "Search"],
         ["Browser"],
     ]
@@ -83,20 +83,15 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
         return next(a.menu() for a in menu.actions() if a.text().replace("&", "") == title)
 
     tools = visible(menus["Tools"])
-    assert tools[:4] == ["Calculator…", "Standardize Values…", "Random", ""]  # then the tools
-    assert [t for t in tools if t] == ["Calculator…", "Standardize Values…", "Random", "Sketcher…",
-                                       "Notepad"]  # fmt: skip
+    assert tools == ["Random", "Standardize Values…", "", "Calculator…", "Notepad", "",
+                     "Sketcher…"]  # fmt: skip
     assert visible(submenu(menus["Tools"], "Random")) == ["Random Numbers…", "Random Rows…"]
-    table = [t for t in visible(submenu(menus["Data"], "Table")) if t]
-    assert table == ["Add Compound…", "Add Rows…", "Add Column…", "Split Column…",
-                     "Join Columns…"]  # fmt: skip
-    # two modules fill Similarity, in MENU_ORDER's order
-    assert visible(submenu(menus["Data"], "Similarity")) == [
-        "Cluster…",
-        "Bin Values…",
-        "Similarity Search…",
-        "Diverse Subset…",
-    ]
+    assert visible(submenu(menus["Data"], "Table")) == ["Operations", "Statistics…"]
+    operations = [t for t in visible(submenu(submenu(menus["Data"], "Table"), "Operations")) if t]
+    assert operations == ["Add Compound…", "Add Rows…", "Add Column…", "Split Column…",
+                          "Join Columns…"]  # fmt: skip
+    similarity = submenu(menus["Chemistry"], "Similarity")
+    assert visible(similarity) == ["Similarity Search…", "Diverse Subset…"]
     assert visible(submenu(menus["Data"], "Scoring")) == ["MPO Score…", "Selectivity…"]
     decompose = submenu(menus["Chemistry"], "Decompose")
     assert visible(decompose) == ["R-Group Decomposition…", "Fragments…", "Central Ring…"]
@@ -111,7 +106,8 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
     three_d = submenu(menus["Chemistry"], "3D")
     assert visible(three_d) == ["Generate Conformers…", "Superpose…"]
     top = [a.text().replace("&", "") or "—" for a in menus["Chemistry"].actions()]
-    assert top[top.index("3D") + 1] == "—"  # set off from the reaction tools, as before
+    assert top == ["Standardize…", "—", "Calculate", "3D", "—", "Similarity", "Reaction",
+                   "Enumerate", "Decompose", "Routes"]  # fmt: skip
     assert "Generate Conformers…" not in visible(menus["Chemistry"])
     calculate = submenu(menus["Chemistry"], "Calculate")
     assert visible(calculate) == ["Descriptors…", "pKa…"]

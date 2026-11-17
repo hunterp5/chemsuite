@@ -138,9 +138,9 @@ SEPARATOR_STYLE = (
 PANEL_MIN_WIDTH = 360
 #: tools that share a submenu but come from different modules, in the order shown
 MENU_ORDER: dict[tuple[str, ...], tuple[str, ...]] = {
-    ("Data",): ("space_map", "som", "statistics"),
-    ("Data", "Similarity"): ("cluster", "binning", "similarity", "diverse_subset"),
-    ("Chemistry", "3D"): ("conformers", "superpose"),  # set off by a separator (_add_tool)
+    ("Data",): ("cluster", "binning", "space_map", "som"),
+    ("Tools",): ("calculator", "notepad"),
+    ("Chemistry", "3D"): ("conformers", "superpose"),
     ("Chemistry", "Reaction"): ("split-reaction", "retrosynthesis", "enumerate-products"),
     ("Chemistry", "Decompose"): ("rgroups", "fragments", "central-ring"),
     ("Chemistry", "Enumerate"): ("enumerate-products", "rgroup-library", "recombine"),
@@ -570,8 +570,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(
             A("file.save_as", "Save &As…", self.save_as, QKeySequence.StandardKey.SaveAs)
         )
-        export_menu = file_menu.addMenu("&Export")
-        export_menu.setToolTipsVisible(True)
+        export_menu = _menu(file_menu, "&Export")
         for rows, title in (("all", "&Table…"), ("visible", "&Visible Rows…"), ("selected",
                             "&Selected Rows…")):  # fmt: skip
             command = "file.export" if rows == "all" else f"file.export_{rows}"
@@ -658,27 +657,28 @@ class MainWindow(QMainWindow):
         search.addAction(A("data.show_all_rows", "Show &All Rows", self.show_all_rows))
 
         self._building = "Tools"
-        tools_menu = bar.addMenu("&Tools")  # Calculator, Random ▸ | the tools (the Sketcher)
-        tools_menu.setToolTipsVisible(True)
-        random_menu = tools_menu.addMenu("&Random")  # Random Numbers and Random Rows fill it
-        random_menu.setToolTipsVisible(True)
-        tools_menu.addSeparator()
+        tools_menu = _menu(bar, "&Tools")  # Random ▸, Standardize Values | Calculator, Notepad | …
+        random_menu = _menu(tools_menu, "&Random")  # Random Numbers and Random Rows fill it
+        values_end, notes_end = tools_menu.addSeparator(), tools_menu.addSeparator()
 
         # the tool menus, in order (tools fill them; see chemsuite.tools.TOOL_MODULES)
         self._tool_actions: dict[str, QAction] = {}
-        chemistry = bar.addMenu("&Chemistry")
-        chemistry.setToolTipsVisible(True)
-        data = bar.addMenu("&Data")
-        data.setToolTipsVisible(True)
-        self._building = "Data ▸ Table"
-        table_menu = data.addMenu("&Table")
-        table_menu.setToolTipsVisible(True)
-        table_menu.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
-        table_menu.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
-        table_menu.addAction(A("data.add_column", "Add &Column…", self.add_column))
-        table_menu.addSeparator()
-        table_menu.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
-        table_menu.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
+        chemistry = _menu(bar, "&Chemistry")  # Standardize | Calculate ▸, 3D ▸ | the other tools
+        standardize_end = chemistry.addSeparator()
+        calculate = _menu(chemistry, "Calculate")
+        three_d = _menu(chemistry, "3D")
+        chemistry.addSeparator()
+        similarity = _menu(chemistry, "Si&milarity")  # first of the other tools
+        data = _menu(bar, "&Data")
+        self._building = "Data ▸ Table ▸ Operations"
+        table_menu = _menu(data, "&Table")  # Operations ▸, then Statistics
+        ops = _menu(table_menu, "&Operations")
+        ops.addAction(A("data.add_compound", "Add Co&mpound…", self.add_compound))
+        ops.addAction(A("data.add_rows", "Add &Rows…", self.add_rows))
+        ops.addAction(A("data.add_column", "Add &Column…", self.add_column))
+        ops.addSeparator()
+        ops.addAction(A("data.split_column", "&Split Column…", lambda: self.split_column()))
+        ops.addAction(A("data.join_columns", "&Join Columns…", lambda: self.join_columns()))
         self._building = "Data ▸ Lists"
         self._lists_menu = data.addMenu("&Lists")
         self._add_to_list = A(
@@ -688,9 +688,7 @@ class MainWindow(QMainWindow):
             "Ctrl+L",
         )
         self._add_visible = A(
-            "lists.add_visible",
-            "Add &Visible to List…",
-            lambda: self.lists.add_visible(),
+            "lists.add_visible", "Add &Visible to List…", lambda: self.lists.add_visible()
         )
         self._remove_from_list = A(
             "lists.remove_selected",
@@ -706,15 +704,10 @@ class MainWindow(QMainWindow):
         self.addAction(self._add_to_list)
         self._building = "Data"
         data.addSeparator()
-        scoring = data.addMenu("S&coring")  # tools fill these two
-        scoring.setToolTipsVisible(True)
-        similarity = data.addMenu("Si&milarity")
-        similarity.setToolTipsVisible(True)
-        data.addSeparator()  # Dimensionality Reduction, Self-Organizing Map | Statistics go here
-        sar = data.addMenu("S&AR")  # tools fill it
-        sar.setToolTipsVisible(True)
-        plot = data.addMenu("&Plot")
-        plot.setToolTipsVisible(True)
+        scoring = _menu(data, "S&coring")  # tools fill it; Cluster and Bin Values follow
+        clusters_end = data.addSeparator()  # Dimensionality Reduction, Self-Organizing Map | here
+        sar = _menu(data, "S&AR")  # tools fill it
+        plot = _menu(data, "&Plot")
         data.addSeparator()
         toggle = self.filter_dock.toggleViewAction()
         toggle.setText("&Filters")
@@ -729,18 +722,21 @@ class MainWindow(QMainWindow):
             ("Tools",): tools_menu,
             ("Tools", "Random"): random_menu,
             ("Chemistry",): chemistry,
+            ("Chemistry", "Calculate"): calculate,
+            ("Chemistry", "3D"): three_d,
+            ("Chemistry", "Similarity"): similarity,
             ("Data",): data,
             ("Data", "Search"): search,
             ("Data", "Plot"): plot,
             ("Data", "Table"): table_menu,
             ("Data", "Scoring"): scoring,
-            ("Data", "Similarity"): similarity,
             ("Data", "SAR"): sar,
         }
         #: tools in these menus go before this action instead of at the end
         self._tool_slots = {("Data", "Search"): search_tools, ("Data",): sar.menuAction()}
-        heads = ("calculator", "standardize_values")  # these go first in Tools, before Random
-        self._tool_places = dict.fromkeys(heads, random_menu.menuAction())
+        places = {"standardize_values": values_end, "calculator": notes_end, "notepad": notes_end}
+        places |= {"standardize": standardize_end, "cluster": clusters_end, "binning": clusters_end}
+        self._tool_places = places  # these tools go before these actions
         for tool in registered_tools():
             self._add_tool(tool, menus)
         data.addSeparator()  # the Browser, in a section of its own at the bottom
@@ -794,10 +790,7 @@ class MainWindow(QMainWindow):
             path = tool.menu[:depth]
             if path not in menus:
                 parent = self.menuBar() if depth == 1 else menus[path[:-1]]
-                menus[path] = parent.addMenu(f"&{path[-1]}" if depth == 1 else path[-1])
-                menus[path].setToolTipsVisible(True)
-                if path == ("Chemistry", "3D"):
-                    parent.addSeparator()
+                menus[path] = _menu(parent, f"&{path[-1]}" if depth == 1 else path[-1])
         action = QAction(tool.title, self)
         register(
             f"tool.{tool.id}",
@@ -1564,3 +1557,9 @@ class MainWindow(QMainWindow):
                 settings_hub().changed.disconnect(self._apply_settings)
             quitting.window_closed(lambda: not _windows)
         event.accept()
+
+
+def _menu(parent: Any, title: str) -> QMenu:
+    menu = parent.addMenu(title)
+    menu.setToolTipsVisible(True)
+    return menu

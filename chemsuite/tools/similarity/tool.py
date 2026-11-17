@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Data ▸ Similarity ▸ Cluster…, Similarity Search…, Diverse Subset…"""
+"""Chemistry ▸ Similarity ▸ Similarity Search…, Diverse Subset…; Data ▸ Cluster…"""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ TOOLS = (
     Tool(
         id="similarity",
         title="Similarity Search…",
-        menu=("Data", "Similarity"),
+        menu=("Chemistry", "Similarity"),
         open=_dialog("search"),
         requires=("rdkit",),
         needs_structures=True,
@@ -49,7 +49,7 @@ TOOLS = (
     Tool(
         id="diverse_subset",
         title="Diverse Subset…",
-        menu=("Data", "Similarity"),
+        menu=("Chemistry", "Similarity"),
         open=_dialog("diverse"),
         requires=("rdkit",),
         tip="Pick compounds that cover the chemistry (MaxMin), optionally adding to a selection.",
@@ -57,7 +57,7 @@ TOOLS = (
     Tool(
         id="cluster",
         title="Cluster…",
-        menu=("Data", "Similarity"),
+        menu=("Data",),
         open=_dialog("cluster"),
         requires=("rdkit", "sklearn", "scipy"),
         tip="Group compounds by Butina, k-means or hierarchical clustering.",
