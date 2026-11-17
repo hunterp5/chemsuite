@@ -48,6 +48,7 @@ QT_FREE = (
     "retro",
     "macromolecule",
     "simulate",
+    "superpose",
 )
 FORBIDDEN_FOR_QT_FREE = ("PySide6", "shiboken6", "pyqtgraph", "chemsuite.app", "chemsuite.tools")
 #: The Qt part of a Qt-free package, scanned by its own rules below.
