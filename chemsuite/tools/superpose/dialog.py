@@ -39,7 +39,7 @@ from chemsuite.core.table.columns import NumberColumn, StructureColumn
 from chemsuite.core.wording import plural
 from chemsuite.superpose import model as sp
 from chemsuite.superpose.run import align_conformers_rows, mol_of_cell, superpose_rows
-from chemsuite.superpose.substructure import parse_core
+from chemsuite.superpose.substructure import MIN_ATOMS, parse_core
 
 #: Below this many rows the work runs on the job's thread: starting worker processes costs more.
 POOL_MIN_ROWS = 20
@@ -126,9 +126,22 @@ class SuperposeDialog(ToolDialog):
         self.core.setPlaceholderText("SMILES or SMARTS")
         self.core.setClearButtonEnabled(True)
         draw = QPushButton("Draw…")
-        draw.clicked.connect(self.draw_core)
+        draw.clicked.connect(lambda: self.draw_into(self.core, "Core"))
         self.core_row = inline(self.core, draw, stretch=0)
         self.method_section.row("Core", self.core_row)
+        self.anchor = QLineEdit()
+        self.anchor.setPlaceholderText("Optional SMILES or SMARTS")
+        self.anchor.setClearButtonEnabled(True)
+        draw_anchor = QPushButton("Draw…")
+        draw_anchor.clicked.connect(lambda: self.draw_into(self.anchor, "Align On"))
+        self.anchor_row = inline(self.anchor, draw_anchor, stretch=0)
+        self.method_section.row(
+            "Align on",
+            self.anchor_row,
+            help="A substructure to fit on, atom on atom; the method then scores each "
+            "conformer in that pose and keeps the best. Rows without it are fitted as if "
+            "none were given, and their Core RMSD is left blank.",
+        )
 
         more = self.section("More Options", collapsed=True)
         self.ring_only = QCheckBox()
@@ -192,6 +205,7 @@ class SuperposeDialog(ToolDialog):
             self.method.currentIndexChanged,
             self.rows.changed,
             self.core.textChanged,
+            self.anchor.textChanged,
         ):
             signal.connect(lambda *_: self._update())
         stop = ctx.watch_current(lambda _oid: self._update())
@@ -207,6 +221,7 @@ class SuperposeDialog(ToolDialog):
     def set_settings(self, settings: sp.Settings) -> None:
         self.method.setCurrentIndex(max(0, self.method.findData(settings.method)))
         self.core.setText(settings.core)
+        self.anchor.setText(settings.anchor)
         self.ring_only.setChecked(settings.mcs_ring_matches_ring)
         self.complete_rings.setChecked(settings.mcs_complete_rings)
         self.elements.setChecked(settings.mcs_compare_elements)
@@ -222,6 +237,7 @@ class SuperposeDialog(ToolDialog):
         return sp.Settings(
             method=self.method.currentData(),
             core=self.core.text().strip(),
+            anchor=self.anchor.text().strip(),
             mcs_ring_matches_ring=self.ring_only.isChecked(),
             mcs_complete_rings=self.complete_rings.isChecked(),
             mcs_compare_elements=self.elements.isChecked(),
@@ -246,6 +262,7 @@ class SuperposeDialog(ToolDialog):
         inputs.set_row_visible(self.reference_column, onto and row)
         self.method_section.setVisible(onto)
         self.method_section.set_row_visible(self.core_row, method == sp.CORE)
+        self.method_section.set_row_visible(self.anchor_row, method in sp.ANCHORED)
         more = self.more
         for option in self.mcs_options:
             more.set_row_visible(option, onto and method == sp.MCS)
@@ -293,18 +310,20 @@ class SuperposeDialog(ToolDialog):
             name = ref.title
             meta = {"source": "protein", "protein": ref.protein, "ligand": ref.label}
         meta["method"] = settings.method
+        if settings.anchored:
+            meta["anchor"] = settings.anchor
         asset_id = self.ctx.table.unique_asset_id(f"superpose-{uuid.uuid4().hex[:8]}")
         return Asset(asset_id, sp.REFERENCE_KIND, name, sp.reference_block(mol), meta)
 
-    def draw_core(self) -> None:
+    def draw_into(self, field: QLineEdit, title: str) -> None:
         from chemsuite.app.sketcher import SketcherDialog
 
-        dialog = SketcherDialog(self.core.text(), "Core", self)
+        dialog = SketcherDialog(field.text(), title, self)
         if not dialog.exec() or not dialog.molblock:
             return
         mol = Chem.MolFromMolBlock(dialog.molblock)
         if mol is not None:
-            self.core.setText(Chem.MolToSmiles(mol))
+            field.setText(Chem.MolToSmiles(mol))
 
     # -- checks -------------------------------------------------------------------------------
     def problem(self) -> str:
@@ -330,6 +349,14 @@ class SuperposeDialog(ToolDialog):
                 return "Enter or draw the core (SMILES or SMARTS)."
             if not mol.HasSubstructMatch(core):
                 return "The core is not in the reference."
+        if self.method.currentData() in sp.ANCHORED and self.anchor.text().strip():
+            anchor = parse_core(self.anchor.text())
+            if anchor is None:
+                return "“Align on” is not a valid SMILES or SMARTS."
+            if anchor.GetNumAtoms() < MIN_ATOMS:
+                return f"“Align on” needs at least {MIN_ATOMS} atoms."
+            if not mol.HasSubstructMatch(anchor):
+                return "The “Align on” substructure is not in the reference."
         return ""
 
     def verb(self) -> str:

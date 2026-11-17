@@ -29,6 +29,7 @@ from chemsuite.core.mols import mol_from_blob, mol_to_blob
 from chemsuite.core.table.columns import StructureColumn
 from chemsuite.superpose import field, kabsch
 from chemsuite.superpose.model import (
+    ANCHORED,
     COLOR,
     COMBO,
     CORE,
@@ -90,6 +91,31 @@ def test_each_method_puts_a_moved_copy_back(method: str) -> None:
         assert min(v for k, v in fit.scores.items()) > 0.99
     if method == COLOR:
         assert fit.scores[COMBO] == pytest.approx(2.0, abs=0.01)
+
+
+@pytest.mark.parametrize("method", sorted(ANCHORED))
+def test_an_anchor_holds_its_atoms_on_the_reference_s(method: str) -> None:
+    """Shape alone leaves 4-ethylaniline's nitrogen 0.2 Å off 4-methylaniline's."""
+    reference = prepare_reference(embedded("Nc1ccc(C)cc1", seed=1))
+    probe = moved(embedded("Nc1ccc(CC)cc1"))
+    settings = Settings(method=method, anchor="Nc1ccccc1")
+    out, fit = superpose_one(probe, reference, settings)
+    assert np.linalg.norm(position(out, "N") - position(reference, "N")) < 0.1
+    assert fit.scores[CORE_RMSD] < 0.1
+    assert settings.scores[-1] == CORE_RMSD
+
+
+def test_rows_without_the_anchor_are_fitted_without_it() -> None:
+    reference = embedded(SULFONAMIDE)
+    cells = [mol_to_blob(moved(reference)), "c1ccccc1C"]
+    settings = Settings(method=SHAPE, anchor="c1ncccn1")
+    batch = superpose_rows(cells, reference, "r", settings)
+    assert all(batch.blobs) and batch.scores["Shape Tanimoto"][1] > 0
+    assert batch.scores[CORE_RMSD][0] < 0.1 and np.isnan(batch.scores[CORE_RMSD][1])
+
+
+def test_an_anchor_does_not_apply_to_the_substructure_methods() -> None:
+    assert Settings(method=MCS, anchor="c1ccccc1").scores == (CORE_RMSD, CORE_ATOMS)
 
 
 def test_mcs_fits_the_shared_ring_of_an_analog() -> None:

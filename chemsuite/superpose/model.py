@@ -48,6 +48,9 @@ SCORES: dict[str, tuple[str, ...]] = {
     COLOR: (COMBO, SHAPE_TANIMOTO, COLOR_TANIMOTO),
     FIELD: (FIELD_SIMILARITY, SHAPE_TANIMOTO),
 }
+#: the methods an optional anchor substructure applies to (the substructure methods fit one
+#: already); an anchored superposition adds :data:`CORE_RMSD` to the method's scores
+ANCHORED = frozenset({O3A, SHAPE, COLOR, FIELD})
 #: scores where lower is better (the rest: higher is better)
 LOWER_IS_BETTER = frozenset({CORE_RMSD, RMSD})
 #: decimals shown for each score
@@ -70,8 +73,11 @@ class Settings:
     """How to superpose.
 
     *core* is a SMARTS or SMILES (the ``core`` method); the ``mcs_*`` fields tune the
-    maximum common substructure. *o3a_typing* is ``"mmff"`` or ``"crippen"``. *color_weight*
-    is the share of the pharmacophore features in the shape + features optimization (0–1).
+    maximum common substructure. *anchor* (SMARTS or SMILES, optional) is a substructure that
+    the O3A, shape, shape + features and field methods fit on, scoring the pose that gives
+    (rows without it are fitted as if there were none). *o3a_typing* is ``"mmff"`` or
+    ``"crippen"``. *color_weight* is the share of the pharmacophore features in the shape +
+    features optimization (0–1).
     *charges* is ``"gasteiger"`` or ``"mmff"``; *field_weight* the share of the field in the
     field method (0–1). *conformers* is how many to generate for a row that has only 2D.
     *heavy_only* fits a molecule's own conformers on heavy atoms only.
@@ -79,6 +85,7 @@ class Settings:
 
     method: str = COLOR
     core: str = ""
+    anchor: str = ""
     mcs_ring_matches_ring: bool = True
     mcs_complete_rings: bool = True
     mcs_compare_elements: bool = True
@@ -103,8 +110,12 @@ class Settings:
             raise ValueError("conformers must be at least 1")
 
     @property
+    def anchored(self) -> bool:
+        return bool(self.anchor.strip()) and self.method in ANCHORED
+
+    @property
     def scores(self) -> tuple[str, ...]:
-        return SCORES[self.method]
+        return (*SCORES[self.method], CORE_RMSD) if self.anchored else SCORES[self.method]
 
 
 @dataclass(frozen=True)

@@ -36,7 +36,7 @@ from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text, mol_to_blob, smiles_of
 
-from . import field, o3a, shape, substructure
+from . import anchor, field, o3a, shape, substructure
 from .model import (
     COLOR,
     CORE,
@@ -66,6 +66,15 @@ ALIGNERS: dict[str, Callable[[Chem.Mol, Chem.Mol, Settings], list[Fit]]] = {
     FIELD: field.align,
 }
 _FAILURES = (ValueError, RuntimeError, ArithmeticError)
+
+
+def fits_of(probe: Chem.Mol, reference: Chem.Mol, settings: Settings) -> list[Fit]:
+    """Every probe conformer's fit: on the anchor when there is one and the probe has it."""
+    if settings.anchored:
+        fits = anchor.align(probe, reference, settings)
+        if fits is not None:
+            return fits
+    return ALIGNERS[settings.method](probe, reference, settings)
 
 
 def prepare_reference(mol: Chem.Mol) -> Chem.Mol:
@@ -108,7 +117,7 @@ def superpose_one(mol: Chem.Mol, reference: Chem.Mol, settings: Settings) -> tup
     probe = probe_of(mol, settings)
     if probe is None:
         raise ValueError("could not embed in 3D")
-    found = best(ALIGNERS[settings.method](probe, reference, settings), settings.method)
+    found = best(fits_of(probe, reference, settings), settings.method)
     if found is None:
         raise ValueError("no fit")
     out = Chem.Mol(probe)
@@ -136,7 +145,7 @@ def fits_over_references(
     out: list[Fit | None] = []
     for reference in references:
         try:
-            out.append(best(ALIGNERS[settings.method](probe, reference, settings), settings.method))
+            out.append(best(fits_of(probe, reference, settings), settings.method))
         except _FAILURES:
             out.append(None)
     return out
@@ -174,7 +183,7 @@ def superpose_chunk(args: tuple[Settings, bytes, str, Sequence[Cell]]) -> list[t
             continue
         with rdBase.BlockLogs():
             display = smiles_of(Chem.RemoveHs(moved))
-        scores = tuple(float(fit.scores[name]) for name in settings.scores)
+        scores = tuple(float(fit.scores.get(name, np.nan)) for name in settings.scores)
         out.append((blob_with_reference(moved, reference_id), display, fit.conf_id + 1.0, scores))
     return out
 

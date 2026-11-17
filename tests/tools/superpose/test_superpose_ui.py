@@ -102,7 +102,7 @@ def test_the_reference_survives_save_rename_and_reopen(window, qtbot, tmp_path) 
 
 
 def test_problems_block_running(window) -> None:
-    from chemsuite.superpose.model import CORE
+    from chemsuite.superpose.model import CORE, SHAPE
 
     chem = _install(window)
     table = chem.workspace.table
@@ -119,6 +119,14 @@ def test_problems_block_running(window) -> None:
     assert dialog.problem() == "The core is not in the reference."
     dialog.core.setText("c1ccccc1")
     assert dialog.problem() == ""
+    dialog.method.setCurrentIndex(dialog.method.findData(SHAPE))
+    assert dialog.problem() == ""  # the anchor is optional
+    dialog.anchor.setText("C1CCCCC1Br")
+    assert dialog.problem() == "The “Align on” substructure is not in the reference."
+    dialog.anchor.setText("CC")
+    assert dialog.problem() == "“Align on” needs at least 3 atoms."
+    dialog.anchor.setText("c1ccccc1")
+    assert dialog.problem() == "" and dialog.settings().anchored
 
 
 def test_offers_the_ligands_of_the_document_s_proteins(window) -> None:

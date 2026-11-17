@@ -1527,6 +1527,11 @@ row's conformers on its first.
 
   - Symmetric cores are tried every way round, so a phenyl fits whichever way its atoms are
     numbered.
+  - **Align on** (Atoms, Shape, Shape + Features and Field; optional): a substructure you type
+    (SMILES or SMARTS, at least 3 atoms) or draw. Each conformer is fitted atom on atom on it,
+    and the method scores that pose and keeps the best-scoring conformer; O3A pairs the
+    other atoms with those pairs held. It adds a **Core RMSD (Å)** column. A row without the
+    substructure is fitted as if none were given, with Core RMSD left blank.
   - Field: each atom's partial charge (Gasteiger, or MMFF94 under **More Options**) gives a
     potential, and the overlap of the two potentials, as a Carbó index, is the field
     similarity. It starts from the best shape fits of the three best-fitting conformers,
