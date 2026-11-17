@@ -233,28 +233,19 @@ other machine can pick it up. Update it at the end of a session that leaves work
       hydroxyl/thiol/ammonium whose H points elsewhere, judged on heavy atoms.
     - Ligands draw as purple sticks; ions amber; metal-contact lines light gold.
     - Not done: the PanelWindow's dock arrangement is not saved; nothing tried by hand yet.
-  - **In progress (protein): surface options**, plan approved 2026-11-17 in
-    [`docs/SURFACE_PLAN.md`](docs/SURFACE_PLAN.md). Decided: SES is the default kind (saved
-    documents load as Blob); Coulombic coloring uses ff14SB-style charges for the states the
-    hydrogens show (united atom when unprepared), Gasteiger for ligands. Phase 0 is done (the
-    charge table from PDB2PQR's AMBER.DAT, BSD-3, approved by the user). Phase 1 is done:
-    `look/surface.py` builds SES/SAS/vdW/Blob from `SurfaceOptions` (Blob is still what
-    `Display` builds until phase 2), and `look/mesh.py` has `edges`, `dots`, `carve`. SES of
-    about 6,000 heavy atoms: 2.8–3.2 s and 220 MB on the Windows desktop, most of it in the
-    distance transforms (one per atom radius); the target was 2 s, accepted since it is built
-    in the background. Phase 2 is done: `Display` holds the options, flat color, pocket
-    transparency and carve points (saved; a document without them opens as Blob; `carry` keeps
-    them through edits), `session.change_surfaces` applies a change to the selected-or-visible
-    proteins, and `ui/surface_menu.py` fills Display ▸ Surface and View ▸ Ligand ▸ Pocket
-    Surface ▸ ("Colour" menus renamed "Color"). Phase 3 is done: Style (Solid, Mesh, Dots) for
-    surfaces and the pocket skin; Mesh draws the edges as a Lines layer (`lines=True`, also in
-    16-bit chunks), Dots are small octahedra. Phase 4 is done: `look/electrostatics.py` (charges from the
-    Amber table by the hydrogens present, folded to united atom when missing; Gasteiger for
-    ligands; the potential 1.4 Å out along normals, eps 4r, 15 Å) and a deferred `potential`
-    part handed out once its surface is accepted; carving and Dots keep it. Phase 5 (ROADMAP,
-    the full suite, a by-hand check with screenshots) is next. Then: try Prepare, Inspect and docking by hand in the app; a second titration
-    round (PROPKA-style H-bond determinants, His titrated for charge only) is listed in
-    p2-review.md §4.
+  - **Done (protein): surface options**, 2026-11-17, [`docs/SURFACE_PLAN.md`](docs/SURFACE_PLAN.md)
+    (commits fc40672 to the phase 5 docs). `look/surface.py` builds SES/SAS/vdW/Gaussian from
+    `SurfaceOptions`; a `Display` holds the options, style, colors, transparencies and carve
+    points (saved; older documents open as Gaussian; `carry` keeps them); `look/electrostatics.py`
+    and the deferred `potential` part color By Electrostatics; `ui/surface_menu.py` fills
+    Display ▸ Surface and View ▸ Ligand ▸ Pocket Surface ▸. Tried by hand on 1ATP (SES,
+    Gaussian, Mesh, Dots, electrostatics, carving): all draw. SES of about 6,000 heavy atoms
+    takes about 3 s (the target was 2 s; it is in the background) and its potential 5.5 s.
+    Open: a whole-protein Mesh at Normal quality is dense (Coarse thins it); ligands without
+    hydrogens take their template's charges, which can be neutral (ATP).
+  - **Next (protein):** try Prepare, Inspect and docking by hand in the app; a second
+    titration round (PROPKA-style H-bond determinants, His titrated for charge only) is listed
+    in p2-review.md §4.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 
@@ -390,9 +381,8 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - Still owed: gate 1 on the Mac (osx-arm64 env and its platforms), and the choice between
     OpenMM 8.4.0 with this driver and 8.6.1 with a newer one.
 
-1. Protein surface options: [`docs/SURFACE_PLAN.md`](docs/SURFACE_PLAN.md) (in progress).
-2. Graceful exit (ROADMAP §7.0).
-3. Bioactive conformers (§7.0b) or protein Phase 1, Alignment (§7a), each starting in plan mode.
+1. Graceful exit (ROADMAP §7.0).
+2. Bioactive conformers (§7.0b) or protein Phase 1, Alignment (§7a), each starting in plan mode.
 
 Still owed by the user: the ChemDraw hotkey list.
 
