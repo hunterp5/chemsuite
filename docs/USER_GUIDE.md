@@ -40,7 +40,7 @@ Each document has its own window. From top to bottom:
 
   | Menu | Holds |
   |---|---|
-  | File | New, New from Shown Rows, Open, Save, Export ▸ Table, Selected Rows or Conformers (SDF), Close (clears the window to a new, empty document; with other windows open it closes this one) |
+  | File | New, New from Shown Rows, Open, Append, Merge, Save, Export ▸ Table, Visible Rows, Selected Rows or Conformers (SDF), Close (clears the window to a new, empty document; with other windows open it closes this one) |
   | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection) |
   | Tools | Calculator, Standardize Values, Random ▸ (Random Numbers and Random Rows), Sketcher, Notepad |
   | Chemistry | Calculate ▸ (Descriptors, pKa), Standardize, 3D ▸ (Generate Conformers, Superpose), Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Routes, Decompose ▸ (R-Group Decomposition, Fragments, Central Ring) |
@@ -177,6 +177,27 @@ format.
 Large files open quickly. The text loads first and the table appears; structures are then parsed
 in the background, using every processor core. You can scroll and work while that happens.
 
+### Append and Merge
+
+Both bring another file (any format above, or a chemsuite document) into the open table as
+one step that Undo takes back. The table's own columns, filters and panels stay as they are.
+
+- **File ▸ Append…** adds every row of the file at the bottom of the table and selects them.
+  Columns are matched by name; a column the table does not have is added, and the table's
+  other columns are blank in the new rows.
+- **File ▸ Merge…** matches the file's rows to the table's and fills in what the file
+  knows. Choose the table column to **Match** and the file column to match it **With** (a
+  column named like ID, Name or Compound is chosen at first). Structures match however they
+  were written (as canonical SMILES); other values match as the text shown.
+  - **Values in the table:** **Replace them** (the file's value wins) or **Keep them, fill
+    blanks**. A blank cell in the file never overwrites a value.
+  - **Rows with no match:** **Add them as new rows**, or leave them out.
+  - The file's other columns are added; a matched row gets their values. When the file has
+    the same key twice, its first row is matched and the rest count as rows with no match.
+  - Text merged into a number column (such as `>10`) turns that column into text.
+- Proteins a chemsuite document's rows link to come too, unless the table already holds one
+  with the same id.
+
 ### Saving
 
 - **File ▸ Save (Ctrl+S)** and **Save As (Ctrl+Shift+S)** write a chemsuite document (`.csd`).
@@ -202,7 +223,9 @@ in the background, using every processor core. You can scroll and work while tha
   complete, so a crash or a full disk never damages your previous version.
 - **File ▸ Export ▸ Table…** writes SDF, mol2, CSV/TSV, SMILES, Excel, Maestro, XYZ, an InChI
   list, ChemDraw (CDXML), Marvin (MRV), an RD file or an RXN file.
-  **File ▸ Export ▸ Selected Rows…** writes only the selected rows.
+  **File ▸ Export ▸ Visible Rows…** writes only the rows the filters and searches leave
+  shown, in the order the table shows them; **File ▸ Export ▸ Selected Rows…** writes only
+  the selected rows.
   - An **RD file** holds the first reaction column as RXN blocks and every other column as
     data. Reactions read from SMILES have no drawing, so they are laid out as the sketcher lays
     them out (using every processor core). Blank values are left out.

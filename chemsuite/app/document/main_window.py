@@ -62,7 +62,6 @@ from chemsuite.io.load import (
     load_table,
     parse_chunks,
     pending_structure_chunks,
-    save_table,
 )
 
 from ..shell import quitting
@@ -87,7 +86,7 @@ from ..table.structure_copy import REACTION_FORMATS, copy_reactions, copy_struct
 from ..table.structure_search import StructureSearchDialog, StructureSearcher
 from ..table.table_view import StructureImages, TableView
 from ..widgets.panel import ToolPanel
-from . import dock_layout, menu_corner, session
+from . import dock_layout, file_actions, menu_corner, session
 from .dock_layout import LAYOUT_KEY
 from .panel_dock import HIDE_DOCK_TABS, PanelDock, PanelHeader
 from .panels import DocumentPanels
@@ -565,6 +564,7 @@ class MainWindow(QMainWindow):
         )
         self._recent_menu = file_menu.addMenu("Open &Recent")
         self._recent_menu.aboutToShow.connect(self._fill_recent_menu)
+        file_actions.add_actions(self, file_menu, A)  # Append…, Merge…
         file_menu.addSeparator()
         file_menu.addAction(A("file.save", "&Save", self.save, QKeySequence.StandardKey.Save))
         file_menu.addAction(
@@ -572,10 +572,10 @@ class MainWindow(QMainWindow):
         )
         export_menu = file_menu.addMenu("&Export")
         export_menu.setToolTipsVisible(True)
-        export_menu.addAction(A("file.export", "&Table…", lambda: self.export_dialog(False)))
-        export_menu.addAction(
-            A("file.export_selected", "&Selected Rows…", lambda: self.export_dialog(True))
-        )
+        for rows, title in (("all", "&Table…"), ("visible", "&Visible Rows…"), ("selected",
+                            "&Selected Rows…")):  # fmt: skip
+            command = "file.export" if rows == "all" else f"file.export_{rows}"
+            export_menu.addAction(A(command, title, lambda r=rows: file_actions.export(self, r)))
         file_menu.addSeparator()
         file_menu.addAction(
             A("file.close", "&Close", self.close_document, QKeySequence.StandardKey.Close)
@@ -1444,35 +1444,6 @@ class MainWindow(QMainWindow):
 
         self.jobs.run(f"Saving {path.name}…", work, done, wait=True)
         return bool(saved)
-
-    def export_dialog(self, selected_only: bool) -> None:
-        workspace = self.workspace
-        oids = workspace.selection.as_array() if selected_only else None
-        if selected_only and not len(oids):
-            QMessageBox.information(self, "Export Selected", "No rows are selected.")
-            return
-        path, _ = QFileDialog.getSaveFileName(self, "Export", self._start_folder(), EXPORT_FILTER)
-        if not path:
-            return
-        snapshot = workspace.table.snapshot()
-
-        def work(job: Job) -> None:
-            save_table(
-                snapshot,
-                path,
-                oids=oids,
-                executor=self._runner.process_pool(),
-                progress=job.report,
-                cancel=job.cancel_token,
-            )
-
-        def done(_result: None) -> None:
-            rows = len(oids) if oids is not None else len(snapshot)
-            self.statusBar().showMessage(f"Exported {Path(path).name}", 4000)
-            log.info("exported %s (%d rows)", path, rows)
-            audit("export", path=path, rows=rows, selected_only=selected_only)
-
-        self.jobs.run(f"Exporting {Path(path).name}…", work, done)
 
     # -- background work ---------------------------------------------------------------------
     def show_jobs(self) -> LogWindow:
