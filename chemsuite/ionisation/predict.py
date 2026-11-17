@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from rdkit import Chem, rdBase
 from rdkit.Chem import Crippen
 
+from chemsuite.conformers import energies
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text, mol_to_blob, smiles_of
@@ -104,7 +105,9 @@ def predict_chunk(args: tuple[float, Sequence[Cell]]) -> PkaResults:
                 mol = _mol(cell)
                 found = profile(mol) if mol is not None else None
                 if found is not None:
-                    species = found.major_species(ph)
+                    species = found.major_species(ph)  # a new molecule
+                    if smiles_of(species) != smiles_of(mol):  # energies were the input's
+                        energies.clear(species)
                     row = (
                         _none(found.most_acidic),
                         _none(found.most_basic),

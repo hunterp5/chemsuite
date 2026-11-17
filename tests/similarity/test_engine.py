@@ -281,6 +281,7 @@ def test_3d_keeps_the_reference_each_row_fits_best() -> None:
 
 
 def test_3d_keeps_each_row_s_pose_on_its_nearest_reference() -> None:
+    from chemsuite.conformers import energies
     from chemsuite.core.mols import mol_from_blob
     from chemsuite.superpose.model import reference_id_of
 
@@ -292,9 +293,11 @@ def test_3d_keeps_each_row_s_pose_on_its_nearest_reference() -> None:
     scores = score_cells(cells, refs, search, pose_ids=["ref-a", "ref-b"])
     assert scores.poses[2] is None  # a blank row has no pose
     for row in (0, 1):
-        blob, smiles, index = scores.poses[row]
+        blob, smiles, index, delta_e = scores.poses[row]
         mol = mol_from_blob(blob)
         assert mol.GetNumConformers() == 1 and smiles == Chem.CanonSmiles(cells[row])
+        # the row's own conformers were generated, so the pose knows its energy above the lowest
+        assert delta_e >= 0 and delta_e == pytest.approx(energies.delta_of(mol))
         assert index == row  # each fits its own shape best, as the 3D score says
         assert reference_id_of(mol) == ["ref-a", "ref-b"][row]
     with pytest.raises(ValueError, match="one pose id per reference"):

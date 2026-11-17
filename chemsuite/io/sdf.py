@@ -34,6 +34,7 @@ import numpy as np
 from rdkit import Chem, rdBase
 from rdkit.Chem import rdDepictor
 
+from chemsuite.conformers import energies
 from chemsuite.core.jobs import CancelToken, Progress, check
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import looks_like_molblock, mol_to_blob, smiles_of
@@ -196,7 +197,8 @@ def write_sdf(
     *structure* defaults to the first structure column. A ``Title`` column becomes each
     record's title line. Invalid structures read from a molfile are written back as read.
     With *all_conformers*, a row whose molecule has several conformers is written once per
-    conformer (lowest energy first, as stored), with a ``Conformer`` field numbering them.
+    conformer (lowest energy first, as stored), with a ``Conformer`` field numbering them, and
+    each conformer's stored energy, relative energy, population and force field as fields.
     """
     structure = structure or first_structure_column(table)
     column = table.column(structure)
@@ -221,11 +223,28 @@ def write_sdf(
                     handle.write("\n")
                     if conformer is not None:
                         handle.write(f"> <Conformer>\n{index + 1}\n\n")
+                    if conformers:
+                        handle.write(_energy_fields(mol.GetConformers()[index]))
                     for name in fields:
                         handle.write(f"> <{tags[name]}>\n{field_value(values[name][i])}\n\n")
                     handle.write("$$$$\n")
             if progress is not None:
                 progress(min(start + 2048, len(slots)), len(slots))
+
+
+def _energy_fields(conformer: Chem.Conformer) -> str:
+    """The conformer's stored energies as SD fields ("" when it has none)."""
+    row = energies.row_of(conformer, 0)
+    if row is None:
+        return ""
+    fields = [
+        ("Energy (kcal/mol)", f"{row.energy:.4f}"),
+        ("Relative Energy (kcal/mol)", f"{row.delta:.4f}"),
+        ("Population (%)", f"{100 * row.population:.2f}"),
+    ]
+    if conformer.HasProp(energies.FORCE_FIELD):
+        fields.append(("Force Field", conformer.GetProp(energies.FORCE_FIELD)))
+    return "".join(f"> <{name}>\n{value}\n\n" for name, value in fields)
 
 
 _NAME_UNSAFE = str.maketrans({"<": "(", ">": ")", "\n": " ", "\r": " "})

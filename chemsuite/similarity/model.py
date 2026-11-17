@@ -174,14 +174,15 @@ class Scores:
     """Results row for row: each method's score (NaN: not scored), the index of each row's
     nearest reference by the primary method (-1: none), the consensus when there are several
     methods, the fingerprints computed on the way (for a cache), and, when they were asked for,
-    the aligned poses of the first 3D method: per row ``(structure, SMILES, reference index)``
+    the aligned poses of the first 3D method: per row ``(structure, SMILES, reference index,
+    ΔE)`` (ΔE: the pose conformer's stored energy above its ensemble's lowest, NaN if unknown)
     or None (see :func:`chemsuite.similarity.shape3d.score_chunk`)."""
 
     columns: dict[str, np.ndarray]
     nearest: np.ndarray
     consensus: np.ndarray | None = None
     fingerprints: dict[str, Fingerprints] = field(default_factory=dict)
-    poses: list[tuple[bytes, str, int] | None] | None = None
+    poses: list[tuple[bytes, str, int, float] | None] | None = None
 
     def __len__(self) -> int:
         return len(self.nearest)

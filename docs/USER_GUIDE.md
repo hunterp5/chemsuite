@@ -1485,7 +1485,17 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
   random **Seed** is under **More Options**.
 - **Output.** The conformers go into a new 3D structure column, lowest energy first, with
   columns **Conformers** (the count) and **Conformer Energy Range (kcal/mol)**.
-  - Energies compare conformers of the same molecule only.
+  - Each conformer keeps its energy (kcal/mol, from MMFF94, UFF or CONFORGE's MMFF94s), its
+    **ΔE** above the molecule's lowest conformer and its Boltzmann **population** at 298.15 K
+    over the conformers kept. They are saved with the document, listed in the
+    [Browser](#browser), written by [Export Conformers](#export-conformers-sdf) and carried
+    onto superposed poses.
+  - Energies compare conformers of the same molecule only. The populations come from
+    gas-phase force-field energies, which favor intramolecular hydrogen bonds, so read them as
+    a rough guide.
+  - ETKDG with **Optimize with** set to none stores no energies. Conformers made by an
+    earlier version of chemsuite, or read from a file, have none either; generate them again
+    to get them. Standardize and Predict pKa drop the energies of a structure they change.
   - Running again writes new columns ("SMILES 3D (2)"); earlier conformers are kept.
 - **Cancelling** keeps the molecules already done.
 - A structure ETKDG cannot embed, or not within a minute (it tries twice: from its own
@@ -1497,6 +1507,10 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 Writes every conformer as its own SD record, carrying the row's other columns. Choose **All**,
 **Shown** or **Selected** rows (Selected when rows are selected), then **Export** asks for the
 file.
+
+Each record has a **Conformer** field numbering it (when the row has several). Conformers that
+carry energies also get **Energy (kcal/mol)**, **Relative Energy (kcal/mol)** (ΔE above the
+lowest), **Population (%)** and **Force Field**.
 
 ### Superpose
 
@@ -1545,6 +1559,10 @@ row's conformers on its first.
   - a new structure column, "<column> superposed", with each row's best conformer moved onto
     the reference;
   - **Best Conformer** (1 is the first stored) and a column for each score;
+  - **Pose ΔE (kcal/mol)**: the kept conformer's energy above the lowest conformer of its
+    molecule, a rough measure of strain. It is written when the conformers carry energies
+    (from [Generate Conformers](#generate-conformers), or made here for 2D rows) and left
+    blank for those that do not;
   - the reference itself, kept with the document so the [Browser](#browser) can show it
     with each superposed row. Rename or copy the column and the link stays.
   - A row with no structure, or that cannot be fitted (the core is not in it), is left blank;
@@ -1593,9 +1611,16 @@ they are, and a 3D view you turned is still turned when you come back to it.
   other than carbon) or None. **Color:** by element, or each conformer's carbons in a colour of
   its own (with Overlay Rows, each row's). These options show in the options menu in 3D.
 - **Conformers:** for a row with several, ‹ and › in the panel's header (or ↑ and ↓) step
-  through them; the counter shows which one. **Overlay** draws every conformer at once as thin
-  sticks with polar hydrogens. **Align Conformers** (on by default) fits them onto the first on
-  heavy atoms.
+  through them; the counter shows which one, and its ΔE above the lowest when the conformers
+  carry energies. **Overlay** draws every conformer at once as thin sticks with polar
+  hydrogens. **Align Conformers** (on by default) fits them onto the first on heavy atoms.
+- **Conformer Energies** (on by default, beside ›): for conformers made by
+  [Generate Conformers](#generate-conformers), a list under the view gives each conformer's
+  number, **ΔE (kcal/mol)**, **Population (%)** (Boltzmann, 298.15 K) and **Energy
+  (kcal/mol)**. It follows the view: click a line to show that conformer; stepping moves the
+  highlight. Select several lines (Shift- or Ctrl-click; ⌘-click on macOS) to overlay just those. Click a
+  heading to sort; drag the boundary above the list to resize it. The header tooltips name
+  the force field.
 - **Overlay Rows** draws every row being browsed at once (all, shown or selected, as
   **Browse Selected** and **Browse Visible** set; up to 200), as thin sticks, each at the
   conformer shown, or all of its conformers with **Overlay** on too. On a column written by
@@ -2422,7 +2447,8 @@ in several ways at once.
   0–1 scale.
 - **Keep aligned poses** (with 3D) writes each row's best pose, fitted onto the reference it
   is most like, in "*column* superposed". As with Superpose, the [Browser](#browser) shows
-  each pose with its reference.
+  each pose with its reference, and **Pose ΔE (kcal/mol)** gives the pose conformer's energy
+  above its molecule's lowest when the conformers carry energies.
 
 **Output** (a file):
 

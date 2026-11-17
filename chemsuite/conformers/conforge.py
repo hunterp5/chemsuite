@@ -31,6 +31,7 @@ import importlib.util
 from rdkit import Chem, rdBase
 from rdkit.Geometry import Point3D
 
+from chemsuite.conformers.energies import annotate
 from chemsuite.conformers.etkdg import Conformers, ConformerSettings
 
 FORCE_FIELD = "MMFF94s"
@@ -116,4 +117,6 @@ def generate(mol: Chem.Mol, settings: ConformerSettings) -> Conformers:
         conformer.Set3D(True)
         conformer.SetId(new_id)
         work.AddConformer(conformer, assignId=False)
-    return Conformers(work, [float(c.energy) for c in found], FORCE_FIELD)
+    energies = [float(c.energy) for c in found]
+    annotate(work, energies, FORCE_FIELD)
+    return Conformers(work, energies, FORCE_FIELD)

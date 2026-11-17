@@ -17,7 +17,8 @@
 """Converting between structure text, RDKit molecules and the compact binary the table stores.
 
 The table keeps each structure as RDKit's binary pickle (connection table plus the file's
-coordinates, no molecule properties): about 200–600 bytes, immutable, cheap to send to worker
+coordinates, no molecule properties; conformer properties such as a conformer's energy are
+kept): about 200–600 bytes, immutable, cheap to send to worker
 processes and fast to turn back into a molecule. RDKit's own warnings are silenced here because
 a bad cell is reported through the cell's status, not through stderr.
 """
@@ -28,6 +29,8 @@ from rdkit import Chem, rdBase
 
 #: Exact pickle content, independent of any global RDKit default another module might change.
 _PICKLE_FLAGS = Chem.PropertyPickleOptions.NoProps
+#: RDKit pickles conformer properties only with the molecule's: used when a conformer has any
+_CONFORMER_FLAGS = Chem.PropertyPickleOptions.MolProps
 
 
 def looks_like_molblock(text: str) -> bool:
@@ -49,7 +52,14 @@ def mol_from_text(text: str) -> Chem.Mol | None:
 
 
 def mol_to_blob(mol: Chem.Mol) -> bytes:
-    return mol.ToBinary(_PICKLE_FLAGS)
+    """*mol* as the table stores it: no molecule properties (a file's data fields go in their
+    own columns), but conformer properties when a conformer has any."""
+    if not any(c.GetPropNames() for c in mol.GetConformers()):
+        return mol.ToBinary(_PICKLE_FLAGS)
+    bare = Chem.Mol(mol)
+    for name in bare.GetPropNames(includePrivate=True, includeComputed=True):
+        bare.ClearProp(name)
+    return bare.ToBinary(_CONFORMER_FLAGS)
 
 
 def mol_from_blob(blob: bytes) -> Chem.Mol:

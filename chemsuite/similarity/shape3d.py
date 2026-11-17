@@ -30,6 +30,7 @@ import numpy as np
 from rdkit import Chem, rdBase
 
 from chemsuite.analysis.fingerprints import Cell
+from chemsuite.conformers.energies import delta_of
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, smiles_of
@@ -58,7 +59,7 @@ def settings_for(kind: str, conformers: int, color_weight: float, field_weight: 
 
 #: a row's aligned pose: its structure (naming the reference it was fitted onto), the SMILES it
 #: shows, and which reference that is
-Pose = tuple[bytes, str, int]
+Pose = tuple[bytes, str, int, float]  # structure, SMILES, reference index, ΔE
 
 
 def score_chunk(
@@ -99,7 +100,8 @@ def score_chunk(
                 fit = fits[wanted.index(index)]
                 moved, _fit = placed(probe, fit)
                 display = smiles_of(Chem.RemoveHs(moved))
-                pose = (sp.blob_with_reference(moved, pose_ids[index]), display, index)
+                blob = sp.blob_with_reference(moved, pose_ids[index])
+                pose = (blob, display, index, delta_of(moved))
             out.append((tuple(row), pose))
     return out
 

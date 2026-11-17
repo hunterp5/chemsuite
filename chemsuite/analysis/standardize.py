@@ -53,6 +53,7 @@ from rdkit import Chem, rdBase
 from rdkit.Chem.MolStandardize import rdMolStandardize
 
 from chemsuite.analysis.salts import by_id, form_salt, removed_fragments
+from chemsuite.conformers import energies
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text, mol_to_blob, smiles_of
@@ -273,7 +274,11 @@ def standardize_chunk(args: tuple[Options, Sequence[Cell]]) -> StandardizeResult
                 mol = _mol(cell)
                 if mol is not None:
                     outcome = standardize(mol, options)
-                    blob, text = mol_to_blob(outcome.mol), smiles_of(outcome.mol)
+                    text = smiles_of(outcome.mol)
+                    # conformer energies belong to the structure as it was (hydrogens aside)
+                    if smiles_of(Chem.RemoveHs(outcome.mol)) != smiles_of(Chem.RemoveHs(mol)):
+                        energies.clear(outcome.mol)
+                    blob = mol_to_blob(outcome.mol)
                     note, salts = "; ".join(outcome.notes), outcome.salts
                     out.changed += text != smiles_of(mol)
                 elif cell is not None:

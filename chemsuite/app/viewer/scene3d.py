@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 from rdkit import Chem
 
+from chemsuite.conformers import energies
 from chemsuite.molview.align import aligned_conformers
 from chemsuite.molview.geometry import NO_H, POLAR_H, THIN, WIRE, molecule_part
 
@@ -48,7 +49,10 @@ def make_3d(mols: dict[int, Chem.Mol]) -> dict[int, Chem.Mol | None]:
     out: dict[int, Chem.Mol | None] = {}
     for oid, mol in mols.items():
         try:
-            out[oid] = generate(mol, settings).mol
+            made = generate(mol, settings).mol
+            if made is not None:
+                energies.clear(made)  # one quick conformer is no ensemble to compare with
+            out[oid] = made
         except Exception:  # noqa: BLE001 - one bad structure must not stop the rest
             out[oid] = None
     return out
@@ -57,8 +61,9 @@ def make_3d(mols: dict[int, Chem.Mol]) -> dict[int, Chem.Mol | None]:
 @dataclass(frozen=True)
 class Look:
     """How the Browser draws its 3D molecules. *conformer* is the one shown of each row, unless
-    *overlay* draws every conformer; *rows* draws several rows at once. Either makes the
-    drawing thin sticks without the hydrogens on carbon, as 3Dmol overlays read best."""
+    *overlay* draws every conformer, or several are *chosen* (positions, 0 first); *rows*
+    draws several rows at once. Any of these makes the drawing thin sticks without the
+    hydrogens on carbon, as 3Dmol overlays read best."""
 
     style: str
     hydrogens: str
@@ -69,6 +74,7 @@ class Look:
     conformer: int
     reference: bool
     limit: int
+    chosen: tuple[int, ...] = ()
 
 
 def scene_parts(
@@ -78,7 +84,8 @@ def scene_parts(
 ) -> tuple[list, list[int]]:
     """The parts to draw and the row each belongs to (-1 for the reference)."""
     style, hydrogens = look.style, look.hydrogens
-    if look.overlay or look.rows:
+    several = len(look.chosen) > 1 and not look.overlay
+    if look.overlay or look.rows or several:
         style = WIRE if style == WIRE else THIN
         hydrogens = NO_H if hydrogens == NO_H else POLAR_H
     parts, rows = [], []
@@ -86,7 +93,12 @@ def scene_parts(
         if look.align and mol.GetNumConformers() > 1:
             mol = aligned_conformers(mol)
         ids = [c.GetId() for c in mol.GetConformers()]
-        chosen = ids if look.overlay else [ids[min(look.conformer, len(ids) - 1)]]
+        if look.overlay:
+            chosen = ids
+        elif several:
+            chosen = [ids[i] for i in look.chosen if i < len(ids)] or ids[:1]
+        else:
+            chosen = [ids[min(look.conformer, len(ids) - 1)]]
         for conf_id in chosen:
             if len(parts) >= look.limit:
                 break

@@ -31,6 +31,7 @@ import numpy as np
 from rdkit import Chem, rdBase
 from rdkit.Chem import AllChem, rdDistGeom, rdMolAlign
 
+from chemsuite.conformers.energies import annotate
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text, mol_to_blob, smiles_of
@@ -176,7 +177,9 @@ def _etkdg(mol: Chem.Mol, settings: ConformerSettings) -> Conformers:
             conformer = Chem.Conformer(conformers[index])
             conformer.SetId(new_id)
             out.AddConformer(conformer, assignId=False)
-    return Conformers(out, [energies[i] for i in order], force_field)
+    kept = [energies[i] for i in order]
+    annotate(out, kept, force_field)
+    return Conformers(out, kept, force_field)
 
 
 def _mol(cell: Cell) -> Chem.Mol | None:

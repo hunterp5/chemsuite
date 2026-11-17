@@ -31,6 +31,7 @@ from rdkit import Chem, rdBase
 from rdkit.Chem import rdMolAlign
 
 from chemsuite.conformers import conforge
+from chemsuite.conformers.energies import delta_of
 from chemsuite.conformers.etkdg import Cell, ConformerSettings, generate
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
@@ -178,8 +179,9 @@ def best_over_references(
 
 
 def superpose_chunk(args: tuple[Settings, bytes, str, Sequence[Cell]]) -> list[tuple]:
-    """``(blob, display, conformer number, scores)`` per cell (a picklable worker entry
-    point); a blank, invalid or failed cell gives ``(b"", "", nan, nans)``."""
+    """``(blob, display, conformer number, scores, ΔE)`` per cell (a picklable worker entry
+    point); a blank, invalid or failed cell gives ``(b"", "", nan, nans, nan)``. ΔE is the kept
+    conformer's stored energy above its ensemble's lowest (NaN when it has none)."""
     settings, reference_blob, reference_id, cells = args
     reference = mol_from_blob(reference_blob)
     blank = tuple(np.nan for _ in settings.scores)
@@ -187,29 +189,32 @@ def superpose_chunk(args: tuple[Settings, bytes, str, Sequence[Cell]]) -> list[t
     for cell in cells:
         mol = mol_of_cell(cell)
         if mol is None:
-            out.append((b"", "", np.nan, blank))
+            out.append((b"", "", np.nan, blank, np.nan))
             continue
         try:
             moved, fit = superpose_one(mol, reference, settings)
         except _FAILURES:
-            out.append((b"", "", np.nan, blank))
+            out.append((b"", "", np.nan, blank, np.nan))
             continue
         with rdBase.BlockLogs():
             display = smiles_of(Chem.RemoveHs(moved))
         scores = tuple(float(fit.scores.get(name, np.nan)) for name in settings.scores)
-        out.append((blob_with_reference(moved, reference_id), display, fit.conf_id + 1.0, scores))
+        out.append((blob_with_reference(moved, reference_id), display, fit.conf_id + 1.0, scores,
+                    delta_of(moved)))  # fmt: skip
     return out
 
 
 @dataclass
 class SuperposeBatch:
     """Results cell for cell: blobs (``b""`` for none), display SMILES, the conformer used
-    (1 = the first) and one array per score (named as in ``settings.scores``)."""
+    (1 = the first), one array per score (named as in ``settings.scores``) and the kept
+    conformer's ΔE above its ensemble's lowest (kcal/mol; NaN where unknown)."""
 
     blobs: list[bytes]
     displays: list[str]
     conformers: np.ndarray
     scores: dict[str, np.ndarray]
+    delta_e: np.ndarray
 
     @property
     def failed(self) -> int:
@@ -221,8 +226,9 @@ def _batch(rows: list[tuple], names: Sequence[str]) -> SuperposeBatch:
     displays = [r[1] for r in rows]
     conformers = np.array([r[2] for r in rows], dtype=np.float64)
     table = np.array([r[3] for r in rows], dtype=np.float64).reshape(len(rows), len(names))
+    delta_e = np.array([r[4] if len(r) > 4 else np.nan for r in rows], dtype=np.float64)
     return SuperposeBatch(blobs, displays, conformers,
-                          {n: table[:, i] for i, n in enumerate(names)})  # fmt: skip
+                          {n: table[:, i] for i, n in enumerate(names)}, delta_e)  # fmt: skip
 
 
 def _run(

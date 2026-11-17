@@ -165,5 +165,14 @@ def test_sdf_writes_each_conformer(tmp_path: Path) -> None:
     assert np.allclose(records[0].GetConformer().GetPositions(), first, atol=1e-3)
     assert not np.allclose(records[1].GetConformer().GetPositions(), first, atol=1e-3)
     assert {r.GetProp("ID") for r in records[:count]} == {"A"}
+    assert float(records[0].GetProp("Relative Energy (kcal/mol)")) == 0.0
+    deltas = [float(r.GetProp("Relative Energy (kcal/mol)")) for r in records[:count]]
+    assert deltas == sorted(deltas) and deltas[-1] > 0
+    assert sum(float(r.GetProp("Population (%)")) for r in records[:count]) == pytest.approx(
+        100, abs=0.1
+    )
+    assert records[0].GetProp("Force Field") == "MMFF94"
+    assert records[0].HasProp("Energy (kcal/mol)")
+    assert not records[count].HasProp("Energy (kcal/mol)")  # the blank row
     write_sdf(table, path)  # default: one record per row
     assert len(list(Chem.SDMolSupplier(str(path)))) == 2

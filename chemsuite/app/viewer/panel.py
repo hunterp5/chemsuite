@@ -73,6 +73,7 @@ from ..shell import graphics
 from ..shell.glyphs import glyph
 from ..widgets.panel import OptionsPopup, ToolPanel
 from .caption import CaptionOverlay, caption_columns, default_caption, paint_caption
+from .conformer_list import ConformerBar
 from .depiction import Depiction2D, flat_picture
 from .scene3d import Look, make_3d, scene_parts
 from .scene3d import is_3d as _is_3d
@@ -140,7 +141,8 @@ class StructureViewer(ToolPanel):
         self.pages = QStackedWidget()
         self.pages.addWidget(self.depiction)
         self.caption = CaptionOverlay()
-        stack = QGridLayout()
+        view = QWidget()
+        stack = QGridLayout(view)
         stack.setContentsMargins(0, 0, 0, 0)
         stack.addWidget(self.pages, 0, 0)
         stack.addWidget(self.caption, 0, 0)
@@ -154,7 +156,7 @@ class StructureViewer(ToolPanel):
         inside.setContentsMargins(0, 0, 0, 0)
         inside.setSpacing(0)
         inside.addWidget(self.toolbar)
-        inside.addLayout(stack, 1)
+        inside.addWidget(self.conformers.beside(view), 1)
         inside.addWidget(self.rowbar)
         self._frame = frame
         self._header_attached = False
@@ -273,13 +275,7 @@ class StructureViewer(ToolPanel):
             self._glyphs[action] = name
             return action
 
-        self.previous = add("previous", "Previous Conformer", "one back (↑)", lambda: self.step(-1))
-        self.counter = QLabel()
-        self.counter.setToolTip("Conformer shown, of how many")
-        self.counter.setContentsMargins(4, 0, 4, 0)
-        self._conformer_actions = [self.previous, bar.addWidget(self.counter)]
-        self.next = add("next", "Next Conformer", "one on (↓)", lambda: self.step(1))
-        self._conformer_actions += [self.next, bar.addSeparator()]
+        self.conformers = ConformerBar(bar, add, self.step, self._picked, self._schedule)
         self.overlay_action = add(
             "overlay",
             "Overlay",
@@ -644,6 +640,8 @@ class StructureViewer(ToolPanel):
         self._conformers = max(counts, default=0)
         if counts:  # nothing shown yet (a document reopening) keeps the saved conformer
             self.conformer = min(self.conformer, self._conformers - 1)
+        shown = next((m for oid, m in molecules if oid == self.oid), None)
+        self.conformers.show((self.column_name(), self.oid, id(shown)), shown)
         look = Look(
             style=self.style(),
             hydrogens=self.hydrogens.currentData(),
@@ -654,6 +652,7 @@ class StructureViewer(ToolPanel):
             conformer=self.conformer,
             reference=self.show_reference.isChecked(),
             limit=MAX_PARTS,
+            chosen=self.conformers.chosen,
         )
         return scene_parts(molecules, look, self._reference_of)
 
@@ -724,10 +723,15 @@ class StructureViewer(ToolPanel):
         if self.mode != THREE_D:
             return
         target = max(0, min(self.conformer + delta, max(self._conformers - 1, 0)))
-        if target != self.conformer:
-            self.conformer = target
-            self._clear_marks()
-            self.refresh()
+        if target != self.conformer or self.conformers.chosen:
+            self._picked((target,))
+
+    def _picked(self, positions: tuple[int, ...]) -> None:
+        """Show the conformer at the one position, or overlay those at several."""
+        self.conformers.chosen = tuple(positions) if len(positions) > 1 else ()
+        self.conformer = positions[0]
+        self._clear_marks()
+        self.refresh()
 
     def _update_counter(self) -> None:
         n = len(self._oids)
@@ -744,16 +748,8 @@ class StructureViewer(ToolPanel):
         self.select_box.setEnabled(self.oid is not None)
         self.select_box.setChecked(self.oid is not None and self.oid in self.selection)
         total = self._conformers if self.mode == THREE_D else 0
-        overlay = self.overlay_action.isChecked()
-        self.counter.setText(
-            f"{total} Conformers" if overlay
-            else f"{self.conformer + 1} / {total}"
-        )  # fmt: skip
-        for action in self._conformer_actions:  # only for a row with several, in 3D
-            action.setVisible(total > 1)
-        stepping = total > 1 and not overlay
-        self.previous.setEnabled(stepping and self.conformer > 0)
-        self.next.setEnabled(stepping and self.conformer < total - 1)
+        self.conformers.update(total, self.conformer, self.overlay_action.isChecked(),
+                               self.rows_action.isChecked())  # fmt: skip
 
     def _schedule(self, *_args) -> None:
         self._timer.start()
@@ -885,6 +881,7 @@ class StructureViewer(ToolPanel):
             "overlay": self.overlay_action.isChecked(),
             "overlay_rows": self.rows_action.isChecked(),
             "conformer": self.conformer,
+            **self.conformers.state(),
             "camera": camera,
         }
 
@@ -917,6 +914,7 @@ class StructureViewer(ToolPanel):
         self.overlay_action.setChecked(bool(state.get("overlay", False)))
         self.rows_action.setChecked(bool(state.get("overlay_rows", False)))
         self.conformer = max(0, int(state.get("conformer", 0) or 0))
+        self.conformers.set_state(state)
         camera = state.get("camera") if isinstance(state.get("camera"), dict) else None
         if self.renderer is not None and camera is not None:
             self._pending_camera = Camera.from_state(camera)

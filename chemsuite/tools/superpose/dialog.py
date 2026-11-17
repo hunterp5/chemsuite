@@ -39,7 +39,7 @@ from chemsuite.superpose import model as sp
 from chemsuite.superpose.run import align_conformers_rows, mol_of_cell, superpose_rows
 from chemsuite.superpose.substructure import MIN_ATOMS, parse_core
 
-from .poses import new_reference_id, output_name, put, reference_asset
+from .poses import DELTA_E, new_reference_id, output_name, put, reference_asset
 
 #: Below this many rows the work runs on the job's thread: starting worker processes costs more.
 POOL_MIN_ROWS = 20
@@ -391,6 +391,8 @@ class SuperposeDialog(ToolDialog):
                 target: (done_oids, StructureColumn.from_parsed(batch.blobs, batch.displays)),
                 BEST_CONFORMER: (done_oids, NumberColumn.from_floats(batch.conformers, 0)),
             }
+            if np.isfinite(batch.delta_e).any():
+                results[DELTA_E] = (done_oids, NumberColumn.from_floats(batch.delta_e, 2))
             for score, values in batch.scores.items():
                 decimals = sp.DECIMALS.get(score, 3)
                 results[score] = (done_oids, NumberColumn.from_floats(values, decimals))

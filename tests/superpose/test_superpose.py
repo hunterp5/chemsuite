@@ -206,6 +206,21 @@ def test_rows_name_their_reference_and_survive_the_structure_column() -> None:
     assert reference_id_of(mol_from_blob(mol_to_blob(Chem.MolFromSmiles("C")))) is None
 
 
+def test_the_pose_keeps_its_conformer_s_energy_above_the_ensemble_s_lowest() -> None:
+    from chemsuite.conformers import energies
+    from chemsuite.conformers.etkdg import ConformerSettings, generate
+
+    reference = embedded(SULFONAMIDE)
+    ensemble = generate(Chem.MolFromSmiles(SULFONAMIDE), ConformerSettings(count=8)).mol
+    cells = [mol_to_blob(ensemble), "c1ccccc1C", mol_to_blob(moved(reference)), ""]
+    batch = superpose_rows(cells, reference, "r", Settings(method=SHAPE, conformers=5))
+    kept = int(batch.conformers[0]) - 1
+    assert batch.delta_e[0] == pytest.approx(energies.delta_of(ensemble, kept))
+    assert energies.delta_of(mol_from_blob(batch.blobs[0])) == pytest.approx(batch.delta_e[0])
+    assert np.isfinite(batch.delta_e[1])  # a 2D row's own conformers carry energies
+    assert np.isnan(batch.delta_e[2]) and np.isnan(batch.delta_e[3])  # none stored, blank
+
+
 def test_the_reference_link_survives_a_blob_round_trip() -> None:
     blob = blob_with_reference(embedded("CCO"), "superpose-7")
     assert reference_id_of(mol_from_blob(blob)) == "superpose-7"

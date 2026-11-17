@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
@@ -75,12 +76,34 @@ def test_superposes_onto_the_current_row_in_one_undo_step(window, qtbot) -> None
     scores = [table.cell("Shape Tanimoto", o) for o in table.oids]
     assert float(scores[0]) > 0.99 and all(scores)
     assert table.cell("Best Conformer", table.oids[0]) == "1"
+    assert "Pose ΔE (kcal/mol)" not in table  # molfile conformers carry no energies
     mol = table.column("Mol 3D superposed").mol(0)
     asset = table.assets[reference_id_of(mol)]
     assert asset.kind == "superpose-reference" and asset.name == "Row 1 (Mol 3D)"
     table.undo()
     assert "Mol 3D superposed" not in table and "Shape Tanimoto" not in table
     assert not table.assets
+
+
+def test_2d_rows_get_the_pose_s_energy_above_its_lowest_conformer(window, qtbot) -> None:
+    from chemsuite.conformers import energies
+    from chemsuite.superpose.model import SHAPE
+
+    chem = _install(window)
+    table = chem.workspace.table
+    _ctx(chem).set_current_oid(int(table.oids[0]))
+    dialog = chem.open_tool("superpose")
+    dialog.structure.setCurrentText("SMILES")  # 2D: conformers are made, with energies
+    dialog.reference_column.setCurrentText("Mol 3D")
+    dialog.method.setCurrentIndex(dialog.method.findData(SHAPE))
+    assert dialog.problem() == ""
+    dialog.accept()
+    qtbot.waitUntil(lambda: "SMILES superposed" in table, timeout=60_000)
+    column = table.column("SMILES superposed")
+    for slot, oid in enumerate(table.oids):
+        stored = energies.delta_of(column.mol(slot))
+        assert stored >= 0
+        assert float(table.cell("Pose ΔE (kcal/mol)", oid)) == pytest.approx(stored, abs=0.01)
 
 
 def test_the_reference_survives_save_rename_and_reopen(window, qtbot, tmp_path) -> None:

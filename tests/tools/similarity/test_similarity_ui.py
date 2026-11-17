@@ -168,6 +168,7 @@ def test_3d_keeps_the_aligned_poses_with_their_reference(window, qtbot) -> None:
     assert poses.mol(1) is not None and poses.mol(1).GetNumConformers() == 1
     found = {reference_id_of(poses.mol(i)) for i in range(len(table)) if poses.mol(i)}
     assert len(found) == 1  # one reference, kept once
+    assert "Pose ΔE (kcal/mol)" not in table  # molfile conformers carry no energies
     asset = table.assets[found.pop()]
     assert asset.kind == REFERENCE_KIND and asset.name == "A"
     assert asset.meta["source"] == "row" and asset.meta["method"] == "shape"

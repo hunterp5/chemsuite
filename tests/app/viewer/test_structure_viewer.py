@@ -175,23 +175,81 @@ def test_deselecting_the_row_shown_moves_on(chem, qtbot) -> None:
 def test_conformer_stepper_and_overlay(chem, qtbot) -> None:
     panel = _open(chem, qtbot, 1)
     first = panel.renderer.scene.positions.copy()
-    assert panel.counter.text() == "1 / 3"
-    assert not panel.previous.isEnabled() and panel.next.isEnabled()
+    assert panel.conformers.counter.text() == "1 / 3"
+    assert not panel.conformers.previous.isEnabled() and panel.conformers.next.isEnabled()
     panel.step(1)
-    assert panel.counter.text() == "2 / 3"
+    assert panel.conformers.counter.text() == "2 / 3"
     assert (panel.renderer.scene.positions != first).any()
     panel.step(10)
-    assert panel.counter.text() == "3 / 3" and not panel.next.isEnabled()
+    assert panel.conformers.counter.text() == "3 / 3" and not panel.conformers.next.isEnabled()
     panel.go_by(1)  # another row starts at its first conformer
     _shows(panel, qtbot, 2)
-    assert panel.conformer == 0 and not panel.next.isVisible()  # one conformer: no stepper
+    assert panel.conformer == 0 and not panel.conformers.next.isVisible()  # one: no stepper
     panel.go_by(-1)
     _shows(panel, qtbot, 1)
     panel.overlay_action.setChecked(True)
-    qtbot.waitUntil(lambda: panel.counter.text() == "3 Conformers", timeout=5_000)
+    qtbot.waitUntil(lambda: panel.conformers.counter.text() == "3 Conformers", timeout=5_000)
     # every conformer, hydrogens only on the oxygen: 5 heavy atoms + 1 H, three times
     assert len(panel.renderer.scene) == 18
-    assert not panel.previous.isEnabled() and not panel.next.isEnabled()
+    assert not panel.conformers.previous.isEnabled() and not panel.conformers.next.isEnabled()
+
+
+def _with_energies(chem) -> None:
+    """Row A's butanol again in "Energies 3D", its conformers carrying energies."""
+    from chemsuite.conformers import energies
+    from chemsuite.core.mols import mol_to_blob
+    from chemsuite.core.table.columns import StructureColumn
+
+    mol = _conformers("CCCCO", 3)
+    energies.annotate(mol, [-5.0, -4.0, -2.5], "MMFF94")
+    blobs = [mol_to_blob(mol), b"", b""]
+    table = chem.workspace.table
+    table.add_column("Energies 3D", StructureColumn.from_parsed(blobs, ["CCCCO", "", ""]))
+
+
+def test_the_conformer_list_follows_the_view_both_ways(chem, qtbot) -> None:
+    _with_energies(chem)
+    panel = _open(chem, qtbot, 1)
+    bar, listing = panel.conformers, panel.conformers.list
+    assert not listing.isVisible()  # the first column's conformers carry no energies
+    assert bar.counter.text() == "1 / 3"
+    panel.column.setCurrentText("Energies 3D")
+    qtbot.waitUntil(listing.isVisible, timeout=5_000)
+    assert listing.rowCount() == 3
+    texts = [[listing.item(r, c).text() for c in range(4)] for r in range(3)]
+    assert [t[0] for t in texts] == ["1", "2", "3"] and texts[1][1] == "1.00"
+    assert texts[2][3] == "-2.50"
+    assert sum(float(t[2]) for t in texts) == pytest.approx(100, abs=0.2)
+    assert "MMFF94" in listing.horizontalHeaderItem(1).toolTip()
+    assert bar.counter.text() == "1 / 3   ΔE +0.00"
+    panel.step(2)  # the view moves the list's highlight
+    assert [i.row() for i in listing.selectionModel().selectedRows()] == [2]
+    assert bar.counter.text() == "3 / 3   ΔE +2.50"
+    listing.selectRow(1)  # the list moves the view
+    assert panel.conformer == 1 and bar.chosen == ()
+    qtbot.waitUntil(lambda: bar.counter.text() == "2 / 3   ΔE +1.00", timeout=5_000)
+    listing.selectAll()  # several: overlaid, as thin sticks without carbon hydrogens
+    qtbot.waitUntil(lambda: len(panel.renderer.scene) == 18, timeout=5_000)
+    assert bar.chosen == (0, 1, 2) and bar.counter.text() == "3 of 3 Conformers"
+    listing.sortItems(1, Qt.SortOrder.DescendingOrder)  # sorting only reorders the lines
+    assert listing.item(0, 0).text() == "3"
+    state = json.loads(json.dumps(panel.state()))
+    assert state["chosen"] == [0, 1, 2] and state["energies"] is True
+    panel.step(-1)  # stepping goes back to one conformer
+    assert bar.chosen == () and panel.conformer == 0
+    bar.energies.setChecked(False)
+    qtbot.waitUntil(lambda: not listing.isVisible(), timeout=5_000)
+    bar.energies.setChecked(True)
+    panel.go_by(1)  # another row (blank here): no list
+    qtbot.waitUntil(lambda: panel.oid == 2 and not listing.isVisible(), timeout=5_000)
+
+
+def test_the_browser_s_own_quick_conformer_has_no_energies() -> None:
+    from chemsuite.app.viewer.scene3d import make_3d
+    from chemsuite.conformers import energies
+
+    made = make_3d({1: Chem.MolFromSmiles("CCCCO")})[1]
+    assert made is not None and energies.rows(made) == []
 
 
 def test_overlay_rows_draws_every_browsed_row_with_3d(chem, qtbot) -> None:

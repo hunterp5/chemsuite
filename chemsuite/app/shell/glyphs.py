@@ -343,6 +343,13 @@ def _overlay_rows(p: QPainter) -> None:
         p.drawEllipse(QPointF(x, y), 3.4, 3.4)
 
 
+def _energies(p: QPainter) -> None:
+    """An energy axis with three levels: the conformers' energies."""
+    p.drawLine(QPointF(3, 2.5), QPointF(3, 13.5))
+    for y, end in ((12, 13), (8, 11), (4, 9)):
+        p.drawLine(QPointF(5.5, y), QPointF(end, y))
+
+
 def _play(p: QPainter) -> None:
     """A triangle pointing right: play."""
     path = QPainterPath()
@@ -391,6 +398,7 @@ GLYPHS: dict[str, Draw] = {
     "ruler": _ruler,
     "overlay": _overlay,
     "overlay_rows": _overlay_rows,
+    "energies": _energies,
 }
 
 

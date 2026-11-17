@@ -41,7 +41,13 @@ from chemsuite.io.formats import UnsupportedFormat, read_filter, split_suffix
 from chemsuite.similarity import model as sm
 from chemsuite.similarity.fusion import unit
 from chemsuite.similarity.run import RANKING
-from chemsuite.tools.superpose.poses import new_reference_id, output_name, put, reference_asset
+from chemsuite.tools.superpose.poses import (
+    DELTA_E,
+    new_reference_id,
+    output_name,
+    put,
+    reference_asset,
+)
 
 from .methods import Methods
 from .references import Entry, References
@@ -305,6 +311,9 @@ class SimilarityDialog(ToolDialog):
             blobs = [b"" if p is None else p[0] for p in poses]
             displays = ["" if p is None else p[1] for p in poses]
             results[output_name(column)] = (oids, StructureColumn.from_parsed(blobs, displays))
+            delta_e = np.array([np.nan if p is None else p[3] for p in poses], dtype=np.float64)
+            if np.isfinite(delta_e).any():
+                results[DELTA_E] = (oids, NumberColumn.from_floats(delta_e, 2))
             method = next(m for m in search.methods if m.kind in sm.THREE_D)
             for index in sorted({p[2] for p in poses if p is not None}):
                 entry = entries[index]

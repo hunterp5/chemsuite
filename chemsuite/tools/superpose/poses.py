@@ -33,6 +33,8 @@ from chemsuite.core.assets import Asset, PutAsset
 from chemsuite.superpose import model as sp
 
 SUFFIX = " superposed"
+#: the kept conformer's energy above its ensemble's lowest, a rough strain
+DELTA_E = "Pose ΔE (kcal/mol)"
 
 
 def output_name(structure: str) -> str:
