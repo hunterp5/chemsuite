@@ -205,11 +205,10 @@ def apply_parsed(table: Table, chunk: ParseChunk) -> int:
         return 0
     if isinstance(column, ReactionColumn) != chunk.reactions:
         return 0  # converted to another kind since the snapshot
-    keep = [
-        i
-        for i, oid in enumerate(chunk.oids.tolist())
-        if table.has_oid(oid) and table.cell(chunk.column, oid) == chunk.texts[i]
-    ]
+    # One search for the whole chunk: per-cell lookups held the GUI thread for ~0.3 s a chunk.
+    present = np.flatnonzero(table.has_oids(chunk.oids))
+    now = column.displays(table.slots_of(chunk.oids[present]))
+    keep = [i for i, text in zip(present.tolist(), now, strict=True) if text == chunk.texts[i]]
     if not keep:
         return 0
     table.fill_structures(chunk.column, chunk.oids[keep], [chunk.blobs[i] for i in keep])

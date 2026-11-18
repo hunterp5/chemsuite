@@ -36,6 +36,7 @@ from chemsuite.app.document.tools import ToolContext, ToolPanel
 from chemsuite.app.widgets.result_table import ResultTable as ResultTable  # for the panels
 from chemsuite.core.mols import mol_from_blob, mol_from_text
 from chemsuite.plotting.data import number_columns
+from chemsuite.sar.rgroups import POOL_MIN_ROWS as RGROUP_POOL_MIN_ROWS
 from chemsuite.sar.rgroups import Decomposition, decompose, parse_core, suggest_core
 
 MCS_SAMPLE = 50  # structures used to suggest a core
@@ -199,11 +200,16 @@ def decompose_task(ctx: ToolContext, recipe: dict, oids: np.ndarray):
     core = parse_core(recipe["core"])
     cells = structure_cells(ctx, recipe["structure"], oids)
     exhaustive = bool(recipe["exhaustive"])
+    executor = ctx.workers_for(len(cells), RGROUP_POOL_MIN_ROWS)
 
     def work(job) -> Decomposition:
-        mols = [cell_mol(c) for c in cells]
         return decompose(
-            mols, core, exhaustive=exhaustive, progress=job.report, cancel=job.cancel_token
+            cells,  # read in the workers: 17k molecules freed here held the GIL for 0.4 s
+            core,
+            exhaustive=exhaustive,
+            progress=job.report,
+            cancel=job.cancel_token,
+            executor=executor,
         )
 
     return work

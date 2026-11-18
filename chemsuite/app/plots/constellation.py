@@ -219,7 +219,9 @@ class ConstellationRenderer:
         self.cx, self.cy = data.coords[:, 0], data.coords[:, 1]
         self._member_oids = [data.oids[m] for m in con.members]
         n = con.n.astype(np.float64)
-        self.sizes = marker_sizes(n, *spec.point_sizes, *spec.size_range)
+        # Half-pixel steps: pyqtgraph renders a symbol per distinct size and brush, which took a
+        # fifth of a second for thousands of cores each with a size of its own.
+        self.sizes = np.round(marker_sizes(n, *spec.point_sizes, *spec.size_range) * 2) / 2
         colors = self._colors(table, spec, data)
         if len(con.edges):
             a, b = con.edges[:, 0], con.edges[:, 1]
@@ -227,11 +229,12 @@ class ConstellationRenderer:
             y = np.column_stack([self.cy[a], self.cy[b]]).ravel()
             self._add(pg.PlotDataItem(x, y, connect="pairs", pen=pg.mkPen(EDGE, width=1)))
         order = np.argsort(-self.sizes, kind="stable")  # small circles drawn over large ones
+        brushes = {c: pg.mkBrush(*c, 210) for c in set(colors)}
         self._points = pg.ScatterPlotItem(
             x=self.cx[order],
             y=self.cy[order],
             size=self.sizes[order],
-            brush=[pg.mkBrush(*colors[i], 210) for i in order],
+            brush=[brushes[colors[i]] for i in order],
             pen=pg.mkPen(60, 60, 60, 160, width=0.8),
             pxMode=True,
         )

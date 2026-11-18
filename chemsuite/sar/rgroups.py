@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Callable, Sequence
+from concurrent.futures import Executor
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -33,12 +34,17 @@ from rdkit import Chem, rdBase
 from rdkit.Chem import rdFMCS
 from rdkit.Chem import rdRGroupDecomposition as rgd
 
+from chemsuite.analysis.fingerprints import Cell, cell_mol
 from chemsuite.core.jobs import Cancelled, CancelToken
+from chemsuite.core.jobs.parallel import ordered_map
 
 HYDROGEN = "H"
 _POSITION = re.compile(r"^R(\d+)$")
 _MAP = re.compile(r"\[\*:(\d+)\]")
 CHUNK = 500
+# RDKit's decomposition holds the GIL for a whole call (~0.4 s per chunk), freezing the window
+# from a job thread: from this many rows the calls go to worker processes instead.
+POOL_MIN_ROWS = 100
 
 
 def parse_core(text: str) -> Chem.Mol:
@@ -137,14 +143,19 @@ def _position_key(name: str) -> int:
 
 
 def decompose(
-    mols: Sequence[Chem.Mol | None],
+    mols: Sequence[Chem.Mol | Cell],
     core: Chem.Mol,
     *,
     exhaustive: bool = False,
     progress: Callable[[int, int], None] | None = None,
     cancel: CancelToken | None = None,
+    executor: Executor | None = None,
 ) -> Decomposition:
     """Decompose every molecule onto *core*.
+
+    *mols* are molecules or table cells (a structure blob or text; None or blank for no
+    molecule). Cells are read chunk by chunk where the chunk runs: in a worker process on
+    *executor*, so the job's thread never holds (or frees) thousands of molecules.
 
     With numbered attachment points the work runs in chunks (each position keeps its number);
     without, RDKit must see every molecule at once to number positions consistently.
@@ -153,33 +164,56 @@ def decompose(
     first rows (the chunks finished), or None if none were.
     """
     n = len(mols)
-    labelled = has_labelled_positions(core)
-    size = CHUNK if labelled else max(n, 1)
+    size = CHUNK if has_labelled_positions(core) else max(n, 1)
     rows: list[dict | None] = [None] * n
     cores: Counter[str] = Counter()
-    for start in range(0, n, size):
-        if cancel is not None and cancel.cancelled:
-            raise Cancelled(_decomposition(rows[:start], cores) if start else None)
-        index = [i for i in range(start, min(n, start + size)) if mols[i] is not None]
-        batch = []
-        for i in index:
-            mol = mols[i]
-            if mol.GetNumConformers() and mol.GetConformer().Is3D():
-                mol = Chem.RemoveHs(mol)
-            batch.append(mol)
-        if batch:
-            with rdBase.BlockLogs():
-                found, unmatched = rgd.RGroupDecompose(
-                    [core], batch, asSmiles=True, asRows=True, options=_params(core, exhaustive)
-                )
+    starts = range(0, n, size)
+    if cancel is not None and cancel.cancelled:
+        raise Cancelled(None)
+    jobs = ((core, list(mols[start : start + size]), exhaustive) for start in starts)
+    results = ordered_map(_decompose_chunk, jobs, executor)
+    try:
+        for start, (present, found, unmatched) in zip(starts, results, strict=True):
             missing = set(unmatched)
-            matched_index = [i for k, i in enumerate(index) if k not in missing]
-            for i, row in zip(matched_index, found, strict=True):
+            matched = [start + p for k, p in enumerate(present) if k not in missing]
+            for i, row in zip(matched, found, strict=True):
                 rows[i] = row
                 cores[row.get("Core", "")] += 1
-        if progress is not None:
-            progress(min(n, start + size), n)
+            end = min(n, start + size)
+            if progress is not None:
+                progress(end, n)
+            if end < n and cancel is not None and cancel.cancelled:
+                raise Cancelled(_decomposition(rows[:end], cores))
+    finally:
+        results.close()  # drops chunks not started after a cancel
     return _decomposition(rows, cores)
+
+
+def _decompose_chunk(
+    job: tuple[Chem.Mol, list, bool],
+) -> tuple[list[int], list[dict], list[int]]:
+    """One RDKit call (in a worker process when there is a pool). Returns the chunk positions
+    that hold a molecule, the decomposed rows, and which of those molecules did not match."""
+    core, items, exhaustive = job
+    present, batch = [], []
+    for p, item in enumerate(items):
+        if item is None or isinstance(item, bytes | str):
+            mol = cell_mol(item)  # a 3D cell loses its hydrogens there
+        elif item.GetNumConformers() and item.GetConformer().Is3D():
+            mol = Chem.RemoveHs(item)
+        else:
+            mol = item
+        if mol is None:
+            continue
+        present.append(p)
+        batch.append(mol)
+    if not batch:
+        return [], [], []
+    with rdBase.BlockLogs():
+        found, unmatched = rgd.RGroupDecompose(
+            [core], batch, asSmiles=True, asRows=True, options=_params(core, exhaustive)
+        )
+    return present, list(found), list(unmatched)
 
 
 def _decomposition(rows: list[dict | None], cores: Counter[str]) -> Decomposition:

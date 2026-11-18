@@ -52,7 +52,7 @@ PERMS = 128
 TREES = 16
 WINDOW = 10
 REFINE = 1
-CHUNK_ROWS = 4096
+CHUNK_ROWS = 1024  # MinHash rows at once: one numpy call holds the GIL, ~25 ms at this size
 RERANK_CELLS = 200_000  # candidate pairs reranked at once (× 256 bytes of fingerprint words)
 SEED = 42
 

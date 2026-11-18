@@ -222,6 +222,14 @@ class Table:
         slot = int(np.searchsorted(self._oids, oid))
         return slot < len(self._oids) and int(self._oids[slot]) == oid
 
+    def has_oids(self, oids: Sequence[int] | np.ndarray) -> np.ndarray:
+        """A bool mask: which of *oids* are rows of the table (one search for them all)."""
+        oids = as_slots(oids)
+        if not len(self._oids):
+            return np.zeros(len(oids), dtype=bool)
+        slots = np.minimum(np.searchsorted(self._oids, oids), len(self._oids) - 1)
+        return self._oids[slots] == oids
+
     def cell(self, name: str, oid: int) -> str:
         """Display text of one cell."""
         return self.column(name).display(int(self.slots_of([oid])[0]))

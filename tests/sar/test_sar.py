@@ -100,6 +100,14 @@ def test_least_squares_statistics() -> None:
     assert collinear.estimable.tolist() == [True, False]
 
 
+def test_a_column_the_intercept_and_earlier_columns_make_is_not_estimable() -> None:
+    labels = np.array([0, 1, 2, 0, 1, 2, 0, 1])
+    dummies = np.column_stack([(labels == k).astype(float) for k in (1, 2, 0)])
+    y = np.arange(8, dtype=float)
+    fit = least_squares(dummies, y, ["one", "two", "zero"])  # zero = intercept − one − two
+    assert fit.estimable.tolist() == [True, True, False] and fit.parameters == 3
+
+
 def test_free_wilson_recovers_effects() -> None:
     smiles, activity = _series()
     d = decompose([Chem.MolFromSmiles(s) for s in smiles], parse_core(CORE))

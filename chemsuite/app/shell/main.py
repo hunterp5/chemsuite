@@ -28,6 +28,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+WARMUP_DELAY_MS = 1500  # after start-up: the warm-up imports should not slow the first paint
+
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QApplication
 
@@ -46,12 +48,12 @@ def main(argv: list[str] | None = None) -> int:
 
     logbook.setup_logging()  # at once, so start-up problems are logged too
 
-    from PySide6.QtCore import QCoreApplication, qVersion
+    from PySide6.QtCore import QCoreApplication, QTimer, qVersion
     from PySide6.QtWidgets import QApplication
 
     from ..document.main_window import MainWindow
     from ..table.table_view import StructureImages
-    from . import graphics
+    from . import graphics, warmup
     from .error_report import install_crash_handler
     from .jobs import JobRunner
     from .settings_hub import config_folder, settings_hub
@@ -80,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     runner = JobRunner(app, keep_awake=True)
     window = MainWindow(runner, StructureImages())
     paths = [Path(arg) for arg in argv[1:] if not arg.startswith("-")]
+    QTimer.singleShot(WARMUP_DELAY_MS, warmup.start)  # once the window is up and drawn
     return run_app(app, runner, window, paths)
 
 

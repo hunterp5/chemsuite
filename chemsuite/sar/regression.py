@@ -27,6 +27,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+# A column adds rank when this fraction of its length lies outside the columns kept before it.
+_RANK_TOLERANCE = 1e-9
+
 
 @dataclass(frozen=True)
 class Fit:
@@ -52,13 +55,27 @@ class Fit:
 
 def _estimable_columns(x: np.ndarray) -> list[int]:
     """Greedy: keep a column when it adds rank to the intercept and the columns kept so far."""
+    # Gram-Schmidt against an orthonormal basis of what is kept: a column adds rank when part
+    # of it lies outside that span. One SVD per column instead took minutes (and held the GIL
+    # for a quarter second each) on a Free-Wilson matrix of thousands of rows and columns.
+    n = len(x)
     kept: list[int] = []
-    basis = np.ones((len(x), 1))
-    rank = 1
+    basis = np.empty((n, min(n, x.shape[1] + 1)))
+    basis[:, 0] = 1 / math.sqrt(n) if n else 0.0
+    rank = 1 if n else 0
     for j in range(x.shape[1]):
-        trial = np.column_stack([basis, x[:, j]])
-        if np.linalg.matrix_rank(trial) > rank:
-            basis, rank = trial, rank + 1
+        column = np.asarray(x[:, j], dtype=np.float64)
+        size = float(np.linalg.norm(column))
+        if size == 0.0 or rank >= basis.shape[1]:
+            continue
+        rest = column.copy()
+        for _ in range(2):  # twice: one pass loses orthogonality on nearly dependent columns
+            q = basis[:, :rank]
+            rest -= q @ (q.T @ rest)
+        left = float(np.linalg.norm(rest))
+        if left > _RANK_TOLERANCE * max(size, 1.0):
+            basis[:, rank] = rest / left
+            rank += 1
             kept.append(j)
     return kept
 
