@@ -1420,6 +1420,62 @@ bases) its error is RMSE 0.81 pKa units.
   - Treat the values as screening estimates, not measurements.
 - **Cancelling** keeps the rows already predicted.
 
+### Sites of Metabolism
+
+Chemistry ▸ Calculate ▸ Sites of Metabolism… ranks the atoms of each structure by how likely a
+cytochrome P450 isoform is to metabolize them. The model is chemsuite's own: a gradient boosting
+machine over 34 cheap atom descriptors (element, hybridization, ring and valence context,
+Gasteiger charge, E-state and Crippen contributions) plus the isoform, trained on the measured
+sites of 679 compounds across the nine isoforms. It comes with chemsuite, needs no network, and
+scores a molecule in about a millisecond.
+
+- **Isoforms.** CYP3A4, 2D6, 2C9 and 1A2 are on by default; 2A6, 2B6, 2C8, 2C19 and 2E1 are under
+  More Options. Each isoform gets its own columns. The model scores them all at once, so asking
+  for more of them costs almost nothing.
+- **Input.** A structure column and the rows. Hydrogens are not sites: explicit ones are ignored,
+  and only heavy atoms are scored. Salts are not reduced for you — run Standardize first if your
+  structures have counter-ions, because the model was trained on single, neutralized fragments.
+- **Columns** (choose any):
+
+  | Column | Meaning |
+  |---|---|
+  | Top Site *(isoform)* | The highest-scoring atom, named by its element and its index in the structure, for example `C7`. Atoms that score identically, such as the two methyls of an isopropyl group, are reported by the lower index. |
+  | Score *(isoform)* | That atom's score, 0 to 1. |
+  | Sites *(isoform)* | The three highest-scoring atoms, best first, each with its score: `C7 0.59, C18 0.04, C19 0.04`. |
+  | Applicability *(isoform)* | The share of the top atom's surroundings the model saw while training, 0 to 1. Below 1 means the molecule is unlike the training set at that atom, so trust the ranking less. |
+
+  Each run writes new columns and never changes an earlier run's. When a name is already taken,
+  all the columns of the run get the same suffix, (2), (3)…
+
+- **How accurate it is.** Measured over ten random splits that keep every isoform of a molecule
+  on one side of the split, so the numbers describe a molecule the model has never seen:
+
+  | | top-1 | top-2 | top-3 | MCC |
+  |---|---|---|---|---|
+  | All isoforms | 0.59 | 0.73 | 0.81 | 0.48 |
+  | CYP3A4 | 0.53 | 0.67 | 0.76 | 0.43 |
+  | CYP2D6 | 0.59 | 0.72 | 0.81 | 0.44 |
+  | CYP2C9 | 0.61 | 0.73 | 0.83 | 0.47 |
+  | CYP1A2 | 0.61 | 0.74 | 0.84 | 0.48 |
+
+  So the measured site is the top-ranked atom about three times in five, and among the top three
+  atoms about four times in five. CYP3A4 is the weakest isoform even though it has the most data:
+  it is the promiscuous one, with the largest substrates.
+
+- **What counts as a site.** Only *primary* sites of metabolism — the dominant route reported for
+  a compound. Published figures for other tools usually count secondary and tertiary annotations
+  as hits too, which raises top-1 by about 0.10, and most of them are measured on splits that put
+  one isoform of a molecule in training and another in the test set, which raises it further. The
+  numbers above do neither, so they are lower than published ones and not comparable with them.
+- **Limits.**
+  - Scores rank the atoms of one molecule. They are not probabilities you can compare between
+    molecules, and they do not say whether the compound is a substrate at all.
+  - The isoform matters less than the molecule: the same atom often leads for every isoform.
+  - Phase II metabolism (glucuronidation, sulfation), non-P450 enzymes and the structures of the
+    metabolites themselves are out of scope.
+  - Treat the ranking as a screening aid, not a measurement.
+- **Cancelling** keeps the rows already found.
+
 ### Standardize
 
 Chemistry ▸ Standardize prepares structures for docking, or for any work that needs

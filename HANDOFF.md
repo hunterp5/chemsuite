@@ -291,12 +291,13 @@ other machine can pick it up. Update it at the end of a session that leaves work
   **U4 built 2026-11-17** (details and benchmark in `docs/UNIPKA_PLAN.md` U4):
   - Prepare and Inspect take ligand states from chemsuite pKa: fold 0 of e20, 3 conformers.
   - The weights are published as GitHub release `pka-weights-1` (GPL-3.0-or-later, with
-    Uni-Mol's MIT license). The app downloads them once, after asking, and checks the SHA-256.
+    Uni-Mol's MIT license). Since U5 the same file ships in the package.
   - Ligand-H benchmark: tied with MolGpKa on the test half (94.7%).
   **U5 built 2026-11-18** (details in `docs/UNIPKA_PLAN.md` U5): Predict pKa, Standardize's
   Protonate and the pKa descriptors run on chemsuite pKa (`ionisation/profile.py`); MolGpKa is
-  removed. Without the weights the pKa tools show ⚠, the descriptors are blank, and Prepare
-  keeps ligands as drawn. About 12 s per drug-sized molecule (3 conformers + 2D).
+  removed. The weights ship in the package (`ionisation/unipka/data/chemsuite-pka-1.npz`,
+  88 MB, committed to git): no download, prompt or cache. About 12 s per drug-sized molecule
+  (3 conformers + 2D).
 - **CONFORGE conformers** (§7.0b, plan approved 2026-11-14): the default Generator in Generate
   Conformers since 2026-11-15 (`conformers/conforge.py`); `cdpkit` is a base dependency with
   platform markers (no wheel on Windows 3.11/3.13 or Intel Macs: ETKDG there).
@@ -374,10 +375,18 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - Chemistry spot-check is in the tests: testosterone → C6 (3A4's 6β-hydroxylation),
     paracetamol → the amide N, caffeine → C8, ethanol → the carbinol C for 2E1, each the
     top-ranked atom.
-  - **Next: M4**, the tool (`chemsuite/tools/metabolism/`, the two-file Predict pKa pattern, a kit
-    dialog with the isoform choice and an `OUTPUTS` dict); then **M5**, showing the sites on the
-    structure (needs an index-provider `Highlight` variant with a per-row cache key — see the
-    plan), then **M6**, the user guide with the label definition beside every number.
+  - **M4 and M6 are done too** (2026-11-18): Chemistry ▸ Calculate ▸ Sites of Metabolism…
+    (`chemsuite/tools/metabolism/`, the two-file Predict pKa pattern) with the four common
+    isoforms on and the other five under More Options, and Top Site / Score / Sites /
+    Applicability columns per isoform; the guide section is `### Sites of Metabolism`, with the
+    accuracy table, the `PRIMARY_SOM` definition and why the numbers are below published ones.
+  - **Next: M5**, showing the sites on the structure. It is also what makes the columns fully
+    usable: `Top Site` names an atom as `C7`, and **nothing in the app displays atom indices
+    yet**, so the highlight (or an atom-number option in the depiction) is how a chemist sees
+    which atom is meant. The plan's M5 needs an index-provider `Highlight` variant with a
+    per-row cache-key component, since `StructureImages` keys its cache on the molecule blob and
+    `Highlight` is a column-wide SMARTS query today. Shared rendering, so the full suite runs at
+    the end of that step.
   CYP inhibition is phase C of the same plan, on OpenADMET's open pIC50 data and the Veith panel
   from PubChem.
 
