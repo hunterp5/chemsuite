@@ -573,34 +573,83 @@ model, mode and seed it does not recompute, so the output file silently mixes th
 ours — which is exactly what the first smoke run produced. `run_bench.sh` now clears
 `metrics_per_run.csv` and `metrics_summary.csv` before each pass.
 
-### The hypothesis the experiment is testing
+## Decided with the user, 2026-11-18: pivot to the GBM, primary-only labels
 
-**If their models still win on primary-only labels, ATTNSOM is the wrong basis for this tool**, on
-this reasoning: it would land level with a plain fingerprint GBM,
-below *untrained* SMARTCyp, and 0.066 top-1 behind a gradient boosting machine over Hückel
-features — while costing 8.5M parameters, a hand-written numpy forward pass with a `SAGPooling`
-reimplementation, and 17 MB of vendored weights. Its 14-point drop from instance to grouped split,
-against 2–4 points for their models, says plainly that much of its reported strength was
-memorizing molecules rather than learning chemistry.
+Accuracy is a tie, so the decision was taken on everything else, and **M2–M6 below are
+superseded by this section**. Two further findings made the choice easier than the table above
+suggests.
 
-**The recommended pivot, which is simpler in every dimension:** atom and bond features plus
-**Hückel** molecular-orbital descriptors, fed to **gradient boosting**.
+**The Hückel descriptors are not worth having.** Their own `docs/HUCKEL_DESCRIPTORS.md` says so,
+in a box headed *"Do these features earn their place? Measured: no"*: dropping all 21 of them and
+refitting costs +0.001 top-1 (p = 0.96), and the document explicitly "documents what the
+descriptors are, not a claim that they help". Our own 10-seed run agrees — `basic_gbm` 0.601
+against `phys_gbm` 0.599. **So the target is the plain atom-feature GBM**, and the
+eigendecomposition, the Streitwieser heteroatom parameters, the degenerate-frontier averaging and
+the π-fragment handling all disappear with it. What looked like the clever part of the pivot turns
+out to be the part to leave out.
 
-- Hückel theory is an eigendecomposition of a connectivity matrix: a page of numpy, no weights.
-- Gradient boosting is **scikit-learn, already a base dependency** (`docs/PLAN.md`).
-- So: no `graphnet.py`, no `SAGPooling`, no float16 archive, no 17 MB in the repo, no golden file
-  of activations — the model is kilobytes and the "port" disappears, because there is nothing to
-  port. Training and inference use the same library.
-- It is also more honest about its own uncertainty: their table reports calibration (ECE, Brier)
-  alongside ranking, and a GBM's probabilities are far easier to calibrate than a focal-loss net's.
-- **Avoid the BDE variant**: its bond dissociation energies come from ALFABET, a neural net with
-  its own TensorFlow dependency, and it buys only 0.022 top-1 over Hückel alone.
+**And the feature set is 34 atom descriptors, all cheap RDKit calls** (read from
+`basic_atom_block` and `charge_block`, 2026-11-18), plus a 9-wide isoform one-hot — 43 columns:
 
-What is kept from the work so far: the licence diligence, the leakage finding and the grouped-split
-harness, `scripts/som/leakage_check.py`, the chemistry sanity-check approach, the per-isoform
-reporting, and the decision to quote grouped numbers only. What is dropped: `graphnet.py`,
-`SAGPooling`, the weights archive, and the activation golden file. `features.py` survives in spirit
-but gains the Hückel descriptors and loses nothing.
+| block | columns |
+|---|---|
+| element one-hot | `el_C N O S P F Cl Br I other` (10) |
+| hybridization one-hot | `hyb_sp sp2 sp3 other` (4) |
+| topology and valence | `n_hydrogens`, `heavy_degree`, `formal_charge`, `is_aromatic`, `in_ring`, `min_ring_size`, `n_rings_at_atom`, `aromatic_neighbours`, `hetero_neighbours`, `has_double_bond`, `has_triple_bond`, `is_benzylic_or_allylic_CH`, `is_terminal` (13) |
+| charge and lipophilicity | `gasteiger_charge`, `estate_index`, `crippen_logp`, `crippen_mr`, `neighbour_charge_max/min/mean` (7) |
+| isoform | one-hot over the nine (9) |
+
+There is **no bond block**: bond information enters through `has_double_bond`, `has_triple_bond`
+and the neighbour counts. Features are computed once per unique molecule and reused across the
+nine isoforms, which is also how the app should batch them.
+
+**The estimator**, read from `_fit_gbm`: `HistGradientBoostingClassifier(max_iter=300,
+early_stopping=False, l2_regularization=1.0, min_samples_leaf=20)`, with `learning_rate` ∈ {0.05,
+0.10} × `max_leaf_nodes` ∈ {31, 63} chosen on the validation split by average precision.
+
+**Labels: `PRIMARY_SOM` only** (decided with the user). It is what our measurements use, it is the
+harder and more defensible question, and `SECONDARY_SOM`/`TERTIARY_SOM` would inflate every quoted
+figure by about 0.10 top-1. The user guide must state the label definition beside each number, so
+no reader mistakes ours for a published `som_all` figure.
+
+### What M2 becomes
+
+A Qt-free `chemsuite/metabolism/`, added to `QT_FREE` in `tests/test_import_boundaries.py`:
+
+| file | contents |
+|---|---|
+| `features.py` | The 43 columns above, ported from `som-benchmark`'s `features.py` (MIT) with attribution. Keep its `_safe()` guard: Gasteiger charges can come back NaN or infinite. |
+| `trees.py` | Numpy inference over the exported ensemble: walk `feature`, `threshold`, `left`, `right`, `is_leaf`, `value` per tree, sum the leaf values onto `baseline_prediction`, then a logistic. ~40 lines, and the only "port" left. |
+| `sites.py` | `ISOFORMS`, `MetaboliteSite(atom, isoform, score, domain)`, `predict_sites(mol, isoforms)`, `predict_on(mol)`. Loads `data/som_gbm.npz` with `importlib.resources` + `functools.cache`. **Ties broken by lowest atom index** — symmetry-equivalent atoms score identically. |
+| `predict.py` | The chunked, cancellable batch driver copied from `ionisation/predict.py`, unchanged by the pivot. |
+| `data/som_gbm.npz` | The trees, order of 100 KB rather than 17 MB. |
+| `data/LICENSE-SOMBENCH.txt` | `som-benchmark`'s MIT text, beside the other vendored licences. |
+
+**No `weights.py`, no download, no consent prompt, no cache folder** — and no `graphnet.py`, no
+`SAGPooling`, no float16 archive, no activation golden file. The golden fixture becomes predicted
+probabilities for a handful of molecules, a few kilobytes of JSON.
+
+**Deliberately not pickle.** A pickled `HistGradientBoostingClassifier` would be opaque, tied to
+one scikit-learn version, and a load-time hazard; exporting the tree arrays to `.npz` and
+evaluating them in numpy keeps the house pattern (`ionisation/molgpka.py`) and survives sklearn
+upgrades.
+
+**Training moves out of WSL entirely.** scikit-learn is already a base dependency, so
+`scripts/som/train_gbm.py` runs in the app's own venv — no conda, no CUDA, no torch, and a fit
+takes seconds. `scripts/som/export_gbm.py` writes the `.npz`. The Zaretzki data still never ships.
+
+### What survives from the ATTNSOM work
+
+The licence diligence; the leakage finding and its grouped-split harness
+(`scripts/som/leakage_check.py`); `bench_table.py` and the benchmark environment; the per-isoform
+reporting; the grouped-numbers-only rule; the chemistry sanity check as a method; and the
+applicability-domain index (Morgan atom-environment fingerprints), which is now cheap beside the
+model rather than dwarfed by it.
+
+**Dropped, and `tests/metabolism/som_golden.json` with them**: `graphnet.py`, the `SAGPooling`
+reimplementation, the float16 weight archive, `convert_weights.py` and `golden.py`. The trained
+ATTNSOM checkpoints stay in WSL as the baseline our own GBM must match, and the sections below are
+kept as the record of how the decision was reached.
 
 ## Commercial tools, for context
 
