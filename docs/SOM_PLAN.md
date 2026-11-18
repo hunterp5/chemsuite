@@ -505,6 +505,67 @@ a **tie** with our 0.606–0.618, not a loss.
 10-seed `som_primary` run is what settles it, and nothing should be concluded until it lands.
 `fp_gbm` is dropped from it — one seed took 96 minutes against 20 seconds for `phys_gbm`.
 
+### The settled answer: a tie on accuracy (10 seeds, 2026-11-18)
+
+`scripts/som/bench_table.py` builds this, and refuses to build it at all unless each result file
+holds only its own run's rows. Control first — our `som_all` against their committed `som_all`,
+both 10-seed means:
+
+| model | theirs | ours | drift |
+|---|---|---|---|
+| atom/bond + GBM | 0.7025 | 0.7009 | −0.0017 |
+| message-passing GNN | 0.6824 | 0.6835 | +0.0011 |
+| GNN + Hückel | 0.6726 | 0.6710 | −0.0016 |
+| Hückel + GBM | 0.6838 | 0.7025 | +0.0187 |
+| atom-type frequency | 0.4192 | 0.4192 | +0.0000 |
+
+Largest drift 0.019, three models inside 0.002 — **the environment reproduces theirs**, so its
+`som_primary` figures can be trusted. And the label field alone costs **−0.100, −0.103, −0.109,
+−0.116 and −0.101 top-1** across the five models: uniform, large, and exactly the mechanical
+effect diagnosed above. That is the whole of the original 0.684-vs-0.618 "gap".
+
+The comparison, on the labels our tool uses:
+
+| model | top-1 | top-2 |
+|---|---|---|
+| atom/bond + GBM | 0.601 ± 0.047 | 0.730 ± 0.048 |
+| **Hückel + GBM** | **0.599 ± 0.046** | **0.744 ± 0.048** |
+| message-passing GNN | 0.575 ± 0.032 | 0.703 ± 0.042 |
+| GNN + Hückel | 0.555 ± 0.042 | 0.688 ± 0.049 |
+| atom-type frequency | 0.318 ± 0.040 | 0.493 ± 0.029 |
+| **our ATTNSOM, grouped 10-fold** | **0.618** | **0.743** |
+| **our ATTNSOM, production 20-fold** | **0.606** | **0.746** |
+
+**ATTNSOM is ahead by 0.017 top-1 against a seed spread of ±0.047, and level on top-2 (0.746 vs
+0.744). That is a tie.** Neither architecture has an accuracy case over the other.
+
+**Two residual biases both run in our favor**, so if anything the tie flatters ATTNSOM:
+
+1. **Training share.** Their split is 475/68/136 molecules, so ~70% train; our 10-fold trains on
+   ~85% and the production run on 95%. We give our model 15–25% more data for the same test task.
+   The production run suggests this is worth little — 95% scored *below* 90% — but it is not zero.
+2. **Tie-breaking.** Our numbers come from upstream's `argsort`, which resolves ties by atom index;
+   theirs use a seeded permutation. Their own docstring notes index order "silently flatters a
+   model whose first atoms happen to be the labelled ones", and we have measured that ties are
+   common on symmetric molecules.
+
+**What that means for the decision.** Accuracy no longer separates the two, so the choice falls to
+everything else — and there the gap is not close:
+
+| | ATTNSOM | Hückel/atom-bond + GBM |
+|---|---|---|
+| runtime dependency | a hand-written numpy port of 8.5M parameters | scikit-learn, already a base dependency |
+| new code | `graphnet.py`, `features.py`, a `SAGPooling` reimplementation | `features.py` plus a Hückel eigendecomposition |
+| shipped weights | ~17 MB vendored float16 | kilobytes |
+| test fixture | an activation golden file, layer by layer | predicted probabilities |
+| calibration | focal-loss logits, uncalibrated | ECE/Brier reported, and GBMs calibrate readily |
+| upstream risk | must reproduce PyG's `topk` tie behavior exactly | none |
+
+**The one measurement that would still sharpen this** is running ATTNSOM inside their harness, on
+their splits with their tie policy, which removes both residual biases. It is worth doing only if
+the decision hinges on a difference smaller than 0.05 top-1 — and since the engineering case is
+now what decides, it probably does not.
+
 One more trap, worth recording because it nearly corrupted the comparison: `03_evaluate.py`
 *updates* rows in an existing `metrics_per_run.csv` keyed by (model, mode, seed) instead of
 rewriting the file. A short run therefore leaves their committed `som_all` rows in place for every
