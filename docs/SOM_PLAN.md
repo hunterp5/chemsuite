@@ -196,8 +196,20 @@ openly-licensed set, at a measured cost in accuracy. Record the decision here ei
      the 50-epoch cap**, so 50 is ample headroom and the inner-validation early stop is doing the
      work. For the port's development the working model is **grouped fold 1** (trained on 90% of
      molecules, properly early-stopped); it is chosen first-and-arbitrarily rather than by score,
-     so the quoted 10-fold CV mean remains an honest estimate of it. Before release, retrain on
-     ~all the data at a fixed 32 epochs and regenerate the golden file.
+     so the quoted 10-fold CV mean remains an honest estimate of it.
+
+     **The production run is done (2026-11-18)**: 20 grouped folds at a 32-epoch cap, so each
+     model trains on 95% of the molecules (`runs/production`, `fold1_best.pt` the candidate).
+
+     | run | folds | train share | MCC | top-1 | top-2 | top-3 |
+     |---|---|---|---|---|---|---|
+     | grouped CV | 10 | 90% | 0.524 ± 0.061 | 0.618 | 0.743 | 0.811 |
+     | **production** | **20** | **95%** | **0.537 ± 0.067** | **0.606** | **0.746** | **0.815** |
+
+     The extra 5% of training data moves nothing outside seed noise, which is worth knowing in
+     itself: **this architecture is not data-starved on Zaretzki**, so "train on more of it" is not
+     the lever. Note the per-isoform spread stays wide (2C19 top-1 0.679 against 3A4 0.561) and 3A4
+     — the isoform that matters most clinically — remains the worst, as it was in the grouped CV.
   5. Only then try the `SECONDARY_SOM` idea, and keep it only if step 2's metric improves.
   - **The `SAGPooling` risk is smaller than it looked, but there is a real decision in it**
     (read from `model.py` 2026-11-17). The FiLM graph vector is pooled two different ways
@@ -439,6 +451,36 @@ are now beside the point next to this one.
 harness with `--label-field som_primary`, which scores *their* models under *our* label
 definition, directly against our 0.618. Their code supports it; nothing has to be written. Until
 that number exists, ATTNSOM stays, and the paragraphs below are a hypothesis, not a decision.
+
+### The experiment answers it: the pivot is dead, ATTNSOM wins (2026-11-18, seed 0)
+
+Ran with `scripts/som/{setup_bench_env.sh,run_bench.sh}`. First seed of the `som_primary` pass,
+beside their published `som_all` figures for the same models:
+
+| model | top-1 `som_primary` | top-2 `som_primary` | their `som_all` top-1 | label effect |
+|---|---|---|---|---|
+| atom-type prior | 0.337 | 0.500 | 0.419 | −0.082 |
+| fingerprint + GBM | 0.507 | 0.613 | 0.622 | −0.115 |
+| atom/bond + GBM | 0.566 | 0.682 | – | – |
+| **Hückel + GBM** | **0.566** | **0.675** | **0.684** | **−0.118** |
+| **our ATTNSOM, grouped** | **0.618** | **0.743** | – | – |
+| **our ATTNSOM, production** | **0.606** | **0.746** | – | – |
+
+**Switching to the primary-only labels costs their models 0.08–0.12 top-1, uniformly**, which is
+the mechanical effect predicted above and confirms the diagnosis. On the label definition our tool
+actually uses, **ATTNSOM leads the best GBM by about 0.04–0.05 top-1 and by 0.07 top-2** — the
+reverse of what their README appeared to say.
+
+So: **keep ATTNSOM. M2 proceeds as planned**, with `graphnet.py`, the `SAGPooling`
+reimplementation, the vendored float16 weights and the activation golden file all back in scope.
+The Hückel + GBM is worth remembering as a cheap, well-calibrated baseline — and `som-benchmark`
+remains the best external check we have — but it is not the better model here.
+
+Caveat, honestly: this is **one seed**, against their 10-seed means, and their own confidence
+intervals span roughly ±0.03. The gap is comfortably larger than that and points the other way
+from the README, so the decision is safe; the 10-seed figures replace this table when they land.
+`fp_gbm` is dropped from the full run — one seed of it took 96 minutes against 20 seconds for
+`phys_gbm`, and it is not the comparator that matters.
 
 ### The hypothesis the experiment is testing
 
