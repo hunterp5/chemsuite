@@ -214,7 +214,7 @@ modified.
 | Random utilities | Random numbers and a random molecule sample. Low priority. Random Numbers and Random Rows are done; random molecules from outside the table (ChEMBL, PubChem) are under External data in Tier 2. |
 | QSAR, Auto QSAR | Added 2026-11-17. MolManager's `qsar_models.py`, `auto_qsar*.py` (about 2.9k lines): fit and compare regression models on descriptors or fingerprints, cross-validated, with predictions, residuals and an applicability domain as columns. scikit-learn is already a base dependency. Port the Qt-free modules with their tests, then a kit dialog. |
 | CoMSIA | Added 2026-11-17. MolManager's `comsia.py` (780 lines): 3D-QSAR fields on aligned conformers. Builds on Superpose for the alignment. After QSAR. |
-| Sites of metabolism, CYP inhibition | Added 2026-11-17, see §7.0f and [SOM_PLAN.md](SOM_PLAN.md). Our own weights on ATTNSOM's design (MIT), run in numpy: a score per atom per P450 isoform, then CYP inhibition on the same package. No external tool and no new dependency, and the weights are vendored in-tree (about 17 MB, decided 2026-11-18), so it works offline with no download. |
+| Sites of metabolism, CYP inhibition | Added 2026-11-17, see §7.0f and [SOM_PLAN.md](SOM_PLAN.md). Our own model: a score per atom per P450 isoform, then CYP inhibition on the same package. A gradient boosting machine over 34 RDKit atom descriptors and an isoform one-hot (decided 2026-11-18, after measuring it level with a graph network that cost 8.5M parameters). No external tool, no new dependency — scikit-learn is already one — and the trees are vendored in-tree at about 100 KB, so it works offline with no download. |
 | Structural alerts | Added 2026-11-17. RDKit's FilterCatalog sets (PAINS, Brenk, NIH, ZINC and the rest) as columns or a filter: which alerts a row hits and how many. MolManager's `chem/structural_alerts.py` (213 lines) was marked to copy and never was. Probably a tab or group in Calculate Descriptors, as in MolManager. |
 | MMP neighbourhood map and transform ledger | Added 2026-11-17. MolManager's `mmp_neighborhood_analysis.py` and its map, plot and ledger views: a compound's matched-pair neighbours around it, and every transform with its count and mean activity change. Builds on Matched Molecular Pairs. |
 
@@ -233,7 +233,7 @@ modified.
 
 | Feature | Notes |
 |---|---|
-| pKa and permeability models | torch, unipka and chemprop make the install about 2 GB larger, so this is an optional "predictions" add-on. Settles the open question about the "(est.)" descriptors. pKa: MolGpKa is built into the base install (Chemistry ▸ Predict pKa); Uni-pKa stays an optional add-on, see [PKA_PLAN.md](PKA_PLAN.md). |
+| Permeability models | Predictions that belong in Chemistry ▸ Calculate beside Predict pKa. chemprop and torch would make the install about 2 GB larger, so as they stand they are an optional add-on; ported to numpy, as chemsuite pKa was, they could join the base install. Settles the open question about the "(est.)" descriptors. pKa itself is done: chemsuite pKa is in the base install (Chemistry ▸ Calculate ▸ pKa, Standardize, the descriptors and Prepare; [UNIPKA_PLAN.md](UNIPKA_PLAN.md) U5, 2026-11-18). |
 | Protein viewer and editor, sequence alignment, docking, preparation, MD simulation | Planned in phases: see **§7a Proteins** below. Still missing from MolManager's macromolecule tools (added 2026-11-17): sequence alignment and MSA (§7a 1), PLIF across poses, pocket surfaces and protein pharmacophores (§7a 2), MD (§7a 5) and free energy, MolManager's FEP (§7a 6). |
 
 ---
@@ -422,18 +422,29 @@ Uni-pKa gives the free energy of each protonation microstate, so linked sites an
 are handled together; MolGpKa treats each site on its own, and in protein preparation it
 catches few ligand states (`docs/prepare/`). Its published weights cannot be used (licence),
 so chemsuite trains its own on pKaHub's data from Uni-Mol's MIT backbone and runs them in numpy, with
-no torch: [UNIPKA_PLAN.md](UNIPKA_PLAN.md). Ligand states in preparation use it first; Predict
-pKa, standardise and the descriptors follow once it beats MolGpKa on the test sets.
+no torch: [UNIPKA_PLAN.md](UNIPKA_PLAN.md). **Done 2026-11-18:** ligand states in preparation
+(U4), then Predict pKa, Standardize and the descriptors (U5); MolGpKa is removed.
 
 ### 7.0f Sites of metabolism, then CYP inhibition (added 2026-11-17)
 
 Nothing in chemsuite says anything about metabolic fate. Sites of metabolism comes first: a score
-for every atom of a molecule for each of nine human P450 isoforms, on ATTNSOM's design (Kim et al.,
-*Bioinformatics* 2026; MIT), which is graph only — RDKit 2D features, no 3D conformers and no protein
-language model — so the whole forward pass is matmuls and scatter-adds. It ships no weights, and
-FAME 3 and MetaQSAR are academic-only, so chemsuite trains its own in WSL and runs them in numpy
-with no torch, exactly as §7.0e does: [SOM_PLAN.md](SOM_PLAN.md). CYP inhibition follows on the
-same package, trained on OpenADMET's open pIC50 data and the Veith panel from PubChem.
+for every atom of a molecule for each of nine human P450 isoforms. FAME 3 and MetaQSAR are
+academic-only, so chemsuite trains its own model on openly licensed data and ships the result.
+
+**The model is a gradient boosting machine over 34 cheap RDKit atom descriptors plus a nine-wide
+isoform one-hot** (decided 2026-11-18). The route there is worth recording: the plan began on
+ATTNSOM's graph network (Kim et al., *Bioinformatics* 2026; MIT), which was trained and reproduced,
+until the independent `som-benchmark` (MIT) was run under matched labels and showed a plain atom
+feature GBM level with it — 0.601 against 0.618 top-1 on a ±0.047 seed spread, with the remaining
+biases favoring the network. A tie on accuracy made the 8.5M-parameter numpy port, its `SAGPooling`
+reimplementation and 17 MB of vendored weights impossible to justify against scikit-learn, which is
+already a base dependency, and a model measured in kilobytes. The Hückel descriptors that first
+motivated the switch were measured and dropped too. Full record in [SOM_PLAN.md](SOM_PLAN.md).
+
+Accuracy is quoted on molecule-grouped splits against `PRIMARY_SOM` alone: counting the secondary
+and tertiary annotation tiers as hits would add about 0.10 top-1 for nothing, so every figure in
+the user guide names its label definition. CYP inhibition follows on the same package, trained on
+OpenADMET's open pIC50 data and the Veith panel from PubChem.
 
 **This is not the metabolite prediction that was dropped.** That item was BioTransformer, a
 rule-based enumerator of metabolite *structures* run as an external Java tool. This is an ML model
@@ -506,7 +517,7 @@ pip extra.
      gaps capped and marked ⚠.
    - **Hydrogens and states, protein and ligand together:** one coupled site graph covers His
      tautomers, Asn/Gln/His flips, titratable residues, OH/SH/NH₃ rotors, pocket waters, metal
-     sites and the ligand's protomers and tautomers. Ligand states start from MolGpKa.
+     sites and the ligand's protomers and tautomers. Ligand states come from chemsuite pKa (U4).
      Desolvation, Coulomb and hydrogen-bond terms act across the interface, so each side's state
      depends on the other's. It is solved exactly per cluster, with populations; near-ties are
      marked ⚠ and become receptor ensembles for docking or separate runs for MD.
