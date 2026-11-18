@@ -384,25 +384,58 @@ Their trained models lose only 2–4 points going from their easier to their har
 ATTNSOM lost 14 going from instance to molecule-grouped — which is itself a hint that ATTNSOM
 leans more on memorizing molecules than on learning chemistry.
 
-**Caveats, which are why this is not yet a verdict:**
-- Their top-k denominator is not fully specified on the page ("per-molecule top-k", pooled, but
-  the record-vs-molecule aggregation is not written down), while ours is per molecule-isoform
-  record from upstream's `metrics.py`. If theirs is per *molecule*, the numbers are not comparable.
-- Their tie handling (seeded permutation, plus a pessimistic variant) differs from upstream's
-  `argsort`, and we have just shown ties are common on symmetric molecules.
-- Their "random" split may already be molecule-grouped; the tiny gap for untrained SMARTCyp
-  (0.629 → 0.635) suggests it is, but it is not stated.
+**The three caveats were checked against their source (2026-11-18), and all three resolve against
+ATTNSOM:**
 
-**So M1 gains a step 6: run `som-benchmark` ourselves and evaluate our model inside its harness.**
-It is MIT, it pulls the data from the clone we already have, and it would give one table with
-ATTNSOM, SMARTCyp and the GBMs measured identically. Only that settles whether to keep ATTNSOM.
+- **The metric is identical.** `src/som/metrics.py`: "top-1 / top-2 **per-instance** accuracy — the
+  fraction of (molecule, isoform) instances for which at least one true site appears among the k
+  highest-scoring atoms", instances without a positive skipped (there are none). That is upstream
+  ATTNSOM's `topk_accuracy` definition, over the same candidate set of all heavy atoms.
+- **The split is identical.** `src/som/splits.py`: "**Every split here partitions molecules.**" In
+  `random` mode the group key is the SMILES itself, so **their random column is exactly our
+  molecule-grouped split**. They reached our leakage conclusion independently, in the same words:
+  "Splitting on instances would put the same structure on both sides."
+- **The tie policy favors us, not them.** They break ties by seeded random permutation and note
+  that breaking them in index order "silently flatters a model whose first atoms happen to be the
+  labelled ones" — which is exactly what upstream's `argsort` does, and what produced our 0.618.
 
-**If the GBM result holds up, the plan should change, and change for the better:** Hückel theory
-is an eigendecomposition of a connectivity matrix — a page of numpy — and gradient boosting is
-scikit-learn, which is already a base dependency (`docs/PLAN.md`). That means **no neural port, no
-`graphnet.py`, no `SAGPooling`, no 17 MB of vendored weights, and a model measured in kilobytes**,
-for better accuracy. The BDE variant is the one to avoid: its bond dissociation energies come from
-ALFABET, which is a neural net of its own, and Hückel alone gives up only 0.014 top-1.
+So on the same data, the same metric and the same split policy, with the tie rule tilted our way:
+
+| approach, molecule-grouped | top-1 | scaffold top-1 | scaffold top-2 |
+|---|---|---|---|
+| Hückel + BDE + GBM | 0.706 | 0.674 | 0.812 |
+| **Hückel physics + GBM** | **0.684** | 0.660 | 0.811 |
+| message-passing GNN | 0.682 | 0.643 | 0.788 |
+| SMARTCyp (untrained) | 0.629 | 0.635 | 0.770 |
+| fingerprint + GBM | 0.622 | 0.601 | 0.741 |
+| **our ATTNSOM** | **0.618** | – | 0.743 |
+| atom-type frequency | 0.419 | 0.425 | 0.607 |
+
+**Verdict: ATTNSOM is the wrong basis for this tool.** It lands level with a plain fingerprint GBM,
+below *untrained* SMARTCyp, and 0.066 top-1 behind a gradient boosting machine over Hückel
+features — while costing 8.5M parameters, a hand-written numpy forward pass with a `SAGPooling`
+reimplementation, and 17 MB of vendored weights. Its 14-point drop from instance to grouped split,
+against 2–4 points for their models, says plainly that much of its reported strength was
+memorizing molecules rather than learning chemistry.
+
+**The recommended pivot, which is simpler in every dimension:** atom and bond features plus
+**Hückel** molecular-orbital descriptors, fed to **gradient boosting**.
+
+- Hückel theory is an eigendecomposition of a connectivity matrix: a page of numpy, no weights.
+- Gradient boosting is **scikit-learn, already a base dependency** (`docs/PLAN.md`).
+- So: no `graphnet.py`, no `SAGPooling`, no float16 archive, no 17 MB in the repo, no golden file
+  of activations — the model is kilobytes and the "port" disappears, because there is nothing to
+  port. Training and inference use the same library.
+- It is also more honest about its own uncertainty: their table reports calibration (ECE, Brier)
+  alongside ranking, and a GBM's probabilities are far easier to calibrate than a focal-loss net's.
+- **Avoid the BDE variant**: its bond dissociation energies come from ALFABET, a neural net with
+  its own TensorFlow dependency, and it buys only 0.022 top-1 over Hückel alone.
+
+What is kept from the work so far: the licence diligence, the leakage finding and the grouped-split
+harness, `scripts/som/leakage_check.py`, the chemistry sanity-check approach, the per-isoform
+reporting, and the decision to quote grouped numbers only. What is dropped: `graphnet.py`,
+`SAGPooling`, the weights archive, and the activation golden file. `features.py` survives in spirit
+but gains the Hückel descriptors and loses nothing.
 
 ## Commercial tools, for context
 
