@@ -109,7 +109,10 @@ changes.
   replaced. Every pKa used to train or test it is measured in water (no cosolvent,
   non-aqueous or extrapolated values). pKaHub is an aqueous compilation (Sipos-Szabó et al.,
   JCIM 2026: cosolvent over 5% excluded), so its shipped sources qualify; any new source must
-  be checked. Never add torch to the app. Uni-pKa's published weights, and the iBonD, DataWarrior
+  be checked. The app's weights are released as GPL-3.0-or-later (GitHub release
+  `pka-weights-N`, with Uni-Mol's MIT license, since they are fine-tuned from its backbone, and
+  a NOTICE), fetched on first use and pinned by SHA-256 in `ionisation/unipka/weights.py`.
+  Never add torch to the app. Uni-pKa's published weights, and the iBonD, DataWarrior
   and IUPAC pKa data, never ship (licences).
 - The sketcher is original code that uses Ketcher (Apache-2.0) only as a reference for its
   rules. Never use MolManager's `iupac_*` modules. Every rule reused from MolManager needs a

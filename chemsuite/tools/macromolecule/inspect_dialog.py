@@ -34,10 +34,12 @@ from collections.abc import Mapping
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.core.wording import plural
 from chemsuite.macromolecule.prepare import pipeline, review
+from chemsuite.macromolecule.prepare.ligand_pka import LigandPka
 from chemsuite.macromolecule.structure.model import Structure
 from chemsuite.macromolecule.workspace.reports import PrepareReport, Row
 from chemsuite.macromolecule.workspace.reviews import Review
 
+from .pka_model import ligand_pka
 from .prepare_dialog import (
     PrepareDialog,
     record_of,
@@ -87,18 +89,21 @@ def _survey(
     skipped: tuple[str, ...],
     overrides: Mapping[str, str],
     base: review.Survey | None = None,
+    pka: LigandPka | None = None,
 ) -> tuple[review.Survey, review.Survey]:
     """The survey of *s* with nothing held (the proposals), and with what was decided held.
     Decisions are named by the lines of the survey with nothing held, so without a *base* it
     is surveyed once plainly first."""
     if base is None:
-        base = review.survey(protein, s, options, cache, cancel)
+        base = review.survey(protein, s, options, cache, cancel, ligand_model=pka)
     if not skipped and not overrides:
         return base, base
     decisions = review.decisions_from(
         base, skip_issues=dict.fromkeys(skipped, True), overrides=overrides
     )
-    return base, review.survey(protein, s, options, cache, cancel, decisions=decisions)
+    return base, review.survey(
+        protein, s, options, cache, cancel, decisions=decisions, ligand_model=pka
+    )
 
 
 def inspect_protein(
@@ -116,9 +121,11 @@ def inspect_protein(
         return None
     cache = ccd(ctx)
     held = dict(overrides or {})
+    model = ligand_pka(ctx, ask=options.ligand_states and base is None)
 
     def work(job):
-        return _survey(protein, s, options, cache, job.cancel_token, skipped, held, base)
+        return _survey(protein, s, options, cache, job.cancel_token, skipped, held, base,
+                       model(job))  # fmt: skip
 
     def done(surveyed: tuple[review.Survey, review.Survey]) -> None:
         if structure_of(ctx, protein) is None:
@@ -217,9 +224,12 @@ def apply_review(ctx: ToolContext, panel, skipped, overrides):
     cache = ccd(ctx)
     before = int((s.element == HYDROGEN).sum())
     panel.set_busy(True)
+    model = ligand_pka(ctx, ask=False)
 
     def work(job):
-        return pipeline.prepare(s, options, cache, job.cancel_token, decisions)
+        return pipeline.prepare(
+            s, options, cache, job.cancel_token, decisions, ligand_model=model(job)
+        )
 
     def done(prepared: pipeline.Prepared) -> None:
         panel.set_busy(False)

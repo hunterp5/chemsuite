@@ -44,6 +44,7 @@ from ..structure.components import CcdCache
 from ..structure.model import WATER, Structure
 from . import inspect as inspection
 from . import pipeline, sites
+from .ligand_pka import LigandPka
 from .pipeline import Decisions, Options, Prepared
 
 #: the issues a preparation can act on; the rest are reported and left alone (alternate
@@ -157,11 +158,15 @@ def survey(
     ccd: CcdCache | None = None,
     cancel: CancelToken | None = None,
     decisions: Decisions | None = None,
+    ligand_model: LigandPka | None = None,
 ) -> Survey:
-    """Prepare *s* without committing it, and report everything found and decided."""
+    """Prepare *s* without committing it, and report everything found and decided (the
+    ligands' forms from *ligand_model*, as :func:`.pipeline.prepare`)."""
     options = options or Options()
     chosen = decisions or Decisions()
-    prepared = pipeline.prepare(s, options, ccd, cancel, chosen, detail=True)
+    prepared = pipeline.prepare(
+        s, options, ccd, cancel, chosen, detail=True, ligand_model=ligand_model
+    )
     issues = tuple(
         Issue(_issue_id(f), f.kind, f.label, f.text, f.warn, f.residue, f.atoms)
         for f in prepared.report

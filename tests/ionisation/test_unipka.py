@@ -93,6 +93,22 @@ def test_conformers_follow_upstream() -> None:
     assert np.allclose(found.coords[-1, :, 2], 0.0)
 
 
+def test_the_2d_layout_ignores_the_global_coordgen_preference() -> None:
+    """chemsuite.core.depict prefers CoordGen; the model's 2D conformer must not change with it."""
+    from rdkit.Chem import rdDepictor
+
+    smiles = "OC(=O)CC(O)(C(=O)O)CC(=O)O"
+    prefer = rdDepictor.GetPreferCoordGen()
+    try:
+        rdDepictor.SetPreferCoordGen(False)
+        plain = conformers._layout(smiles)
+        rdDepictor.SetPreferCoordGen(True)
+        assert np.allclose(conformers._layout(smiles), plain)
+        assert rdDepictor.GetPreferCoordGen()
+    finally:
+        rdDepictor.SetPreferCoordGen(prefer)
+
+
 def test_tokens_frame_atoms_and_charges() -> None:
     atoms, charges = model.tokens(["C", "N", "Xe"], [0, 1, 3])
     assert atoms.tolist() == [1, 4, 5, 3, 2]  # [CLS] C N [UNK] [SEP]

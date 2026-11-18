@@ -101,8 +101,22 @@ CC BY-SA 3.0 requires).
     | 20 epochs | 0.96 | 0.84 | 0.81 | 0.80 |
 
     One 20-epoch fold matches the five 10-epoch folds (0.82). Novartis acids 1.08 → 1.03,
-    SAMPL6 0.74 → 0.64, SAMPL8 0.78 → 0.72; SAMPL7 (20 molecules) 0.82 → 0.94. Folds 1–4 at
-    20 epochs: `~/bench/unipka/e20_rest.sh` (log `logs/e20_rest.log`), started 2026-11-15.
+    SAMPL6 0.74 → 0.64, SAMPL8 0.78 → 0.72; SAMPL7 (20 molecules) 0.82 → 0.94.
+  - **All 5 folds at 20 epochs, 2026-11-17** (`samples/unipka/weights/e20.npz`, 440 MB;
+    `samples/unipka/e20.eval.txt`, `e20.enum.eval.txt`). Validation RMSE of folds 1–4: 0.760,
+    0.711, 0.698, 0.767. External tests, full templates (RMSE):
+
+    | 20 epochs | 2D only | 1 + 2D | 3 + 2D | 10 + 2D |
+    |---|---|---|---|---|
+    | given, 1 fold | 0.96 | 0.87 | 0.84 | 0.83 |
+    | given, 5 folds | 0.93 | 0.86 | 0.83 | 0.82 |
+    | enumerated, 1 fold | – | 0.83 | 0.81 | 0.80 |
+    | enumerated, 5 folds | – | 0.82 | 0.80 | 0.79 |
+
+    Better than the 10-epoch folds throughout (enumerated, 3 + 2D, 5 folds 0.82 → 0.80) except
+    SAMPL7, where 5 folds (0.94–0.99) do worse than 1 (0.90–0.95). MolGpKa on the same sets:
+    1.02. Five folds buy only 0.01–0.02 for 5 × the time, and 3 conformers come within 0.01
+    of 10.
   - Errors by acid group (`novartis_acid`, SAMPL7): ring N–H acids (RMSE 1.66) and
     sulfonamides (SAMPL7 0.88 too acidic on average) are worst; the training set has about
     590 sulfonamide and 570 ring N–H transitions against 11,900 bases. More data in those
@@ -118,6 +132,40 @@ CC BY-SA 3.0 requires).
     `scripts/unipka/golden.py`.
 - **U4:** ligand states in `macromolecule/prepare/ligand_sites.py` from the model's free energies. A
   microstate's energy at pH is `G + ln10 · n · (pH − μ)` kT, with μ the training mean.
+  - **Built 2026-11-17** (plan approved that day):
+    - The app runs fold 0 of `e20` (`e20_f0.npz`, 1 fold, 3 conformers + 2D), released as
+      GPL-3.0-or-later. The release is `pka-weights-1`, with Uni-Mol's MIT license and a NOTICE.
+      `ionisation/unipka/weights.py` pins the URL and SHA-256.
+    - Prepare and Inspect ask once per session to download it (`tools/macromolecule/pka_model.py`).
+      They use MolGpKa until it is downloaded, when it is declined, or when IT policy blocks the
+      network.
+    - `ligand_pka.LigandPka` is the model's interface; `ligand_sites._model_forms` makes the
+      forms. Each form's `intrinsic` is `kT·G − RT ln10·n·μ`; `within`, `attract` and
+      `tautomer_cost` are 0, because G already holds them.
+    - RDKit's tautomers of the best microstate are scored by the model too.
+    - Upstream's enumerator stops one charge short of `lower` and `upper`, so the default
+      −2..+2 gives charges −1..+1, and that is what U2 evaluated.
+    - Prepare starts there and widens, up to charges −4..+3, while the best form holds the
+      lowest or highest charge. The wider range has not been evaluated.
+    - A ligand with more than 48 microstates uses MolGpKa and says so in the report. ATP has
+      455 microstates, takes 19 s just to enumerate, and the model takes about 0.45 s per
+      microstate.
+    - The report's **Ligands** line names the model that ran.
+  - **Ligand hydrogens on the 262 neutron entries**, at the default weights
+    (`prepare_review.py fit_ligands --pka`, against the same run without `--pka`):
+
+    | | MolGpKa | chemsuite pKa |
+    |---|---|---|
+    | Training half | 97.0% (815/840) | 96.7% (812/840) |
+    | Test half | 94.7% (643/679) | 94.7% (643/679) |
+    | Test, unlike the CCD | 3 of 33 | 3 of 33 |
+
+    - It is a tie. The prior toward the CCD drawing decides most atoms, and too few atoms differ
+      from the drawing to tell the two models apart.
+    - Refitting the ligand weights for the model (`ccd` 8 → 6) overfits: training goes to
+      96.9%, test drops to 94.3%. So the defaults stay.
+    - The case for the model rests on the external pKa tests (0.81 against MolGpKa's 1.02) and on
+      its handling of sites that affect each other.
 - **U5:** Predict pKa, standardise and the descriptors move over; MolGpKa is removed.
 
 ## Notes

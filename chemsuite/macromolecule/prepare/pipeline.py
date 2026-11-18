@@ -48,6 +48,7 @@ from ..structure.model import LIGAND, WATER, Structure
 from . import energy, hydrogens, ligand_sites, populations, repair, sites, solve, waters
 from .energy import Weights
 from .inspect import CAP, FILLED, Finding, inspect
+from .ligand_pka import LigandPka
 from .templates import Library
 
 ALL, NEAR_LIGANDS, NONE = "all", "near ligands", "none"
@@ -181,10 +182,12 @@ def prepare(
     cancel: CancelToken | None = None,
     decisions: Decisions | None = None,
     detail: bool = False,
+    ligand_model: LigandPka | None = None,
 ) -> Prepared:
     """*s* prepared. With *decisions*, the chemist's choices overrule what it would do on its
     own, case by case (:class:`Decisions`); with *detail*, every state's energy is kept as
-    well, for a review of the choices (:mod:`.review`)."""
+    well, for a review of the choices (:mod:`.review`). The ligands' forms come from *ligand_model*
+    (chemsuite pKa), or without it from MolGpKa (:mod:`.ligand_sites`)."""
     options = options or Options()
     chosen = decisions or Decisions()
     library = Library(ccd)
@@ -225,7 +228,10 @@ def prepare(
     share: dict[int, float] = {}
     if options.optimise:
         weights = options.weights or Weights()
-        found = _sites(protonated, options, ccd, kept, report, cancel)
+        found = _sites(protonated, options, ccd, kept, report, cancel, ligand_model)
+        if any(site.kind == sites.LIGAND for site in found):
+            name = ligand_model.name if ligand_model is not None else "MolGpKa"
+            report.append(Finding(NOTE, "Ligands", f"Protonation states by {name}"))
         check(cancel)
         table = energy.tables(protonated.structure, found, options.ph)
         check(cancel)
@@ -267,12 +273,13 @@ def _sites(
     kept: frozenset[int],
     report: list[Finding],
     cancel: CancelToken | None,
+    pka: LigandPka | None = None,
 ) -> list[sites.Site]:
     """The protein's sites and (with :attr:`Options.ligand_states`) the ligands'."""
     s = protonated.structure
     found: list[sites.Site] = []
     if options.ligand_states:
-        found, notes = ligand_sites.find(protonated, options.ph, ccd, kept, cancel)
+        found, notes = ligand_sites.find(protonated, options.ph, ccd, kept, cancel, pka)
         report += [Finding(NOTE, s.residue_label(n.residue), n.text, warn=True,
                            residue=n.residue) for n in notes]  # fmt: skip
     taken = np.zeros(s.n_atoms, dtype=bool)

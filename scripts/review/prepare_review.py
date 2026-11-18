@@ -339,6 +339,24 @@ FIT_GRID = {
 
 # -- fitting the ligand weights ------------------------------------------------------------------
 LIGAND_CASES = DATA / "ligand_cases.pkl"
+#: ``--pka``: the ligands' forms from chemsuite pKa (these weights) instead of MolGpKa
+PKA_WEIGHTS = ROOT / "samples" / "unipka" / "weights" / "e20_f0.npz"
+
+
+def _ligand_model():
+    """chemsuite pKa with ``--pka`` (one per process), else None (MolGpKa)."""
+    if "--pka" not in sys.argv:
+        return None
+    from chemsuite.ionisation.unipka import weights
+    from chemsuite.macromolecule.prepare.ligand_pka import ModelStates
+
+    return ModelStates(weights.predictor(PKA_WEIGHTS))
+
+
+def _ligand_cases_file() -> Path:
+    return LIGAND_CASES.with_name("ligand_cases_pka.pkl") if "--pka" in sys.argv else LIGAND_CASES
+
+
 FIT_LIGAND_GRID = {
     "ccd": (0.0, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0),
     "tautomer": (0.0, 0.1, 0.2, 0.5, 1.0),
@@ -371,7 +389,7 @@ def _ligand_case(pdb_id: str, expected: pt.Truth):
                              library)  # fmt: skip
     built = hydrogens.add_hydrogens(s, library, ccd)
     kept = frozenset(n.residue for n in built.notes if n.text == hydrogens.KEPT)
-    found = pipeline._sites(built, pipeline.Options(ph=ph), ccd, kept, [], None)
+    found = pipeline._sites(built, pipeline.Options(ph=ph), ccd, kept, [], None, _ligand_model())
     s = built.structure
     table = energy.tables(s, found, ph)
     graph = sites.bond_graph(s)
@@ -430,14 +448,16 @@ def _ligand_accuracy(cases, weights) -> tuple[int, int, int, int]:
 
 def fit_ligands() -> None:
     """A coordinate search over the ligand weights on the training half; prints both halves.
-    The cases are built once into ``ligand_cases.pkl`` (``--redo`` rebuilds them)."""
+    The cases are built once into ``ligand_cases.pkl`` (``--redo`` rebuilds them; with
+    ``--pka``, chemsuite pKa's into ``ligand_cases_pka.pkl``)."""
     import pickle
     from dataclasses import asdict, replace
 
     from chemsuite.macromolecule.prepare.energy import Weights
 
-    if LIGAND_CASES.exists() and "--redo" not in sys.argv:
-        cases = pickle.loads(LIGAND_CASES.read_bytes())
+    cases_file = _ligand_cases_file()
+    if cases_file.exists() and "--redo" not in sys.argv:
+        cases = pickle.loads(cases_file.read_bytes())
     else:
         from concurrent.futures import ProcessPoolExecutor
 
@@ -449,7 +469,7 @@ def fit_ligands() -> None:
             for pdb_id, case in zip(ids, built, strict=True):
                 if case is not None:
                     cases[training(pdb_id)].append(case)
-        LIGAND_CASES.write_bytes(pickle.dumps(cases))
+        cases_file.write_bytes(pickle.dumps(cases))
 
     def score(w) -> float:
         right, total, caught, unusual = _ligand_accuracy(cases[True], w)

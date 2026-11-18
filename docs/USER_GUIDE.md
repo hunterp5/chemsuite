@@ -1915,6 +1915,15 @@ X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked ou
 - **Optimise** chooses each Asn/Gln flip, each His tautomer (HID, HIE or HIP) and each
   hydroxyl, thiol and amine orientation by the hydrogen bonds they make, the choices solved
   together rather than one at a time.
+- **Ligand forms** (on by default, More Options ▸ Ligand Forms) let each ligand take another
+  protonation state or tautomer when its pocket favors it. The forms and their free energies
+  in water come from **chemsuite pKa**, chemsuite's own model (the Uni-pKa method, trained on
+  pKaHub's aqueous pKa data), which scores every protonation state of the whole molecule, so
+  sites that affect each other are handled together. The model (88 MB) is downloaded once,
+  the first time Prepare or Inspect runs with ligand forms on, after you agree. Until it is
+  downloaded (or when you decline, or IT policy turns downloads off) **MolGpKa** is used
+  instead. A ligand with more than 48 protonation states (ATP, NADP) also uses MolGpKa, and
+  the report says so on its line. The report's **Ligands** line names the model used.
 - **More Options ▸ Titrate** works out each group's pKa in its surroundings and takes the form
   it mostly holds at that pH, for the groups near a ligand (Pocket) or for all of them. It is
   off by default: on the benchmark the textbook forms at pH 7 are right more often.

@@ -28,7 +28,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from rdkit import Chem, RDLogger
-from rdkit.Chem import AllChem
+from rdkit.Chem import AllChem, rdDepictor
 
 N_3D = 10  # upstream's count (with the 2D layout, 11)
 
@@ -41,8 +41,16 @@ class Atoms:
 
 
 def _layout(smiles: str) -> np.ndarray:
+    """The 2D layout by RDKit's own depictor, as upstream's training data, whatever the global
+    preference (:mod:`chemsuite.core.depict` prefers CoordGen, which would change the free
+    energy with whether it had been imported)."""
     mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
-    AllChem.Compute2DCoords(mol)
+    prefer = rdDepictor.GetPreferCoordGen()
+    rdDepictor.SetPreferCoordGen(False)
+    try:
+        AllChem.Compute2DCoords(mol)
+    finally:
+        rdDepictor.SetPreferCoordGen(prefer)
     return mol.GetConformer().GetPositions()
 
 

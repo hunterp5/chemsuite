@@ -285,6 +285,17 @@ other machine can pick it up. Update it at the end of a session that leaves work
   count, U4. The PC hard-reset again under training (Kernel-Power 41, bugcheck 0) on
   2026-11-15 at 19:54 in fold 1's epoch 19; both jobs restarted 2026-11-16 08:35 (rerunning
   `e20_rest.sh` resumes a fold from its `checkpoint_last.pt`).
+  **Done 2026-11-17:** folds 1–4 at 20 epochs finished (11:22) and `e20_after.sh` (14:38):
+  `samples/unipka/weights/e20.npz`; enumerated, 3 conformers + 2D: 5 folds 0.80, 1 fold 0.81
+  (10 epochs: 0.82 / 0.84; table in `docs/UNIPKA_PLAN.md` U2). U2 is done.
+  **U4 built 2026-11-17** (details and benchmark in `docs/UNIPKA_PLAN.md` U4):
+  - Prepare and Inspect take ligand states from chemsuite pKa: fold 0 of e20, 3 conformers.
+  - The weights are published as GitHub release `pka-weights-1` (GPL-3.0-or-later, with
+    Uni-Mol's MIT license). The app downloads them once, after asking, and checks the SHA-256.
+  - It falls back to MolGpKa without the weights, and for a ligand with more than 48
+    microstates.
+  - Ligand-H benchmark: tied with MolGpKa on the test half (94.7%).
+  - Next: U5 (Predict pKa, standardise and the descriptors move over; MolGpKa removed).
 - **CONFORGE conformers** (§7.0b, plan approved 2026-11-14): the default Generator in Generate
   Conformers since 2026-11-15 (`conformers/conforge.py`); `cdpkit` is a base dependency with
   platform markers (no wheel on Windows 3.11/3.13 or Intel Macs: ETKDG there).
