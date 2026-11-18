@@ -476,11 +476,41 @@ reimplementation, the vendored float16 weights and the activation golden file al
 The Hückel + GBM is worth remembering as a cheap, well-calibrated baseline — and `som-benchmark`
 remains the best external check we have — but it is not the better model here.
 
-Caveat, honestly: this is **one seed**, against their 10-seed means, and their own confidence
-intervals span roughly ±0.03. The gap is comfortably larger than that and points the other way
-from the README, so the decision is safe; the 10-seed figures replace this table when they land.
-`fp_gbm` is dropped from the full run — one seed of it took 96 minutes against 20 seconds for
-`phys_gbm`, and it is not the comparator that matters.
+### …but that table is also biased, in our favor (checked 2026-11-18)
+
+Running the `som_all` control exposed a second problem with the seed-0 table above. Two things
+came out of comparing it against their committed numbers:
+
+| model | their committed `som_all`, seed 0 | our `som_all`, seed 0 | drift | our `som_primary`, seed 0 |
+|---|---|---|---|---|
+| atom-type prior | 0.4198 | 0.4198 | +0.0000 | 0.3373 |
+| fingerprint + GBM | 0.5849 | 0.5849 | +0.0000 | 0.5071 |
+| atom/bond + GBM | 0.6344 | 0.6156 | −0.0189 | 0.5660 |
+| Hückel + GBM | 0.6439 | 0.6462 | +0.0024 | 0.5660 |
+| message-passing GNN | 0.6344 | 0.6415 | +0.0071 | 0.5307 |
+| GNN + Hückel | 0.6368 | 0.6509 | +0.0142 | 0.5094 |
+
+**Good news — the environment is sound.** `prior` and `fp_gbm` reproduce their committed values
+exactly, and the trained models drift by at most 0.019, mostly under 0.01, which is the expected
+cost of rdkit 2026.09.2 and numpy 2.5.5 against their macOS pins. Numbers from this environment
+can be trusted.
+
+**Bad news — seed 0 is a hard seed.** Their 10-seed `som_all` mean for the Hückel GBM is 0.684,
+but seed 0 gives 0.644: about 0.04 low. So comparing a seed-0 `som_primary` figure (0.566)
+against our *10-fold mean* (0.618) is not a fair comparison, and the bias runs **in our favor**.
+Correcting for the seed penalty puts their Hückel GBM near 0.61 on primary-only labels, which is
+a **tie** with our 0.606–0.618, not a loss.
+
+**So the honest status is: unresolved, and much closer than either earlier table suggested.** The
+10-seed `som_primary` run is what settles it, and nothing should be concluded until it lands.
+`fp_gbm` is dropped from it — one seed took 96 minutes against 20 seconds for `phys_gbm`.
+
+One more trap, worth recording because it nearly corrupted the comparison: `03_evaluate.py`
+*updates* rows in an existing `metrics_per_run.csv` keyed by (model, mode, seed) instead of
+rewriting the file. A short run therefore leaves their committed `som_all` rows in place for every
+model, mode and seed it does not recompute, so the output file silently mixes their numbers with
+ours — which is exactly what the first smoke run produced. `run_bench.sh` now clears
+`metrics_per_run.csv` and `metrics_summary.csv` before each pass.
 
 ### The hypothesis the experiment is testing
 

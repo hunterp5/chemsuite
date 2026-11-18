@@ -40,7 +40,9 @@ REPO=/home/hp/bench/sombench/som-benchmark
 OUT=/home/hp/bench/sombench/out
 SEEDS="${BENCH_SEEDS:-10}"
 JOBS="${BENCH_JOBS:-4}"
-MODELS="prior fp_gbm basic_gbm phys_gbm gnn gnn_huckel"
+# fp_gbm is excluded: one seed took 96 minutes against 20 seconds for phys_gbm, and it is not a
+# comparator that matters. The BDE models and smartcyp need inputs this environment does not build.
+MODELS="${BENCH_MODELS:-prior basic_gbm phys_gbm gnn gnn_huckel}"
 
 mkdir -p "$OUT"
 
@@ -59,6 +61,12 @@ cd "$REPO"
 for FIELD in som_primary som_all; do
     echo
     echo "=== evaluating, label field = $FIELD, $SEEDS seeds, split mode random ==="
+
+    # 03_evaluate.py *updates* rows in an existing metrics_per_run.csv keyed by
+    # (model, mode, seed) rather than rewriting it, so without this the output keeps their
+    # committed som_all rows for every model, mode and seed this run does not recompute -- which
+    # silently mixes their numbers into ours. Clearing it means each run's file is only its own.
+    rm -f "$REPO/results/metrics_per_run.csv" "$REPO/results/metrics_summary.csv"
     "$PYTHON" -u scripts/03_evaluate.py \
         --seeds "$SEEDS" \
         --modes random \
