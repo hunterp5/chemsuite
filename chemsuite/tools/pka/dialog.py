@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The Predict pKa dialog."""
+"""The Predict pKa dialog (chemsuite pKa)."""
 
 from __future__ import annotations
 
@@ -27,15 +27,15 @@ from chemsuite.core.table.columns import NumberColumn, StructureColumn
 from chemsuite.core.wording import plural
 from chemsuite.ionisation.predict import PkaResults, predict_pka
 
-POOL_MIN_ROWS = 200
+POOL_MIN_ROWS = 1  # seconds per molecule: always in worker processes, never the job's thread
 
 #: output key -> (label in the dialog, tooltip)
 OUTPUTS = {
     "pka": ("pKa (most acidic), pKa (most basic)", "The strongest acid and the strongest base."),
-    "sites": ("pKa Values", "Every predicted site, lowest pKa first, marked acid or base."),
-    "charge": ("Charge, % Neutral", "Mean net charge, and the share with no site ionised."),
-    "logd": ("cLogD", "Crippen cLogP of the neutral parent, corrected for ionisation."),
-    "species": ("Major Species", "The dominant protonation state, as a structure column."),
+    "sites": ("pKa Values", "Every macroscopic pKa, lowest first, marked acid or base."),
+    "charge": ("Charge, % Neutral", "Mean net charge, and the share with no site ionized."),
+    "logd": ("cLogD", "Crippen cLogP of the neutral parent, corrected for ionization."),
+    "species": ("Major Species", "The most populated protonation state, as a structure column."),
 }
 DEFAULT_OUTPUTS = ("pka", "charge", "logd")
 
@@ -79,8 +79,9 @@ class PkaDialog(ToolDialog):
         method.row(
             "pH",
             self.ph,
-            help="Charge, % neutral, cLogD and the major species are given at this pH. "
-            "The pKa values themselves do not depend on it.",
+            help="Charge, % neutral, cLogD and the major species are given at this pH. The "
+            "protonation states considered widen to the charges populated here, so a pKa "
+            "between charges rare at this pH may not be listed.",
         )
 
         output = self.section("Output")

@@ -34,5 +34,5 @@ TOOL = Tool(
     open=_open,
     requires=("rdkit",),
     needs_structures=True,
-    tip="Predict pKa values with MolGpKa, and the charge, cLogD and major species at a pH.",
+    tip="Predict pKa values with chemsuite pKa, and the charge, cLogD and major species at a pH.",
 )

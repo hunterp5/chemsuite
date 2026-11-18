@@ -226,7 +226,8 @@ def _prepare_one(pdb_id: str, variant: str) -> str:
     ccd = CcdCache(DATA / "ccd", offline=True)
     try:
         options = Options(ph=crystal_ph(pdb_id), weights=FITTED, **VARIANTS[variant])
-        done = prepare(io.read(DATA / "inputs" / f"{pdb_id}.pdb"), options, ccd)
+        done = prepare(io.read(DATA / "inputs" / f"{pdb_id}.pdb"), options, ccd,
+                       ligand_model=_ligand_model())  # fmt: skip
     except (ValueError, RuntimeError, KeyError) as error:
         return f"{pdb_id} failed: {error}"
     io.write(done.structure, DATA / "out" / variant / f"{pdb_id}.pdb")
@@ -338,30 +339,23 @@ FIT_GRID = {
 
 
 # -- fitting the ligand weights ------------------------------------------------------------------
-LIGAND_CASES = DATA / "ligand_cases.pkl"
-#: ``--pka``: the ligands' forms from chemsuite pKa (these weights) instead of MolGpKa
-PKA_WEIGHTS = ROOT / "samples" / "unipka" / "weights" / "e20_f0.npz"
+LIGAND_CASES = DATA / "ligand_cases_pka.pkl"
 
 
 def _ligand_model():
-    """chemsuite pKa with ``--pka`` (one per process), else None (MolGpKa)."""
-    if "--pka" not in sys.argv:
-        return None
+    """chemsuite pKa, the weights shipped with the app (one predictor per process)."""
     from chemsuite.ionisation.unipka import weights
     from chemsuite.macromolecule.prepare.ligand_pka import ModelStates
 
-    return ModelStates(weights.predictor(PKA_WEIGHTS))
+    return ModelStates(weights.predictor())
 
 
 def _ligand_cases_file() -> Path:
-    return LIGAND_CASES.with_name("ligand_cases_pka.pkl") if "--pka" in sys.argv else LIGAND_CASES
+    return LIGAND_CASES
 
 
 FIT_LIGAND_GRID = {
     "ccd": (0.0, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0),
-    "tautomer": (0.0, 0.1, 0.2, 0.5, 1.0),
-    "within": (0.0, 0.5, 1.0, 2.0),
-    "attract": (0.0, 0.25, 0.5, 1.0, 1.5),
     "coordination": (0.0, 2.0, 5.0, 10.0),
     "ligand_coulomb": (0.0, 0.1, 0.25, 0.5, 1.0, 2.0),
 }
@@ -448,8 +442,8 @@ def _ligand_accuracy(cases, weights) -> tuple[int, int, int, int]:
 
 def fit_ligands() -> None:
     """A coordinate search over the ligand weights on the training half; prints both halves.
-    The cases are built once into ``ligand_cases.pkl`` (``--redo`` rebuilds them; with
-    ``--pka``, chemsuite pKa's into ``ligand_cases_pka.pkl``)."""
+    The cases (chemsuite pKa's forms) are built once into ``ligand_cases_pka.pkl`` (``--redo``
+    rebuilds them)."""
     import pickle
     from dataclasses import asdict, replace
 

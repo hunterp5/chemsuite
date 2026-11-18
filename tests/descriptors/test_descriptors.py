@@ -26,7 +26,7 @@ from rdkit.Chem import Crippen
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.mols import parse_structure
 from chemsuite.descriptors import medchem
-from chemsuite.descriptors.catalog import CATALOG, COMMON, GROUPS, in_group
+from chemsuite.descriptors.catalog import CATALOG, COMMON, GROUPS, PKA_KEYS, in_group
 from chemsuite.descriptors.compute import compute_chunk, compute_descriptors
 
 ASPIRIN = "CC(=O)Oc1ccccc1C(=O)O"
@@ -59,7 +59,18 @@ def test_moe_type_vsa_descriptors_match_rdkit_by_name() -> None:
     assert "< -0.4" in CATALOG["SlogP_VSA1"].help and "≥ 0.6" in CATALOG["SlogP_VSA12"].help
 
 
-def test_every_descriptor_runs_on_a_drug() -> None:
+@pytest.fixture
+def pka():
+    """chemsuite pKa's place taken by a stub with textbook sites."""
+    from chemsuite.ionisation import profile
+    from tests.ionisation.test_profile import SmilesStub
+
+    profile.use(SmilesStub())
+    yield
+    profile.use(None)
+
+
+def test_every_descriptor_runs_on_a_drug(pka) -> None:
     from chemsuite.conformers.etkdg import generate
     from chemsuite.core.mols import mol_from_blob, mol_to_blob
 
@@ -69,8 +80,10 @@ def test_every_descriptor_runs_on_a_drug() -> None:
     for key, (value,) in out.items():
         if CATALOG[key].is_text:
             ok = isinstance(value, str) and bool(value)
+        elif key == "PKA_BASIC":  # aspirin has no basic site
+            ok = math.isnan(value)
         else:
-            ok = math.isfinite(value) or key == "PKA_BASIC"  # aspirin has no basic site
+            ok = math.isfinite(value)
         if not ok:
             blank.append(f"{key}: {value!r} ({_why(key, three_d)})")
     assert not blank, "\n".join(blank)
@@ -88,7 +101,14 @@ def _why(key: str, three_d: Chem.Mol) -> str:
         return f"{type(error).__name__}: {error}"
 
 
-def test_known_values() -> None:
+def test_the_pka_descriptors_run_on_a_drug(pka) -> None:
+    aspirin = mol(ASPIRIN)
+    for key in PKA_KEYS:
+        value = CATALOG[key].fn(aspirin)
+        assert math.isfinite(value) or key == "PKA_BASIC", key  # aspirin has no basic site
+
+
+def test_known_values(pka) -> None:
     aspirin = mol(ASPIRIN)
     assert medchem.lipinski_violations(aspirin) == 0
     assert medchem.ro5_pass(aspirin) == "Yes"

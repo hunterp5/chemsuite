@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""pKa prediction for many structures: chunked, optionally in worker processes."""
+"""pKa prediction for many structures with chemsuite pKa: chunked, optionally in worker
+processes (each loads the shipped weights once)."""
 
 from __future__ import annotations
 
@@ -31,13 +32,13 @@ from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text, mol_to_blob, smiles_of
 
-from .molgpka import ACID
-from .profile import Profile, profile
+from .profile import ACID, Profile, profile
 
 #: A structure cell: its RDKit blob, or its text when not parsed yet (None: blank).
 Cell = bytes | str | None
-CHUNK_ROWS = 200  # per task in a worker process
-INLINE_CHUNK_ROWS = 20  # in the job's own thread, so a cancel is noticed quickly
+#: rows per task: the model takes seconds per molecule, so progress and a cancel stay prompt
+CHUNK_ROWS = 2  # in a worker process
+INLINE_CHUNK_ROWS = 1  # in the job's own thread
 
 _FAILURES = (ValueError, RuntimeError, ArithmeticError, KeyError, IndexError)
 
@@ -48,7 +49,7 @@ class PkaResults:
 
     most_acidic: list[float] = field(default_factory=list)
     most_basic: list[float] = field(default_factory=list)
-    sites: list[str] = field(default_factory=list)  # "9.05 (base), 13.77 (acid)"
+    sites: list[str] = field(default_factory=list)  # "2.35 (acid), 9.78 (base)"
     charge: list[float] = field(default_factory=list)
     neutral: list[float] = field(default_factory=list)  # percent
     logd: list[float] = field(default_factory=list)
@@ -75,10 +76,9 @@ class PkaResults:
 
 
 def sites_text(found: Profile) -> str:
-    """Every site's pKa, lowest first, each marked acid or base."""
-    ordered = sorted(found.sites, key=lambda site: site.pka)
+    """Every macroscopic pKa, lowest first, each marked acid or base."""
     return ", ".join(
-        f"{site.pka:.2f} ({'acid' if site.kind == ACID else 'base'})" for site in ordered
+        f"{step.pka:.2f} ({'acid' if step.kind == ACID else 'base'})" for step in found.steps
     )
 
 
@@ -103,7 +103,7 @@ def predict_chunk(args: tuple[float, Sequence[Cell]]) -> PkaResults:
             found = None
             try:
                 mol = _mol(cell)
-                found = profile(mol) if mol is not None else None
+                found = profile(mol, ph) if mol is not None else None
                 if found is not None:
                     species = found.major_species(ph)  # a new molecule
                     if smiles_of(species) != smiles_of(mol):  # energies were the input's
@@ -142,7 +142,7 @@ def predict_pka(
     progress: Callable[[int, int], None] | None = None,
     cancel: CancelToken | None = None,
 ) -> PkaResults:
-    """MolGpKa's pKa values for each cell, and what they mean at pH *ph*.
+    """chemsuite pKa's values for each cell, and what they mean at pH *ph*.
 
     If *cancel* is set, raises :class:`Cancelled` whose ``partial`` holds the results for the
     rows finished so far (the first rows, in order), or None if none were.

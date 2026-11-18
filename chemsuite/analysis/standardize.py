@@ -33,10 +33,10 @@ suites:
 5. **Canonical tautomer** (optional): RDKit's canonical tautomer. It is one consistent form for
    each molecule, so duplicates collapse; it is not necessarily the most stable or the
    bioactive form. A tautomer that would lose drawn stereo is not used.
-6. **Protonate at pH** (optional): each ionisable site in its majority form at the pH, from
-   MolGpKa's predicted pKa values (``chemsuite.ionisation``). Each fragment is protonated on
-   its own, so counter-ions that are kept stay as they are. Carbon acids are ignored: a
-   carbanion is never the form to dock.
+6. **Protonate at pH** (optional): the most populated protonation microstate at the pH, from
+   chemsuite pKa (``chemsuite.ionisation.profile``). Each fragment is protonated on its own,
+   so counter-ions that are kept stay as they are. A carbanion is never chosen: it is never
+   the form to dock.
 
 Stereo is never invented: undefined stereocentres and double bonds are counted in the notes,
 so they can be enumerated or fixed before docking. 3D coordinates are a separate step
@@ -62,6 +62,8 @@ from chemsuite.core.mols import mol_from_blob, mol_from_text, mol_to_blob, smile
 Cell = bytes | str | None
 CHUNK_ROWS = 200  # per task in a worker process
 INLINE_CHUNK_ROWS = 20  # in the job's own thread, so a cancel is noticed quickly
+#: the same when protonating: chemsuite pKa takes seconds per molecule
+PKA_CHUNK_ROWS, PKA_INLINE_CHUNK_ROWS = 2, 1
 
 _FAILURES = (ValueError, RuntimeError, ArithmeticError, KeyError, IndexError)
 
@@ -192,22 +194,13 @@ def _double_bonds(atom: Chem.Atom) -> int:
 
 
 def protonate(mol: Chem.Mol, ph: float) -> Chem.Mol:
-    """*mol* with each ionisable site in its majority form at *ph* (MolGpKa), fragment by
-    fragment. A fragment MolGpKa cannot prepare is kept as it is."""
-    from chemsuite.ionisation.molgpka import ACID
-    from chemsuite.ionisation.profile import Profile, profile
+    """*mol* with each fragment in its most populated microstate at *ph* (chemsuite pKa). A
+    fragment the model cannot prepare is kept as it is."""
+    from chemsuite.ionisation.profile import profile
 
     out = None
     for fragment in Chem.GetMolFrags(mol, asMols=True, sanitizeFrags=True):
-        found = profile(fragment) if fragment.GetNumHeavyAtoms() > 1 else None
-        if found is not None:
-            # MolGpKa scores some C-H as acids (an alpha-CH between carbonyls); a carbanion is
-            # never the form to dock, so only heteroatoms lose a proton
-            sites = tuple(
-                site for site in found.sites
-                if site.kind != ACID or found.mol.GetAtomWithIdx(site.atom).GetAtomicNum() != 6
-            )  # fmt: skip
-            found = Profile(found.mol, sites)
+        found = profile(fragment, ph) if fragment.GetNumHeavyAtoms() > 1 else None
         part = found.major_species(ph) if found is not None else fragment
         out = part if out is None else Chem.CombineMols(out, part)
     return out if out is not None else mol
@@ -308,7 +301,10 @@ def standardize_cells(
     rows finished so far (the first rows, in order), or None if none were.
     """
     total = len(cells)
-    size = CHUNK_ROWS if executor is not None else INLINE_CHUNK_ROWS
+    if options.protonate:
+        size = PKA_CHUNK_ROWS if executor is not None else PKA_INLINE_CHUNK_ROWS
+    else:
+        size = CHUNK_ROWS if executor is not None else INLINE_CHUNK_ROWS
     chunks = ((options, list(cells[i : i + size])) for i in range(0, total, size))
     results = StandardizeResults()
     try:

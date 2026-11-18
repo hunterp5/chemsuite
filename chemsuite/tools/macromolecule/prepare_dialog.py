@@ -40,9 +40,9 @@ from chemsuite.macromolecule.workspace.prepared import PreparedRecord, carried_b
 from chemsuite.macromolecule.workspace.reports import PrepareReport, Row
 from chemsuite.simulate.spec import MinimiseSettings
 
+from ..pka import model as pka_model
 from . import minimise
 from .minimise_options import MinimiseFields
-from .pka_model import ligand_pka
 from .prepare_options import OptionsFields, describe, settings_of
 from .tool import KIND, TOOL_ID, ccd, dialog_parent, macromolecule_workspace
 
@@ -193,10 +193,10 @@ def prepare_protein(
     before = int((s.element == HYDROGEN).sum())
     earlier = macromolecule_workspace(ctx).prepared(protein)
     worker = minimise.simulator() if minimising is not None else None
-    model = ligand_pka(ctx, ask=options.ligand_states)
 
     def work(job) -> Outcome:
-        prepared = pipeline.prepare(s, options, cache, job.cancel_token, ligand_model=model(job))
+        prepared = pipeline.prepare(s, options, cache, job.cancel_token,
+                                    ligand_model=pka_model.ligand_pka(options))  # fmt: skip
         if worker is None or minimising is None:
             return Outcome(prepared)
         record = record_of(protein, prepared, options, earlier)

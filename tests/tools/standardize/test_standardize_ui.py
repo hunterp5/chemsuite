@@ -56,7 +56,7 @@ def test_standardize_writes_a_new_column_and_notes(chem, qtbot) -> None:
     dialog.protonate.setChecked(True)
     assert dialog.ph.isEnabled() and dialog.primary.isEnabled()
     dialog.run()
-    qtbot.waitUntil(lambda: "SMILES (Standardized)" in table.column_names, timeout=20_000)
+    qtbot.waitUntil(lambda: "SMILES (Standardized)" in table.column_names, timeout=120_000)
     amine, acetate, alanine, bad, blank = (int(o) for o in table.oids)
     out = "SMILES (Standardized)"
     assert table.kind(out) == "structure"

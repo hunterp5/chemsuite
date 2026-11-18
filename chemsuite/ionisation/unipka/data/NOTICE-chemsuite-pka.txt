@@ -1,0 +1,21 @@
+chemsuite pKa weights, release 1 (chemsuite-pka-1.npz)
+Copyright (C) 2026 Hunter Picard
+
+The weights of chemsuite's own pKa model (chemsuite pKa), shipped with chemsuite for Predict
+pKa, Standardize, the pKa descriptors and the ligand states in Prepare. They are one fold of a
+5-fold training, at 20 epochs.
+
+License: GNU General Public License, version 3 or (at your option) any later version, the
+same as chemsuite. See chemsuite's LICENSE.
+
+The weights were fine-tuned from Uni-Mol's published pretrained backbone
+(mol_pre_all_h_220816.pt; Zhou et al., ICLR 2023), Copyright (c) 2022 DP Technology, under the
+MIT License. See LICENSE-Uni-Mol.txt.
+
+- Method: Uni-pKa (Luo et al., JACS Au 2024; https://github.com/dptech-corp/Uni-pKa,
+  Apache-2.0). These are not the published Uni-pKa weights.
+- Training data: the aqueous pKa values of pKaHub (Sipos-Szabo et al., JCIM 2026), from its
+  redistributable sources only. No iBonD, DataWarrior or IUPAC data were used.
+
+SHA-256 (chemsuite-pka-1.npz):
+2a50506a62f671e5a0122093a6fda71dc91cd1cdca69e9bbff8ad068514c8090

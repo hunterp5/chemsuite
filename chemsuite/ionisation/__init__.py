@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Ionisation: per-site pKa (MolGpKa) and what follows from it at a given pH.
+"""Ionization: chemsuite pKa (:mod:`.unipka`) and what follows from it at a given pH
+(:mod:`.profile`).
 
 Qt-free, like ``chemsuite.core``: no GUI imports.
 """

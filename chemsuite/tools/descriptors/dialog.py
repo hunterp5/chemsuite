@@ -38,11 +38,12 @@ from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import FIELD_WIDTH, RowsChoice, ToolDialog
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.wording import plural
-from chemsuite.descriptors.catalog import CATALOG, COMMON, GROUPS, in_group
+from chemsuite.descriptors.catalog import CATALOG, COMMON, GROUPS, PKA_KEYS, in_group
 from chemsuite.descriptors.compute import compute_descriptors
 
 #: Below this many rows the work runs on the job's thread: starting worker processes costs more.
 POOL_MIN_ROWS = 2000
+PKA_POOL_MIN_ROWS = 1  # chemsuite pKa takes seconds per molecule: always in worker processes
 KEY_ROLE = Qt.ItemDataRole.UserRole
 
 _last_keys: tuple[str, ...] = COMMON  # remembered for the session
@@ -239,9 +240,11 @@ class DescriptorDialog(ToolDialog):
         n = len(cells)
         steps = (1 if keys else 0) + len(fingerprints)
 
+        pka = bool(PKA_KEYS.intersection(keys))
+
         def work(job):
             """``(rows done, {column: values})``: descriptors, then each fingerprint."""
-            executor = ctx.workers_for(len(cells), POOL_MIN_ROWS)
+            executor = ctx.workers_for(len(cells), PKA_POOL_MIN_ROWS if pka else POOL_MIN_ROWS)
             results: dict[str, object] = {}
             step = 0
 
@@ -251,7 +254,11 @@ class DescriptorDialog(ToolDialog):
             if keys:
                 try:
                     columns = compute_descriptors(
-                        cells, keys, executor=executor, progress=report, cancel=job.cancel_token
+                        cells,
+                        keys,
+                        executor=executor,
+                        progress=report,
+                        cancel=job.cancel_token,
                     )
                 except Cancelled as stopped:  # keep the descriptors of the first rows
                     if stopped.partial is None:

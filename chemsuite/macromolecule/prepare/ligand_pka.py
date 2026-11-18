@@ -20,7 +20,7 @@
 microstates and each one's free energy in water (kT, as :mod:`chemsuite.ionisation.unipka`
 gives it), with the model's mean pKa μ, so a form's free energy at a pH is
 ``G + ln10 · n · (pH − μ)`` kT. :class:`ModelStates` is chemsuite pKa; tests use a stub.
-Without one, :mod:`.ligand_sites` uses MolGpKa's site pKa values instead.
+Without one, :mod:`.ligand_sites` keeps every ligand as drawn.
 """
 
 from __future__ import annotations
@@ -29,10 +29,11 @@ from typing import Protocol
 
 from rdkit import Chem
 
-from chemsuite.ionisation.unipka import Predictor, microstates
+from chemsuite.ionisation.unipka import Predictor, microstates, ranges
 from chemsuite.ionisation.unipka.microstates import Microstate
 
 MODEL_NAME = "chemsuite pKa"
+NO_MODEL = "no pKa model"  # the report's reason without one (only a caller that passes none)
 
 
 class LigandPka(Protocol):
@@ -59,7 +60,9 @@ class ModelStates:
         self.mean = predictor.mean
 
     def microstates(self, mol: Chem.Mol, lower: int, upper: int) -> dict[int, list[Microstate]]:
-        return microstates.ensemble(mol, lower, upper)
+        """The model's microstates, less those that protonate an O or S (see
+        :func:`chemsuite.ionisation.unipka.ranges.plausible`)."""
+        return ranges.plausible(microstates.ensemble(mol, lower, upper), mol)
 
     def free_energy(self, mol: Chem.Mol) -> float:
         return self.predictor.free_energy(Chem.MolToSmiles(mol))

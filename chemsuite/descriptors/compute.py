@@ -28,7 +28,7 @@ from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text
 from chemsuite.core.table.columns import Column, NumberColumn, TextColumn
 
-from .catalog import CATALOG, SHAPE_GROUP
+from .catalog import CATALOG, PKA_KEYS, SHAPE_GROUP
 
 #: A structure cell for a worker: its RDKit blob, or its text when not parsed yet (None: blank).
 Cell = bytes | str | None
@@ -36,6 +36,8 @@ Cell = bytes | str | None
 #: is noticed within a fraction of a second
 CHUNK_ROWS = 500
 INLINE_CHUNK_ROWS = 50
+#: the same with a chemsuite pKa descriptor (seconds per molecule)
+PKA_CHUNK_ROWS, PKA_INLINE_CHUNK_ROWS = 2, 1
 
 # Expected per-molecule failures (odd valences, InChI errors…); the cell is left blank.
 _FAILURES = (ValueError, RuntimeError, ArithmeticError, KeyError, IndexError)
@@ -103,7 +105,9 @@ def compute_descriptors(
     cancel: CancelToken | None = None,
     chunk_rows: int | None = None,
 ) -> dict[str, Column]:
-    """One result column per key, cell for cell. Unknown keys raise ``KeyError``.
+    """One result column per key, cell for cell. Unknown keys raise ``KeyError``. The pKa
+    descriptors (:data:`.catalog.PKA_KEYS`) take seconds per molecule, so they go in small
+    chunks.
 
     If *cancel* is set, raises :class:`Cancelled` whose ``partial`` holds the columns for the
     rows finished so far (the first rows, in order), or None if none were.
@@ -113,7 +117,12 @@ def compute_descriptors(
     if unknown:  # fail before starting any work
         raise KeyError(f"unknown descriptor(s): {', '.join(unknown)}")
     total = len(cells)
-    size = chunk_rows or (CHUNK_ROWS if executor is not None else INLINE_CHUNK_ROWS)
+    if chunk_rows:
+        size = chunk_rows
+    elif PKA_KEYS.intersection(keys):
+        size = PKA_CHUNK_ROWS if executor is not None else PKA_INLINE_CHUNK_ROWS
+    else:
+        size = CHUNK_ROWS if executor is not None else INLINE_CHUNK_ROWS
     collected: dict[str, list] = {key: [] for key in keys}
     done = 0
     try:

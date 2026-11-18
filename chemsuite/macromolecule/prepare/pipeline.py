@@ -48,7 +48,7 @@ from ..structure.model import LIGAND, WATER, Structure
 from . import energy, hydrogens, ligand_sites, populations, repair, sites, solve, waters
 from .energy import Weights
 from .inspect import CAP, FILLED, Finding, inspect
-from .ligand_pka import LigandPka
+from .ligand_pka import NO_MODEL, LigandPka
 from .templates import Library
 
 ALL, NEAR_LIGANDS, NONE = "all", "near ligands", "none"
@@ -187,7 +187,7 @@ def prepare(
     """*s* prepared. With *decisions*, the chemist's choices overrule what it would do on its
     own, case by case (:class:`Decisions`); with *detail*, every state's energy is kept as
     well, for a review of the choices (:mod:`.review`). The ligands' forms come from *ligand_model*
-    (chemsuite pKa), or without it from MolGpKa (:mod:`.ligand_sites`)."""
+    (chemsuite pKa); without it every ligand stays as drawn (:mod:`.ligand_sites`)."""
     options = options or Options()
     chosen = decisions or Decisions()
     library = Library(ccd)
@@ -229,9 +229,11 @@ def prepare(
     if options.optimise:
         weights = options.weights or Weights()
         found = _sites(protonated, options, ccd, kept, report, cancel, ligand_model)
-        if any(site.kind == sites.LIGAND for site in found):
-            name = ligand_model.name if ligand_model is not None else "MolGpKa"
-            report.append(Finding(NOTE, "Ligands", f"Protonation states by {name}"))
+        if ligand_model is None:
+            if options.ligand_states and _has_ligand(protonated.structure):
+                report.append(Finding(NOTE, "Ligands", f"Kept as drawn: {NO_MODEL}"))
+        elif any(site.kind == sites.LIGAND for site in found):
+            report.append(Finding(NOTE, "Ligands", f"Protonation states by {ligand_model.name}"))
         check(cancel)
         table = energy.tables(protonated.structure, found, options.ph)
         check(cancel)
@@ -264,6 +266,12 @@ def prepare(
     built = frozenset(int(u) for u in np.setdiff1d(heavy, original.uid))
     return Prepared(structure, dict(protonated.states), tuple(report), tuple(choices),
                     pka, share, energies, keys, built)  # fmt: skip
+
+
+def _has_ligand(s: Structure) -> bool:
+    """Whether *s* has a ligand of more than one atom (an ion's form is its component's)."""
+    starts = s.res_start
+    return any(int(starts[r + 1] - starts[r]) > 1 for r in np.flatnonzero(s.res_kind == LIGAND))
 
 
 def _sites(

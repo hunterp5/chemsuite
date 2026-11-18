@@ -18,22 +18,10 @@
 
 A ligand starts as its component draws it (:mod:`.hydrogens`). With chemsuite pKa (a
 :class:`.ligand_pka.LigandPka`), its forms are the model's protonation microstates and the best
-one's tautomers, each with the model's free energy, which holds what the charges do to each
-other (:func:`_model_forms`); a ligand with too many microstates, or a run without the model,
-takes MolGpKa's forms:
-
-- **Protomers.** MolGpKa (:mod:`chemsuite.ionisation.molgpka`) gives the pKa values of the
-  neutral parent's sites. Each ionisable atom takes the charge levels (−1, 0, +1) whose free
-  energy at the pH is within :data:`WINDOW` pH units of its best. The :data:`MAX_SITES` atoms
-  closest to a tie take all of them; the rest stay in their best level. A form's free energy in
-  water is −RT ln10 · Σ pKa over the protons it carries, as for the protein's groups
-  (:attr:`.sites.State.intrinsic`), plus the Coulomb energy between the charges it adds
-  (:attr:`.sites.State.within`): MolGpKa gives each site's pKa with the rest neutral, and a
-  second charge on one molecule costs. A base on an amine N conjugated with another base
-  (adenine's N6, beside N1) is left out.
-- **Tautomers** of the neutral parent (RDKit's enumerator) that move hydrogens only between N,
-  O and S, the :data:`MAX_TAUTOMERS` best by RDKit's score, each carrying how much worse it
-  scores than the drawn form (:attr:`.sites.State.tautomer_cost`).
+one's tautomers (RDKit's enumerator, moving hydrogens only between N, O and S), each with the
+model's free energy, which holds what the charges do to each other (:func:`_model_forms`).
+Without a model (``pka`` None) every ligand stays as drawn, as does one with more than
+:data:`~chemsuite.ionisation.unipka.ranges.MAX_MICROSTATES` microstates.
 
 The drawn form is always one of them, and every form carries how many polar atoms it protonates
 unlike the drawing (:attr:`.sites.State.unlike`): the drawing is right most of the time, so
@@ -41,7 +29,7 @@ another form must win by a margin. The atoms that move are the polar atoms whose
 charge differ between the forms; their hydrogens come from RDKit's placement on the pose, and a
 terminal OH, SH or NH turns about its bond (in :data:`STEPS`, as fine as :data:`MAX_STATES`
 allows). A charge is shared by the polar atoms of its conjugated group (a carboxylate's two O,
-an amidinium's two N) for the Coulomb term.
+an amidinium's two N).
 
 A ligand bonded to another residue keeps the atoms of that bond as they are; a ligand whose
 bond orders were guessed, or that RDKit cannot read, stays as drawn.
@@ -58,7 +46,7 @@ from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
 
 from chemsuite.core.jobs import CancelToken, check
-from chemsuite.ionisation import molgpka
+from chemsuite.ionisation.unipka import ranges
 
 from ..chem import ligands
 from ..structure.components import CcdCache
@@ -68,24 +56,13 @@ from .hydrogens import HYDROGEN, Note, Protonated, ligand_names
 from .ligand_pka import LigandPka
 from .sites import KT, POLAR, RT_LN10, Site, State
 
-WINDOW = 4.0  # pH units: charge levels this much worse than an atom's best are left out
-MAX_SITES = 4  # ionisable atoms that take more than one level
-MAX_FORMS = 16  # protomers kept, the best at the pH first
+WINDOW = 4.0  # pH units: forms this much worse than the best at the pH are left out
+MAX_FORMS = 16  # forms kept, the best at the pH first
 MAX_TAUTOMERS = 4
-TAUTOMER_GAP = 10  # RDKit tautomer score units below the drawn form's: further ones dropped
+TAUTOMER_GAP = 10  # RDKit tautomer score units below the best form's: further ones dropped
 MAX_STATES = 400  # per ligand, rotor variants included
-#: charge ranges handed to :func:`chemsuite.ionisation.unipka.microstates.ensemble`, whose
-#: loop (upstream's) stops one short of each end: upstream's −2..+2 gives charges −1..+1, as
-#: evaluated; widened while the best form sits at an end, up to charges −4..+3 (ATP, citrate)
-START_RANGE, WIDEST_RANGE = (-2, 2), (-5, 4)
-#: microstates at most for the model (about 0.45 s each); a ligand with more takes MolGpKa's
-MAX_MICROSTATES = 48
 STEPS = (30.0, 60.0, 120.0, 180.0)  # degrees, the finest that fits first
-#: charges on one ligand: 332/(εr) with ε = 4r as in :func:`.energy.coulomb`, scaled to the
-#: shifts seen in small molecules (a phosphate's second pKa, glycine's amine), the distance
-#: held to at least :data:`WITHIN_FLOOR` Å
-WITHIN_SCALE, WITHIN_FLOOR = 0.5, 3.0
-#: elements MolGpKa knows; a ligand with any other (a haem's iron) stays as drawn
+#: elements the model is used for; a ligand with any other (a haem's iron) stays as drawn
 ORGANIC = frozenset([1, 5, 6, 7, 8, 9, 14, 15, 16, 17, 34, 35, 53])
 AS_DRAWN = "as drawn"
 
@@ -99,9 +76,6 @@ class Form:
     charges: tuple[int, ...]
     protons: int
     intrinsic: float
-    tautomer_cost: float = 0.0
-    within: float = 0.0  # kcal/mol between the like charges the form adds to the neutral parent
-    attract: float = 0.0  # and between its opposite ones (negative)
 
 
 def find(
@@ -112,9 +86,11 @@ def find(
     cancel: CancelToken | None = None,
     pka: LigandPka | None = None,
 ) -> tuple[list[Site], list[Note]]:
-    """A site for each ligand (other than those in *skip*) with more than one form at *ph*:
-    its forms from *pka*'s microstates (chemsuite pKa), or without it from MolGpKa's site
-    pKa values; a ligand with more than :data:`MAX_MICROSTATES` takes MolGpKa's too."""
+    """A site for each ligand (other than those in *skip*) with more than one form at *ph*,
+    its forms from *pka*'s microstates (chemsuite pKa). Without *pka* none: every ligand stays
+    as drawn."""
+    if pka is None:
+        return [], []
     s = p.structure
     graph = sites.bond_graph(s)
     found, notes = [], []
@@ -134,12 +110,8 @@ def find(
         if ligand.mol.GetNumAtoms() < 2:
             continue  # an ion (OH, D3O, ...): the component names its form
         try:
-            try:
-                site = _site(s, r, ligand.mol, graph, ph, pka, cancel)
-            except TooManyMicrostates as many:
-                notes.append(Note(r, f"Ligand states by MolGpKa: {many.count} microstates"))
-                site = _site(s, r, ligand.mol, graph, ph)
-        except (ValueError, RuntimeError) as error:
+            site = _site(s, r, ligand.mol, graph, ph, pka, cancel)
+        except (ValueError, RuntimeError, ranges.TooManyMicrostates) as error:
             notes.append(Note(r, f"Kept as drawn: {error}"))
             continue
         if site is not None:
@@ -179,192 +151,6 @@ def _with(mol: Chem.Mol, hydrogens: list[int], charges: list[int]) -> Chem.Mol |
     return made
 
 
-def _levels(found: list[molgpka.Site]) -> dict[int, list[tuple[int, float]]]:
-    """Each ionisable atom's charge levels (−1, 0, +1), lowest first, with their free energies
-    in water less the pH term (−RT ln10 · pKa per proton above the lowest)."""
-    by_atom: dict[int, dict[str, float]] = {}
-    for site in found:
-        by_atom.setdefault(site.atom, {})[site.kind] = site.pka
-    out = {}
-    for atom, pkas in by_atom.items():
-        acid, base = pkas.get(molgpka.ACID), pkas.get(molgpka.BASE)
-        levels = [(-1, 0.0)] if acid is not None else []
-        g0 = -RT_LN10 * acid if acid is not None else 0.0
-        levels.append((0, g0))
-        if base is not None:
-            levels.append((1, g0 - RT_LN10 * base))
-        out[atom] = levels
-    return out
-
-
-def _plausible(neutral: Chem.Mol, found: list[molgpka.Site]) -> list[molgpka.Site]:
-    """*found* less the sites MolGpKa gets wrong by chemistry:
-
-    - bases whose lone pair is not free: an aromatic N with three neighbours (a pyrrole N,
-      adenine's N9), and an amine N whose lone pair is shared with a conjugated system that
-      has another base (adenine's N6, beside N1);
-    - acids on an alcohol, an O whose one neighbour is an sp³ carbon (pKa ≈ 15; MolGpKa puts
-      NADP's ribose hydroxyls at 2–7)."""
-    supplier = Chem.ResonanceMolSupplier(neutral)
-    group = [supplier.GetAtomConjGrpIdx(a.GetIdx()) for a in neutral.GetAtoms()]
-    bases = [site.atom for site in found if site.kind == molgpka.BASE]
-
-    def amine(k: int) -> bool:
-        atom = neutral.GetAtomWithIdx(k)
-        single = all(b.GetBondType() == Chem.BondType.SINGLE for b in atom.GetBonds())
-        return (atom.GetAtomicNum() == 7 and atom.GetTotalNumHs() > 0 and not atom.IsInRing()
-                and group[k] >= 0 and single)  # fmt: skip
-
-    def shared(k: int) -> bool:
-        return any(b != k and group[b] == group[k] for b in bases)
-
-    def pyrrole(k: int) -> bool:
-        atom = neutral.GetAtomWithIdx(k)
-        return atom.GetIsAromatic() and atom.GetDegree() + atom.GetTotalNumHs() >= 3
-
-    def alcohol(k: int) -> bool:
-        atom = neutral.GetAtomWithIdx(k)
-        heavy = [n for n in atom.GetNeighbors() if n.GetAtomicNum() > 1]
-        return (atom.GetAtomicNum() == 8 and len(heavy) == 1 and heavy[0].GetAtomicNum() == 6
-                and heavy[0].GetHybridization() == Chem.HybridizationType.SP3)  # fmt: skip
-
-    def wrong(site: molgpka.Site) -> bool:
-        if site.kind == molgpka.ACID:
-            return alcohol(site.atom)
-        return pyrrole(site.atom) or (amine(site.atom) and shared(site.atom))
-
-    return [site for site in found if not wrong(site)]
-
-
-def _couplings(neutral: Chem.Mol, atoms: list[int], xyz: np.ndarray) -> np.ndarray:
-    """The Coulomb energy (ε = 4r, as :func:`.energy.coulomb`) between like unit charges on
-    each pair of *atoms*, each charge shared by the polar atoms of its conjugated group. Only
-    like charges count (``level_a · level_b > 0``): MolGpKa's pKa values already carry most of
-    the pull between opposite ones, which zwitterions in its training set show."""
-    supplier = Chem.ResonanceMolSupplier(neutral)
-    spread = []
-    for k in atoms:
-        group = supplier.GetAtomConjGrpIdx(k)
-        members = [a.GetIdx() for a in neutral.GetAtoms()
-                   if group >= 0 and supplier.GetAtomConjGrpIdx(a.GetIdx()) == group
-                   and a.GetAtomicNum() in POLAR] or [k]  # fmt: skip
-        spread.append(members)
-    out = np.zeros((len(atoms), len(atoms)))
-    for a, b in itertools.combinations(range(len(atoms)), 2):
-        d = np.linalg.norm(xyz[spread[a]][:, None] - xyz[spread[b]][None], axis=-1)
-        e = float((83.0 / np.maximum(d, WITHIN_FLOOR) ** 2).sum()) * WITHIN_SCALE
-        e /= len(spread[a]) * len(spread[b])
-        out[a, b] = out[b, a] = e
-    return out
-
-
-def _repulsion(row: np.ndarray, level: int, current: list[int], k: int, like: bool = True) -> float:
-    """What atom *k* at *level* pays for the like (or, with *like* False, gains from the
-    opposite) charges of the others at *current*."""
-    return float(sum(row[j] * level * q for j, q in enumerate(current)
-                     if j != k and (level * q > 0 if like else level * q < 0)))  # fmt: skip
-
-
-def _protomers(
-    neutral: Chem.Mol, frozen: set[int], ph: float, xyz: np.ndarray, drawn: Chem.Mol | None = None
-) -> tuple[list[Form], dict[int, int], Form | None]:
-    """The protomers of *neutral* at *ph* (*xyz*: its pose), the level each atom outside the
-    choice keeps, and *drawn* as a form scored the same way (every form's free energy sums
-    every ionisable atom's level, so the drawing competes on equal terms).
-
-    Each atom's level is first settled in the field of the others' (iterated to a fixed
-    point), so a phosphate's second oxygen stays protonated beside its first; the
-    :data:`MAX_SITES` atoms closest to a tie in that field, within :data:`WINDOW`, stay open.
-    """
-    levels = _levels(_plausible(neutral, molgpka.predict_on(neutral)))
-    atoms = [a for a in levels if a not in frozen]
-    coupling = _couplings(neutral, atoms, xyz)
-
-    def energies(k: int, current: list[int]) -> np.ndarray:
-        lv = levels[atoms[k]]
-        return np.array([g + RT_LN10 * (level - lv[0][0]) * ph
-                         + _repulsion(coupling[k], level, current, k)
-                         for level, g in lv])  # fmt: skip
-
-    current = [0] * len(atoms)
-    for _ in range(20):
-        moved = False
-        for k in range(len(atoms)):
-            best = levels[atoms[k]][int(np.argmin(energies(k, current)))][0]
-            if best != current[k]:
-                current[k], moved = best, True
-        if not moved:
-            break
-    allowed, gaps = {}, {}
-    for k in range(len(atoms)):
-        e = energies(k, current)
-        keep = [lv for lv, x in zip(levels[atoms[k]], e, strict=True)
-                if x - e.min() <= RT_LN10 * WINDOW]  # fmt: skip
-        if len(keep) > 1:
-            allowed[k] = keep
-            gaps[k] = float(np.sort(e)[1] - e.min())
-    open_k = sorted(allowed, key=lambda k: gaps[k])[:MAX_SITES]
-    fixed = {atoms[k]: current[k] for k in range(len(atoms)) if k not in open_k}
-    h0, q0 = _counts(neutral)
-
-    def form(mol: Chem.Mol, level: list[int]) -> Form:
-        protons = sum(lv - levels[a][0][0] for a, lv in zip(atoms, level, strict=True))
-        intrinsic = sum(_free_energy(levels[a], lv) for a, lv in zip(atoms, level, strict=True))
-        within = sum(_repulsion(coupling[k], lv, level, k) for k, lv in enumerate(level)) / 2
-        attract = sum(_repulsion(coupling[k], lv, level, k, like=False)
-                      for k, lv in enumerate(level)) / 2  # fmt: skip
-        h, q = _counts(mol)
-        return Form(mol, h, q, protons, intrinsic, within=within, attract=attract)
-
-    forms = []
-    for chosen in itertools.product(*(allowed[k] for k in open_k)):
-        level = list(current)
-        for k, (lv, _g) in zip(open_k, chosen, strict=True):
-            level[k] = lv
-        h, q = list(h0), list(q0)
-        for k, lv in enumerate(level):
-            h[atoms[k]] += lv
-            q[atoms[k]] += lv
-        mol = _with(neutral, h, q) if min(h) >= 0 else None
-        if mol is not None:
-            forms.append(form(mol, level))
-    forms.sort(key=lambda f: f.intrinsic + f.within + RT_LN10 * f.protons * ph)
-    as_drawn = None
-    if drawn is not None:
-        level = [int(np.clip(drawn.GetAtomWithIdx(a).GetFormalCharge()
-                             - neutral.GetAtomWithIdx(a).GetFormalCharge(), -1, 1))
-                 for a in atoms]  # fmt: skip
-        as_drawn = form(drawn, level)
-    return forms[:MAX_FORMS], fixed, as_drawn
-
-
-def _free_energy(levels: list[tuple[int, float]], level: int) -> float:
-    """The free energy of *level* among an atom's *levels* (the nearest one it has)."""
-    return min(levels, key=lambda lv: abs(lv[0] - level))[1]
-
-
-def _tautomers(
-    neutral: Chem.Mol, frozen: set[int], fixed: dict[int, int], base: Form | None
-) -> list[Form]:
-    """The neutral parent's best tautomers that move hydrogens only between N, O and S, with
-    the levels *fixed* applied and *base*'s free energy (the protomer with every open atom
-    neutral)."""
-    if base is None:
-        return []
-    q0 = _counts(neutral)[1]
-    forms = []
-    for gap, t, h in _tautomer_mols(neutral, frozen):
-        h, q = list(h), list(q0)
-        for atom, level in fixed.items():
-            h[atom] += level
-            q[atom] += level
-        mol = _with(t, h, q) if min(h) >= 0 else None
-        if mol is not None:
-            forms.append(Form(mol, tuple(h), tuple(q), base.protons, base.intrinsic,
-                              gap, base.within, base.attract))  # fmt: skip
-    return forms
-
-
 def _tautomer_mols(
     mol: Chem.Mol, frozen: set[int]
 ) -> list[tuple[float, Chem.Mol, tuple[int, ...]]]:
@@ -390,14 +176,6 @@ def _tautomer_mols(
     return [(float(reference - score), t, h) for score, t, h in scored[:MAX_TAUTOMERS]]
 
 
-class TooManyMicrostates(Exception):
-    """A ligand has more microstates than the model is given (:data:`MAX_MICROSTATES`)."""
-
-    def __init__(self, count: int) -> None:
-        super().__init__(f"{count} microstates")
-        self.count = count
-
-
 def _model_forms(
     neutral: Chem.Mol,
     frozen: set[int],
@@ -412,9 +190,9 @@ def _model_forms(
     costs ``G + ln10 · n · (pH − μ)`` kT. The model's G already holds what the charges on
     the molecule do to each other, so ``within``, ``attract`` and ``tautomer_cost`` are 0.
 
-    The charges first enumerated are :data:`START_RANGE`'s; the range widens, to
-    :data:`WIDEST_RANGE`, while the best microstate holds the lowest or highest charge found.
-    Microstates that change a *frozen* atom are left out. Raises :class:`TooManyMicrostates`.
+    The charge range widens while the best microstate holds the lowest or highest charge
+    found (:mod:`chemsuite.ionisation.unipka.ranges`). Microstates that change a *frozen*
+    atom are left out. Raises :class:`~chemsuite.ionisation.unipka.ranges.TooManyMicrostates`.
     """
     h0, q0 = _counts(neutral)
     scored: dict[tuple[tuple[int, ...], tuple[int, ...]], Form] = {}
@@ -452,34 +230,25 @@ def _microstates(
     at_ph: Callable[[Form], float],
 ) -> list[Form]:
     """The microstates of *neutral* that leave the *frozen* atoms alone, as forms; the charge
-    range widens from :data:`START_RANGE` toward :data:`WIDEST_RANGE` while the best (by
+    range widens (:func:`chemsuite.ionisation.unipka.ranges.widen`) while the best (by
     *at_ph*) holds the lowest or highest charge found."""
     h0, q0 = _counts(neutral)
-    (lower, upper), charges, found = START_RANGE, set(), []
-    while True:
-        pools = pka.microstates(neutral, lower, upper)
-        count = sum(len(pool) for pool in pools.values())
-        if count > MAX_MICROSTATES:
-            if not found:
-                raise TooManyMicrostates(count)
-            return found
-        if set(pools) == charges:
-            return found  # widening found no new charge
-        charges, found = set(pools), []
+
+    def accept(pools: ranges.Pools) -> list[Form]:
+        found = []
         for m in (m for pool in pools.values() for m in pool):
             if any(m.hydrogens[k] != h0[k] or m.charges[k] != q0[k] for k in frozen):
                 continue
             mol = _with(neutral, list(m.hydrogens), list(m.charges))
             if mol is not None:
                 found.append(form(mol))
-        if not found:
-            return found
+        return found
+
+    def ends(found: list[Form], low: int, high: int) -> tuple[bool, bool]:
         charge = sum(min(found, key=at_ph).charges)
-        low = lower - 1 if charge == min(pools) and lower > WIDEST_RANGE[0] else lower
-        high = upper + 1 if charge == max(pools) and upper < WIDEST_RANGE[1] else upper
-        if (low, high) == (lower, upper):
-            return found
-        lower, upper = low, high
+        return charge == low, charge == high
+
+    return ranges.widen(lambda lo, hi: pka.microstates(neutral, lo, hi), accept, ends)
 
 
 def _shared(mol: Chem.Mol) -> list[float]:
@@ -508,7 +277,7 @@ def _site(
     mol: Chem.Mol,
     graph: list[list[int]],
     ph: float,
-    pka: LigandPka | None = None,
+    pka: LigandPka,
     cancel: CancelToken | None = None,
 ) -> Site | None:
     index = [s.index_of_uid[a.GetIntProp("uid")] for a in mol.GetAtoms()]
@@ -520,16 +289,7 @@ def _site(
     if neutral.GetNumAtoms() != drawn.GetNumAtoms():
         return None
     Chem.SanitizeMol(neutral)
-    if pka is not None:
-        forms = _unique(_model_forms(neutral, frozen, ph, drawn, pka, cancel))
-    else:
-        pose = s.coords[0, index].astype(np.float64)
-        protomers, fixed, as_drawn = _protomers(neutral, frozen, ph, pose, drawn)
-        base = next((f for f in protomers if all(f.charges[a] == neutral.GetAtomWithIdx(a)
-                                                 .GetFormalCharge() + fixed.get(a, 0)
-                                                 for a in range(len(index)))), None)  # fmt: skip
-        drawn_form = [as_drawn] if as_drawn is not None else []
-        forms = _unique(drawn_form + protomers + _tautomers(neutral, frozen, fixed, base))
+    forms = _unique(_model_forms(neutral, frozen, ph, drawn, pka, cancel))
     if not forms:
         return None
     h_drawn, q_drawn = _counts(drawn)
@@ -663,8 +423,7 @@ def _states(
         out.append(State(f"{label} {suffix}".strip(), tuple(atom_names), tuple(parents),
                          np.array(elements), stacked, donor, form=label, protons=f.protons,
                          formal=tuple(formal), partial=tuple(partial),
-                         unlike=float(unlike), tautomer_cost=f.tautomer_cost,
-                         within=f.within, attract=f.attract))  # fmt: skip
+                         unlike=float(unlike)))  # fmt: skip
     variants = KT * np.log(len(out))
     return [replace(st, intrinsic=f.intrinsic + variants) for st in out]
 

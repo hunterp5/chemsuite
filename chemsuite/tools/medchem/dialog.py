@@ -27,10 +27,10 @@ from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import ToolDialog
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.core.wording import plural
-from chemsuite.descriptors.catalog import CATALOG
+from chemsuite.descriptors.catalog import CATALOG, PKA_KEYS
 from chemsuite.descriptors.compute import compute_descriptors
 from chemsuite.plotting.data import numbers
-from chemsuite.tools.descriptors.dialog import POOL_MIN_ROWS
+from chemsuite.tools.descriptors.dialog import PKA_POOL_MIN_ROWS, POOL_MIN_ROWS
 from chemsuite.tools.sar.common import activity_combo, structure_cells
 
 LIPE_COLUMN = "LipE"
@@ -139,7 +139,8 @@ class MedChemPlotDialog(ToolDialog):
             return None
         oids = ctx.table.oids.copy()
         cells = structure_cells(ctx, self.structure.currentText(), oids)
-        use_pool = len(cells) >= POOL_MIN_ROWS
+        pka = bool(PKA_KEYS.intersection(keys))
+        use_pool = len(cells) >= (PKA_POOL_MIN_ROWS if pka else POOL_MIN_ROWS)
 
         def work(job):
             return compute_descriptors(

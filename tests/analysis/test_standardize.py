@@ -65,14 +65,25 @@ def test_tautomer_and_isotopes():
     assert run("[2H]C(Cl)Cl", Options(remove_isotopes=True))[0] == "ClCCl"
 
 
-def test_protonation_at_ph_uses_molgpka():
+@pytest.fixture
+def pka():
+    """chemsuite pKa's place taken by a stub with textbook sites."""
+    from chemsuite.ionisation import profile
+    from tests.ionisation.test_profile import SmilesStub
+
+    profile.use(SmilesStub())
+    yield
+    profile.use(None)
+
+
+def test_protonation_at_ph_uses_chemsuite_pka(pka):
     amine, notes = run("CN1CCC[C@H]1c1cccnc1", Options(protonate=True))  # nicotine
     assert amine == "C[NH+]1CCC[C@H]1c1cccnc1" and "net charge +1" in notes
     assert run("CC(=O)O", Options(protonate=True, ph=2.0))[0] == "CC(=O)O"
     assert run("CC(=O)O", Options(protonate=True, ph=7.4))[0] == "CC(=O)[O-]"
 
 
-def test_protonation_never_makes_a_carbanion():
+def test_protonation_never_makes_a_carbanion(pka):
     ticarcillin = "CC1(C)SC2C(NC(=O)[C@H](C(=O)O)c3ccsc3)C(=O)N2C1C(=O)O"
     got, _ = run(ticarcillin, Options(protonate=True))
     mol = Chem.MolFromSmiles(got)
@@ -80,12 +91,12 @@ def test_protonation_never_makes_a_carbanion():
     assert got.count("[O-]") == 2
 
 
-def test_protonation_keeps_counter_ions_when_salts_are_kept():
+def test_protonation_keeps_counter_ions_when_salts_are_kept(pka):
     got, _ = run("CN1CCCC1.Cl", Options(strip_salts=False, neutralise=False, protonate=True))
     assert set(got.split(".")) == {"C[NH+]1CCCC1", "Cl"}
 
 
-def test_drawn_stereo_is_kept_by_every_step():
+def test_drawn_stereo_is_kept_by_every_step(pka):
     for smiles in ["C[C@H](N)C(=O)O", "C/C=C/C(=O)O", "C[C@@H]1CCC(=O)C1"]:
         got, notes = run(smiles, FULL)
         mol = Chem.MolFromSmiles(got)

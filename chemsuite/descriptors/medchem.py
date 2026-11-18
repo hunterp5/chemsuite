@@ -20,9 +20,9 @@
 * **AB-MPS**: DeGoey et al., J. Med. Chem. 2018 (doi:10.1021/acs.jmedchem.7b00717).
 * **ESOL intrinsic log S**: Delaney, J. Chem. Inf. Comput. Sci. 2004 (doi:10.1021/ci034243x).
 
-cLogD 7.4 and the scores that need a basic pKa (CNS MPO, BBB Score, AB-MPS) use MolGpKa's
-predicted pKa values (``chemsuite.ionisation``). A molecule without a basic site is scored as
-if its most basic pKa were 2, as MolManager did.
+cLogD 7.4 and the scores that need a basic pKa (CNS MPO, BBB Score, AB-MPS) use chemsuite
+pKa's predictions (``chemsuite.ionisation.profile``). A molecule without a basic site is
+scored as if its most basic pKa were 2, as MolManager did.
 """
 
 from __future__ import annotations
@@ -77,14 +77,14 @@ NO_BASE_PKA = 2.0  # the most basic pKa used for a molecule without a basic site
 
 
 def basic_pka(mol: Chem.Mol) -> float:
-    """MolGpKa's pKa of the most basic site (its conjugate acid); NO_BASE_PKA without one."""
+    """The highest base pKa (of the conjugate acid); NO_BASE_PKA without a base step."""
     found = profile(mol)
     strongest = found.most_basic if found is not None else None
     return NO_BASE_PKA if strongest is None else strongest
 
 
 def clogd74(mol: Chem.Mol) -> float:
-    """cLogD at pH 7.4: Crippen cLogP corrected with MolGpKa's pKa values."""
+    """cLogD at pH 7.4: Crippen cLogP corrected with chemsuite pKa's populations."""
     return clogd(mol, 7.4)
 
 

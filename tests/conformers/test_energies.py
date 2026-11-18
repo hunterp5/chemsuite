@@ -141,10 +141,16 @@ def test_a_structure_changed_by_standardize_drops_its_energies() -> None:
 
 
 def test_a_charged_major_species_drops_its_energies() -> None:
+    from chemsuite.ionisation import profile
     from chemsuite.ionisation.predict import predict_chunk
+    from tests.ionisation.test_profile import SmilesStub
 
     blob = mol_to_blob(generate(Chem.MolFromSmiles("CCCC(=O)O"), ConformerSettings(count=3)).mol)
-    result = predict_chunk((7.4, [blob]))
+    profile.use(SmilesStub())  # a model in place of the weights
+    try:
+        result = predict_chunk((7.4, [blob]))
+    finally:
+        profile.use(None)
     species = mol_from_blob(result.species_blobs[0])
     assert Chem.MolToSmiles(Chem.RemoveHs(species)) == "CCCC(=O)[O-]"
     assert en.rows(species) == []

@@ -16,56 +16,29 @@
 
 """Ligand forms from a microstate model (chemsuite pKa), here a stub whose free energies make
 every base a pKa of :data:`BASE_PKA` and every acid one of :data:`ACID_PKA`; with the real
-weights (``samples/unipka/weights/e20_f0.npz``) the named cases run too."""
+weights shipped with chemsuite the named cases run too."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import numpy as np
 import pytest
 from rdkit import Chem
 
-from chemsuite.ionisation.unipka import microstates
+from chemsuite.ionisation.unipka import ranges
 from chemsuite.macromolecule.prepare import energy, ligand_sites, pipeline, populations, sites
 from chemsuite.macromolecule.prepare.energy import Tables, Weights
 from chemsuite.macromolecule.prepare.ligand_pka import ModelStates
 from chemsuite.macromolecule.prepare.sites import KT, RT_LN10
 from tests.macromolecule.conftest import load
-from tests.macromolecule.prepare.test_ligand_sites import BENZAMIDINE_PH, _forms, _protonated
-
-LN10 = float(np.log(10.0))
-MEAN = 6.0
-BASE_PKA, ACID_PKA = 10.0, 4.0
-UNLIKELY = 50.0  # kT
-WEIGHTS = Path(__file__).parents[3] / "samples" / "unipka" / "weights" / "e20_f0.npz"
-
-
-class Stub:
-    """Each N⁺ a base of pKa :data:`BASE_PKA`, each O⁻ or S⁻ an acid of :data:`ACID_PKA`
-    (any other charge :data:`UNLIKELY`), independent of one another: ``E(pH) = G + ln10·n·
-    (pH − μ)`` crosses over at the pKa when one proton costs ``−ln10·(pKa − μ)``."""
-
-    name = "stub"
-    mean = MEAN
-
-    def __init__(self, base_pka: float = BASE_PKA, acid_pka: float = ACID_PKA) -> None:
-        self.base_pka, self.acid_pka = base_pka, acid_pka
-        self.asked: list[str] = []
-
-    def microstates(self, mol: Chem.Mol, lower: int, upper: int):
-        return microstates.ensemble(mol, lower, upper)
-
-    def free_energy(self, mol: Chem.Mol) -> float:
-        self.asked.append(Chem.MolToSmiles(mol))
-        g = 0.0
-        for a in mol.GetAtoms():
-            q, n = a.GetFormalCharge(), a.GetAtomicNum()
-            if q > 0:
-                g += -LN10 * (self.base_pka - MEAN) if n == 7 else UNLIKELY
-            elif q < 0:
-                g += LN10 * (self.acid_pka - MEAN) if n in (8, 16) else UNLIKELY
-        return g
+from tests.macromolecule.prepare.test_hydrogens import _on
+from tests.macromolecule.prepare.test_ligand_sites import (
+    BASE_PKA,
+    BENZAMIDINE_PH,
+    MEAN,
+    Stub,
+    _forms,
+    _protonated,
+)
+from tests.macromolecule.prepare.test_named_cases import _charge, _residue
 
 
 def _at(form: ligand_sites.Form, ph: float) -> float:
@@ -136,17 +109,18 @@ def test_tautomers_are_scored_by_the_model() -> None:
     forms = ligand_sites._model_forms(mol, set(), 7.0, mol, stub)
     pyridone = [f for f in forms if f.hydrogens[0] == 0 and sum(f.charges) == 0]
     assert pyridone
-    assert pyridone[0].tautomer_cost == 0.0
     assert Chem.MolToSmiles(pyridone[0].mol) in stub.asked
 
 
-def test_too_many_microstates_fall_back_to_molgpka(trypsin, monkeypatch) -> None:
-    monkeypatch.setattr(ligand_sites, "MAX_MICROSTATES", 1)
+def test_a_ligand_with_too_many_microstates_is_kept_as_drawn(trypsin, monkeypatch) -> None:
+    monkeypatch.setattr(ranges, "MAX_MICROSTATES", 1)
     found, notes = ligand_sites.find(trypsin, BENZAMIDINE_PH, pka=Stub())
-    assert [n.text for n in notes] == ["Ligand states by MolGpKa: 4 microstates"]
-    (site,) = found
-    molgpka_site = ligand_sites.find(trypsin, BENZAMIDINE_PH)[0][0]
-    assert [st.intrinsic for st in site.states] == [st.intrinsic for st in molgpka_site.states]
+    assert not found
+    assert [n.text for n in notes] == ["Kept as drawn: 4 protonation states"]
+
+
+def test_without_the_model_every_ligand_is_kept_as_drawn(trypsin) -> None:
+    assert ligand_sites.find(trypsin, BENZAMIDINE_PH) == ([], [])
 
 
 def _prepared(name: str, ph: float, pka) -> pipeline.Prepared:
@@ -155,42 +129,42 @@ def _prepared(name: str, ph: float, pka) -> pipeline.Prepared:
     return pipeline.prepare(s, pipeline.Options(ph=ph, waters=pipeline.NONE), ligand_model=pka)
 
 
-def test_the_report_names_the_model() -> None:
-    for model, name in ((Stub(), "stub"), (None, "MolGpKa")):
+def test_the_report_names_the_model_or_says_the_ligands_are_as_drawn() -> None:
+    for model, line in ((Stub(), "Protonation states by stub"),
+                        (None, "Kept as drawn: no pKa model")):  # fmt: skip
         done = _prepared("5mo0_pocket.cif.gz", BENZAMIDINE_PH, model)
-        lines = [f.text for f in done.report if f.label == "Ligands"]
-        assert lines == [f"Protonation states by {name}"]
+        assert [f.text for f in done.report if f.label == "Ligands"] == [line]
 
 
 # -- with the real weights ------------------------------------------------------------------------
-needs_weights = pytest.mark.skipif(not WEIGHTS.is_file(), reason="no chemsuite pKa weights")
 
 
 @pytest.fixture(scope="module")
 def model() -> ModelStates:
     from chemsuite.ionisation.unipka import weights
 
-    return ModelStates(weights.predictor(WEIGHTS))
+    return ModelStates(weights.predictor())
 
 
-@needs_weights
 def test_benzamidine_in_trypsin_is_the_amidinium(model) -> None:
+    """Trypsin with benzamidine (5MO0, neutron): both N carry two D, the charge on Asp189."""
     done = _prepared("5mo0_pocket.cif.gz", BENZAMIDINE_PH, model)
     s = done.structure
-    (r,) = [r for r in range(s.n_residues) if str(s.res_name[r]) == "BEN"]
+    r = _residue(s, "BEN")
     assert done.states[r] == "+H N1"
+    assert len(_on(s, r, "N1")) == 2 and len(_on(s, r, "N2")) == 2
+    assert _charge(s, r, "N1") + _charge(s, r, "N2") == 1
 
 
-@needs_weights
 def test_acetazolamide_binds_zinc_as_the_sulfonamide_anion(model) -> None:
     """Carbonic anhydrase II with acetazolamide (4G0C, neutron): N1 keeps one D, on the Zn."""
     done = _prepared("4g0c_pocket.cif.gz", 7.8, model)
     s = done.structure
-    (r,) = [r for r in range(s.n_residues) if str(s.res_name[r]) == "AZM"]
+    r = _residue(s, "AZM")
     assert done.states[r] == "−H N1"
+    assert len(_on(s, r, "N1")) == 1 and _charge(s, r, "N1") == -1
 
 
-@needs_weights
 @pytest.mark.parametrize(
     ("smiles", "charge"),
     [

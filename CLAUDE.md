@@ -105,13 +105,14 @@ changes.
 ## Decided
 
 - pKa: chemsuite's own model of Uni-pKa's design, trained on pKaHub's data in WSL and run in numpy
-  (`chemsuite/ionisation/unipka/`, `docs/UNIPKA_PLAN.md`); MolGpKa (numpy) stays until it is
-  replaced. Every pKa used to train or test it is measured in water (no cosolvent,
+  (`chemsuite/ionisation/unipka/`, `docs/UNIPKA_PLAN.md`); it replaced MolGpKa everywhere
+  (U5, 2026-11-18). Every pKa used to train or test it is measured in water (no cosolvent,
   non-aqueous or extrapolated values). pKaHub is an aqueous compilation (Sipos-Szabó et al.,
   JCIM 2026: cosolvent over 5% excluded), so its shipped sources qualify; any new source must
   be checked. The app's weights are released as GPL-3.0-or-later (GitHub release
   `pka-weights-N`, with Uni-Mol's MIT license, since they are fine-tuned from its backbone, and
-  a NOTICE), fetched on first use and pinned by SHA-256 in `ionisation/unipka/weights.py`.
+  a NOTICE), shipped in `ionisation/unipka/data/` (84 MB) and pinned by size and SHA-256 in
+  `ionisation/unipka/weights.py`, which a test checks.
   Never add torch to the app. Uni-pKa's published weights, and the iBonD, DataWarrior
   and IUPAC pKa data, never ship (licences).
 - The sketcher is original code that uses Ketcher (Apache-2.0) only as a reference for its

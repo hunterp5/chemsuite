@@ -413,8 +413,13 @@ model beside the prepared one; on by default when the worker is set; a native en
 optional WSL interpreter. M0 (the feasibility gates) passed on 2026-11-15
 ([simulate/m0-review.md](simulate/m0-review.md)); M1 (the Prepare fixes and
 `chemsuite/simulate`'s spec, build and result) and M2 (the OpenMM worker, its runner and the
-shared JSON-lines client) done the same day; M3, the minimisation result and its benchmark, is
-next (see HANDOFF).
+shared JSON-lines client) done the same day, as are M3 (the minimisation protocol and its
+measured result) and M4 (Minimise in Prepare and Protein ▸ Minimise…, each result a new
+protein). **M5, the benchmark, is next**, and it splits: M5a is the minimisation metrics on the
+P0 sets, which the current worker can measure; M5b is the plan's short explicit-solvent MD gate,
+which needs solvation, ions, a thermostat and a production loop that `chemsuite/simulate` does
+not have yet, so it is planned with §7a 5. Prepare's Minimise stays off by default until M5b.
+A by-hand Prepare + Minimise run on 181L with the real env is still owed (see HANDOFF).
 
 ### 7.0e High priority: our own Uni-pKa (revised 2026-11-12)
 

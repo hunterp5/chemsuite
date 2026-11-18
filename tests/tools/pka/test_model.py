@@ -14,13 +14,20 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The protein tools' tests prepare with MolGpKa: nothing asks to download chemsuite pKa."""
+"""The ligand pKa model Prepare and Inspect run with."""
 
-import pytest
+from __future__ import annotations
 
-from chemsuite.tools.macromolecule import pka_model
+import importlib
+
+from chemsuite.ionisation.unipka import weights
+from chemsuite.macromolecule.prepare.ligand_pka import ModelStates
+from chemsuite.macromolecule.prepare.pipeline import Options
 
 
-@pytest.fixture(autouse=True)
-def no_pka_download(monkeypatch):
-    monkeypatch.setattr(pka_model, "_declined", True)
+def test_ligand_forms_take_the_shipped_model() -> None:
+    pka_model = importlib.import_module("chemsuite.tools.pka.model")  # not the conftest's stand-in
+    importlib.reload(pka_model)
+    model = pka_model.ligand_pka(Options())
+    assert isinstance(model, ModelStates) and model.predictor is weights.predictor()
+    assert pka_model.ligand_pka(Options(ligand_states=False)) is None

@@ -53,7 +53,7 @@ class Descriptor:
 
 
 PKA_NOTE = (
-    " Uses MolGpKa's predicted pKa values (see Predict pKa in the user guide); a screening "
+    " Uses chemsuite pKa's predictions (see Predict pKa in the user guide); a screening "
     "estimate, not a measured value."
 )
 
@@ -61,7 +61,7 @@ PKA_NOTE = (
 def _profiled(mol: Chem.Mol) -> Profile:
     found = profile(mol)
     if found is None:
-        raise ValueError("MolGpKa could not prepare the structure")
+        raise ValueError("chemsuite pKa could not prepare the structure")
     return found
 
 
@@ -215,7 +215,7 @@ _ITEMS: tuple[Descriptor, ...] = (
         "Physicochemical",
         medchem.clogd74,
         2,
-        "cLogP corrected for ionisation at pH 7.4." + PKA_NOTE,
+        "cLogP corrected for ionization at pH 7.4." + PKA_NOTE,
     ),
     Descriptor(
         "ESOL",
@@ -265,7 +265,7 @@ _ITEMS: tuple[Descriptor, ...] = (
         "Ionisation",
         _most_acidic,
         2,
-        "MolGpKa's lowest acid pKa; blank without an acidic site.",
+        "The lowest acid pKa; blank without an acid step." + PKA_NOTE,
     ),
     Descriptor(
         "PKA_BASIC",
@@ -273,7 +273,7 @@ _ITEMS: tuple[Descriptor, ...] = (
         "Ionisation",
         _most_basic,
         2,
-        "MolGpKa's highest base pKa (of the conjugate acid); blank without a basic site.",
+        "The highest base pKa (of the conjugate acid); blank without a base step." + PKA_NOTE,
     ),
     Descriptor(
         "CHARGE74",
@@ -281,7 +281,7 @@ _ITEMS: tuple[Descriptor, ...] = (
         "Ionisation",
         lambda mol: _profiled(mol).charge(7.4),
         2,
-        "Mean net charge at pH 7.4 from MolGpKa's pKa values.",
+        "Mean net charge at pH 7.4." + PKA_NOTE,
     ),
     Descriptor(
         "NEUTRAL74",
@@ -289,7 +289,8 @@ _ITEMS: tuple[Descriptor, ...] = (
         "Ionisation",
         lambda mol: 100.0 * _profiled(mol).fraction_neutral(7.4),
         1,
-        "Share of molecules with no ionised site at pH 7.4 (zwitterions count as ionised).",
+        "Share of molecules with no ionized site at pH 7.4 (zwitterions count as ionized)."
+        + PKA_NOTE,
     ),
     # -- drug-likeness --
     Descriptor(
@@ -470,6 +471,11 @@ _ITEMS: tuple[Descriptor, ...] = (
 )
 
 CATALOG: dict[str, Descriptor] = {d.key: d for d in _ITEMS}
+#: the descriptors that need chemsuite pKa (seconds per molecule, so they go in small chunks)
+PKA_KEYS: frozenset[str] = frozenset(
+    ("CLOGD74", "PKA_ACIDIC", "PKA_BASIC", "CHARGE74", "NEUTRAL74", "CNS_MPO", "BBB_SCORE",
+     "AB_MPS")
+)  # fmt: skip
 GROUPS: tuple[str, ...] = tuple(dict.fromkeys(d.group for d in _ITEMS))
 COMMON: tuple[str, ...] = (
     "MolWt",

@@ -14,7 +14,11 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The Qt test setup (:mod:`tests.gui`) for the GUI tests in this folder."""
+"""The Qt test setup (:mod:`tests.gui`) for the GUI tests in this folder. Prepare and Inspect
+run without a ligand pKa model here (ligands as drawn), so the protein tests stay quick;
+:mod:`tests.macromolecule.prepare.test_ligand_pka` covers the model."""
+
+import pytest
 
 from tests.gui import (  # noqa: F401 (fixtures pytest finds here)
     clear_clipboard,
@@ -26,3 +30,10 @@ from tests.gui import (  # noqa: F401 (fixtures pytest finds here)
     qapp_cls,
     window,
 )
+
+
+@pytest.fixture(autouse=True)
+def no_ligand_pka(monkeypatch):
+    from chemsuite.tools.pka import model as pka_model
+
+    monkeypatch.setattr(pka_model, "ligand_pka", lambda _options: None)

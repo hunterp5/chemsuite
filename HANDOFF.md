@@ -292,10 +292,11 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - Prepare and Inspect take ligand states from chemsuite pKa: fold 0 of e20, 3 conformers.
   - The weights are published as GitHub release `pka-weights-1` (GPL-3.0-or-later, with
     Uni-Mol's MIT license). The app downloads them once, after asking, and checks the SHA-256.
-  - It falls back to MolGpKa without the weights, and for a ligand with more than 48
-    microstates.
   - Ligand-H benchmark: tied with MolGpKa on the test half (94.7%).
-  - Next: U5 (Predict pKa, standardise and the descriptors move over; MolGpKa removed).
+  **U5 built 2026-11-18** (details in `docs/UNIPKA_PLAN.md` U5): Predict pKa, Standardize's
+  Protonate and the pKa descriptors run on chemsuite pKa (`ionisation/profile.py`); MolGpKa is
+  removed. Without the weights the pKa tools show ⚠, the descriptors are blank, and Prepare
+  keeps ligands as drawn. About 12 s per drug-sized molecule (3 conformers + 2D).
 - **CONFORGE conformers** (§7.0b, plan approved 2026-11-14): the default Generator in Generate
   Conformers since 2026-11-15 (`conformers/conforge.py`); `cdpkit` is a base dependency with
   platform markers (no wheel on Windows 3.11/3.13 or Intel Macs: ETKDG there).

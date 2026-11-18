@@ -107,10 +107,34 @@ def test_the_pose_atoms_and_uids_are_kept(kinase) -> None:
     assert mol.GetProp("_Name") == "E/ATP 355"
 
 
+class _Phosphates:
+    """A ligand pKa model with one other form: every P–OH an anion, far the best."""
+
+    name, mean = "phosphates", 6.0
+
+    def microstates(self, mol: Chem.Mol, lower: int, upper: int):
+        from chemsuite.ionisation.unipka.microstates import Microstate
+
+        h = [a.GetTotalNumHs() for a in mol.GetAtoms()]
+        q = [a.GetFormalCharge() for a in mol.GetAtoms()]
+        for a in mol.GetAtoms():
+            if a.GetAtomicNum() == 8 and h[a.GetIdx()] and any(
+                    n.GetAtomicNum() == 15 for n in a.GetNeighbors()):  # fmt: skip
+                h[a.GetIdx()] -= 1
+                q[a.GetIdx()] -= 1
+        drawn = Microstate(tuple(a.GetTotalNumHs() for a in mol.GetAtoms()),
+                           tuple(a.GetFormalCharge() for a in mol.GetAtoms()), "")  # fmt: skip
+        return {sum(drawn.charges): [drawn], sum(q): [Microstate(tuple(h), tuple(q), "")]}
+
+    def free_energy(self, mol: Chem.Mol) -> float:
+        return 100.0 * Chem.GetFormalCharge(mol)  # each anion 100 kT better
+
+
 def test_the_prepared_form_has_the_structures_own_hydrogens_and_charges(kinase) -> None:
     from chemsuite.macromolecule.prepare import pipeline
 
-    s = pipeline.prepare(kinase, pipeline.Options(waters=pipeline.NONE)).structure
+    options = pipeline.Options(waters=pipeline.NONE)
+    s = pipeline.prepare(kinase, options, ligand_model=_Phosphates()).structure
     residue = only_ligand(s)
     mol = ligands.prepared_form(s, residue).mol
     span = s.atoms_of(residue)

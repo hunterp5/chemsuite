@@ -167,6 +167,46 @@ CC BY-SA 3.0 requires).
     - The case for the model rests on the external pKa tests (0.81 against MolGpKa's 1.02) and on
       its handling of sites that affect each other.
 - **U5:** Predict pKa, standardise and the descriptors move over; MolGpKa is removed.
+  - **Built 2026-11-18** (plan approved 2026-11-17):
+    - `ionisation/profile.py` is rebuilt on the model.
+      - It enumerates the neutral parent's microstates and scores them with the app's weights
+        (1 fold, 3 conformers + 2D, as in Prepare), giving populations at a pH.
+      - Each macroscopic pKa is marked acid or base by the atom that loses the most hydrogen
+        across the step (populations within each charge).
+      - It gives charge, % neutral (no atom charged unlike the parent, so a quaternary N stays
+        neutral), cLogD and the major species (never a carbanion).
+    - Microstates that put a positive charge on O or S are left out. Upstream's templates
+      make them (protonated carbonyls and alcohols), and the model put acetic acid's at 1.85,
+      where the real values are below about −2. `unipka/ranges.plausible` applies it to
+      Prepare and `evaluate.py --enumerated` too. Rescored from `e20.enum.cache.pkl` (1 fold,
+      3 + 2D), the external tests are unchanged: RMSE 0.808 with or without.
+    - The charge range is the one Prepare uses (`unipka/ranges.py`, shared). It starts at
+      −1..+1 and widens while more than 1% sits at an end at the pH asked for.
+      - The first version widened for populations anywhere from pH 0 to 14, which pulled in
+        dications at pH 0 and took imatinib from 9 microstates to 45 (81 s).
+      - The 48-microstate cap stays: AMP (44 microstates) does not reach its dianion, so its
+        charge at 7.4 is −1.0.
+    - Memory: each worker process holds about 190 MB of weights, about 2.1 GB over the 11
+      workers of a 12-core PC.
+    - ATP and NADP (more than 48 microstates) now stay as drawn in Prepare; before U5 they
+      fell back to MolGpKa.
+    - Speed, single thread, on this PC: about 1 s for small molecules and 7–41 s for
+      drug-sized ones (mean 12 s over 8). Worker processes take 2 rows per task, and pKa work
+      always goes to the workers.
+    - The app (`tools/pka/model.py`) asks once per session to download the weights. Without
+      them:
+      - Predict pKa, Standardize with Protonate and the MedChem plots that need pKa show ⚠
+        (a new `ToolDialog.ready()` hook asks on Run);
+      - the pKa descriptors are blank;
+      - Prepare keeps ligands as drawn and says so.
+    - Removed:
+      - `ionisation/molgpka.py`, its weights and templates;
+      - `scripts/convert_molgpka_weights.py`;
+      - Prepare's MolGpKa ligand path (`_protomers`, `_plausible`, `_couplings`);
+      - the MolGpKa baseline in `scripts/unipka/evaluate.py`; its RMSE (1.02) is recorded
+        above.
+    - The energy terms `within`, `attract` and `tautomer` are now always 0 for ligands. Their
+      weights and `State` fields are left in place; removing them is a later clean-up.
 
 ## Notes
 

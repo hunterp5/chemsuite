@@ -1352,8 +1352,10 @@ calculating MW again adds "MW (2)".
 | Identifiers | Canonical SMILES, InChIKey, InChI, Formula, Murcko Scaffold, Generic Scaffold |
 
 - **pKa-based values.** The Ionisation group, cLogD 7.4, CNS MPO, BBB Score and AB-MPS use
-  MolGpKa's predicted pKa values (see [Predict pKa](#predict-pka)). For CNS MPO and BBB Score, a
-  compound with no basic site is scored as if its most basic pKa were 2.
+  chemsuite pKa (see [Predict pKa](#predict-pka)), which takes seconds per molecule. Choosing
+  any of them asks to download the model the first time; without it, these columns come out
+  blank. For CNS MPO and BBB Score, a compound with no basic site is scored as if its most
+  basic pKa were 2.
 - **SAScore** is the synthetic accessibility score of Ertl and Schuffenhauer (2009): 1 (easy
   to make) to 10 (very hard), from how common the molecule's fragments are in known compounds
   and a penalty for size, stereocentres, macrocycles and unusual ring fusions. Most drug-like
@@ -1373,40 +1375,52 @@ calculating MW again adds "MW (2)".
 
 ### Predict pKa
 
-Chemistry ▸ Calculate ▸ pKa… predicts the pKa of every ionisable site with **MolGpKa**, a
-graph-convolutional network (Pan et al., J. Chem. Inf. Model. 2021). Its authors report a mean
-absolute error of about 0.6 pKa units on their literature test set. The model ships with
-chemsuite and runs on the CPU, at roughly 2 ms per molecule.
+Chemistry ▸ Calculate ▸ pKa… predicts pKa values with **chemsuite pKa**, chemsuite's own model:
+the Uni-pKa method (Luo et al., JACS Au 2024) on the Uni-Mol network (Zhou et al., ICLR 2023),
+trained on pKaHub's aqueous pKa data. It gives a free energy for every protonation state
+(microstate) of the whole molecule, so sites that affect each other, as in zwitterions and
+polyamines, are handled together. On held-out test sets (SAMPL6–8 and Novartis acids and
+bases) its error is RMSE 0.81 pKa units.
 
+- **The model.** It is downloaded once (88 MB), the first time a pKa tool runs, after you
+  agree. If you decline, or IT policy turns downloads off, the tool shows ⚠ chemsuite pKa is
+  not downloaded and cannot run until the app is restarted and you agree. An administrator can
+  place `chemsuite-pka-1.npz` in the app's cache folder, under `pka`.
+- **Speed.** About 1 s for a small molecule and 10–40 s for a drug-sized one, which has more
+  protonation states. Rows run in parallel across the worker processes, and progress counts
+  rows as they finish.
 - **Input.** A structure column and the rows. Salts are reduced to the largest fragment and
-  charges are neutralised before prediction, so a sodium salt gives its parent acid's values.
+  charges are neutralized before prediction, so a sodium salt gives its parent acid's values.
 - **pH.** Charge, % neutral, cLogD and the major species are given at this pH (default 7.4).
-  The pKa values do not depend on it.
+  The protonation states considered start at net charges −1 to +1, and widen, up to −4 and +3,
+  while more than 1% of the molecules sit at the end at this pH. So a pKa between charges
+  that are not populated at the pH (a dication's, near pH 7) may be listed only at another pH.
 - **Columns** (choose any):
 
   | Column | Meaning |
   |---|---|
-  | pKa (most acidic) | The lowest acid pKa. Blank without an acidic site. |
-  | pKa (most basic) | The highest pKa of a protonated base (the strongest base). Blank without a basic site. |
-  | pKa Values | Every site, lowest pKa first, each marked acid or base, for example "4.47 (acid), 9.05 (base)". |
-  | Charge @ pH, % Neutral @ pH | Mean net charge, and the share of molecules with no site ionised. Zwitterions count as ionised. |
+  | pKa (most acidic) | The lowest acid pKa. Blank without an acid step. |
+  | pKa (most basic) | The highest pKa of a protonated base (the strongest base). Blank without a base step. |
+  | pKa Values | Every pKa, lowest first, each marked acid or base, for example glycine's "2.11 (acid), 9.76 (base)". |
+  | Charge @ pH, % Neutral @ pH | Mean net charge, and the share of molecules with no site ionized. Zwitterions count as ionized; a permanent charge (a quaternary nitrogen) does not. |
   | cLogD *pH* | Crippen cLogP of the neutral parent plus log10(fraction neutral). |
-  | Major Species @ pH | The dominant protonation state, as a structure column. |
+  | Major Species @ pH | The most populated protonation state, as a structure column. |
 
   Each run writes new columns and never changes an earlier run's. When a name is already
   taken, all the columns of the run get the same suffix, (2), (3)…, so they read as a set:
   `pKa (most acidic) (2)` and `cLogD 7.4 (2)` come from the same run.
 
-- **How sites combine.** Each site is predicted, and ionised, independently (Henderson–
-  Hasselbalch per site). This is a good approximation when sites are far apart and a rough one
-  when they interact.
+- **Macroscopic pKa values.** Each pKa is a step in net charge, between all the states of one
+  charge and all those of the next. It is marked by the atom that loses the most hydrogen
+  across the step: a base when that atom is positively charged before it loses it, an acid
+  otherwise. So glycine's carboxylic acid is an acid and its ammonium a base.
 - **Limits.**
-  - Only groups in MolGpKa's site templates are found; methylamine, for example, has no
-    matching template.
-  - Very small molecules lie outside the training data and can be badly off: triethylamine
-    comes out at 1.7 against a measured 10.75, while larger tertiary amines are close.
+  - A molecule with more than 48 protonation states is left blank; widening stops before it
+    would pass 48, so a polyphosphate may lack its last pKa.
+  - States that protonate an oxygen or sulfur (a carbonyl, an alcohol) are left out: their
+    pKa values lie below about −2, where the model was not trained.
   - Because only the neutral form is assumed to partition, cLogD of zwitterions and of
-    strong acids and bases comes out far lower than measured: glycine gives about −8.5.
+    strong acids and bases comes out far lower than measured.
   - Treat the values as screening estimates, not measurements.
 - **Cancelling** keeps the rows already predicted.
 
@@ -1423,7 +1437,7 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 | Neutralise | On | Adds or removes hydrogens so that charges cancel. Quaternary nitrogens stay charged. |
 | Remove isotopes | Off | Deuterium becomes hydrogen, ¹³C becomes carbon. |
 | Canonical tautomer | Off | One consistent tautomer per molecule (RDKit), so duplicates collapse. It is not necessarily the most stable or the bioactive form. If the canonical tautomer would lose any drawn stereo, the drawn tautomer is kept. |
-| Protonate at pH | Off | Each ionisable site in its majority form at the pH (default 7.4), from MolGpKa's predicted pKa values (see [Predict pKa](#predict-pka) and its limits). Carbon acids are ignored, so no carbanions are made. Kept counter-ions stay as they are. |
+| Protonate at pH | Off | The most populated protonation state at the pH (default 7.4), from chemsuite pKa (see [Predict pKa](#predict-pka), its download and its limits). It is never a carbanion. Kept counter-ions stay as they are. Without the model, Standardize cannot run with this step on. |
 | Form salt | Off | Adds the counter-ion you pick and balances the charge. Runs last, so leaving **Strip salts** on switches one salt for another. |
 
 - **Stereo** is never invented or lost. Each step keeps drawn stereocentres and double-bond
@@ -1924,10 +1938,11 @@ X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked ou
   in water come from **chemsuite pKa**, chemsuite's own model (the Uni-pKa method, trained on
   pKaHub's aqueous pKa data), which scores every protonation state of the whole molecule, so
   sites that affect each other are handled together. The model (88 MB) is downloaded once,
-  the first time Prepare or Inspect runs with ligand forms on, after you agree. Until it is
-  downloaded (or when you decline, or IT policy turns downloads off) **MolGpKa** is used
-  instead. A ligand with more than 48 protonation states (ATP, NADP) also uses MolGpKa, and
-  the report says so on its line. The report's **Ligands** line names the model used.
+  the first time Prepare or Inspect runs with ligand forms on (or any pKa tool runs), after you
+  agree. Until it is downloaded (or when you decline, or IT policy turns downloads off) every
+  ligand stays as drawn, and the report's **Ligands** line says so; otherwise that line names
+  the model used. A ligand with more than 48 protonation states (ATP, NADP) also stays as
+  drawn, and the report says so on its line.
 - **More Options ▸ Titrate** works out each group's pKa in its surroundings and takes the form
   it mostly holds at that pH, for the groups near a ligand (Pocket) or for all of them. It is
   off by default: on the benchmark the textbook forms at pH 7 are right more often.

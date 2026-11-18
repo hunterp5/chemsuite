@@ -39,7 +39,7 @@ from chemsuite.macromolecule.structure.model import Structure
 from chemsuite.macromolecule.workspace.reports import PrepareReport, Row
 from chemsuite.macromolecule.workspace.reviews import Review
 
-from .pka_model import ligand_pka
+from ..pka import model as pka_model
 from .prepare_dialog import (
     PrepareDialog,
     record_of,
@@ -121,11 +121,10 @@ def inspect_protein(
         return None
     cache = ccd(ctx)
     held = dict(overrides or {})
-    model = ligand_pka(ctx, ask=options.ligand_states and base is None)
 
     def work(job):
         return _survey(protein, s, options, cache, job.cancel_token, skipped, held, base,
-                       model(job))  # fmt: skip
+                       pka_model.ligand_pka(options))  # fmt: skip
 
     def done(surveyed: tuple[review.Survey, review.Survey]) -> None:
         if structure_of(ctx, protein) is None:
@@ -224,12 +223,10 @@ def apply_review(ctx: ToolContext, panel, skipped, overrides):
     cache = ccd(ctx)
     before = int((s.element == HYDROGEN).sum())
     panel.set_busy(True)
-    model = ligand_pka(ctx, ask=False)
 
     def work(job):
-        return pipeline.prepare(
-            s, options, cache, job.cancel_token, decisions, ligand_model=model(job)
-        )
+        return pipeline.prepare(s, options, cache, job.cancel_token, decisions,
+                                ligand_model=pka_model.ligand_pka(options))  # fmt: skip
 
     def done(prepared: pipeline.Prepared) -> None:
         panel.set_busy(False)

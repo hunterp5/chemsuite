@@ -36,6 +36,7 @@ from chemsuite.core.table.columns import StructureColumn
 from chemsuite.core.wording import plural
 
 POOL_MIN_ROWS = 200
+PKA_POOL_MIN_ROWS = 1  # protonating takes seconds per molecule: always in worker processes
 NOTES_COLUMN = "Standardization Notes"
 SALTS_COLUMN = "Salts"
 
@@ -67,8 +68,8 @@ FORM_SALT = (
 )
 PROTONATE = (
     "Protonate at pH",
-    "Each ionisable site in its majority form at the pH, from MolGpKa's predicted pKa "
-    "values (as the Major Species of Predict pKa).",
+    "The most populated protonation state at the pH, from chemsuite pKa (as the Major "
+    "Species of Predict pKa).",
 )
 NOTES_HELP = (
     f"A “{NOTES_COLUMN}” column is always added: what changed in each structure, and any "
@@ -198,12 +199,13 @@ class StandardizeDialog(ToolDialog):
         cells = ctx.structure_inputs(source, oids)  # workers parse unparsed cells
         options = self.options()
         replace = self._replacing()
+        least = PKA_POOL_MIN_ROWS if options.protonate else POOL_MIN_ROWS
 
         def work(job):
             return standardize_cells(
                 cells,
                 options,
-                executor=ctx.workers_for(len(cells), POOL_MIN_ROWS),
+                executor=ctx.workers_for(len(cells), least),
                 progress=job.report,
                 cancel=job.cancel_token,
             )

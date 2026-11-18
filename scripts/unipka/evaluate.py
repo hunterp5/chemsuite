@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""chemsuite pKa weights on the held-out test sets, against MolGpKa (docs/UNIPKA_PLAN.md, U2).
+"""chemsuite pKa weights on the held-out test sets (docs/UNIPKA_PLAN.md, U2).
 
     python scripts/unipka/evaluate.py <weights.npz> <tests folder> <cache.pkl>
         [--workers N] [--enumerated] [--sets novartis_acid,sampl6,...] [--sites <tsv>]
@@ -29,9 +29,10 @@ conformers and folds cost without running the network again.
 - **enumerated** (``--enumerated``): from the molecule alone, as the app will: every microstate
   from chemsuite's enumerator, the macro pKa between the transition's two charges (with the
   bundled site templates, or ``--sites``; give each template set its own cache, since the
-  cache keeps each molecule's microstates);
-- **MolGpKa:** its site closest to the measured value, among sites of the transition's kind
-  (an optimistic bound: the app cannot know which site is meant).
+  cache keeps each molecule's microstates).
+
+MolGpKa, the model chemsuite pKa replaced, scored RMSE 1.02 on these sets (closest site); it
+was removed in U5.
 """
 
 from __future__ import annotations
@@ -52,8 +53,8 @@ from pathlib import Path  # noqa: E402
 import numpy as np  # noqa: E402
 from rdkit import Chem, RDLogger  # noqa: E402
 
-from chemsuite.ionisation import molgpka  # noqa: E402
-from chemsuite.ionisation.unipka import conformers, microstates, model, thermo  # noqa: E402
+from chemsuite.ionisation.profile import prepare  # noqa: E402
+from chemsuite.ionisation.unipka import conformers, microstates, model, ranges, thermo  # noqa: E402
 
 SETS = ("novartis_acid", "novartis_base", "sampl6", "sampl7", "sampl8")
 N_CONFORMERS = conformers.N_3D + 1  # the 2D layout last
@@ -142,14 +143,15 @@ def given(row: Row, cache: dict[str, np.ndarray], mean: float, n_3d: int, folds:
 
 def _molecule(row: Row) -> Chem.Mol | None:
     mol = Chem.MolFromSmiles(row.acid[0])
-    return None if mol is None else molgpka.prepare(mol)
+    return None if mol is None else prepare(mol)
 
 
 def enumerate_states(row: Row) -> dict[int, list[str]]:
     mol = _molecule(row)
     if mol is None:
         return {}
-    return {q: [m.smiles for m in pool] for q, pool in microstates.ensemble(mol).items()}
+    pools = ranges.plausible(microstates.ensemble(mol), mol)  # as the app enumerates
+    return {q: [m.smiles for m in pool] for q, pool in pools.items()}
 
 
 def enumerated(row: Row, states: dict[int, list[str]], cache: dict[str, np.ndarray],
@@ -160,14 +162,6 @@ def enumerated(row: Row, states: dict[int, list[str]], cache: dict[str, np.ndarr
     ga = np.array([_g(s, cache[s], n_3d, folds) for s in states[q]])
     gb = np.array([_g(s, cache[s], n_3d, folds) for s in states[q - 1]])
     return thermo.macro_pka(ga, gb, mean)
-
-
-def molgpka_closest(row: Row) -> float:
-    mol = _molecule(row)
-    sites = [] if mol is None else molgpka.predict_sites(mol)
-    kind = molgpka.BASE if row.charge > 0 else molgpka.ACID
-    pool = [s.pka for s in sites if s.kind == kind] or [s.pka for s in sites]
-    return min(pool, key=lambda p: abs(p - row.pka)) if pool else np.nan
 
 
 # -- the table ----------------------------------------------------------------------------------
@@ -233,7 +227,7 @@ def main() -> None:
     finally:
         args.cache.write_bytes(pickle.dumps(store))
 
-    methods: dict[str, Callable[[Row], float]] = {"MolGpKa (closest site)": molgpka_closest}
+    methods: dict[str, Callable[[Row], float]] = {}
     for folds in sorted({1, n_folds}):
         for n_3d in CONFORMER_STEPS:
             label = f"given, {n_3d} 3D + 2D, {folds} fold{'s' * (folds > 1)}"
