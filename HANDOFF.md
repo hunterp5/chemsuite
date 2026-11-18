@@ -346,6 +346,97 @@ other machine can pick it up. Update it at the end of a session that leaves work
 
 ## Next
 
+- **Just started: sites of metabolism** (ROADMAP §7.0f, plan approved 2026-11-17 in
+  [`docs/SOM_PLAN.md`](docs/SOM_PLAN.md); Claude's plan file on the Windows PC,
+  `polished-wandering-candle.md`). Our own weights on ATTNSOM's design (MIT, graph only, no 3D and
+  no protein language model), trained in WSL on the local GPU and run in numpy with no torch, as
+  §7.0e does. **M0 is done** (2026-11-17): the plan, the license chain and the roadmap entry
+  saying ML SoM is not the dropped BioTransformer item. **M1 is in progress** (2026-11-17):
+  - WSL layout `~/bench/attnsom/{upstream/ATTNSOM, scripts, runs}`; the MIT clone is pinned at
+    commit `0faa38b`. `scripts/som/setup_env.sh` builds the conda env `attnsom` and
+    `scripts/som/train.sh` drives upstream's `main.py`. **Upstream's `envs/attnsom.yaml` does not
+    solve on this host** (ffmpeg and torchvision pins hit strict repo priority, and
+    `cuda-version 13` conflicts with the driver's `__cuda=12.6`), so the script installs only what
+    the model imports, at upstream's versions: torch 2.4.0+cu118, the `torch_scatter` 2.1.2 wheel,
+    PyG 2.6.1, rdkit 2025.3.6, numpy 2.0.1. GPU passthrough works (RTX 4070, 12 GB; the model
+    needs about 1.5 GB).
+  - The data checks out exactly against the paper (2,003 instances, 679 unique SMILES, no
+    out-of-range sites) and the quirks the port must reproduce are written up in the plan. Two
+    worth knowing: **the model is heavy-atom only** (`SDMolSupplier` removes Hs and nothing adds
+    them back), and **the SDFs carry `SECONDARY_SOM`/`TERTIARY_SOM` that upstream ignores**, so
+    real secondary sites are trained as negatives — the cheapest available improvement.
+  - **Both reproductions pass** (2026-11-17). Zaretzki 10-fold: MCC 0.701 ± 0.028, top-2 0.865
+    (paper 0.710 / 0.871), 16 minutes for ten folds on the 4070. AZ-ExactSOM 10-fold: MCC
+    0.502 ± 0.096 (paper 0.517), every metric within one fold std.
+  - **But the published split leaks, and the honest numbers are much lower.** Upstream splits
+    molecule-**isoform instances**, so **86.2% of test instances have their own molecule in
+    training under another isoform** (`scripts/som/leakage_check.py`); its `no_leakage` helper
+    masks only the auxiliary attention targets, not `y`. Re-run molecule-grouped
+    (`scripts/som/apply_group_split.py` + `train.sh … --group_split`):
+
+    | split | MCC | top-1 | top-2 | top-3 |
+    |---|---|---|---|---|
+    | instance (paper's basis) | 0.701 | 0.761 | 0.865 | 0.917 |
+    | **molecule-grouped** | **0.524 ± 0.061** | **0.618** | **0.743** | **0.811** |
+
+    **Quote the grouped numbers, never the paper's.** Honest claim for the user guide: for an
+    unseen molecule the true site is top-1 ~62%, top-2 ~74%, top-3 ~81%. Still well worth
+    shipping (FAME 3 got MCC 0.20 on exact annotations), but every published comparison in this
+    field uses the inflated basis, so we cannot rank against XenoSite or SMARTCyp without
+    re-running them the same way. Grouping also flattens the per-isoform spread — 3A4 is no
+    longer the outlier — so the instance-split ranking between isoforms was mostly an artifact.
+  - **The `SAGPooling` question is settled, and the answer is the opposite of the first guess**
+    (`scripts/som/batch_check.py`). The FiLM mean-pool branch fires only for a batch of exactly
+    one graph; upstream's own inference batches nine isoform copies, so everything real takes the
+    SAGPool branch. Measured: the two branches differ by up to **7.56 logits and change the
+    top-1 site in 30% of molecule-isoforms**, while batch size within the SAGPool branch changes
+    nothing (8e-6). **So the port must implement `SAGPooling` and must always run the nine
+    isoforms as one batch**, and the golden file must come from the batched path. No retraining
+    needed.
+  - **Fold count measured** (`scripts/som/holdout_eval.py`, on AZ-ExactSOM: 95 compounds with
+    exact sites, **zero overlap** with Zaretzki, so genuinely external). Ensemble helps *ranking*,
+    and three folds capture most of it; MCC is flat throughout:
+
+    | folds | float16 | top-1 | top-2 |
+    |---|---|---|---|
+    | 1 | **17 MB** | 0.427 ± 0.032 | 0.503 |
+    | 3 | **51 MB** | 0.480 ± 0.027 | 0.525 |
+    | 10 | 171 MB | 0.495 | 0.558 |
+
+    (Absolute values are a pessimistic cross-dataset floor — only the curve's shape is used.)
+    **This is now a product trade-off awaiting the user:** one fold at 17 MB vendored in-tree
+    works offline with no download, consent prompt or cache and costs ~5 points of top-1; three
+    folds at 51 MB must be a pinned download (vs the pKa model's 88 MB).
+  - **Decided 2026-11-18 (user): one fold, vendored in-tree**, and **the user guide quotes the
+    grouped numbers only** — no instance-split figures, and no published comparison against
+    SMARTCyp/XenoSite/FAME, since every one of those is on the inflated basis. **So most of M3
+    disappears**: no release, no SHA-256 pin, no `cached`/`fetch`, no cache folder, no network
+    check, no consent prompt, and **no `metabolism/weights.py` at all** — `sites.py` loads
+    `data/som_weights.npz` with `importlib.resources`, as `ionisation/molgpka.py` does.
+  - **float16 verified harmless** (`convert_weights.py --check`): 17.37 MB, largest probability
+    shift 0.00036, and the single top-1 reordering in 225 was between two atoms the float32 model
+    scored *identically*. Which surfaces a real M4 point: **symmetry-equivalent atoms tie** (both
+    of ibuprofen's terminal methyls score 0.754 exactly), so the port must break ties by lowest
+    atom index or the displayed "Top Site" will wobble.
+  - **`SAGPooling` is now fully specified** in the plan from PyG 2.6.1's source (GraphConv to a
+    scalar, `tanh(attn·p/‖p‖)`, `k = ceil(0.8n)`, kept features **scaled by their score**, then
+    mean) — so M2 has no unknowns left.
+  - **`tests/metabolism/som_golden.json` is committed** (608 KB): per-atom probabilities for all
+    nine isoforms over 20 molecules, per-stage digests for 3, full activations for `CO`, plus the
+    raw feature matrices. Regenerating it from `scripts/som/golden.py` is byte-identical, so it is
+    a real fixture, not a snapshot. Chemistry spot-check passes: caffeine's N-methyls,
+    paracetamol's amide N, ibuprofen's isobutyl chain scored highest by 2C9 — all correct.
+  - **`scripts/som/` now holds** `setup_env.sh`, `train.sh`, `apply_group_split.py`,
+    `leakage_check.py`, `batch_check.py`, `holdout_eval.py`, `convert_weights.py`, `golden.py`.
+    All lint clean, all GPL-headed.
+  - **Next:** M1 step 4, retrain on ~all data at a fixed 32 epochs (best epochs ran 17–42, mean
+    28, median 32, none hitting the 50 cap) and regenerate the golden file; optionally step 5, the
+    `SECONDARY_SOM` soft-label experiment. **M2, the numpy port, is unblocked and is the long
+    pole.**
+  - Still open: whether the Zaretzki labels may be trained on at all (we never ship them).
+  CYP inhibition is phase C of the same plan, on OpenADMET's open pIC50 data and the Veith panel
+  from PubChem.
+
 - **Saved for later: SQL import** (File ▸ Import from Database, read-only queries; SQLite
   built in, PostgreSQL/MySQL/Oracle/SQL Server through optional extras). The plan was approved
   2026-11-12 and is in [`docs/DATABASE_PLAN.md`](docs/DATABASE_PLAN.md). No code yet.

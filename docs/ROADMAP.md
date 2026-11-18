@@ -8,8 +8,10 @@ conformers and the Data menu. This roadmap covers what comes next:
 - the rest of MolManager's features, ranked by value and install cost.
 
 Decisions so far: QSAR, Auto QSAR and CoMSIA (phase 7d), skipped at first, are back on the
-roadmap since 2026-11-17 (§6 Tier 1). Metabolite prediction (BioTransformer) is
-dropped from the plan. Groovy and custom themes stay. External
+roadmap since 2026-11-17 (§6 Tier 1). Metabolite prediction (BioTransformer: rule-based
+metabolite structures from an external Java tool) is dropped from the plan; **ML site-of-metabolism
+prediction, a different thing, is in since 2026-11-17** (§7.0f), with CYP inhibition after it.
+Groovy and custom themes stay. External
 tools (Gnina, AiZynthFinder…) will be integrated, so their paths are already in
 Settings. Settings… sits in the app menu on macOS and the Edit menu elsewhere. Tool dialogs close on OK
 and their jobs run in the background (§2). A robust drawing sketcher that works with the table
@@ -212,6 +214,7 @@ modified.
 | Random utilities | Random numbers and a random molecule sample. Low priority. Random Numbers and Random Rows are done; random molecules from outside the table (ChEMBL, PubChem) are under External data in Tier 2. |
 | QSAR, Auto QSAR | Added 2026-11-17. MolManager's `qsar_models.py`, `auto_qsar*.py` (about 2.9k lines): fit and compare regression models on descriptors or fingerprints, cross-validated, with predictions, residuals and an applicability domain as columns. scikit-learn is already a base dependency. Port the Qt-free modules with their tests, then a kit dialog. |
 | CoMSIA | Added 2026-11-17. MolManager's `comsia.py` (780 lines): 3D-QSAR fields on aligned conformers. Builds on Superpose for the alignment. After QSAR. |
+| Sites of metabolism, CYP inhibition | Added 2026-11-17, see §7.0f and [SOM_PLAN.md](SOM_PLAN.md). Our own weights on ATTNSOM's design (MIT), run in numpy: a score per atom per P450 isoform, then CYP inhibition on the same package. No external tool and no new dependency, and the weights are vendored in-tree (about 17 MB, decided 2026-11-18), so it works offline with no download. |
 | Structural alerts | Added 2026-11-17. RDKit's FilterCatalog sets (PAINS, Brenk, NIH, ZINC and the rest) as columns or a filter: which alerts a row hits and how many. MolManager's `chem/structural_alerts.py` (213 lines) was marked to copy and never was. Probably a tab or group in Calculate Descriptors, as in MolManager. |
 | MMP neighbourhood map and transform ledger | Added 2026-11-17. MolManager's `mmp_neighborhood_analysis.py` and its map, plot and ledger views: a compound's matched-pair neighbours around it, and every transform with its count and mean activity change. Builds on Matched Molecular Pairs. |
 
@@ -421,6 +424,21 @@ catches few ligand states (`docs/prepare/`). Its published weights cannot be use
 so chemsuite trains its own on pKaHub's data from Uni-Mol's MIT backbone and runs them in numpy, with
 no torch: [UNIPKA_PLAN.md](UNIPKA_PLAN.md). Ligand states in preparation use it first; Predict
 pKa, standardise and the descriptors follow once it beats MolGpKa on the test sets.
+
+### 7.0f Sites of metabolism, then CYP inhibition (added 2026-11-17)
+
+Nothing in chemsuite says anything about metabolic fate. Sites of metabolism comes first: a score
+for every atom of a molecule for each of nine human P450 isoforms, on ATTNSOM's design (Kim et al.,
+*Bioinformatics* 2026; MIT), which is graph only — RDKit 2D features, no 3D conformers and no protein
+language model — so the whole forward pass is matmuls and scatter-adds. It ships no weights, and
+FAME 3 and MetaQSAR are academic-only, so chemsuite trains its own in WSL and runs them in numpy
+with no torch, exactly as §7.0e does: [SOM_PLAN.md](SOM_PLAN.md). CYP inhibition follows on the
+same package, trained on OpenADMET's open pIC50 data and the Veith panel from PubChem.
+
+**This is not the metabolite prediction that was dropped.** That item was BioTransformer, a
+rule-based enumerator of metabolite *structures* run as an external Java tool. This is an ML model
+that scores atoms on a graph: no external tool, no new runtime dependency, and no generated
+structures — metabolite structure generation stays out of scope.
 
 ### 7a. Proteins: from viewer to medicinal-chemistry workspace (revised 2026-11-11)
 
