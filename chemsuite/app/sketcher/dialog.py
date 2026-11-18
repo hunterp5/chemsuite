@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""The sketcher window: tool strips around the canvas; OK gives back a molfile.
+"""The sketcher window: tool strips around the canvas under a File and Edit menu bar; File ▸
+Done (Ctrl+Enter) gives back a molfile, File ▸ Close (or closing the window) cancels.
 
 Tools run along the top, rings along the bottom and elements down the left, as in Ketcher.
 Undo, redo, cut, copy, paste and clear are on the keyboard and the canvas's right-click menu,
@@ -28,16 +29,9 @@ way to edit a structure in the app; there is no text editor.
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QDialog, QGridLayout, QLabel, QVBoxLayout, QWidget
 
+from chemsuite.app.sketcher import menus as sketch_menus
 from chemsuite.app.sketcher.canvas import SketchCanvas
 from chemsuite.app.sketcher.toolbar import SketchToolBar
 from chemsuite.sketch import convert, reaction
@@ -52,12 +46,13 @@ class SketcherDialog(QDialog):
     holds it as an RXN file and :attr:`molblock` stays "". Otherwise OK on a reaction says
     that only a structure can go there.
 
-    With ``menus=True`` (Tools ▸ Sketcher) there are no buttons: a File menu saves the
-    drawing or gives it back (*ok_text*, emitting :attr:`submitted` and staying open), and an
-    Edit menu holds the main window's Edit items.
+    There are no buttons: a File menu saves the drawing or gives it back (*ok_text*, "Done"
+    by default; it needs a drawing when *ok_text* is given), and an Edit menu holds the main
+    window's Edit items. With ``keep_open=True`` (Tools ▸ Sketcher) giving the drawing back
+    emits :attr:`submitted` and leaves the window open; otherwise it accepts the dialog.
     """
 
-    #: the drawing was given back from File (``menus=True``); the window stays open
+    #: the drawing was given back from File (``keep_open=True``); the window stays open
     submitted = Signal()
 
     def __init__(
@@ -69,7 +64,7 @@ class SketcherDialog(QDialog):
         ok_text: str = "",
         reactions: bool = False,
         reaction_only: bool = False,
-        menus: bool = False,
+        keep_open: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
@@ -88,22 +83,18 @@ class SketcherDialog(QDialog):
         self.info.setWordWrap(True)
         self.info.setStyleSheet("color: #c62828")
         self.info.hide()
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        if ok_text:
-            self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText(ok_text)
+        #: the File action gives back only a drawing (Add, Add to Table), never an empty one
+        self.needs_drawing = bool(ok_text)
 
         layout = QVBoxLayout(self)
-        self.menu_bar = self.save_action = self.add_action = None
-        if menus:
-            from chemsuite.app.sketcher import menus as sketch_menus
-
-            self.menu_bar, self.save_action, self.add_action = sketch_menus.build(
-                self, self.canvas, ok_text or "OK", self.submit
-            )
-            layout.setMenuBar(self.menu_bar)
-            self.buttons.hide()
+        self.menu_bar, self.save_action, self.done_action = sketch_menus.build(
+            self,
+            self.canvas,
+            ok_text or "&Done",
+            self.submit if keep_open else self.accept,
+            self.reject,
+        )
+        layout.setMenuBar(self.menu_bar)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
         grid = QGridLayout()  # rings line up with the canvas edge, elements to its left
@@ -115,10 +106,7 @@ class SketcherDialog(QDialog):
         grid.setColumnStretch(1, 1)
         grid.setRowStretch(1, 1)
         layout.addLayout(grid, 1)
-        bottom = QHBoxLayout()
-        bottom.addWidget(self.info, 1)
-        bottom.addWidget(self.buttons)
-        layout.addLayout(bottom)
+        layout.addWidget(self.info)
         self.resize(760, 560)
 
         self.toolbar.picked.connect(self.canvas.set_tool)
@@ -127,8 +115,6 @@ class SketcherDialog(QDialog):
         self.canvas.tool_changed.connect(lambda _n: self.toolbar.show_tool(self.canvas.tool))
         self.canvas.changed.connect(self._update)
         self.canvas.message.connect(self._show_message)
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
         self.molblock = ""
         self._update()
         if text.strip() and start is None:  # SMARTS or a typo: start blank and say why
@@ -156,11 +142,9 @@ class SketcherDialog(QDialog):
 
     def _update(self) -> None:
         report = self.canvas.report
-        ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
-        ok.setEnabled(report.valid)
-        if self.add_action is not None:
-            self.add_action.setEnabled(report.valid and not self.canvas.sketch.is_empty())
-            self.save_action.setEnabled(report.valid and not self.canvas.sketch.is_empty())
+        drawn = not self.canvas.sketch.is_empty()
+        self.done_action.setEnabled(report.valid and (drawn or not self.needs_drawing))
+        self.save_action.setEnabled(report.valid and drawn)
         wedges = len(self.canvas.wedge_problems)
         if report.valid and wedges:
             self._show_message(

@@ -114,7 +114,7 @@ def test_the_panel_lists_distinct_fragments_with_activity(chem, qtbot) -> None:
     acetyl = next(s for s in panel.stats if s.smiles == "[1*]C(C)=O")
     assert acetyl.count == 2  # paracetamol and acetanilide
     assert acetyl.mean == pytest.approx(6.0)
-    assert panel.table.horizontalHeaderItem(2).text() == "Mean pIC50"
+    assert panel.table.header_text(2) == "Mean pIC50"
 
 
 def test_selecting_a_fragment_selects_its_compounds(chem, qtbot) -> None:

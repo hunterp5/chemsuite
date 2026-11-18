@@ -80,16 +80,19 @@ class JobHost:
         lane: str = QUICK,
         guard: bool = False,
         keep_partial: bool = False,
+        counted: bool = False,
     ) -> Job:
         """Run *work* in the background; *on_done* gets its result on the GUI thread.
 
         *wait* blocks (with a progress dialog) until the job ends, for callers that need the
         outcome now, such as Save from the close prompt. With *guard*, the result is dropped
         if the window has moved on to another document meanwhile. With *keep_partial*, a
-        cancelled job's ``Cancelled(partial)`` still reaches *on_done*.
+        cancelled job's ``Cancelled(partial)`` still reaches *on_done*. With *counted*, the
+        status bar shows the job's progress as a count (see :attr:`Job.counted`).
         """
         current = self._current()
         job = self.runner.submit(label, work, lane=lane, owner=self.window, document=self._name())
+        job.counted = counted
 
         def finished(result: Any) -> None:
             if not self.alive():

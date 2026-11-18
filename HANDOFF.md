@@ -392,8 +392,14 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - Still owed: gate 1 on the Mac (osx-arm64 env and its platforms), and the choice between
     OpenMM 8.4.0 with this driver and 8.6.1 with a newer one.
 
-1. Graceful exit (ROADMAP §7.0).
+1. Conformers at scale (§7.0f): measured and fixed 2026-11-17
+   ([`docs/conformers/scale.md`](docs/conformers/scale.md); data from
+   `scripts/review/conformer_scale.py data`, local under `samples/conformers/scale/`). Open
+   for a decision: 2D-only work on a 3D column loads every conformer (the report's two
+   options). Owed: the by-hand pass on a 1k × 300 document and the same benches on the Mac.
+   Conformer energies (2026-11-17) are also owed a by-hand run in the app with 3D drawing.
 2. Bioactive conformers (§7.0b) or protein Phase 1, Alignment (§7a), each starting in plan mode.
+   (Graceful exit, once listed here, is done: ROADMAP §7.0.)
 
 Still owed by the user: the ChemDraw hotkey list.
 

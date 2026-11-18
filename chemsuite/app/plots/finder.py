@@ -71,6 +71,10 @@ class Finder(QObject):
         thread; the job it returns runs in the background)."""
         raise NotImplementedError
 
+    def job_title(self, spec: PlotSpec) -> str:
+        """The job's name in the status bar and the Log: the plot being calculated."""
+        return "Calculating plot…"
+
     def executor(self, rows: int) -> Executor | None:
         return self._workers(rows) if self._workers is not None else None
 
@@ -92,7 +96,7 @@ class Finder(QObject):
         if self._run is None:
             self._done(run())
         else:
-            self._run(self.waiting, run, self._done)
+            self._run(self.job_title(spec), run, self._done)
         return self._result
 
     def close(self) -> None:

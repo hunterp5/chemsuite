@@ -214,6 +214,7 @@ class ToolContext:
         lane: str = QUEUE,
         keep_partial: bool = False,
         background: bool = False,
+        counted: bool | None = None,
     ) -> Job:
         """Run *work* in the background; *on_done* runs on the GUI thread when it finishes.
 
@@ -232,6 +233,10 @@ class ToolContext:
         whose result means nothing until complete (a model fit, an embedding, clustering, a
         pair search) leaves it off.
 
+        *counted* says the job's progress counts molecules or rows, shown in the status bar
+        as "(120/500)"; it defaults to *keep_partial* (per-row work). Whole-dataset work (a
+        plot, a fit, an embedding) shows only its title.
+
         *background* marks work the user did not ask for (a panel making things ahead):
         closing the document cancels it without asking.
         """
@@ -245,7 +250,13 @@ class ToolContext:
                 self._finishing = None
 
         job = self._window.jobs.run(
-            label, work, finish, lane=lane, guard=True, keep_partial=keep_partial
+            label,
+            work,
+            finish,
+            lane=lane,
+            guard=True,
+            keep_partial=keep_partial,
+            counted=keep_partial if counted is None else counted,
         )
         job.background = background
         holder.append(job)

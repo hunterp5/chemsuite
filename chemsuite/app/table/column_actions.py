@@ -169,7 +169,7 @@ class ColumnActions:
         return True
 
     def number_format(self, name: str):
-        """Open Number Format… for *name* (display only; one undoable step on OK)."""
+        """Open Precision… for *name* (display only; one undoable step on OK)."""
         from .number_format import NumberFormatDialog
 
         dialog = NumberFormatDialog(self._parent, self._table, name)
@@ -232,6 +232,29 @@ class ColumnActions:
             return action
 
         drawn = table.kind(name) in (STRUCTURE, REACTION)
+        if self._freeze is not None:
+            freeze = self._freeze
+            frozen = self._frozen()
+            through = add("Freeze Columns", lambda: freeze(position + 1))
+            through.setToolTip(
+                "Keep this column and the ones left of it in place while the rest scroll "
+                "sideways. Drag columns such as ID and Structure to the front first."
+            )
+            through.setEnabled(frozen != position + 1)
+            if frozen:
+                add("Unfreeze Columns", lambda: freeze(0))
+        if table.kind(name) == STRUCTURE and self._align is not None:
+            align = self._align
+            aligning = add("Align Drawings…", lambda: align(name))
+            aligning.setToolTip(
+                "Draw every structure that contains a core with the core in the same place "
+                "and orientation; the structures themselves are not changed."
+            )
+            if self._aligned(name) and self._unalign is not None:
+                unalign = self._unalign
+                add("Stop Aligning Drawings", lambda: unalign(name))
+        if not menu.isEmpty():
+            menu.addSeparator()
         if self._selection is not None:
             chooser = menu.addMenu("Select")
             chooser.setToolTipsVisible(True)
@@ -278,27 +301,6 @@ class ColumnActions:
         )
         menu.addSeparator()
 
-        if self._freeze is not None:
-            freeze = self._freeze
-            frozen = self._frozen()
-            through = add("Freeze Columns up to Here", lambda: freeze(position + 1))
-            through.setToolTip(
-                "Keep this column and the ones left of it in place while the rest scroll "
-                "sideways. Drag columns such as ID and Structure to the front first."
-            )
-            through.setEnabled(frozen != position + 1)
-            if frozen:
-                add("Unfreeze Columns", lambda: freeze(0))
-        if table.kind(name) == STRUCTURE and self._align is not None:
-            align = self._align
-            aligning = add("Align Drawings…", lambda: align(name))
-            aligning.setToolTip(
-                "Draw every structure that contains a core with the core in the same place "
-                "and orientation; the structures themselves are not changed."
-            )
-            if self._aligned(name) and self._unalign is not None:
-                unalign = self._unalign
-                add("Stop Aligning Drawings", lambda: unalign(name))
         kinds = menu.addMenu("Column Type")
         group = QActionGroup(kinds)
         for kind, title in KIND_TITLES.items():
@@ -307,21 +309,19 @@ class ColumnActions:
             action.setChecked(table.kind(name) == kind)
             group.addAction(action)
             action.triggered.connect(lambda _checked=False, k=kind: self.convert(name, k))
+        if table.kind(name) != NUMBER:  # Logarithmic and Precision are for numbers only
+            return menu
         menu.addSeparator()
-
-        number = table.kind(name) == NUMBER
-        log = add("Logarithmic (log₁₀)", lambda: self.toggle_log(name), not self.log_problem(name))
+        problem = self.log_problem(name)
+        log = add("Logarithmic (log₁₀)", lambda: self.toggle_log(name), not problem)
         log.setCheckable(True)
         log.setChecked(table.column(name).style.log10)
         log.setToolTip(
-            self.log_problem(name)
+            problem
             or "Convert the values to log₁₀; choose again to convert them back. You can undo it."
         )
-        formatting = add("Number Format…", lambda: self.number_format(name), number)
-        formatting.setToolTip(
+        add("Precision…", lambda: self.number_format(name)).setToolTip(
             "Decimals, thousands separator, scientific, significant figures or percent; the "
             "stored values are not rounded."
-            if number
-            else "Only Number columns have a number format."
         )
         return menu

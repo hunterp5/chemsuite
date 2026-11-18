@@ -125,7 +125,7 @@ class SomDialog(ToolDialog):
             remember()
             self.finish(oids, result)
 
-        return ctx.run("Training a self-organising map…", work, done)
+        return ctx.run("Calculating Self-Organizing Map…", work, done)
 
     def finish(self, oids: np.ndarray, result: Som):
         ctx = self.ctx

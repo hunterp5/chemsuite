@@ -1498,6 +1498,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(message + (f"; {bad:,} invalid" if bad else ""), 6000)
 
         job = self._runner.submit("Reading structures…", work)
+        job.counted = True
         job.background = True  # made ahead for the table: quitting stops it without asking
         job.partial.connect(apply)
         job.finished.connect(finished)

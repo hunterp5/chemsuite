@@ -25,7 +25,7 @@ from chemsuite.app.document.tools import Tool, ToolContext
 def _open(ctx: ToolContext):
     from chemsuite.app.sketcher import SketcherDialog
 
-    dialog = SketcherDialog("", "Sketcher", ctx.parent, ok_text="Add to Table", menus=True)
+    dialog = SketcherDialog("", "Sketcher", ctx.parent, ok_text="Add to Table", keep_open=True)
 
     def added() -> None:
         if dialog.molblock and ctx.add_compound(dialog.molblock) is not None:

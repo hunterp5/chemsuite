@@ -104,6 +104,9 @@ class Job(QObject):
         self.queued_at = time.monotonic()
         self.started_at: float | None = None
         self.ended_at: float | None = None
+        #: the progress counts things the user knows (molecules, rows, ligands), so the status
+        #: bar shows them ("Predicting pKa… (120/500)"); otherwise only the title
+        self.counted = False
         self.summary = ""  # one line about the result ("Added 3 columns")
         self.error_text = ""  # the traceback of a failure
         #: what a cancelled job finished before stopping (see ``Cancelled.partial``), or None

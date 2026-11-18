@@ -13,8 +13,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""The standalone Sketcher's menu bar (Tools ▸ Sketcher…): File (Save…, then the window's
-own action, Add to Table) and Edit, the main window's Edit items for the drawing.
+"""Every sketcher window's menu bar: File (Save…, the window's own action such as Done or
+Add to Table, and Close) and Edit, the main window's Edit items for the drawing.
 
 The canvas already handles the Edit keys itself (Delete erases what the pointer is over), so
 those shortcuts are shown in the menu but act only while the menu is open."""
@@ -79,9 +79,13 @@ def save_drawing(parent: QWidget, canvas: SketchCanvas, path: str = "") -> bool:
 
 
 def build(
-    parent: QWidget, canvas: SketchCanvas, add_text: str, add: Callable[[], None]
+    parent: QWidget,
+    canvas: SketchCanvas,
+    done_text: str,
+    done: Callable[[], None],
+    close: Callable[[], object],
 ) -> tuple[QMenuBar, QAction, QAction]:
-    """The menu bar, with the File actions that depend on the drawing: Save and *add*."""
+    """The menu bar, with the File actions that depend on the drawing: Save and *done*."""
     bar = QMenuBar(parent)
     bar.setNativeMenuBar(False)  # in the window on macOS too: it belongs to this window
     key = QKeySequence.StandardKey
@@ -100,7 +104,9 @@ def build(
 
     file_menu = bar.addMenu("&File")
     save = action(file_menu, "&Save…", lambda: save_drawing(parent, canvas), key.Save)
-    added = action(file_menu, add_text, add, "Ctrl+Return")
+    finished = action(file_menu, done_text, done, "Ctrl+Return")
+    file_menu.addSeparator()
+    action(file_menu, "&Close", close, key.Close)
 
     edit = bar.addMenu("&Edit")
     action(edit, "&Undo", lambda: undo(canvas), key.Undo, shown_only=True)
@@ -115,4 +121,4 @@ def build(
     action(edit, "Invert Selection", lambda: invert_selection(canvas), "Ctrl+I")
     action(edit, "Clear Selection", canvas.clear_selection, "Ctrl+Shift+A", shown_only=True)
     action(edit, "&Delete Selection", canvas.erase_selection, key.Delete, shown_only=True)
-    return bar, save, added
+    return bar, save, finished

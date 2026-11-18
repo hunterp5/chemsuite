@@ -302,4 +302,4 @@ def minimise_protein(ctx: ToolContext, protein: str, settings: MinimiseSettings)
         ctx.show_message(f"Minimised {protein} as {new}: heavy atoms moved {result.rmsd:.2f} Å"
                          f"{warned}")  # fmt: skip
 
-    return ctx.run(f"Minimising {protein}…", work, done)
+    return ctx.run(f"Minimizing {protein}…", work, done)

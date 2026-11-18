@@ -19,6 +19,8 @@ and the column menu's Duplicate, Logarithmic, Precision and Colour."""
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QGuiApplication
@@ -154,8 +156,11 @@ def test_double_click_on_a_structure_opens_the_sketcher(structures) -> None:
 
     window.view.edit(index, window.view.EditTrigger.DoubleClicked, None)
     sketcher = window.findChild(SketcherDialog)
+    files = next(a.menu() for a in sketcher.menu_bar.actions() if a.text() == "&File")
+    assert [a.text() for a in files.actions()] == ["&Save…", "&Done", "", "&Close"]
     sketcher.canvas.set_sketch(from_text("CCN"), "Replace")
-    sketcher.accept()
+    sketcher.done_action.trigger()  # File ▸ Done writes the cell and closes the sketcher
+    assert not sketcher.isVisible()
     assert table.cell("SMILES", model.oid_at(0)) == "CCN"
     assert table.column("SMILES").mol(0).GetNumConformers() == 1  # the drawing's layout
     assert table.history.undo_label == "Draw SMILES"
@@ -258,7 +263,7 @@ def test_copy_as_reports_an_invalid_structure(structures) -> None:
 
 def test_menu_has_the_new_column_items(window) -> None:
     titles = menu_titles(window.columns.build_menu("pIC50", [], 1))
-    for title in ("Duplicate “pIC50”", "Logarithmic (log₁₀)", "Number Format…", "Color…"):
+    for title in ("Duplicate “pIC50”", "Logarithmic (log₁₀)", "Precision…", "Color…"):
         assert title in titles
 
 
@@ -291,9 +296,6 @@ def test_logarithmic_is_disabled_with_a_reason(window, monkeypatch) -> None:
     menu = window.columns.build_menu("pIC50", [], 1)
     action = next(a for a in menu.actions() if a.text() == "Logarithmic (log₁₀)")
     assert not action.isEnabled() and "above zero" in action.toolTip()
-    menu = window.columns.build_menu("ID", [], 0)
-    action = next(a for a in menu.actions() if a.text() == "Logarithmic (log₁₀)")
-    assert not action.isEnabled() and "Number" in action.toolTip()
     warned = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.append(a[2]))
     assert not window.columns.toggle_log("pIC50")
@@ -397,22 +399,21 @@ def test_the_sketcher_window_has_file_and_edit_menus(window, tmp_path) -> None:
     table = window.workspace.table
     dialog = window.open_tool("sketcher")
     assert isinstance(dialog, SketcherDialog) and dialog.canvas.sketch.is_empty()
-    assert not dialog.buttons.isVisible()  # no Add to Table or Cancel buttons
     menus = {a.text(): a.menu() for a in dialog.menu_bar.actions()}
     assert list(menus) == ["&File", "&Edit"]
-    assert [a.text() for a in menus["&File"].actions()] == ["&Save…", "Add to Table"]
+    assert [a.text() for a in menus["&File"].actions()] == ["&Save…", "Add to Table", "", "&Close"]
     edit = [a.text() for a in menus["&Edit"].actions() if not a.isSeparator()]
     main_edit = next(a.menu() for a in window.menuBar().actions() if a.text() == "&Edit")
     assert [t for t in edit if t != "Cu&t"] == [
         a.text() for a in main_edit.actions() if not a.isSeparator()
     ]
-    assert not dialog.add_action.isEnabled() and not dialog.save_action.isEnabled()
+    assert not dialog.done_action.isEnabled() and not dialog.save_action.isEnabled()
     # Elements run down the left of the canvas.
     assert dialog.toolbar.side.geometry().right() < dialog.canvas.geometry().left()
 
     dialog.canvas.set_sketch(from_text("c1ccccc1O"), "Draw")
-    assert dialog.add_action.isEnabled()
-    dialog.add_action.trigger()
+    assert dialog.done_action.isEnabled()
+    dialog.done_action.trigger()
     assert len(table) == 4 and dialog.isVisible()  # added; the window stays open
     assert Chem.MolToSmiles(table.column("Structure").mol(3)) == "Oc1ccccc1"
     assert window.workspace.selection.oids == {int(table.oids[3])}
@@ -443,8 +444,8 @@ def test_frozen_columns_stay_put_and_follow_the_table(window, qtbot) -> None:
         view.setColumnWidth(col, 300)
     qtbot.waitUntil(lambda: view.horizontalScrollBar().maximum() > 600)
     titles = menu_titles(window.columns.build_menu("pIC50", [], 1))
-    assert "Freeze Columns up to Here" in titles and "Unfreeze Columns" not in titles
-    trigger(window.columns.build_menu("pIC50", [], 1), "Freeze Columns up to Here")
+    assert "Freeze Columns" in titles and "Unfreeze Columns" not in titles
+    trigger(window.columns.build_menu("pIC50", [], 1), "Freeze Columns")
     frozen = view._frozen
     assert view.frozen_count == 2 and frozen.isVisible()
     assert frozen.width() == 2 * 300 + 1
@@ -529,8 +530,10 @@ def test_structure_cells_preview_a_large_drawing_on_hover(structures) -> None:
     for row in range(3):
         column.obj(int(model._slots[row]))  # what drawing the cells does
     tip = model.data(model.index(1, 1), Qt.ItemDataRole.ToolTipRole)
-    assert tip.startswith('<img src="data:image/png;base64,')
-    assert 'width="360" height="270"' in tip and "c1ccccc1" in tip
+    assert tip.startswith('<div align="center"><img src="data:image/png;base64,')
+    assert "c1ccccc1" not in tip  # the drawing alone, no SMILES
+    width, height = (int(re.search(rf'{k}="(\d+)"', tip)[1]) for k in ("width", "height"))
+    assert 120 <= width < 360 and 90 <= height < 270  # fitted to benzene, not a big empty box
     assert model.data(model.index(2, 1), Qt.ItemDataRole.ToolTipRole).startswith("Invalid")
 
 
@@ -621,12 +624,14 @@ def test_column_menu_order(window, structures) -> None:
         return [f"Rename “{name}”…", f"Duplicate “{name}”", f"Delete “{name}”", "--"]
 
     assert _menu_layout(window.columns.build_menu("IC50", [], 2)) == [
+        "Freeze Columns", "--",
         "Select", "Sort", "Search", "Filter", "Color…", "--", *common("IC50"),
-        "Freeze Columns up to Here",
-        "Column Type", "--", "Logarithmic (log₁₀)", "Number Format…",
+        "Column Type", "--", "Logarithmic (log₁₀)", "Precision…",
     ]  # fmt: skip
     assert _menu_layout(window.columns.build_menu("SMILES", [], 1)) == [
+        "Freeze Columns", "Align Drawings…", "--",
         "Select", "Sort", "Search", "Filter", "Color…", "--", *common("SMILES"),
-        "Freeze Columns up to Here", "Align Drawings…", "Column Type", "--",
-        "Logarithmic (log₁₀)", "Number Format…",
+        "Column Type",
     ]  # fmt: skip
+    # Logarithmic and Precision are for Number columns only
+    assert _menu_layout(window.columns.build_menu("ID", [], 0))[-1] == "Column Type"

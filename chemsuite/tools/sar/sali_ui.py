@@ -156,7 +156,7 @@ class SaliPanel(ToolPanel):
             ],
             pairs,
         )
-        self.table.itemDoubleClicked.connect(lambda *_: self.select_pairs())
+        self.table.doubleClicked.connect(lambda *_: self.select_pairs())
         which = (
             f"The {shown:,} steepest of {len(cliffs):,}"
             if shown < len(cliffs)

@@ -208,18 +208,23 @@ def write_sdf(
     slots = np.arange(len(table)) if oids is None else table.slots_of(oids)
     titles = table.column(TITLE) if TITLE in table else None
     tags = {name: field_name(name) for name in fields}
+    step = 16 if all_conformers else 2048  # rows between cancel checks and progress
     with atomic_write(path, "w", encoding="utf-8", newline="\n") as handle:
-        for start in range(0, len(slots), 2048):
+        for start in range(0, len(slots), step):
             check(cancel)
-            chunk = slots[start : start + 2048]
+            chunk = slots[start : start + step]
             values = {name: table.column(name).displays(chunk) for name in fields}
             for i, slot in enumerate(chunk.tolist()):
                 title = titles.display(slot) if titles is not None else ""
                 mol = column.mol(slot) if all_conformers else None
                 conformers = mol.GetNumConformers() if mol is not None else 0
-                for index in range(max(1, conformers)):
+                if conformers > 1:
+                    blocks = _conformer_blocks(column, slot, title, mol)
+                else:
+                    blocks = [_molblock(column, slot, title)]
+                for index, block in enumerate(blocks):
                     conformer = index if conformers > 1 else None
-                    handle.write(_molblock(column, slot, title, conformer))
+                    handle.write(block)
                     handle.write("\n")
                     if conformer is not None:
                         handle.write(f"> <Conformer>\n{index + 1}\n\n")
@@ -229,7 +234,7 @@ def write_sdf(
                         handle.write(f"> <{tags[name]}>\n{field_value(values[name][i])}\n\n")
                     handle.write("$$$$\n")
             if progress is not None:
-                progress(min(start + 2048, len(slots)), len(slots))
+                progress(min(start + step, len(slots)), len(slots))
 
 
 def _energy_fields(conformer: Chem.Conformer) -> str:
@@ -276,15 +281,57 @@ def _molblock(column: StructureColumn, slot: int, title: str, conformer: int | N
                 mol = Chem.Mol(mol)
                 rdDepictor.Compute2DCoords(mol)
             conf_id = mol.GetConformers()[conformer].GetId() if conformer is not None else -1
-            try:
-                block = Chem.MolToMolBlock(mol, confId=conf_id)
-            except (RuntimeError, ValueError):
-                block = Chem.MolToMolBlock(mol, kekulize=False, confId=conf_id)
+            block = _writes(mol, conf_id)
     else:
         text = column.display(slot)
         block = text if looks_like_molblock(text) else _EMPTY_MOLBLOCK
-    _, _, rest = block.partition("\n")  # replace the title line
+    return _titled(block, title)
+
+
+def _writes(mol: Chem.Mol, conf_id: int = -1) -> str:
+    """RDKit's molfile for one conformer (not kekulized where it cannot be)."""
+    with rdBase.BlockLogs():
+        try:
+            return Chem.MolToMolBlock(mol, confId=conf_id)
+        except (RuntimeError, ValueError):
+            return Chem.MolToMolBlock(mol, kekulize=False, confId=conf_id)
+
+
+def _titled(block: str, title: str) -> str:
+    """*block* with *title* as its first line."""
+    _, _, rest = block.partition("\n")
     return f"{title.splitlines()[0] if title else ''}\n{rest}".rstrip("\n")
+
+
+def _conformer_blocks(column: StructureColumn, slot: int, title: str, mol: Chem.Mol) -> list[str]:
+    """A molfile per conformer of *mol* (the molecule in *slot*), in order, the same text
+    RDKit writes for each. RDKit copies the whole ensemble for every molfile, which made
+    hundreds of conformers slow, so a V2000 molfile is written once and each conformer's
+    coordinates put in its atom lines. Wedge flags follow each conformer's geometry, so a
+    molecule with any is written one conformer at a time from a one-conformer copy."""
+    first = _molblock(column, slot, title, 0)
+    lines = first.split("\n")
+    atoms = mol.GetNumAtoms()
+    bonds = lines[4 + atoms : 4 + atoms + mol.GetNumBonds()] if len(lines) > 3 else []
+    wedged = any(line[9:12].strip() not in ("", "0") for line in bonds)
+    rest = list(mol.GetConformers())[1:]
+    if len(lines) < 4 + atoms or "V2000" not in lines[3] or wedged:
+        one = Chem.Mol(mol)
+        out = [first]
+        for conformer in rest:
+            one.RemoveAllConformers()
+            one.AddConformer(Chem.Conformer(conformer), assignId=True)
+            out.append(_titled(_writes(one), title))
+        return out
+    out = [first]
+    for conformer in rest:
+        xyz = conformer.GetPositions()
+        block = lines[:]
+        for k in range(atoms):
+            x, y, z = xyz[k]
+            block[4 + k] = f"{x:10.4f}{y:10.4f}{z:10.4f}{lines[4 + k][30:]}"
+        out.append("\n".join(block))
+    return out
 
 
 def first_structure_column(table: Table) -> str:

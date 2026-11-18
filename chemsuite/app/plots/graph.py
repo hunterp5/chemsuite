@@ -67,11 +67,14 @@ class Drawn:
 class GraphFinder(Finder):
     """Finds the TMAP or network of the rows a plot shows."""
 
-    waiting = "Finding neighbours…"
+    waiting = "Finding neighbors…"
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._cells: list = []
+
+    def job_title(self, spec: PlotSpec) -> str:
+        return "Calculating TMAP…" if spec.kind == TMAP else "Calculating Chemical Space Network…"
 
     def key(self, spec: PlotSpec, oids: np.ndarray) -> tuple | None:
         column = spec.structure

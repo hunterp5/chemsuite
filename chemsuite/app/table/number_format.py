@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Number Format…: how a Number column shows its values (display only, undoable)."""
+"""Precision…: how a Number column shows its values (display only, undoable)."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ class NumberFormatDialog(ToolDialog):
     """Choose a format and its digits for one Number column."""
 
     def __init__(self, parent: QWidget | None, table: Table, name: str) -> None:
-        super().__init__(parent, f"Number Format — {name}", guide="columns")
+        super().__init__(parent, f"Precision — {name}", guide="columns")
         self.table = table
         self.name = name
         style = table.column(name).style

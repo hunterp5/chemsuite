@@ -109,14 +109,23 @@ class MmpDialog(ToolDialog):
         return _compute(
             self.ctx,
             recipe,
-            lambda oids, activity, pairs, found: self.finish(
-                oids, activity, recipe["activity"], pairs, found, recipe
+            lambda oids, activity, pairs, found, rows: self.finish(
+                oids, activity, recipe["activity"], pairs, found, recipe, rows
             ),
         )
 
-    def finish(self, oids, activity, name, pairs: list[Pair], found: list[Transform], recipe=None):
+    def finish(
+        self,
+        oids,
+        activity,
+        name,
+        pairs: list[Pair],
+        found: list[Transform],
+        recipe=None,
+        rows: list[list] | None = None,
+    ):
         ctx = self.ctx
-        self.panel = MmpPanel(ctx, oids, activity, name, found, recipe)
+        self.panel = MmpPanel(ctx, oids, activity, name, found, recipe, rows)
         ctx.add_panel(self.panel, self.panel.title())
         ctx.show_message(
             f"Found {plural(len(pairs), 'matched pair')}; "
@@ -131,8 +140,17 @@ class MmpPanel(ToolPanel):
     tool_id = "mmp"
 
     def __init__(
-        self, ctx: ToolContext, oids, activity, name: str, found: list[Transform], recipe=None
+        self,
+        ctx: ToolContext,
+        oids,
+        activity,
+        name: str,
+        found: list[Transform],
+        recipe=None,
+        rows: list[list] | None = None,
     ):
+        """*rows* are :func:`transform_rows` of *found*, made in the job (naming the groups
+        is slow for thousands of transformations)."""
         super().__init__()
         self.ctx = ctx
         self.recipe = recipe or {}
@@ -142,21 +160,7 @@ class MmpPanel(ToolPanel):
         self.found = found
         self.names = labels(ctx, self.oids)
         self.transforms = ResultTable(["From", "To", "Pairs", "Mean Δ", "SD", "Up", "Down"])
-        self.transforms.fill(
-            [
-                [
-                    readable(t.from_group),
-                    readable(t.to_group),
-                    t.count,
-                    t.mean,
-                    t.sd,
-                    t.ups,
-                    t.downs,
-                ]
-                for t in found
-            ],
-            found,
-        )
+        self.transforms.fill(rows if rows is not None else transform_rows(found), found)
         self.transforms.setToolTip(
             f"Δ = {name} of the “to” compound minus the “from” compound."
             if name != NO_ACTIVITY
@@ -219,7 +223,7 @@ class MmpPanel(ToolPanel):
 
 def _compute(ctx: ToolContext, recipe: dict, done):
     """Find the pairs *recipe* describes in the background; then
-    ``done(oids, activity, pairs, found)``."""
+    ``done(oids, activity, pairs, found, rows)``."""
     oids = np.asarray(recipe["oids"], dtype=np.int64)
     cells = structure_cells(ctx, recipe["structure"], oids)
     name = recipe["activity"]
@@ -236,7 +240,8 @@ def _compute(ctx: ToolContext, recipe: dict, done):
             progress=job.report,
             cancel=job.cancel_token,
         )
-        return pairs, transforms(pairs, min_pairs=min_pairs)
+        found = transforms(pairs, min_pairs=min_pairs)
+        return pairs, found, transform_rows(found)
 
     return ctx.run("Finding matched pairs…", work, lambda result: done(oids, activity, *result))
 
@@ -249,11 +254,19 @@ def restore(ctx: ToolContext, state: dict) -> RerunPanel:
     holder = RerunPanel(MmpPanel.tool_id, _title(name), recipe)
     ctx.add_panel(holder, holder.title())
 
-    def done(oids, activity, _pairs, found) -> None:
-        holder.fill(MmpPanel(ctx, oids, activity, name, found, recipe))
+    def done(oids, activity, _pairs, found, rows) -> None:
+        holder.fill(MmpPanel(ctx, oids, activity, name, found, recipe, rows))
 
     holder.job = _compute(ctx, recipe, done)
     return holder
+
+
+def transform_rows(found: list[Transform]) -> list[list]:
+    """The transformations table's cells, one list per transformation."""
+    return [
+        [readable(t.from_group), readable(t.to_group), t.count, t.mean, t.sd, t.ups, t.downs]
+        for t in found
+    ]
 
 
 def _title(activity: str) -> str:

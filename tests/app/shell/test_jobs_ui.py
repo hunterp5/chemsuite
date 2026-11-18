@@ -58,6 +58,10 @@ def test_tool_job_runs_in_background_and_records_its_result(window, qtbot) -> No
     assert window.jobs_indicator.button.text() == "Calculating…"
     job.report(120, 500)
     window.jobs_indicator.refresh()
+    assert not job.counted  # whole-dataset work: the title alone, no count
+    assert window.jobs_indicator.button.text() == "Calculating…"
+    job.counted = True  # per-row work (keep_partial, or counted=True) shows the count
+    window.jobs_indicator.refresh()
     assert window.jobs_indicator.button.text() == "Calculating… (120/500)"
     # Left-aligned with the other status text; no progress bar.
     status = window.statusBar()
@@ -199,6 +203,7 @@ def test_cancel_shows_cancelling_then_keeps_partial_results(window, qtbot) -> No
         ctx.show_message(f"Wrote {len(rows)} rows")
 
     job = ctx.run("Generating conformers…", work, done, keep_partial=True)
+    assert job.counted  # per-row work counts its rows by default
     qtbot.waitUntil(lambda: job.state == RUNNING and started.is_set(), timeout=5000)
     job.cancel()
     assert window.jobs_indicator.button.text().startswith("Cancelling generating conformers")
@@ -340,7 +345,7 @@ def test_log_window_links_jobs_and_their_messages(window, qtbot, logged) -> None
     log.close()
 
 
-def test_log_button_shows_running_and_failed_jobs(window, qtbot) -> None:
+def test_log_button_shows_only_failed_jobs(window, qtbot) -> None:
     if window.menuBar().isNativeMenuBar():
         return  # macOS: Window ▸ Log, no button
     button = window.log_button
@@ -348,8 +353,9 @@ def test_log_button_shows_running_and_failed_jobs(window, qtbot) -> None:
     ctx = ToolContext(window)
     work, release = _gate()
     job = ctx.run("Slow…", work, lambda r: None)
-    qtbot.waitUntil(lambda: button.state() == "busy", timeout=5000)
-    assert not button.icon().isNull()
+    qtbot.waitUntil(lambda: job.running, timeout=5000)
+    button.refresh()
+    assert button.state() == "" and button.icon().isNull()  # running jobs: no dot
     release.set()
     qtbot.waitUntil(lambda: not job.running, timeout=5000)
     assert button.state() == ""
@@ -359,7 +365,7 @@ def test_log_button_shows_running_and_failed_jobs(window, qtbot) -> None:
 
     failed = ctx.run("Broken…", broken, lambda r: None)
     qtbot.waitUntil(lambda: failed.state == FAILED, timeout=5000)
-    assert button.state() == "failed"
+    assert button.state() == "failed" and not button.icon().isNull()
     window.jobs.failure_box.close()
     button.click()  # opens the Log window at its Jobs tab; the failure is seen
     assert button.state() == ""

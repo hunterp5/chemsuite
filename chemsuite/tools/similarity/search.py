@@ -283,7 +283,10 @@ class SimilarityDialog(ToolDialog):
                     cache.put(column, kind, targets, fps, generation)
             self.finish(scores, search, targets[: len(scores)], entries, column, pose_ids)
 
-        return ctx.run("Searching for similar compounds…", work, done, keep_partial=True)
+        # progress is shared between the methods, not a count of rows
+        return ctx.run(
+            "Searching for similar compounds…", work, done, keep_partial=True, counted=False
+        )
 
     def finish(
         self,
@@ -373,4 +376,5 @@ class SimilarityDialog(ToolDialog):
                 return
             ctx.open_table(hits.table, f"{plural(len(hits), 'hit')} from {read}")
 
-        return ctx.run(f"Screening {path.name}…", work, done, keep_partial=True)
+        # progress is through the file, not a count of molecules
+        return ctx.run(f"Screening {path.name}…", work, done, keep_partial=True, counted=False)

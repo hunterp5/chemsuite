@@ -119,7 +119,7 @@ Tool dialogs do not block the window. While one is open you can still select row
 filters and scroll the table, and the dialog's row counts follow along. Opening another
 document closes any open tool dialogs.
 
-Every tool dialog uses one layout, and so do Split Column, Join Columns, Number Format, Align
+Every tool dialog uses one layout, and so do Split Column, Join Columns, Precision, Align
 Drawings and Structure Search. The window title names the tool, and every dialog reads the same
 way, top to bottom:
 
@@ -300,6 +300,15 @@ scrolled to, the moved column stays in view and, if it was selected, stays selec
 
 Right-click a column header for:
 
+- **Freeze Columns** keeps that column and every column left of it in place while
+  the rest of the table scrolls sideways; **Unfreeze Columns** lets them scroll again. Drag the
+  columns you want to keep in view (ID, Structure) to the front first. Frozen columns are saved
+  with the document.
+- **Align Drawings…** (Structure columns). Type, draw or take from the current row a core
+  (SMILES or SMARTS); every structure that contains it is drawn with the core in the same place
+  and orientation, so a series lines up down the column. Structures without the core keep
+  their usual drawing. Only the drawings change, not the structures. **Stop Aligning
+  Drawings** brings the usual drawings back. The core is saved with the document's layout.
 - **Select ▸** picks shown rows by this column's value, top to bottom: **Empty**, **Not Empty**,
   **First Occurrence** (the first row of each value), **Duplicates** (every row whose value
   appears in a row above it, so deleting them keeps one of each) and **All Duplicated Values**
@@ -316,22 +325,13 @@ Right-click a column header for:
 - **Rename “column”…**, **Duplicate “column”** (a copy, with its formatting, to the right),
   **Delete “column”**, each naming the column you right-clicked. Delete acts on all selected
   columns when you right-click one of them (**Delete 3 Columns**).
-- **Freeze Columns up to Here** keeps that column and every column left of it in place while
-  the rest of the table scrolls sideways; **Unfreeze Columns** lets them scroll again. Drag the
-  columns you want to keep in view (ID, Structure) to the front first. Frozen columns are saved
-  with the document.
-- **Align Drawings…** (Structure columns). Type, draw or take from the current row a core
-  (SMILES or SMARTS); every structure that contains it is drawn with the core in the same place
-  and orientation, so a series lines up down the column. Structures without the core keep
-  their usual drawing. Only the drawings change, not the structures. **Stop Aligning
-  Drawings** brings the usual drawings back. The core is saved with the document's layout.
 - **Column Type ▸ Text / Number / Structure / Reaction.** Converting to Number warns you if
   some values are not numbers; those cells would be cleared. Converting to Structure or
   Reaction reads each cell's text; cells that do not read are kept and marked invalid.
 - **Logarithmic (log₁₀)** (Number columns). Converts the values to log₁₀; choose it again to
   convert them back (10ˣ). The header shows "(log₁₀)". It needs every value above zero. One
   step you can undo.
-- **Number Format…** (Number columns). How every value is shown:
+- **Precision…** (Number columns). How every value is shown:
 
   | Format | 1234.5678 (or 0.4567 for Percent) with 2 digits |
   |---|---|
@@ -345,8 +345,8 @@ Right-click a column header for:
   The stored values are not rounded, so sorting, filters and tools still use the full numbers,
   and editing a cell starts from the number as typed. The quick search and Find match what the
   cells show.
-- **Hover over a structure cell** for a large drawing of the structure with its SMILES below.
-- Number formats, Logarithmic and colours are saved in the document and can be undone.
+- **Hover over a structure cell** for a larger drawing of the structure.
+- Precision, Logarithmic and colors are saved in the document and can be undone.
 - **Hover over a column's header** for a summary of the column: how many cells are filled and
   blank, and for numbers the range, mean ± standard deviation and median, or for text the
   number of distinct values and the commonest one.
@@ -355,7 +355,7 @@ From Data ▸ Table ▸ Operations:
 
 | Command | What it does |
 |---|---|
-| Add Compound… | Opens the sketcher; draw (or paste) a structure, and **Add** appends it as a new row. |
+| Add Compound… | Opens the sketcher; draw (or paste) a structure, and **File ▸ Add** appends it as a new row. |
 | Add Rows… | Adds empty rows. |
 | Add Column… | Adds a column. |
 | Split Column… / Join Columns… | Each with a live preview of the first rows shown. Choose **All**, **Shown** or **Selected** rows; other rows stay blank. Split finds the delimiter itself (**Auto**) or uses one you choose, and keeps every field or only the first, last, largest or smallest; Join can skip blank cells so no delimiters are doubled. |
@@ -383,7 +383,8 @@ From Data ▸ Table ▸ Operations:
 ## 4. Structures
 
 - Structures are edited in the **sketcher** only. **Double-click** a structure, press **F2**
-  or start typing in the cell, or right-click and choose **Edit in Sketcher…**. OK writes the drawing back as one step you can undo. The
+  or start typing in the cell, or right-click and choose **Edit in Sketcher…**. **File ▸ Done** (Ctrl/⌘+Enter) writes the drawing back as one step
+  you can undo; **File ▸ Close** leaves the cell as it was. The
   drawing is stored as a molfile, which keeps your layout and wedges.
 - To bring in SMILES, InChI or a molfile, paste it onto the drawing (Ctrl+V), or paste it
   straight into the cell from the table.
@@ -592,20 +593,21 @@ Opened by double-clicking a structure cell, F2, **Add Compound…**,
 **Draw…** in the structure fields of Structure Search and Similarity Search, or
 blank with **Tools ▸ Sketcher…**.
 
-The Sketcher opened from Tools is a window of its own with two menus instead of buttons:
+Every sketcher window has two menus instead of buttons:
 
 - **File:** **Save…** (Ctrl/⌘+S) writes the drawing to a file: an MDL Molfile (.mol), SD
   file (.sdf) or SMILES (.smi), or for a reaction an RXN file (.rxn) or reaction SMILES.
-  **Add to Table** (Ctrl/⌘+Enter) adds the drawing as a new, selected row and leaves the
-  window open for the next drawing. Both need a drawing with valid valences.
+  Then the window's own action (Ctrl/⌘+Enter): **Done** gives the drawing back to the cell or
+  field it came from and closes the window; **Add** (Add Compound) adds it as a new row; and
+  in the Sketcher opened from Tools, **Add to Table** adds it as a new, selected row and
+  leaves the window open for the next drawing. **Close** (Ctrl+W, ⌘W) closes the window
+  without giving the drawing back, as closing the window does.
 - **Edit:** the main window's Edit items for the drawing: Undo, Redo, Cut, Copy, Paste,
   Select All, Invert Selection (Ctrl/⌘+I), Clear Selection and Delete Selection.
 
-Close the window when you are done.
-
-Drawing tools are along the top, elements down the left and rings along the bottom. OK is
-available only when every atom has a valid valence; a line under the drawing says what is
-wrong. Undo, Redo, Cut, Copy, Paste, Select All and Clear are on the keyboard (Ctrl/⌘+Z, Y, X,
+Drawing tools are along the top, elements down the left and rings along the bottom. Done,
+Add and Save are available only when every atom has a valid valence; a line under the drawing
+says what is wrong. Undo, Redo, Cut, Copy, Paste, Select All and Clear are on the keyboard (Ctrl/⌘+Z, Y, X,
 C, V, A) and on the drawing's right-click menu.
 
 **Tools**
@@ -792,7 +794,7 @@ numbers are drawn in small blue type beside the atom.
 Copy puts a reaction on the clipboard as an RXN file and as reaction SMILES, so ChemDraw,
 Marvin and Ketcher can paste it. Paste takes either back, and reaction SMILES typed or pasted
 in (`CC(=O)O.OCC>[H+]>CC(=O)OCC`) is laid out left to right, agents above the arrow. A
-reaction cannot be OK'd into a structure cell; the sketcher asks you to delete the arrow and
+reaction cannot be put into a structure cell; the sketcher asks you to delete the arrow and
 plus signs. Reactions belong in a [reaction column](#reactions-in-the-table).
 
 **Valence.** An atom with an impossible valence is shown in red inside a dotted ring; point
@@ -1009,12 +1011,14 @@ descriptors, conformers, clustering, maps and searches.
 - **Two lanes.**
   - Heavy jobs wait in a **queue** and run one at a time, in order.
   - Quick jobs, like a small search, never wait behind them.
-- **Status bar.** The job's progress shows at the far left of the status bar: "Generating
-  conformers… (120/500)", counting each row as it finishes, or just "Calculating UMAP…" when
-  there is no count. Click it to open the Log window at its Jobs tab.
+- **Status bar.** The running job shows at the far left of the status bar. Tools that work
+  through molecules or rows one at a time count them as they finish: "Predicting pKa…
+  (120/500)", "Generating conformers… (40/500)". Work on the whole set at once, such as a
+  plot, a model fit, an embedding, clustering or Matched Molecular Pairs, shows only what is
+  being calculated: "Calculating TMAP…", "Calculating UMAP…". Click it to open the Log window
+  at its Jobs tab.
 - **Log**, at the right end of the menu bar (**Window ▸ Log** on macOS), opens the Log window.
-  A dot beside it shows that jobs are running (accent colour) or that one failed and you have
-  not looked yet (red). The window opens at **Jobs** while jobs run or a failure is unseen,
+  A red dot beside it shows that a job failed and you have not looked yet. The window opens at **Jobs** while jobs run or a failure is unseen,
   otherwise at **Messages** (see [The log](#16-the-log-and-reporting-problems)).
 - The **Jobs** tab lists running, queued and finished jobs with their elapsed time and result.
   The tab's title counts the running and queued jobs, and turns red when one has failed.
@@ -1302,7 +1306,7 @@ relatives. Series show as branches; distances between far branches mean little.
 
 Both plots:
 
-- are built in the background for the rows the table shows, saying "Finding neighbours…" until
+- are built in the background for the rows the table shows, saying "Finding neighbors…" until
   they are ready, and are built again when a filter changes;
 - select rows as a scatter plot does (click, box, lasso), and the table scrolls to them; hover
   shows the row's card and how many edges it has;

@@ -19,19 +19,20 @@
 from __future__ import annotations
 
 import base64
-import html
 from collections import OrderedDict
 
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QPalette
+from PySide6.QtWidgets import QApplication, QToolTip
 from rdkit import Chem
 
-from chemsuite.core.depict import render_png
+from chemsuite.core.depict import fitted_size, render_png
 
-from ..shell.theme import is_dark
-
-#: logical size of the drawing in the tooltip
+#: largest logical size of the drawing in the tooltip; smaller molecules get a smaller box
 PREVIEW_WIDTH = 360
 PREVIEW_HEIGHT = 270
+#: smallest box, so a tiny molecule still reads as a picture
+_MIN_WIDTH = 120
+_MIN_HEIGHT = 90
 #: drawn a little larger than the table's thumbnails
 _ZOOM = 1.3
 _KEEP = 32
@@ -39,31 +40,43 @@ _KEEP = 32
 _cache: OrderedDict[tuple[str, bool, float], str] = OrderedDict()
 
 
-def preview_html(mol: Chem.Mol, text: str) -> str:
-    """Tooltip HTML: *mol* drawn at about 360 x 270 points, with *text* (its SMILES) below."""
-    app = QGuiApplication.instance()
-    screen = QGuiApplication.primaryScreen() if app is not None else None
+def _dark() -> bool:
+    """Whether tooltips have a dark background (the drawing goes on it)."""
+    if not isinstance(QApplication.instance(), QApplication):
+        return False
+    return QToolTip.palette().color(QPalette.ColorRole.ToolTipBase).lightness() < 128
+
+
+def preview_size(mol: Chem.Mol) -> tuple[int, int]:
+    """The tooltip drawing's logical size: fitted to *mol* at the preview's bond length."""
+    width, height = fitted_size(
+        mol,
+        round(PREVIEW_WIDTH / _ZOOM),
+        round(PREVIEW_HEIGHT / _ZOOM),
+        min_width=round(_MIN_WIDTH / _ZOOM),
+        min_height=round(_MIN_HEIGHT / _ZOOM),
+    )
+    return round(width * _ZOOM), round(height * _ZOOM)
+
+
+def preview_html(mol: Chem.Mol, key: str) -> str:
+    """Tooltip HTML: *mol* alone, centered in a box fitted to it (at most 360 x 270 points).
+    *key* (its SMILES) identifies the drawing in the cache."""
+    screen = QGuiApplication.primaryScreen() if QGuiApplication.instance() else None
     dpr = float(screen.devicePixelRatio()) if screen is not None else 1.0
-    dark = is_dark(QGuiApplication.palette()) if app is not None else False
-    key = (text, dark, dpr)
-    image = _cache.get(key)
+    dark = _dark()
+    width, height = preview_size(mol)
+    cache_key = (key, dark, dpr)
+    image = _cache.get(cache_key)
     if image is None:
-        png = render_png(
-            mol,
-            round(PREVIEW_WIDTH * dpr),
-            round(PREVIEW_HEIGHT * dpr),
-            scale=dpr * _ZOOM,
-            dark=dark,
-        )
+        png = render_png(mol, round(width * dpr), round(height * dpr), scale=dpr * _ZOOM, dark=dark)
         image = base64.b64encode(png).decode("ascii")
-        _cache[key] = image
+        _cache[cache_key] = image
         while len(_cache) > _KEEP:
             _cache.popitem(last=False)
     else:
-        _cache.move_to_end(key)
-    shown = html.escape(text if len(text) <= 200 else text[:200] + "…")
+        _cache.move_to_end(cache_key)
     return (
-        f'<img src="data:image/png;base64,{image}" '
-        f'width="{PREVIEW_WIDTH}" height="{PREVIEW_HEIGHT}"><br>'
-        f'<span style="font-family: monospace;">{shown}</span>'
+        f'<div align="center"><img src="data:image/png;base64,{image}" '
+        f'width="{width}" height="{height}"></div>'
     )

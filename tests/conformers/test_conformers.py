@@ -176,3 +176,21 @@ def test_sdf_writes_each_conformer(tmp_path: Path) -> None:
     assert not records[count].HasProp("Energy (kcal/mol)")  # the blank row
     write_sdf(table, path)  # default: one record per row
     assert len(list(Chem.SDMolSupplier(str(path)))) == 2
+
+
+@pytest.mark.parametrize("smiles", [FLEXIBLE, "C[C@H](N)C(=O)NCC[C@@H](O)c1ccccc1"])
+def test_each_exported_conformer_is_rdkit_s_own_molfile(tmp_path: Path, smiles: str) -> None:
+    """Conformers are written by putting each one's coordinates in one molfile (or one
+    conformer at a time where wedges follow the geometry): the text RDKit writes for each."""
+    mol = generate(Chem.MolFromSmiles(smiles), ConformerSettings(count=6, prune_rms=0.1)).mol
+    assert mol.GetNumConformers() > 2
+    table = Table()
+    cells = StructureColumn.from_parsed([mol_to_blob(mol)], [smiles])
+    table.add_rows({"Structure 3D": cells}, undoable=False)
+    path = tmp_path / "out.sdf"
+    write_sdf(table, path, columns=[], all_conformers=True)
+    records = path.read_text(encoding="utf-8").split("$$$$\n")[:-1]
+    assert len(records) == mol.GetNumConformers()
+    for record, conformer in zip(records, mol.GetConformers(), strict=True):
+        expected = Chem.MolToMolBlock(mol, confId=conformer.GetId()).split("M  END")[0]
+        assert record.split("M  END")[0].split("\n", 1)[1] == expected.split("\n", 1)[1]

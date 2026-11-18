@@ -74,6 +74,7 @@ TOOL_APP_IMPORTS = {
     "chemsuite.app.plots.panel",  # plots opened by analysis tools
     "chemsuite.app.viewer.panel",  # the Browser, opened by its tool
     "chemsuite.app.widgets.reaction_text",  # the reaction field (shared with a filter card)
+    "chemsuite.app.widgets.result_table",  # the sortable results table of analysis panels
 }
 
 

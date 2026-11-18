@@ -83,6 +83,9 @@ class CoreFinder(Finder):
 
     waiting = WAITING
 
+    def job_title(self, spec: PlotSpec) -> str:
+        return "Calculating Constellation Plot…"
+
     def __init__(
         self,
         table: Table,

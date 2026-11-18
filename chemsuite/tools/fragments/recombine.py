@@ -191,7 +191,8 @@ class RecombineDialog(ToolDialog):
         def done(made: Recombined) -> None:
             finish(ctx, made, len(fragments))
 
-        return ctx.run("Recombining fragments…", work, done, keep_partial=True)
+        # progress runs up to the product cap, not a count of finished work
+        return ctx.run("Recombining fragments…", work, done, keep_partial=True, counted=False)
 
 
 def canonical_smiles(texts: list[str]) -> list[str]:

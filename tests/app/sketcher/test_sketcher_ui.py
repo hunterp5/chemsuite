@@ -260,7 +260,7 @@ def test_copy_and_paste_round_trip(dialog):
 def test_valence_problem_disables_ok_and_explains(dialog):
     canvas = dialog.canvas
     canvas.set_sketch(from_text("CC(C)(C)C"))
-    ok = dialog.buttons.button(dialog.buttons.StandardButton.Ok)
+    ok = dialog.done_action
     assert ok.isEnabled()
     centre = next(a for a in canvas.sketch.atoms if canvas.sketch.degree(a) == 4)
     hover(canvas, canvas.sketch.atoms[centre].pos)
@@ -629,7 +629,7 @@ def test_bad_wedge_is_marked_and_explained_without_blocking_ok(dialog):
     canvas.set_sketch(sketch)
     assert canvas.wedge_problems == {first: stereo.NO_CENTRE}
     assert dialog.info.isVisible() and "wedge" in dialog.info.text()
-    assert dialog.buttons.button(dialog.buttons.StandardButton.Ok).isEnabled()
+    assert dialog.done_action.isEnabled()
 
 
 def test_enhanced_stereo_menu_labels_and_round_trip(dialog):
@@ -671,7 +671,7 @@ def test_bond_query_menu_and_zero_key(dialog):
     hover(canvas, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2))
     key(canvas, "0", Qt.Key.Key_0)
     assert canvas.sketch.bonds[second].order is Order.ANY
-    assert dialog.buttons.button(dialog.buttons.StandardButton.Ok).isEnabled()
+    assert dialog.done_action.isEnabled()
 
 
 def test_attachment_point_menu(dialog):
@@ -846,7 +846,7 @@ def test_template_library_picks_a_drawing_tool(dialog, qapp) -> None:
 
 def test_the_edit_keys_still_reach_the_canvas_under_the_menu_bar(qapp, qtbot) -> None:
     """The Edit menu shows the canvas's keys; pressing them acts once, not twice."""
-    dlg = SketcherDialog("CCO", menus=True, ok_text="Add to Table")
+    dlg = SketcherDialog("CCO", keep_open=True, ok_text="Add to Table")
     qtbot.addWidget(dlg)
     dlg.show()
     dlg.canvas.setFocus()

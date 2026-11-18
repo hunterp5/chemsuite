@@ -104,6 +104,54 @@ class _Part:
     atom_number: np.ndarray
 
 
+@dataclass(frozen=True)
+class Topology:
+    """What drawing a molecule takes from its graph: the same for every conformer, so an
+    overlay of hundreds works it out once (:func:`topology`)."""
+
+    numbers: np.ndarray  # (n,) atomic numbers
+    keep: np.ndarray  # (n,) atoms drawn
+    bonds: np.ndarray  # (m, 3) begin, end and drawn order (1-3) of the bonds drawn
+    neighbours: tuple[tuple[int, ...], ...]
+    #: for each double or triple bond (in order), the first neighbouring atom drawn whose
+    #: plane its cylinders lie in, and the bond atom it is bonded to (-1, -1: none)
+    planes: np.ndarray  # (p, 2)
+
+
+def drawable(mol: Chem.Mol, hydrogens: str = ALL_H) -> Chem.Mol:
+    """*mol* with its implicit hydrogens made atoms (placed on every conformer) when any
+    hydrogens are drawn."""
+    if hydrogens != NO_H and any(a.GetTotalNumHs() for a in mol.GetAtoms()):
+        return Chem.AddHs(mol, addCoords=True)
+    return mol
+
+
+def topology(mol: Chem.Mol, hydrogens: str = ALL_H) -> Topology:
+    """*mol*'s :class:`Topology` (*mol* as :func:`drawable` gives it)."""
+    numbers = np.array([a.GetAtomicNum() for a in mol.GetAtoms()], np.int64)
+    keep = _kept(mol, numbers, hydrogens)
+    rows = [
+        (b.GetBeginAtomIdx(), b.GetEndAtomIdx(), order)
+        for b, order in zip(mol.GetBonds(), _orders(mol), strict=True)
+        if keep[b.GetBeginAtomIdx()] and keep[b.GetEndAtomIdx()]
+    ]
+    bonds = np.array(rows, np.int64).reshape(-1, 3)
+    neighbours = tuple(tuple(n.GetIdx() for n in a.GetNeighbors()) for a in mol.GetAtoms())
+    planes = [
+        next(
+            (
+                (here, k)
+                for here, other in ((i, j), (j, i))
+                for k in neighbours[here]
+                if k != other and keep[k]
+            ),
+            (-1, -1),
+        )
+        for i, j, _order in bonds[bonds[:, 2] > 1].tolist()
+    ]
+    return Topology(numbers, keep, bonds, neighbours, np.array(planes, np.int64).reshape(-1, 2))
+
+
 def molecule_part(
     mol: Chem.Mol,
     conf_id: int = -1,
@@ -111,15 +159,18 @@ def molecule_part(
     style: str = BALL_AND_STICK,
     hydrogens: str = ALL_H,
     carbon: tuple[float, float, float] | None = None,
+    shared: Topology | None = None,
 ) -> _Part:
-    """One conformer of *mol* drawn in *style*; *carbon* recolours carbon atoms."""
+    """One conformer of *mol* drawn in *style*; *carbon* recolours carbon atoms. With
+    *shared* (*mol*'s :func:`topology` for *hydrogens*), *mol* must be :func:`drawable`
+    already: the graph is not looked at again."""
     look = LOOKS[style]
-    if hydrogens != NO_H and any(a.GetTotalNumHs() for a in mol.GetAtoms()):
-        mol = Chem.AddHs(mol, addCoords=True)  # hydrogens placed on the conformer
+    if shared is None:
+        mol = drawable(mol, hydrogens)
+        shared = topology(mol, hydrogens)
     conf = mol.GetConformer(conf_id)
     xyz = np.array(conf.GetPositions(), np.float32).reshape(-1, 3)
-    numbers = np.array([a.GetAtomicNum() for a in mol.GetAtoms()], np.int64)
-    keep = _kept(mol, numbers, hydrogens)
+    numbers, keep = shared.numbers, shared.keep
     rgb = colours(numbers)
     if carbon is not None:
         rgb = rgb.copy()
@@ -134,9 +185,7 @@ def molecule_part(
     spheres[:, 3] = radius
     spheres[:, 4:7] = rgb
     spheres[:, 7] = 1.0
-    cylinders = (
-        _bonds(mol, xyz, rgb, keep, look.bond_radius) if look.bond_radius else _no_cylinders()
-    )
+    cylinders = _bonds(shared, xyz, rgb, look.bond_radius) if look.bond_radius else _no_cylinders()
     index = np.flatnonzero(keep)
     return _Part(spheres[index], cylinders, index, numbers[index])
 
@@ -189,36 +238,66 @@ def _orders(mol: Chem.Mol) -> list[int]:
     return out
 
 
-def _bonds(mol, xyz, rgb, keep, radius) -> np.ndarray:
-    rows = []
-    for bond, order in zip(mol.GetBonds(), _orders(mol), strict=True):
-        i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-        if not (keep[i] and keep[j]):
-            continue
-        a, b = xyz[i], xyz[j]
-        if order == 1:
-            rows.append(_cylinder(a, b, radius, rgb[i], rgb[j]))
-            continue
-        scale, offsets = _DOUBLE if order == 2 else _TRIPLE
-        side = _side(mol, xyz, keep, i, j) * radius
-        for k in offsets:
-            shift = side * k
-            rows.append(_cylinder(a + shift, b + shift, radius * scale, rgb[i], rgb[j]))
-    return np.array(rows, np.float32).reshape(-1, CYLINDER_FLOATS)
+def _bonds(shared: Topology, xyz: np.ndarray, rgb: np.ndarray, radius: float) -> np.ndarray:
+    """Single bonds as one cylinder each, double and triple bonds as two or three thinner ones
+    side by side, worked out for all bonds at once and kept in bond order."""
+    bonds = shared.bonds
+    numbers = np.arange(len(bonds))
+    single = bonds[:, 2] == 1
+    i, j = bonds[single, 0], bonds[single, 1]
+    parts = [_cylinders(xyz[i], xyz[j], radius, rgb[i], rgb[j])]
+    keys = [numbers[single] * 4]  # each bond's cylinders together, in bond order
+    multiple = ~single
+    if multiple.any():
+        sides = _sides(shared, xyz, bonds[multiple]) * radius
+        for order, (scale, offsets) in ((2, _DOUBLE), (3, _TRIPLE)):
+            rows = bonds[multiple, 2] == order
+            i, j = bonds[multiple][rows, 0], bonds[multiple][rows, 1]
+            for n, k in enumerate(offsets):
+                shift = sides[rows] * k
+                parts.append(_cylinders(xyz[i] + shift, xyz[j] + shift, radius * scale,
+                                        rgb[i], rgb[j]))  # fmt: skip
+                keys.append(numbers[multiple][rows] * 4 + n)
+    order = np.argsort(np.concatenate(keys), kind="stable")
+    return np.concatenate(parts).astype(np.float32, copy=False)[order]
 
 
-def _cylinder(a, b, radius, ca, cb) -> list[float]:
-    return [*a, radius, *b, 0.0, *ca, 1.0, *cb, 1.0]
+def _sides(shared: Topology, xyz: np.ndarray, multiple: np.ndarray) -> np.ndarray:
+    """:func:`_side` for every double and triple bond at once; the rare bond whose first
+    neighbour lies on its axis (or that has none) is worked out on its own."""
+    i, j = multiple[:, 0], multiple[:, 1]
+    axis = xyz[j] - xyz[i]
+    axis = axis / np.maximum(np.linalg.norm(axis, axis=1), 1e-6)[:, None]
+    here, k = shared.planes[:, 0], shared.planes[:, 1]
+    v = xyz[k] - xyz[here]
+    v = v - axis * (v * axis).sum(axis=1)[:, None]
+    norm = np.linalg.norm(v, axis=1)
+    out = v / np.maximum(norm, 1e-6)[:, None]
+    for row in np.flatnonzero((k < 0) | (norm <= 1e-3)).tolist():
+        out[row] = _side(shared, xyz, int(i[row]), int(j[row]))
+    return out
 
 
-def _side(mol, xyz, keep, i, j) -> np.ndarray:
+def _cylinders(a, b, radius, ca, cb) -> np.ndarray:
+    out = np.empty((len(a), CYLINDER_FLOATS), np.float32)
+    out[:, 0:3] = a
+    out[:, 3] = radius
+    out[:, 4:7] = b
+    out[:, 7] = 0.0
+    out[:, 8:11] = ca
+    out[:, 11] = 1.0
+    out[:, 12:15] = cb
+    out[:, 15] = 1.0
+    return out
+
+
+def _side(shared: Topology, xyz: np.ndarray, i: int, j: int) -> np.ndarray:
     """A unit vector across bond i-j, in the plane of a neighbouring atom when there is one."""
     axis = xyz[j] - xyz[i]
     axis = axis / max(float(np.linalg.norm(axis)), 1e-6)
     for here, other in ((i, j), (j, i)):
-        for n in mol.GetAtomWithIdx(here).GetNeighbors():
-            k = n.GetIdx()
-            if k != other and keep[k]:
+        for k in shared.neighbours[here]:
+            if k != other and shared.keep[k]:
                 v = xyz[k] - xyz[here]
                 v = v - axis * float(v @ axis)
                 norm = float(np.linalg.norm(v))

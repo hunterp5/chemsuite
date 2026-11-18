@@ -24,10 +24,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPalette, QPixmap
+from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QMenu, QToolButton, QWidget
 
-from ..shell.jobs import QUEUED, RUNNING
 from ..shell.jobs_ui import FAILED_COLOUR, JobsIndicator
 from . import dock_layout
 
@@ -77,8 +76,8 @@ def install(window: MainWindow, layout: QMenu, log: QAction) -> None:
 
 
 class LogButton(QToolButton):
-    """Opens the Log window; a dot shows jobs running (accent) or a failure not yet seen
-    (red)."""
+    """Opens the Log window; a red dot shows a failure not yet seen. Running jobs show in the
+    status bar, not here."""
 
     def __init__(self, action: QAction, indicator: JobsIndicator) -> None:
         super().__init__()
@@ -90,26 +89,18 @@ class LogButton(QToolButton):
         self.refresh()
 
     def state(self) -> str:
-        """``failed``, ``busy`` or ``""``."""
-        if self.indicator.unseen_failures():
-            return "failed"
-        if any(j.state in (RUNNING, QUEUED) for j in self.indicator.runner.jobs):
-            return "busy"
-        return ""
+        """``failed`` or ``""``."""
+        return "failed" if self.indicator.unseen_failures() else ""
 
     def refresh(self) -> None:
         state = self.state()
         if state == self._shown:  # the indicator refreshes often while jobs run
             return
         self._shown = state
-        colour = {
-            "failed": FAILED_COLOUR,
-            "busy": self.palette().color(QPalette.ColorRole.Highlight),
-        }
-        self.setIcon(_dot(colour[state], self) if state else QIcon())
-        tips = {"failed": "A job failed. Show the jobs and messages.",
-                "busy": "Jobs are running. Show the jobs and messages."}  # fmt: skip
-        self.setToolTip(tips.get(state, "Show the jobs and messages"))
+        self.setIcon(_dot(FAILED_COLOUR, self) if state else QIcon())
+        self.setToolTip(
+            "A job failed. Show the jobs and messages." if state else "Show the jobs and messages"
+        )
 
 
 def _dot(colour: QColor, widget: QWidget) -> QIcon:

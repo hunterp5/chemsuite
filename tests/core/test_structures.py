@@ -147,3 +147,46 @@ def test_worker_inputs_send_blobs_unparsed_text_or_none() -> None:
     blob = mol_to_blob(Chem.MolFromSmiles("CCO"))
     column = StructureColumn.from_parsed([blob, None, None], ["CCO", "c1ccccc1", ""])
     assert column.worker_inputs(np.array([2, 0, 1])) == [None, blob, "c1ccccc1"]
+
+
+def test_loaded_molecules_are_kept_to_a_size_as_well_as_a_count() -> None:
+    from chemsuite.core.table.columns import LoadedCache
+
+    cache = LoadedCache(items=3, size=100)
+    for name in (b"a" * 10, b"b" * 10, b"c" * 10, b"d" * 10):
+        cache.put(name, name.decode()[0])
+    assert len(cache) == 3 and cache.get(b"a" * 10) is None  # the count binds
+    cache.get(b"b" * 10)  # used: kept over "c"
+    cache.put(b"e" * 80, "e")  # 110 bytes: the oldest go until it fits
+    assert cache.get(b"c" * 10) is None and cache.get(b"b" * 10) == "b"
+    assert cache.bytes <= 100
+    cache.put(b"f" * 500, "f")  # alone over the size: kept, as the only one
+    assert len(cache) == 1 and cache.get(b"f" * 500) == "f"
+    cache.clear()
+    assert len(cache) == 0 and cache.bytes == 0
+
+
+def test_a_column_s_molecules_are_cached_within_its_size() -> None:
+    from rdkit.Chem import AllChem
+
+    from chemsuite.core.mols import mol_to_blob
+
+    mol = Chem.AddHs(Chem.MolFromSmiles("CCCCCCO"))
+    AllChem.EmbedMultipleConfs(mol, 20, randomSeed=1)
+    blobs = []
+    for i in range(6):
+        copy = Chem.Mol(mol)
+        copy.GetConformer(0).SetDoubleProp("n", i)  # six different blobs
+        blobs.append(mol_to_blob(copy))
+    column = StructureColumn.from_parsed(blobs, ["CCCCCCO"] * 6)
+    cache = StructureColumn._cache
+    size = cache.size
+    try:
+        cache.clear()
+        cache.size = 3 * len(blobs[0])
+        for slot in range(6):
+            assert column.mol(slot).GetNumConformers() == 20
+        assert len(cache) == 3 and cache.bytes <= cache.size
+    finally:
+        cache.size = size
+        cache.clear()

@@ -68,13 +68,14 @@ BUTTON_STYLE = "QToolButton { border: none; padding: 0px 2px; }"
 
 
 def progress_text(job: Job) -> str:
-    """What a job is doing, e.g. ``Generating conformers… (120/500)``."""
+    """What a job is doing: ``Generating conformers… (120/500)`` when it counts molecules or
+    rows (:attr:`Job.counted`), else just ``Calculating UMAP…``."""
     name = job.name
     if job.cancelling:
         return f"Cancelling {name[:1].lower() + name[1:]}…"
     done, total = job.progress
     text = f"{name}…"
-    return f"{text} ({min(done, total):,}/{total:,})" if total else text
+    return f"{text} ({min(done, total):,}/{total:,})" if total and job.counted else text
 
 
 class JobsIndicator(QWidget):

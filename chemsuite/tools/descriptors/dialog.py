@@ -283,4 +283,7 @@ class DescriptorDialog(ToolDialog):
                 f"Added {plural(len(names), 'column')} for {plural(len(done_oids), 'row')}"
             )
 
-        return ctx.run("Calculating descriptors…", work, done, keep_partial=True)
+        # counted by molecule only in one pass; each fingerprint is another pass over the rows
+        return ctx.run(
+            "Calculating descriptors…", work, done, keep_partial=True, counted=steps == 1
+        )

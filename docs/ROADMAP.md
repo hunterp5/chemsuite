@@ -7,7 +7,8 @@ conformers and the Data menu. This roadmap covers what comes next:
 - improvements to the tools chemsuite already has, starting with search;
 - the rest of MolManager's features, ranked by value and install cost.
 
-Decisions so far: QSAR (phase 7d) is skipped for now. Metabolite prediction (BioTransformer) is
+Decisions so far: QSAR, Auto QSAR and CoMSIA (phase 7d), skipped at first, are back on the
+roadmap since 2026-11-17 (§6 Tier 1). Metabolite prediction (BioTransformer) is
 dropped from the plan. Groovy and custom themes stay. External
 tools (Gnina, AiZynthFinder…) will be integrated, so their paths are already in
 Settings. Settings… sits in the app menu on macOS and the Edit menu elsewhere. Tool dialogs close on OK
@@ -188,7 +189,7 @@ modified.
 - **Browser:** sort options, a size slider, and pinning compounds to compare them
   side by side.
 - **SAR tools**
-  - MMP neighbourhood map and transform ledger (from MolManager).
+  - MMP neighbourhood map and transform ledger (from MolManager; in §6 Tier 1).
   - An activity-cliff network plot.
   - Free-Wilson proposals sent to a design sheet (MolManager's Design Studio idea, without its
     pKa heuristics).
@@ -208,7 +209,11 @@ modified.
 | Decomposition and enumeration | **Done 2026-11-14:** Chemistry ▸ Decompose (R-Group Decomposition, Fragments by BRICS or RECAP, Central Ring) and Chemistry ▸ Enumerate (Reaction Products with 28 named templates, R-Groups on a Core, Recombine Fragments). **2026-11-15:** Prepare Reagents turns reagents into substituents (13 kinds, the leaving group replaced by an attachment point), and R-Groups on a Core takes a position's substituents From a File…, so a prepared set is reused across cores. |
 | Documents | Duplicate document, send selected rows to a new document, and Notes (a notepad saved in the `.csd`). |
 | Macros | Record and replay sequences of commands with their settings. The new command registry is the base for this. |
-| Random utilities | Random numbers and a random molecule sample. Low priority. |
+| Random utilities | Random numbers and a random molecule sample. Low priority. Random Numbers and Random Rows are done; random molecules from outside the table (ChEMBL, PubChem) are under External data in Tier 2. |
+| QSAR, Auto QSAR | Added 2026-11-17. MolManager's `qsar_models.py`, `auto_qsar*.py` (about 2.9k lines): fit and compare regression models on descriptors or fingerprints, cross-validated, with predictions, residuals and an applicability domain as columns. scikit-learn is already a base dependency. Port the Qt-free modules with their tests, then a kit dialog. |
+| CoMSIA | Added 2026-11-17. MolManager's `comsia.py` (780 lines): 3D-QSAR fields on aligned conformers. Builds on Superpose for the alignment. After QSAR. |
+| Structural alerts | Added 2026-11-17. RDKit's FilterCatalog sets (PAINS, Brenk, NIH, ZINC and the rest) as columns or a filter: which alerts a row hits and how many. MolManager's `chem/structural_alerts.py` (213 lines) was marked to copy and never was. Probably a tab or group in Calculate Descriptors, as in MolManager. |
+| MMP neighbourhood map and transform ledger | Added 2026-11-17. MolManager's `mmp_neighborhood_analysis.py` and its map, plot and ledger views: a compound's matched-pair neighbours around it, and every transform with its count and mean activity change. Builds on Matched Molecular Pairs. |
 
 **Tier 2: external tools or network access (optional, controlled by policy)**
 
@@ -216,7 +221,8 @@ modified.
 |---|---|
 | Confab conformers | Through the Open Babel path in Settings. (CONFORGE is in: a Generator choice in Generate Conformers, from the optional `cdpkit` package.) |
 | Superpose conformers, pharmacophore screen | **Superpose done (2026-11-16):** Chemistry ▸ 3D ▸ Superpose (`chemsuite/superpose`) fits rows onto a row or a protein's ligand by MCS or a core, O3A, shape, shape + features (RDKit's `rdShapeAlign`) or field (our own Gaussian ESP overlap), keeps each row's best conformer and its scores, and the Browser shows the reference. **Unified Similarity Search done (2026-11-17,** [SIMILARITY_PLAN.md](SIMILARITY_PLAN.md)**):** Chemistry ▸ Similarity ▸ Similarity Search… (`chemsuite/similarity`) scores the table or screens a library file against one or more references by fingerprints (Tversky too), the Gobbi 2D pharmacophore, MCS and scaffolds, and 3D shape, shape + features and field on the superpose engine, with a consensus score, a fingerprint prefilter for the slow methods, and the aligned 3D poses kept with their reference. **Next:** 3D pharmacophore point alignment (perhaps CDPKit's `PharmacophoreAlignment`), ErG and count fingerprints. |
-| PubChem, ChEMBL, vendor, patent and SQL queries | Network access, off by default under policy. Plain HTTPS REST calls, not MolManager's client libraries. SQL through the standard library or an optional driver. |
+| 3D pharmacophore screen | Added 2026-11-17. MolManager's Pharmacophore Screen: build a 3D pharmacophore (feature points with tolerances, excluded volumes) from a reference row, several aligned actives or a protein's pocket (§7a 2), then screen the table or a library file by point alignment over each row's conformers, keeping the fit score and the aligned pose. A method in Similarity Search beside shape and field, perhaps on CDPKit's `PharmacophoreAlignment`. |
+| External data: PubChem, ChEMBL, vendors, SureChEMBL patents, Open Reaction Database, SQL | Added in detail 2026-11-17. Network access, off by default under policy. Plain HTTPS REST calls, not MolManager's client libraries. Look up names, properties and identifiers for rows; bring in ChEMBL activities for a target; vendor availability; patents that contain a structure; reactions from ORD; random molecules from ChEMBL or PubChem as a new document. SQL through the standard library or an optional driver. The user's details never go into a request. |
 | Retrosynthesis | AiZynthFinder through its own Python interpreter (path in Settings). |
 | Sketcher | **Decided: needed.** A robust drawing sketcher that works with the table: edit a structure cell in place, draw a query for structure search and filters, and add new compounds. Plan: [SKETCHER_PLAN.md](SKETCHER_PLAN.md) (native, Ketcher rules as reference, verified; no MolManager iupac_* code). |
 
@@ -225,8 +231,7 @@ modified.
 | Feature | Notes |
 |---|---|
 | pKa and permeability models | torch, unipka and chemprop make the install about 2 GB larger, so this is an optional "predictions" add-on. Settles the open question about the "(est.)" descriptors. pKa: MolGpKa is built into the base install (Chemistry ▸ Predict pKa); Uni-pKa stays an optional add-on, see [PKA_PLAN.md](PKA_PLAN.md). |
-| Protein viewer and editor, sequence alignment, docking, preparation, MD simulation | Planned in phases: see **§7a Proteins** below. |
-| QSAR, Quick QSAR, CoMSIA | Skipped for now (phase 7d). |
+| Protein viewer and editor, sequence alignment, docking, preparation, MD simulation | Planned in phases: see **§7a Proteins** below. Still missing from MolManager's macromolecule tools (added 2026-11-17): sequence alignment and MSA (§7a 1), PLIF across poses, pocket surfaces and protein pharmacophores (§7a 2), MD (§7a 5) and free energy, MolManager's FEP (§7a 6). |
 
 ---
 
@@ -321,6 +326,14 @@ conformer quality; this item is about scale.
   and pruning by default.
 - **Process:** plan mode first. The plan states the numbers to reach (UI response, memory,
   save and load times at 1k × 100 and 1k × 300) before any decision on storage.
+- **Measured and fixed (2026-11-17,** [conformers/scale.md](conformers/scale.md)**):** at
+  1k × 300 (190 conformers on average) every step the user waits on meets its target once
+  three fixes were in: the molecule cache is limited by size (memory over the blobs 434 →
+  238 MB), Overlay works out the bond graph once (559 → 51 ms), and exporting every
+  conformer writes one molfile per molecule (114 → 37 s). **Open:** 2D-only work on a 3D
+  column (substructure search, fingerprints, 2D descriptors) loads every conformer in the
+  workers, 6–30× slower than on the 2D column; the report weighs handing those tools the
+  cell's SMILES against keeping conformers outside the cells. No storage change yet.
 
 ### 7.0d High priority: TMAP and Chemical Space Networks (added 2026-11-11)
 
@@ -439,7 +452,11 @@ pip extra.
    Poses panel, every run side by side (pose rank, Vina score, CNN score, parent), shown in the
    pocket by the pose display and copied to table rows on request; covalent and
    flexible-side-chain docking; ensemble and consensus scoring; pocket detection and
-   druggability; interaction fingerprints across poses, building on Interactions to Table. The
+   druggability, with the pocket's surface drawn and coloured by property (MolManager's Pocket
+   Surface); interaction fingerprints across poses, building on Interactions to Table;
+   **protein pharmacophores** (added 2026-11-17, from MolManager): feature points and excluded
+   volumes from a pocket and its ligand's interactions, or from the empty site, drawn in the
+   viewer and used by the 3D pharmacophore screen (§6 Tier 2). The
    receptor is prepared by `macromolecule/prepare` (phase 3's P1 is enough for docking).
    - **Progress (2026-11-14):** Stage A is Prepare (phase 3's P4). Stage B: AutoDock Vina 1.2.7
      bundled for Windows, macOS and Linux with its licence and pinned hashes

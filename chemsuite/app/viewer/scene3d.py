@@ -25,7 +25,15 @@ from rdkit import Chem
 
 from chemsuite.conformers import energies
 from chemsuite.molview.align import aligned_conformers
-from chemsuite.molview.geometry import NO_H, POLAR_H, THIN, WIRE, molecule_part
+from chemsuite.molview.geometry import (
+    NO_H,
+    POLAR_H,
+    THIN,
+    WIRE,
+    drawable,
+    molecule_part,
+    topology,
+)
 
 #: carbon colors for overlays (distinct on white and on dark backgrounds)
 PALETTE = [
@@ -99,12 +107,14 @@ def scene_parts(
             chosen = [ids[i] for i in look.chosen if i < len(ids)] or ids[:1]
         else:
             chosen = [ids[min(look.conformer, len(ids) - 1)]]
+        mol = drawable(mol, hydrogens)
+        shared = topology(mol, hydrogens)  # once for all its conformers
         for conf_id in chosen:
             if len(parts) >= look.limit:
                 break
             carbon = PALETTE[len(parts) % len(PALETTE)] if look.by_color else None
             parts.append(molecule_part(mol, conf_id, style=style, hydrogens=hydrogens,
-                                       carbon=carbon))  # fmt: skip
+                                       carbon=carbon, shared=shared))  # fmt: skip
             rows.append(oid)
     if look.reference and molecules and len(parts) < look.limit:
         reference = reference_part(reference_of(molecules[0][1]))

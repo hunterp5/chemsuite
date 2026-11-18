@@ -18,26 +18,22 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QLabel,
     QLineEdit,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from chemsuite.analysis.selectivity import looks_like_assay
 from chemsuite.app.document.tools import ToolContext, ToolPanel
+from chemsuite.app.widgets.result_table import ResultTable as ResultTable  # for the panels
 from chemsuite.core.mols import mol_from_blob, mol_from_text
 from chemsuite.plotting.data import number_columns
 from chemsuite.sar.rgroups import Decomposition, decompose, parse_core, suggest_core
@@ -215,71 +211,3 @@ def decompose_task(ctx: ToolContext, recipe: dict, oids: np.ndarray):
 
 def number_text(value: float, digits: int = 3) -> str:
     return "" if value is None or not math.isfinite(value) else f"{value:.{digits}f}"
-
-
-class ResultTable(QTableWidget):
-    """A read-only, sortable table of results."""
-
-    def __init__(self, headers: Sequence[str]) -> None:
-        super().__init__(0, len(headers))
-        self.setHorizontalHeaderLabels(list(headers))
-        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.verticalHeader().hide()
-        self.verticalHeader().setDefaultSectionSize(22)
-        self.horizontalHeader().setStretchLastSection(False)
-
-    def fill(self, rows: Sequence[Sequence[object]], data: Sequence[object] | None = None) -> None:
-        """One list of cells per row; numbers align right and sort as numbers.
-
-        *data* attaches a value per row (read back with :meth:`row_data`), so sorting by a
-        column does not lose track of which result a row shows.
-        """
-        self.setSortingEnabled(False)
-        self.setRowCount(len(rows))
-        for r, cells in enumerate(rows):
-            for c, value in enumerate(cells):
-                item = QTableWidgetItem()
-                if isinstance(value, int | float | np.integer | np.floating):
-                    number = float(value)
-                    item.setData(
-                        Qt.ItemDataRole.DisplayRole, number if math.isfinite(number) else None
-                    )
-                    if isinstance(value, float | np.floating) and math.isfinite(number):
-                        item.setData(Qt.ItemDataRole.DisplayRole, round(number, 3))
-                    item.setTextAlignment(
-                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-                    )
-                else:
-                    item.setText(str(value))
-                if c == 0 and data is not None:
-                    item.setData(Qt.ItemDataRole.UserRole, r)
-                self.setItem(r, c, item)
-        self._data = list(data) if data is not None else None
-        self.resizeColumnsToContents()
-        for c in range(self.columnCount()):  # room for the sort arrow; long text stays readable
-            self.setColumnWidth(c, min(self.columnWidth(c) + 18, 360))
-        # Keep the given order (e.g. best first) until the user clicks a header.
-        self.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
-        self.setSortingEnabled(True)
-
-    def row_data(self, row: int):
-        if self._data is None or row < 0:
-            return None
-        return self._data[self.item(row, 0).data(Qt.ItemDataRole.UserRole)]
-
-    def selected_data(self) -> list:
-        rows = sorted({i.row() for i in self.selectedIndexes()})
-        return [self.row_data(r) for r in rows]
-
-    def copy_text(self) -> str:
-        headers = [self.horizontalHeaderItem(c).text() for c in range(self.columnCount())]
-        lines = ["\t".join(headers)]
-        for r in range(self.rowCount()):
-            cells = [
-                self.item(r, c).text() if self.item(r, c) else "" for c in range(self.columnCount())
-            ]
-            lines.append("\t".join(cells))
-        text = "\n".join(lines)
-        QGuiApplication.clipboard().setText(text)
-        return text

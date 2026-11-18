@@ -147,7 +147,12 @@ class StructureSearcher:
             on_done(oids, result)
 
         return self._run(
-            f"Structure search: {query.describe()}", work, done, lane=QUICK, guard=True
+            f"Structure search: {query.describe()}",
+            work,
+            done,
+            lane=QUICK,
+            guard=True,
+            counted=True,
         )
 
     def start_reactions(
@@ -187,6 +192,7 @@ class StructureSearcher:
             lambda hits: on_done(oids, hits),
             lane=QUICK,
             guard=True,
+            counted=True,
         )
 
 

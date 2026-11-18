@@ -444,6 +444,40 @@ class TextColumn(Column):
 # --------------------------------------------------------------------------------------------
 
 
+class LoadedCache:
+    """Objects loaded from blobs, the most recently used kept: at most *items* of them, and
+    no more than *size* bytes of blobs. A molecule with hundreds of conformers is a large
+    blob and several times that in memory, so the byte limit is what binds for 3D columns."""
+
+    def __init__(self, items: int = 1024, size: int = 64 * 1024**2) -> None:
+        self.items = items
+        self.size = size
+        self.bytes = 0
+        self._loaded: OrderedDict[bytes, object] = OrderedDict()
+
+    def __len__(self) -> int:
+        return len(self._loaded)
+
+    def get(self, blob: bytes) -> object | None:
+        value = self._loaded.get(blob)
+        if value is not None:
+            self._loaded.move_to_end(blob)
+        return value
+
+    def put(self, blob: bytes, value: object) -> None:
+        if blob in self._loaded:
+            return
+        self._loaded[blob] = value
+        self.bytes += len(blob)
+        while len(self._loaded) > 1 and (len(self._loaded) > self.items or self.bytes > self.size):
+            old, _value = self._loaded.popitem(last=False)
+            self.bytes -= len(old)
+
+    def clear(self) -> None:
+        self._loaded.clear()
+        self.bytes = 0
+
+
 class ParsedColumn(Column):
     """Cells holding text that parses to a chemical object (a molecule or a reaction).
 
@@ -463,8 +497,7 @@ class ParsedColumn(Column):
     __slots__ = ("_blobs", "_texts")
 
     #: Loaded objects by blob, shared by the columns of one subclass.
-    _cache: ClassVar[OrderedDict[bytes, object]]
-    _CACHE_SIZE: ClassVar[int] = 1024
+    _cache: ClassVar[LoadedCache]
 
     def __init__(self, blobs: np.ndarray, texts: np.ndarray) -> None:
         if len(blobs) != len(texts):
@@ -557,11 +590,7 @@ class ParsedColumn(Column):
         value = cache.get(blob)
         if value is None:
             value = self.load(blob)
-            cache[blob] = value
-            if len(cache) > self._CACHE_SIZE:
-                cache.popitem(last=False)
-        else:
-            cache.move_to_end(blob)
+            cache.put(blob, value)
         return value
 
     def fill(self, slots: np.ndarray, blobs: Sequence[bytes]) -> None:
@@ -600,7 +629,7 @@ class StructureColumn(ParsedColumn):
 
     kind = STRUCTURE
     __slots__ = ()
-    _cache: ClassVar[OrderedDict[bytes, object]] = OrderedDict()
+    _cache: ClassVar[LoadedCache] = LoadedCache()
 
     @staticmethod
     def parse(text: str) -> bytes:
@@ -625,7 +654,7 @@ class ReactionColumn(ParsedColumn):
 
     kind = REACTION
     __slots__ = ()
-    _cache: ClassVar[OrderedDict[bytes, object]] = OrderedDict()
+    _cache: ClassVar[LoadedCache] = LoadedCache()
 
     @staticmethod
     def parse(text: str) -> bytes:
