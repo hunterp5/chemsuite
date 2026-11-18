@@ -1352,9 +1352,7 @@ calculating MW again adds "MW (2)".
 | Identifiers | Canonical SMILES, InChIKey, InChI, Formula, Murcko Scaffold, Generic Scaffold |
 
 - **pKa-based values.** The Ionisation group, cLogD 7.4, CNS MPO, BBB Score and AB-MPS use
-  chemsuite pKa (see [Predict pKa](#predict-pka)), which takes seconds per molecule. Choosing
-  any of them asks to download the model the first time; without it, these columns come out
-  blank. For CNS MPO and BBB Score, a compound with no basic site is scored as if its most
+  chemsuite pKa (see [Predict pKa](#predict-pka)), which takes seconds per molecule. For CNS MPO and BBB Score, a compound with no basic site is scored as if its most
   basic pKa were 2.
 - **SAScore** is the synthetic accessibility score of Ertl and Schuffenhauer (2009): 1 (easy
   to make) to 10 (very hard), from how common the molecule's fragments are in known compounds
@@ -1382,10 +1380,8 @@ trained on pKaHub's aqueous pKa data. It gives a free energy for every protonati
 polyamines, are handled together. On held-out test sets (SAMPL6–8 and Novartis acids and
 bases) its error is RMSE 0.81 pKa units.
 
-- **The model.** It is downloaded once (88 MB), the first time a pKa tool runs, after you
-  agree. If you decline, or IT policy turns downloads off, the tool shows ⚠ chemsuite pKa is
-  not downloaded and cannot run until the app is restarted and you agree. An administrator can
-  place `chemsuite-pka-1.npz` in the app's cache folder, under `pka`.
+- **The model** (88 MB) comes with chemsuite and needs no network. Each worker process loads
+  it the first time it predicts, which takes about 190 MB of memory per process.
 - **Speed.** About 1 s for a small molecule and 10–40 s for a drug-sized one, which has more
   protonation states. Rows run in parallel across the worker processes, and progress counts
   rows as they finish.
@@ -1437,7 +1433,7 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 | Neutralise | On | Adds or removes hydrogens so that charges cancel. Quaternary nitrogens stay charged. |
 | Remove isotopes | Off | Deuterium becomes hydrogen, ¹³C becomes carbon. |
 | Canonical tautomer | Off | One consistent tautomer per molecule (RDKit), so duplicates collapse. It is not necessarily the most stable or the bioactive form. If the canonical tautomer would lose any drawn stereo, the drawn tautomer is kept. |
-| Protonate at pH | Off | The most populated protonation state at the pH (default 7.4), from chemsuite pKa (see [Predict pKa](#predict-pka), its download and its limits). It is never a carbanion. Kept counter-ions stay as they are. Without the model, Standardize cannot run with this step on. |
+| Protonate at pH | Off | The most populated protonation state at the pH (default 7.4), from chemsuite pKa (see [Predict pKa](#predict-pka) and its limits). It is never a carbanion. Kept counter-ions stay as they are. Without the model, Standardize cannot run with this step on. |
 | Form salt | Off | Adds the counter-ion you pick and balances the charge. Runs last, so leaving **Strip salts** on switches one salt for another. |
 
 - **Stereo** is never invented or lost. Each step keeps drawn stereocentres and double-bond
@@ -1937,11 +1933,8 @@ X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked ou
   protonation state or tautomer when its pocket favors it. The forms and their free energies
   in water come from **chemsuite pKa**, chemsuite's own model (the Uni-pKa method, trained on
   pKaHub's aqueous pKa data), which scores every protonation state of the whole molecule, so
-  sites that affect each other are handled together. The model (88 MB) is downloaded once,
-  the first time Prepare or Inspect runs with ligand forms on (or any pKa tool runs), after you
-  agree. Until it is downloaded (or when you decline, or IT policy turns downloads off) every
-  ligand stays as drawn, and the report's **Ligands** line says so; otherwise that line names
-  the model used. A ligand with more than 48 protonation states (ATP, NADP) also stays as
+  sites that affect each other are handled together; it comes with chemsuite. The report's
+  **Ligands** line names the model used. A ligand with more than 48 protonation states (ATP, NADP) also stays as
   drawn, and the report says so on its line.
 - **More Options ▸ Titrate** works out each group's pKa in its surroundings and takes the form
   it mostly holds at that pH, for the groups near a ligand (Pocket) or for all of them. It is

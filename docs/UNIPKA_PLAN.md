@@ -193,12 +193,12 @@ CC BY-SA 3.0 requires).
     - Speed, single thread, on this PC: about 1 s for small molecules and 7–41 s for
       drug-sized ones (mean 12 s over 8). Worker processes take 2 rows per task, and pKa work
       always goes to the workers.
-    - The app (`tools/pka/model.py`) asks once per session to download the weights. Without
-      them:
-      - Predict pKa, Standardize with Protonate and the MedChem plots that need pKa show ⚠
-        (a new `ToolDialog.ready()` hook asks on Run);
-      - the pKa descriptors are blank;
-      - Prepare keeps ligands as drawn and says so.
+    - The weights ship with the app (user's decision, 2026-11-18): `unipka/data/
+      chemsuite-pka-1.npz`, committed to git with Uni-Mol's license and a NOTICE, 88 MB
+      (compressed already, so a wheel would not shrink it). The download prompt, the cache, the
+      ⚠ "not downloaded" problems and the dialog kit's `ready()` hook, built first, are gone.
+      `weights.predictor()` loads the shipped file once per process; a test checks its size and
+      SHA-256 (a Git LFS pointer or truncated file would fail it).
     - Removed:
       - `ionisation/molgpka.py`, its weights and templates;
       - `scripts/convert_molgpka_weights.py`;
