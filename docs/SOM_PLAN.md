@@ -411,7 +411,39 @@ So on the same data, the same metric and the same split policy, with the tie rul
 | **our ATTNSOM** | **0.618** | – | 0.743 |
 | atom-type frequency | 0.419 | 0.425 | 0.607 |
 
-**Verdict: ATTNSOM is the wrong basis for this tool.** It lands level with a plain fingerprint GBM,
+### That verdict was wrong: the labels are not the same labels (corrected 2026-11-18)
+
+**A fourth difference, found after the above was written and committed, invalidates the whole
+table.** `scripts/03_evaluate.py` takes `--label-field`, and its default — the one every committed
+number in their `results/` was produced with — is **`som_all`**, where
+`SOM_FIELDS = ("PRIMARY_SOM", "SECONDARY_SOM", "TERTIARY_SOM")` and `som_all` is their union.
+Upstream ATTNSOM, and therefore every number of ours, trains and scores on **`PRIMARY_SOM` alone**.
+
+Counted over the nine SDFs (`/home/hp/bench/probe/labels.py`):
+
+| labels | positive atoms | rate |
+|---|---|---|
+| `PRIMARY_SOM` only — ours and upstream's | 2,853 | **0.0681** |
+| all three tiers — theirs | 4,163 | **0.0994** |
+
+Their rate of 0.0994 is exactly the 9.94% their README quotes and the 0.0989 mean `positive_rate`
+in their `metrics_per_run.csv`, so this is confirmed, not inferred. **Their task has 46% more
+atoms counting as a correct hit.** Top-1 asks "is the highest-scoring atom *an* annotated site",
+so a 46% larger target set inflates it mechanically. Their 0.684 and our 0.618 are answers to
+different questions, and the gap cannot be read as a difference in model quality.
+
+The three differences checked earlier still hold, and still favor us on tie-breaking — but they
+are now beside the point next to this one.
+
+**So the pivot is not justified yet, and the decisive experiment is a single flag:** re-run their
+harness with `--label-field som_primary`, which scores *their* models under *our* label
+definition, directly against our 0.618. Their code supports it; nothing has to be written. Until
+that number exists, ATTNSOM stays, and the paragraphs below are a hypothesis, not a decision.
+
+### The hypothesis the experiment is testing
+
+**If their models still win on primary-only labels, ATTNSOM is the wrong basis for this tool**, on
+this reasoning: it would land level with a plain fingerprint GBM,
 below *untrained* SMARTCyp, and 0.066 top-1 behind a gradient boosting machine over Hückel
 features — while costing 8.5M parameters, a hand-written numpy forward pass with a `SAGPooling`
 reimplementation, and 17 MB of vendored weights. Its 14-point drop from instance to grouped split,
