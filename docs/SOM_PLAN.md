@@ -651,6 +651,97 @@ reimplementation, the float16 weight archive, `convert_weights.py` and `golden.p
 ATTNSOM checkpoints stay in WSL as the baseline our own GBM must match, and the sections below are
 kept as the record of how the decision was reached.
 
+### M2 is done (2026-11-18): the package, the model and its measured accuracy
+
+`chemsuite/metabolism/` is written, trained and tested, and the whole of it took 24 seconds of
+CPU rather than a GPU afternoon — which is the pivot's dividend.
+
+| file | what it is |
+|---|---|
+| `__init__.py` | `ISOFORMS` (the one-hot's column order, and so part of the archive's format) and `COMMON_ISOFORMS` |
+| `features.py` | the 43 columns, `atom_block`, `design_matrix`, and `atom_environments` for the domain |
+| `trees.py` | `Ensemble` and `probabilities`: the exported trees walked in numpy |
+| `sites.py` | `MetaboliteSite`, `predict_sites`, `top_site`; loads the archive once per process |
+| `predict.py` | `predict_metabolism`, the chunked cancellable driver |
+| `data/som_gbm.npz` | **250 KB**: 300 trees, 18,300 nodes, and the domain index |
+| `data/LICENSE-SOMBENCH.txt` | som-benchmark's MIT text, with a note on what was reused |
+
+**The features are the app's, and training imports them.** `scripts/som/train_gbm.py` builds its
+design matrix from `chemsuite.metabolism.features`, so train and serve cannot drift. The port was
+checked against `som-benchmark`'s own `basic_atom_block` + `charge_block` over 22 molecules taken across the
+curated set: **identical to 0.0 in every column**, names and order included.
+
+**The numpy evaluation is exact, not close.** `scripts/som/export_gbm.py` refuses to write an
+archive whose predictions differ from scikit-learn's `predict_proba` by more than 1e-9; the
+measured difference for the shipped model is **1.1e-16** over all 41,878 training rows. So
+`trees.py` is not an approximation of the estimator, it *is* the estimator, and no pickle and no
+scikit-learn version pin are needed at run time.
+
+**Accuracy, molecule-grouped, `PRIMARY_SOM` only, 10 seeds** (20% test / 10% validation of
+molecules, tuned on seed 0's validation split by average precision; chosen `learning_rate` 0.05,
+`max_leaf_nodes` 31):
+
+| metric | mean | sd |
+|---|---|---|
+| MCC | 0.475 | 0.041 |
+| top-1 | **0.592** | 0.039 |
+| top-2 | **0.727** | 0.049 |
+| top-3 | **0.813** | 0.047 |
+
+| isoform | 1A2 | 2A6 | 2B6 | 2C8 | 2C9 | 2C19 | 2D6 | 2E1 | 3A4 |
+|---|---|---|---|---|---|---|---|---|---|
+| MCC | 0.476 | 0.459 | 0.503 | 0.552 | 0.470 | 0.585 | 0.444 | 0.404 | 0.434 |
+| top-1 | 0.611 | 0.614 | 0.588 | 0.618 | 0.607 | 0.683 | 0.593 | 0.574 | 0.526 |
+| top-2 | 0.742 | 0.779 | 0.707 | 0.753 | 0.727 | 0.817 | 0.722 | 0.724 | 0.670 |
+
+That lands where the benchmark said it would: `basic_gbm` 0.601 top-1 in som-benchmark's own
+10-seed run, ATTNSOM 0.618 grouped. **Ours is 0.592 — within 0.7 of a seed standard deviation of
+both**, so the tie the decision was taken on holds for our own implementation of it. 3A4 is again
+the weakest isoform and 2C19 the strongest, as in every run so far.
+
+**What the user guide may say**, with the label definition beside it: for a molecule the model has
+not seen, the true primary site is the top-ranked atom about **59%** of the time, in the top two
+**73%**, and in the top three **81%**, per isoform numbers as above. No comparison against
+SMARTCyp, XenoSite or FAME, since those are published on the inflated instance-split basis.
+
+**The production model is fitted on all 2,003 instances** with the tuned settings, which is the
+point of a grouped-CV estimate: the quoted numbers describe a model trained on 90% of the
+molecules, and the shipped one has seen 10% more than that.
+
+**The applicability domain ships with it.** `atom_environments` reads each atom's Morgan
+environment identifiers (radii 0–2, `AdditionalOutput.GetBitInfoMap`) and the archive carries the
+sorted unique identifiers seen in training, so `MetaboliteSite.domain` is the share of an atom's
+environments the training set held: 1.0 for a drug-like amide, below 1.0 for a silane. RDKit
+reports an environment only where it adds atoms to the smaller one, which is why the index is
+`(radius, identifier)` pairs rather than one identifier per radius.
+
+**Three decisions taken while writing it**, each because the alternative was quietly wrong:
+
+* **`RemoveAllHs`, not `RemoveHs`.** Training molecules came from SMILES with implicit hydrogens
+  throughout. `RemoveHs` keeps a hydrogen that carries an isotope, a charge or a stereo marker,
+  and a hydrogen left in the graph changes its neighbour's `heavy_degree` — a feature. Atom
+  indices come back in the caller's numbering either way.
+* **Ties are broken by the lower atom index**, in `sites.py` and in the training script's top-k
+  metric alike, so the measured number and the displayed one rank symmetry-equivalent atoms the
+  same way. (Ibuprofen's two isobutyl methyls score identically to the last bit.)
+* **A blank cell is not a failure.** `predict.py`'s `is_blank` treats `None`, `b""` and
+  whitespace as "nothing here" and only counts a cell that held something unparsable, which is
+  what the dialog's failure count should mean.
+
+**Chemistry spot-check, in the test suite rather than a notebook**
+(`tests/metabolism/test_sites.py`): testosterone → C6, allylic to the enone, 3A4's
+6β-hydroxylation (score 0.59, next atom 0.04); paracetamol → the amide nitrogen, the route to
+NAPQI (0.57); caffeine → C8, oxidized to 1,3,7-trimethyluric acid (0.27); ethanol → the carbinol
+carbon for 2E1 (0.74). All four are the top-ranked atom.
+
+**35 tests** in `tests/metabolism/` cover the column contract, the split rule and the missing-value
+flag of the trees, the scikit-learn parity of a freshly fitted model, the chemistry above, the
+hydrogen handling, the domain, the blank and failure rows, progress and cancel.
+`tests/metabolism/som_golden.json` (36 KB) pins every isoform's scores for 15 molecules, written by
+`scripts/som/golden.py`.
+
+**Still to do:** M4 (the tool), M5 (showing the sites on the structure) and M6 (the user guide).
+
 ## Commercial tools, for context
 
 No current, directly comparable commercial numbers exist, and the honest answer is that we cannot

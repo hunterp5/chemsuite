@@ -1,0 +1,41 @@
+chemsuite's sites-of-metabolism feature set (chemsuite/metabolism/features.py) is ported from
+som-benchmark (https://github.com/WillDeSnoo/som-benchmark), an independent comparison of
+atom-level CYP site-of-metabolism models, whose licence follows. The code reused is its
+`basic_atom_block` and `charge_block` featurization and the hyperparameter grid and protocol of
+its `_fit_gbm`; chemsuite's weights are its own, trained by scripts/som/train_gbm.py, and are
+released under chemsuite's own licence (GPL-3.0-or-later).
+
+The site-of-metabolism measurements used to train them are not distributed here or by
+som-benchmark; they come from the Zaretzki et al. dataset as redistributed by ATTNSOM. Nothing
+derived from them other than the fitted trees is shipped.
+
+----------------------------------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 Will DeSnoo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+This licence covers the CODE in this repository only. It does not cover the
+cytochrome P450 site-of-metabolism data, which is not distributed here and is
+downloaded from its upstream source by `make data`. See DATA.md for the
+provenance and licence of that data.

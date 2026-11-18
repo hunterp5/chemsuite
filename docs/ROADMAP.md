@@ -446,6 +446,13 @@ reimplementation and 17 MB of vendored weights impossible to justify against sci
 already a base dependency, and a model measured in kilobytes. The Hückel descriptors that first
 motivated the switch were measured and dropped too. Full record in [SOM_PLAN.md](SOM_PLAN.md).
 
+**The engine is in (2026-11-18).** `chemsuite/metabolism` holds the features, the trees walked in
+numpy and the batch driver, with a 250 KB `som_gbm.npz` vendored in-tree — no download, no consent
+prompt, and no scikit-learn at run time (the export is refused unless the numpy path reproduces
+scikit-learn's probabilities, measured at 1.1e-16). Molecule-grouped over ten seeds it reaches
+top-1 0.592, top-2 0.727 and top-3 0.813, which is the tie the decision assumed. The tool, the
+highlight on the structure and the user guide are what remain.
+
 Accuracy is quoted on molecule-grouped splits against `PRIMARY_SOM` alone: counting the secondary
 and tertiary annotation tiers as hits would add about 0.10 top-1 for nothing, so every figure in
 the user guide names its label definition. CYP inhibition follows on the same package, trained on

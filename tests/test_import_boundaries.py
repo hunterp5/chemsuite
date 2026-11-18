@@ -47,6 +47,7 @@ QT_FREE = (
     "sketch",
     "retro",
     "macromolecule",
+    "metabolism",
     "simulate",
     "superpose",
     "similarity",
