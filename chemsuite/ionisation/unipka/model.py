@@ -50,6 +50,9 @@ CHARGES = ("[PAD]", "[CLS]", "[SEP]", "[UNK]", "1", "0", "-1", "[MASK]")
 _CLS, _SEP, _UNK = 1, 2, 3
 _EPS = 1e-5  # Uni-Core's LayerNorm
 _SQRT_2PI = (2 * 3.14159) ** 0.5  # upstream's constant, π to five figures
+#: Python floats, not numpy scalars: a numpy float64 scalar would turn the float32 arrays into
+#: float64 (numpy 2's promotion), and the encoder would run 4 × slower than in float32
+_SQRT_HALF = 0.5**0.5
 
 
 @dataclass(frozen=True)
@@ -91,7 +94,7 @@ def _layer_norm(x: np.ndarray, w: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 
 def _gelu(x: np.ndarray) -> np.ndarray:
-    return 0.5 * x * (1.0 + erf(x / np.sqrt(2.0)))
+    return 0.5 * x * (1.0 + erf(x * _SQRT_HALF))
 
 
 def _linear(x: np.ndarray, p: dict[str, np.ndarray], name: str) -> np.ndarray:

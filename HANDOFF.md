@@ -296,7 +296,7 @@ other machine can pick it up. Update it at the end of a session that leaves work
   **U5 built 2026-11-18** (details in `docs/UNIPKA_PLAN.md` U5): Predict pKa, Standardize's
   Protonate and the pKa descriptors run on chemsuite pKa (`ionisation/profile.py`); MolGpKa is
   removed. The weights ship in the package (`ionisation/unipka/data/chemsuite-pka-1.npz`,
-  88 MB, committed to git): no download, prompt or cache. About 12 s per drug-sized molecule
+  88 MB, committed to git): no download, prompt or cache. About 5 s per drug-sized molecule
   (3 conformers + 2D).
 - **CONFORGE conformers** (§7.0b, plan approved 2026-11-14): the default Generator in Generate
   Conformers since 2026-11-15 (`conformers/conforge.py`); `cdpkit` is a base dependency with

@@ -21,7 +21,7 @@ Upstream's enumerator loop stops one charge short of each end it is given: its d
 (:data:`START_RANGE`) gives charges −1..+1, which is what docs/UNIPKA_PLAN.md U2 evaluated.
 :func:`widen` steps out one charge at a time, up to :data:`WIDEST_RANGE` (charges −4..+3:
 citrate, ATP), while the caller says an end is populated. Each microstate costs the model about
-0.45 s, so a molecule with more than :data:`MAX_MICROSTATES` raises
+0.75 s, so a molecule with more than :data:`MAX_MICROSTATES` raises
 :class:`TooManyMicrostates`, and a wider range that would exceed it is not taken.
 
 :func:`plausible` leaves out the microstates that protonate an oxygen or sulfur (a carbonyl or

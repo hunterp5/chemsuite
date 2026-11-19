@@ -20,6 +20,10 @@ Upstream (``scripts/preprocess_pka.py``) reads the SMILES, adds hydrogens, and e
 molecule once per seed 0, 1, … with RDKit's default embedding, then MMFF; a failed embedding
 falls back to the 2D layout. A last conformer is the 2D layout itself. The model averages its
 free energy over them.
+
+Seeds 0 and 1 give the same conformer: RDKit's random engine (Boost's ``minstd_rand``) takes a
+seed of 0 as 1. Upstream's average counts it twice, so :func:`atoms` does too, but embeds it
+once (:func:`_seed`), and :class:`.Predictor` scores each distinct conformer once.
 """
 
 from __future__ import annotations
@@ -31,6 +35,11 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem import AllChem, rdDepictor
 
 N_3D = 10  # upstream's count (with the 2D layout, 11)
+
+
+def _seed(seed: int) -> int:
+    """The seed RDKit's engine actually uses: ``minstd_rand`` takes 0 as 1."""
+    return max(seed, 1)
 
 
 @dataclass(frozen=True)
@@ -60,17 +69,19 @@ def atoms(smiles: str, n_3d: int = N_3D) -> Atoms:
     RDLogger.DisableLog("rdApp.*")
     try:
         mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
-        coords = []
-        for seed in range(n_3d):
+        made: dict[int, np.ndarray] = {}
+        for seed in map(_seed, range(n_3d)):
+            if seed in made:
+                continue
             if AllChem.EmbedMolecule(mol, randomSeed=seed) == 0:
                 try:
                     AllChem.MMFFOptimizeMolecule(mol)
-                    coords.append(mol.GetConformer().GetPositions())
+                    made[seed] = mol.GetConformer().GetPositions()
                 except (ValueError, RuntimeError):  # no MMFF parameters: upstream's 2D layout
-                    coords.append(_layout(smiles))
+                    made[seed] = _layout(smiles)
             else:
-                coords.append(_embedded_without_hydrogens(smiles, seed))
-        coords.append(_layout(smiles))
+                made[seed] = _embedded_without_hydrogens(smiles, seed)
+        coords = [made[_seed(seed)] for seed in range(n_3d)] + [_layout(smiles)]
     finally:
         RDLogger.EnableLog("rdApp.*")
     symbols = tuple(a.GetSymbol() for a in mol.GetAtoms())

@@ -79,7 +79,10 @@ class Predictor:
         """The microstate's free energy (kT), averaged over conformers and folds."""
         if smiles not in self._cache:
             found = conformers.atoms(smiles, self.n_3d)
-            g = [model.free_energy(net, list(found.symbols), list(found.charges), found.coords)
+            # each distinct conformer scored once, counted as often as it occurs
+            unique, inverse = np.unique(found.coords, axis=0, return_inverse=True)
+            inverse = inverse.reshape(-1)
+            g = [model.free_energy(net, list(found.symbols), list(found.charges), unique)[inverse]
                  for net in self.nets]  # fmt: skip
             g = [float(np.mean(x)) for x in g]  # each fold over its conformers
             charge = int(sum(found.charges))

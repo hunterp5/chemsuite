@@ -93,6 +93,32 @@ def test_conformers_follow_upstream() -> None:
     assert np.allclose(found.coords[-1, :, 2], 0.0)
 
 
+def test_seed_0_embeds_as_seed_1_so_it_is_made_once() -> None:
+    """RDKit's engine takes seed 0 as 1, which is what lets :func:`.conformers.atoms` reuse it."""
+    from rdkit.Chem import AllChem
+
+    smiles = "OC(=O)COCCN1CCN(CC1)C(c1ccccc1)c1ccc(Cl)cc1"
+    made = []
+    for seed in (0, 1):
+        mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+        assert AllChem.EmbedMolecule(mol, randomSeed=seed) == 0
+        AllChem.MMFFOptimizeMolecule(mol)
+        made.append(mol.GetConformer().GetPositions())
+    assert np.array_equal(made[0], made[1])
+    found = conformers.atoms(smiles, n_3d=3)
+    assert np.allclose(found.coords[0], made[0], atol=1e-5)
+    assert np.array_equal(found.coords[0], found.coords[1])
+    assert not np.allclose(found.coords[1], found.coords[2])
+
+
+def test_the_network_runs_in_float32() -> None:
+    """A numpy float64 scalar in the encoder would promote it to float64, 4 × slower."""
+    x = np.linspace(-3, 3, 7, dtype=np.float32)
+    assert model._gelu(x).dtype == np.float32
+    assert model._layer_norm(x, x, x).dtype == np.float32
+    assert model._softmax(x).dtype == np.float32
+
+
 def test_the_2d_layout_ignores_the_global_coordgen_preference() -> None:
     """chemsuite.core.depict prefers CoordGen; the model's 2D conformer must not change with it."""
     from rdkit.Chem import rdDepictor

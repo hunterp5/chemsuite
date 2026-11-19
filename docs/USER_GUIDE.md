@@ -1382,7 +1382,7 @@ bases) its error is RMSE 0.81 pKa units.
 
 - **The model** (88 MB) comes with chemsuite and needs no network. Each worker process loads
   it the first time it predicts, which takes about 190 MB of memory per process.
-- **Speed.** About 1 s for a small molecule and 10–40 s for a drug-sized one, which has more
+- **Speed.** About 1 s for a small molecule and 4–20 s for a drug-sized one, which has more
   protonation states. Rows run in parallel across the worker processes, and progress counts
   rows as they finish.
 - **Input.** A structure column and the rows. Salts are reduced to the largest fragment and

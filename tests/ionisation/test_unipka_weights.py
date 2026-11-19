@@ -40,3 +40,21 @@ def test_the_weights_ship_with_their_notice_and_licenses() -> None:
 def test_one_predictor_per_process() -> None:
     assert weights.predictor() is weights.predictor(weights.PATH)
     assert weights.predictor().nets
+
+
+def test_each_distinct_conformer_is_scored_once(monkeypatch) -> None:
+    """Seeds 0 and 1 give one conformer: scored once, counted twice in the average."""
+    import numpy as np
+
+    from chemsuite.ionisation.unipka import Predictor, model
+
+    shapes = []
+
+    def scored(_net, _symbols, _charges, coords):
+        shapes.append(coords.shape[0])
+        return np.arange(coords.shape[0], dtype=np.float64)  # a distinct value per conformer
+
+    monkeypatch.setattr(model, "free_energy", scored)
+    predictor = Predictor(weights.PATH, n_3d=weights.N_3D)
+    predictor.free_energy("CCCCC(=O)O")
+    assert shapes == [weights.N_3D]  # 3 + 2D is 4 conformers, 3 of them distinct

@@ -191,7 +191,11 @@ CC BY-SA 3.0 requires).
     - ATP and NADP (more than 48 microstates) now stay as drawn in Prepare; before U5 they
       fell back to MolGpKa.
     - Speed, single thread, on this PC: about 1 s for small molecules and 7–41 s for
-      drug-sized ones (mean 12 s over 8). Worker processes take 2 rows per task, and pKa work
+      drug-sized ones (mean 12 s over 8), then 2.3 × faster with the same values (2026-11-18):
+      the encoder had run in float64 (a numpy float64 scalar in the GELU promoted it), and
+      seeds 0 and 1 embed the same conformer (RDKit takes seed 0 as 1), now made and scored
+      once and still counted twice. Cetirizine 11.3 → 5.0 s, imatinib 43 → 19 s. What is left:
+      the network about 0.5 s and the 3D conformers about 0.26 s per microstate. Worker processes take 2 rows per task, and pKa work
       always goes to the workers.
     - The weights ship with the app (user's decision, 2026-11-18): `unipka/data/
       chemsuite-pka-1.npz`, committed to git with Uni-Mol's license and a NOTICE, 88 MB
