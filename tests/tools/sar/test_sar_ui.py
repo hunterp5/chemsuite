@@ -172,6 +172,66 @@ def test_mmp(series, qtbot) -> None:
     assert "Pairs" in panel.transforms.copy_text()
 
 
+def _oid(table, name: str) -> int:
+    return next(int(o) for o in table.oids if table.cell("ID", int(o)) == name)
+
+
+def test_mmp_draws_the_change_and_follows_the_current_compound(series, qtbot) -> None:
+    from chemsuite.app.widgets.result_table import DRAWING_ROLE, Drawing
+
+    table = series.workspace.table
+    dialog = series.open_tool("mmp")
+    dialog.min_pairs.setValue(1)
+    _run(qtbot, dialog)
+    panel = dialog.panel
+    drawn = panel.transforms.result_model.index(0, 0).data(DRAWING_ROLE)
+    assert isinstance(drawn, Drawing) and drawn.draw(120, 50, 1.0, False).startswith(b"\x89PNG")
+    row = next(
+        r
+        for r in range(panel.transforms.rowCount())
+        if panel.transforms.row_data(r).to_group == "Cl[*:1]"
+        and panel.transforms.row_data(r).from_group == "[*:1][H]"
+    )
+    panel.transforms.selectRow(row)
+    pair_cell = panel.pairs.result_model.index(0, 0).data(DRAWING_ROLE)
+    assert isinstance(pair_cell, Drawing) and pair_cell.caption in ("H/H", "H/N")
+    assert pair_cell.draw(200, 110, 1.0, False).startswith(b"\x89PNG")
+    # The Δ strip: one dot per pair; a dot chooses its pair.
+    assert not panel.strip.isHidden() and len(panel.strip.points()) == 2
+    panel.pick_pair(1)
+    assert panel.pairs.selected_data() == [panel.shown_pairs[1]]
+    # Double-click: the "from" columns go to the from compound, the others to the to compound.
+    pair = panel.pairs.row_data(0)
+    for column, oid in ((1, panel.oids[pair.b]), (0, panel.oids[pair.a])):
+        panel.pairs.doubleClicked.emit(panel.pairs.result_model.index(0, column))
+        assert panel.ctx.current_oid() == int(oid)
+    # Current Compound: only that compound's transformations, the chosen one kept.
+    assert panel.ctx.set_current_oid(_oid(table, "H/H"))
+    every = panel.transforms.rowCount()
+    panel.current_only.setChecked(True)
+    listed = [panel.transforms.row_data(r) for r in range(panel.transforms.rowCount())]
+    here = panel.index[_oid(table, "H/H")]
+    assert 0 < len(listed) < every and all(here in t.rows() for t in listed)
+    assert [t.to_group for t in panel.transforms.selected_data()] == ["Cl[*:1]"]
+    assert panel.pairs.rowCount() == 2
+    # Going to a pair's compound moves the current row, but leaves the pairs as they were.
+    panel.pairs.selectRow(1)
+    chosen, drawing = (
+        panel.pairs.row_data(1),
+        panel.pairs.result_model.index(0, 0).data(DRAWING_ROLE),
+    )
+    panel.pairs.doubleClicked.emit(panel.pairs.result_model.index(1, 1))
+    assert panel.ctx.current_oid() == int(panel.oids[chosen.b])
+    assert panel.pairs.selected_data() == [chosen]
+    assert panel.pairs.result_model.index(0, 0).data(DRAWING_ROLE) is drawing
+    panel.ctx.set_current_oid(_oid(table, "ethanol"))  # no pairs at all
+    assert panel.transforms.rowCount() == 0 and panel.pairs.rowCount() == 0
+    assert panel.strip.isHidden()
+    assert panel.state()["current_only"] is True
+    panel.current_only.setChecked(False)
+    assert panel.transforms.rowCount() == every
+
+
 def test_sali(series, qtbot) -> None:
     table = series.workspace.table
     dialog = series.open_tool("sali")
@@ -217,6 +277,7 @@ def test_analysis_panels_reopen_with_the_document(series, qtbot, tmp_path) -> No
     mmp = series.open_tool("mmp")
     mmp.min_pairs.setValue(1)
     _run(qtbot, mmp)
+    mmp.panel.current_only.setChecked(True)
     sali = series.open_tool("sali")
     sali.min_similarity.setValue(0.3)
     _run(qtbot, sali)
@@ -236,4 +297,5 @@ def test_analysis_panels_reopen_with_the_document(series, qtbot, tmp_path) -> No
     r2, transforms, cliffs = expected
     assert fw_panel.model.fit.r2 == pytest.approx(r2)
     assert (len(mmp_panel.found), sali_panel.table.rowCount()) == (transforms, cliffs)
+    assert mmp_panel.current_only.isChecked()
     assert [h.state() for h in holders] == [s["state"] for s in saved]

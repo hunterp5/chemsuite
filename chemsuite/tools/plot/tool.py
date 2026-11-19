@@ -125,34 +125,33 @@ TOOLS = [
         open=lambda ctx: _open(ctx, "landscape"),
         tip="An activity landscape: a surface of one column (pIC50) over two others, such as "
         "a chemical-space map. Peaks next to valleys are activity cliffs.",
-        separator_after=True,
     ),
     Tool(
         id="constellation",
         title="Constellation Plot",
-        menu=("Data", "Plot"),
+        menu=("Data",),  # below MedChem
         open=lambda ctx: _open(ctx, "constellation"),
         needs_structures=True,
         tip="The cores analog series share, placed in chemical space: sized by their "
         "compounds, coloured by activity (Naveja and Medina-Franco, 2019).",
     ),
     Tool(
+        id="tmap",
+        title="TMAP",
+        menu=("Data",),  # below MedChem
+        open=lambda ctx: _open(ctx, "tmap"),
+        needs_structures=True,
+        tip="A tree of nearest neighbours: every compound a point on the branches beside its "
+        "closest relatives, for sets of up to hundreds of thousands (Probst and Reymond, 2020).",
+    ),
+    Tool(
         id="network",
         title="Chemical Space Network",
-        menu=("Data", "Plot"),
+        menu=("Data",),  # below MedChem
         open=lambda ctx: _open(ctx, "network"),
         needs_structures=True,
         tip="Compounds joined to those they resemble (or form a matched pair with), clusters "
         "laid out by force: for hundreds to a few thousand compounds (Maggiora and Bajorath, "
         "2014).",
-    ),
-    Tool(
-        id="tmap",
-        title="TMAP",
-        menu=("Data", "Plot"),
-        open=lambda ctx: _open(ctx, "tmap"),
-        needs_structures=True,
-        tip="A tree of nearest neighbours: every compound a point on the branches beside its "
-        "closest relatives, for sets of up to hundreds of thousands (Probst and Reymond, 2020).",
     ),
 ]

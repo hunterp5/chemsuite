@@ -59,7 +59,7 @@ from chemsuite.core.table.columns import STRUCTURE
 
 from ..shell.jobs import QUICK, Job
 from ..widgets.dialogs import FIELD_WIDTH, RowsChoice, Segmented, ToolDialog
-from .table_view import Highlight
+from .highlights import Highlight
 
 if TYPE_CHECKING:
     from ..document.main_window import MainWindow

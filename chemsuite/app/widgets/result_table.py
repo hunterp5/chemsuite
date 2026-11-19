@@ -14,22 +14,60 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """A read-only, sortable table of analysis results, on a model: filling it with a hundred
-thousand rows costs nothing on the GUI thread (cells are formatted only when drawn)."""
+thousand rows costs nothing on the GUI thread (cells are formatted only when drawn).
+
+A cell can be a :class:`Drawing` (a structure): drawn only when it scrolls into view, and
+sorted and copied by its text."""
 
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections import OrderedDict
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 import numpy as np
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, Signal
-from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QAbstractItemView, QTableView
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QModelIndex,
+    QPersistentModelIndex,
+    QRect,
+    QSize,
+    Qt,
+    Signal,
+)
+from PySide6.QtGui import QGuiApplication, QImage, QPainter
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QTableView,
+)
 
 _NUMBER = (int, float, np.integer, np.floating)
 _RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
 #: rows measured to size the columns (Qt measures every row by default)
 _MEASURED_ROWS = 100
+#: the role that hands a cell's :class:`Drawing` to the delegate
+DRAWING_ROLE = Qt.ItemDataRole.UserRole + 1
+#: drawings kept, at the sizes they were last drawn
+_CACHED_IMAGES = 400
+
+
+@dataclass(frozen=True, eq=False)
+class Drawing:
+    """A cell drawn as a picture: *draw* ``(width, height, scale, dark)`` gives PNG bytes in
+    device pixels (None when it cannot be drawn: the text is shown instead). *text* is what
+    the cell sorts and copies by, and its tooltip; *caption* is written under the picture."""
+
+    text: str
+    draw: Callable[[int, int, float, bool], bytes | None]
+    caption: str = ""
+
+    def __str__(self) -> str:
+        return self.text
 
 
 def _shown(value: object) -> object:
@@ -75,12 +113,16 @@ class ResultModel(QAbstractTableModel):
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
             return None
+        value = self.value(index.row(), index.column())
         if role == Qt.ItemDataRole.DisplayRole:
-            return _shown(self.value(index.row(), index.column()))
-        if role == Qt.ItemDataRole.TextAlignmentRole and isinstance(
-            self.value(index.row(), index.column()), _NUMBER
-        ):
+            return _shown(value)
+        if role == Qt.ItemDataRole.TextAlignmentRole and isinstance(value, _NUMBER):
             return _RIGHT
+        if isinstance(value, Drawing):
+            if role == DRAWING_ROLE:
+                return value
+            if role == Qt.ItemDataRole.ToolTipRole:
+                return value.text
         return None
 
     def headerData(self, section: int, orientation, role: int = Qt.ItemDataRole.DisplayRole):
@@ -115,21 +157,102 @@ class ResultModel(QAbstractTableModel):
         self.layoutChanged.emit()
 
 
+class DrawingDelegate(QStyledItemDelegate):
+    """Paints :class:`Drawing` cells (other cells as usual), keeping recent pictures."""
+
+    def __init__(self, width: int, parent=None) -> None:
+        super().__init__(parent)
+        self.width = width
+        self.images: OrderedDict[tuple, QImage] = OrderedDict()
+        self.drawn = 0  # pictures made (not taken from the cache)
+
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex):
+        hint = super().sizeHint(option, index)
+        if isinstance(index.data(DRAWING_ROLE), Drawing):
+            return QSize(max(self.width, hint.width()), hint.height())
+        return hint
+
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> None:
+        drawing = index.data(DRAWING_ROLE)
+        if not isinstance(drawing, Drawing):
+            super().paint(painter, option, index)
+            return
+        item = QStyleOptionViewItem(option)
+        self.initStyleOption(item, index)
+        item.text = ""
+        widget = item.widget
+        style = widget.style() if widget is not None else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, item, painter, widget)
+        box = option.rect.adjusted(2, 2, -2, -2)
+        if drawing.caption:
+            line = option.fontMetrics.height()
+            caption = QRect(box.left(), box.bottom() - line + 1, box.width(), line)
+            box.setBottom(caption.top() - 1)
+            elided = option.fontMetrics.elidedText(
+                drawing.caption, Qt.TextElideMode.ElideRight, caption.width()
+            )
+            painter.drawText(caption, Qt.AlignmentFlag.AlignCenter, elided)
+        scale = widget.devicePixelRatioF() if widget is not None else 1.0
+        dark = option.palette.base().color().lightness() < 128
+        image = self.image(drawing, box.width(), box.height(), scale, dark)
+        if image is None:
+            painter.drawText(box, Qt.AlignmentFlag.AlignCenter, drawing.text)
+            return
+        painter.drawImage(box.topLeft(), image)
+
+    def image(
+        self, drawing: Drawing, width: int, height: int, scale: float, dark: bool
+    ) -> QImage | None:
+        if width < 8 or height < 8:
+            return None
+        key = (drawing, width, height, scale, dark)
+        if key in self.images:
+            self.images.move_to_end(key)
+            return self.images[key]
+        png = drawing.draw(round(width * scale), round(height * scale), scale, dark)
+        self.drawn += 1
+        if not png:
+            return None
+        image = QImage.fromData(png, "PNG")
+        if image.isNull():
+            return None
+        image.setDevicePixelRatio(scale)
+        self.images[key] = image
+        while len(self.images) > _CACHED_IMAGES:
+            self.images.popitem(last=False)
+        return image
+
+
 class ResultTable(QTableView):
-    """A read-only, sortable table of results."""
+    """A read-only, sortable table of results. With :class:`Drawing` cells, give a
+    *row_height* and *drawing_width* to suit the pictures."""
 
     #: the selected rows changed
     itemSelectionChanged = Signal()
+    #: a cell was double-clicked: its row (as shown) and column
+    cellDoubleClicked = Signal(int, int)
 
-    def __init__(self, headers: Sequence[str]) -> None:
+    def __init__(
+        self, headers: Sequence[str], *, row_height: int = 22, drawing_width: int = 160
+    ) -> None:
         super().__init__()
         self.result_model = ResultModel(headers)
         self.setModel(self.result_model)
+        self.drawings = DrawingDelegate(drawing_width, self)
+        self.setItemDelegate(self.drawings)
         self.selectionModel().selectionChanged.connect(lambda *_: self.itemSelectionChanged.emit())
+        self.doubleClicked.connect(lambda i: self.cellDoubleClicked.emit(i.row(), i.column()))
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.verticalHeader().hide()
-        self.verticalHeader().setDefaultSectionSize(22)
+        self.verticalHeader().setDefaultSectionSize(row_height)
+        if row_height > 40:  # tall rows: scroll smoothly, not a whole picture at a time
+            self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         header = self.horizontalHeader()
         header.setStretchLastSection(False)
         header.setResizeContentsPrecision(_MEASURED_ROWS)

@@ -59,11 +59,17 @@ def test_menu_bar_order(window) -> None:
     assert groups == [
         ["Table", "Lists"],
         ["Scoring", "Cluster…", "Bin Values…"],
-        ["Dimensionality Reduction…", "Self-Organizing Map…"],
-        ["SAR", "Plot"],
-        ["Filters", "Search"],
+        ["Plot", "Dimensionality Reduction", "MedChem", "Constellation Plot", "TMAP",
+         "Chemical Space Network"],
+        ["SAR"],
+        ["Search", "Filters"],
         ["Browser"],
-    ]
+    ]  # fmt: skip
+    filters = next(a for a in data.actions() if a.text() == "&Filters")
+    assert not filters.isCheckable()  # a plain command that shows or hides the pane
+    hidden = window.filter_dock.isHidden()
+    filters.trigger()
+    assert window.filter_dock.isHidden() != hidden
     assert data.actions()[-1].shortcut().toString() == "Ctrl+Shift+B"
 
 
@@ -87,6 +93,8 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
                      "Sketcher…"]  # fmt: skip
     assert visible(submenu(menus["Tools"], "Random")) == ["Random Numbers…", "Random Rows…"]
     assert visible(submenu(menus["Data"], "Table")) == ["Operations", "Statistics…"]
+    maps = visible(submenu(menus["Data"], "Dimensionality Reduction"))
+    assert maps == ["PCA…", "UMAP…", "t-SNE…", "PaCMAP…", "", "Self-Organizing Map…"]
     operations = [t for t in visible(submenu(submenu(menus["Data"], "Table"), "Operations")) if t]
     assert operations == ["Add Compound…", "Add Rows…", "Add Column…", "Split Column…",
                           "Join Columns…"]  # fmt: skip
@@ -110,7 +118,7 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
                    "Enumerate", "Decompose", "Routes"]  # fmt: skip
     assert "Generate Conformers…" not in visible(menus["Chemistry"])
     calculate = submenu(menus["Chemistry"], "Calculate")
-    assert visible(calculate) == ["Descriptors…", "pKa…"]
+    assert visible(calculate) == ["Descriptors…", "pKa…", "Sites of Metabolism…"]
     reaction = submenu(menus["Chemistry"], "Reaction")
     assert visible(reaction) == ["Split Reactions…", "Retrosynthesis…"]
     assert not {"Preferences…", "Status Bar"} & set(visible(menus["Edit"]))

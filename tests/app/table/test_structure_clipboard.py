@@ -164,3 +164,17 @@ def test_copy_structure_as_molfile(structures) -> None:
     mime = QGuiApplication.clipboard().mimeData()
     assert b"M  END" in bytes(mime.data("chemical/x-mdl-molfile").data())
     assert mime.text() == "c1ccccc1"
+
+
+def test_a_3d_structure_copies_as_smiles_without_its_hydrogens(qapp) -> None:
+    from rdkit.Chem import AllChem
+
+    from chemsuite.app.table.structure_clipboard import copy_structure
+
+    pose = Chem.AddHs(Chem.MolFromSmiles("CCO"))
+    AllChem.EmbedMolecule(pose, randomSeed=7)
+    assert copy_structure(pose)
+    mime = QGuiApplication.clipboard().mimeData()
+    assert mime.text() == "CCO"
+    block = bytes(mime.data("chemical/x-mdl-molfile").data()).decode()
+    assert Chem.MolFromMolBlock(block, removeHs=False).GetNumAtoms() == 9  # hydrogens kept

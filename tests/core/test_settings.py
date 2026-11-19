@@ -151,3 +151,16 @@ def test_external_tools(tmp_path) -> None:
 @pytest.mark.parametrize("theme", ["system", "light", "dark", "groovy", "custom:Mine"])
 def test_theme_names(theme) -> None:
     assert from_dict({"appearance": {"theme": theme}})[0].appearance.theme == theme
+
+
+def test_remembered_tool_options(tmp_path) -> None:
+    store = SettingsStore(tmp_path, Policy())
+    settings = store.user.copy()
+    settings.tool_options["space_map_umap"] = {"neighbours": 8, "fit": "list:Ref", "x": None}
+    settings.tool_options["som"] = {"cells": "hexagonal", "wrap": True, "pair": [1, 3]}
+    store.save(settings)
+    assert SettingsStore(tmp_path, Policy()).user.tool_options == settings.tool_options
+    bad, problems = from_dict({"tool_options": {"som": {"seed": {"nested": 1}}}})
+    assert bad.tool_options == {} and problems == ["tool_options"]
+    bad, problems = from_dict({"tool_options": {"som": [1, 2]}})
+    assert bad.tool_options == {} and problems == ["tool_options"]

@@ -23,7 +23,7 @@ from PySide6.QtCore import QMimeData
 from PySide6.QtGui import QGuiApplication
 from rdkit import Chem
 
-from chemsuite.core.mols import looks_like_molblock, smiles_of
+from chemsuite.core.mols import looks_like_molblock, smiles_of, without_hydrogens
 from chemsuite.core.structure_input import molblock_of
 
 #: Clipboard formats that carry a molfile (ChemDraw, MarvinSketch, Biovia Draw and others).
@@ -67,11 +67,12 @@ def clipboard_structure_text() -> str:
 
 
 def copy_structure(mol: Chem.Mol | None) -> bool:
-    """Put a structure on the clipboard as a molfile (for drawing programs) and SMILES text."""
+    """Put a structure on the clipboard as a molfile (for drawing programs) and SMILES text
+    (without hydrogens, as the cell shows it; the molfile keeps them)."""
     if mol is None:
         return False
     mime = QMimeData()
     mime.setData("chemical/x-mdl-molfile", molblock_of(mol).encode())
-    mime.setText(smiles_of(mol))
+    mime.setText(smiles_of(without_hydrogens(mol)))
     QGuiApplication.clipboard().setMimeData(mime)
     return True

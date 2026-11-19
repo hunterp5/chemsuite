@@ -64,9 +64,6 @@ def prepared(window, qtbot, options: pipeline.Options | None = None) -> PrepareR
 
 def test_prepare_is_in_the_viewers_tools_menu(opened) -> None:
     assert PrepareReportPanel.tool_id == tool.PREPARE_ID  # the tool reopens the report panel
-    titles = [a.text().replace("&", "") for a in opened.menuBar().actions()]
-    protein = opened.menuBar().actions()[titles.index("Macromolecule")].menu()
-    assert tool.PREPARE_ID not in [a.data() for a in protein.actions()]
     panel = ToolContext(opened).find_panel("protein")
     menu = next(a.menu() for a in panel.menu_bar.actions() if a.text() == "Tools")
     menu.aboutToShow.emit()

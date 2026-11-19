@@ -213,19 +213,51 @@ def hierarchical_fingerprints(
 
 
 # -- number columns ----------------------------------------------------------------------------
-def standardize(columns: Sequence[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+#: how number columns are put on a common scale: key -> title
+SCALINGS = {
+    "zscore": "Z-score",
+    "minmax": "Min-max (0 to 1)",
+    "robust": "Robust (median and IQR)",
+    "none": "None",
+}
+
+
+def standardize(
+    columns: Sequence[np.ndarray], scaling: str = "zscore"
+) -> tuple[np.ndarray, np.ndarray]:
     """``(z-scores of complete rows, row indices)``: rows missing any value are left out.
 
-    A constant column carries no information and is dropped.
+    A constant column carries no information and is dropped. *scaling* (a key of
+    :data:`SCALINGS`) picks another scale than the z-score.
     """
+    x, rows, _kept = scale_columns(columns, scaling)
+    return x, rows
+
+
+def scale_columns(
+    columns: Sequence[np.ndarray], scaling: str = "zscore"
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """:func:`standardize`, also returning which columns were kept (a bool per column)."""
+    if scaling not in SCALINGS:
+        raise ValueError(f"unknown column scaling {scaling!r}")
     data = np.column_stack([np.asarray(c, dtype=np.float64) for c in columns])
     rows = np.flatnonzero(np.isfinite(data).all(axis=1))
     x = data[rows]
     if not len(rows):
-        return x, rows
-    sd = x.std(axis=0)
-    keep = sd > 0
-    return (x[:, keep] - x[:, keep].mean(axis=0)) / sd[keep], rows
+        return x, rows, np.ones(data.shape[1], dtype=bool)
+    keep = x.std(axis=0) > 0
+    x = x[:, keep]
+    if scaling == "zscore":
+        x = (x - x.mean(axis=0)) / x.std(axis=0)
+    elif scaling == "minmax":
+        low = x.min(axis=0)
+        x = (x - low) / (x.max(axis=0) - low)
+    elif scaling == "robust":
+        q1, median, q3 = np.percentile(x, [25, 50, 75], axis=0)
+        spread = q3 - q1
+        spread = np.where(spread > 0, spread, x.std(axis=0))  # mostly-tied columns
+        x = (x - median) / spread
+    return x, rows, keep
 
 
 def kmeans_numeric(columns: Sequence[np.ndarray], k: int, *, seed: int = 0) -> Clusters:

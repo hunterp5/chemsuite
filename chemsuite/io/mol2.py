@@ -70,7 +70,7 @@ def iter_blocks(stream, block_bytes: int | None = None) -> Iterator[bytes]:
 
 def parse_block(data: bytes) -> SdfBlock:
     """Parse every record in *data* (worker-process entry point)."""
-    from chemsuite.core.mols import mol_to_blob, smiles_of
+    from chemsuite.core.mols import as_read, mol_to_blob, smiles_of, without_hydrogens
 
     text = decode(data).replace("\r\n", "\n")
     out = SdfBlock()
@@ -80,13 +80,13 @@ def parse_block(data: bytes) -> SdfBlock:
                 continue  # comments before the first record
             lines = record.split("\n")
             out.titles.append(lines[1].strip() if len(lines) > 1 else "")
-            mol = Chem.MolFromMol2Block(record)
+            mol = as_read(Chem.MolFromMol2Block(record, removeHs=False))
             if mol is None:
                 out.blobs.append(b"")
                 out.texts.append(record.rstrip("\n"))
             else:
                 out.blobs.append(mol_to_blob(mol))
-                out.texts.append(smiles_of(mol) or record.rstrip("\n"))
+                out.texts.append(smiles_of(without_hydrogens(mol)) or record.rstrip("\n"))
     return out
 
 

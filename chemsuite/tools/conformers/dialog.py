@@ -29,11 +29,12 @@ from PySide6.QtWidgets import (
 )
 
 from chemsuite.app.document.tools import ToolContext
-from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, inline
+from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog, inline
 from chemsuite.conformers import conforge
 from chemsuite.conformers.etkdg import ConformerSettings, generate_conformers
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 from chemsuite.core.wording import plural
+from chemsuite.io.sdf import ADD_H, AS_STORED, REMOVE_H
 
 #: Below this many rows the work runs on the job's thread: starting worker processes costs more.
 POOL_MIN_ROWS = 50
@@ -255,6 +256,15 @@ class ExportConformersDialog(ToolDialog):
             "“Conformer” field and the row's other columns as data fields.",
         )
         self.rows = inputs.row("Rows", RowsChoice(ctx, "selected" if len(ctx.selection) else "all"))
+        output = self.section("Output")
+        self.hydrogens = output.row(
+            "Hydrogens",
+            Segmented(((AS_STORED, "As Stored"), (ADD_H, "Add"), (REMOVE_H, "Remove")), AS_STORED),
+            help="As Stored writes each structure's hydrogens as the table holds them. Add "
+            "writes every hydrogen, placing missing ones on each conformer. Remove writes heavy "
+            "atoms only (deuterium and hydrogens that define stereo stay). The table is not "
+            "changed.",
+        )
         self.rows.changed.connect(lambda *_: self.refresh())
         self.refresh()
 
@@ -284,6 +294,7 @@ class ExportConformersDialog(ToolDialog):
         ctx = self.ctx
         oids = self.rows.oids()
         structure = self.structure.currentText()
+        hydrogens = self.hydrogens.value()
         snapshot = ctx.table.snapshot()
 
         def work(job) -> None:
@@ -293,6 +304,7 @@ class ExportConformersDialog(ToolDialog):
                 oids=oids,
                 structure=structure,
                 all_conformers=True,
+                hydrogens=hydrogens,
                 progress=job.report,
                 cancel=job.cancel_token,
             )

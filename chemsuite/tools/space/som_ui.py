@@ -20,23 +20,27 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QCheckBox,
     QComboBox,
-    QHeaderView,
+    QDoubleSpinBox,
     QLabel,
     QSpinBox,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
 )
 
-from chemsuite.analysis.som import MAX_SIDE, Som, default_size, som
+from chemsuite.analysis.som import (
+    END_RADIUS,
+    INITS,
+    MAX_SIDE,
+    NEIGHBORHOODS,
+    Som,
+    default_size,
+    som,
+)
 from chemsuite.app.document.tools import ToolContext, ToolPanel
-from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog, inline
+from chemsuite.app.widgets.dialogs import FitChoice, RowsChoice, Segmented, ToolDialog, inline
 from chemsuite.app.widgets.flow_layout import FlowRow, compact, field
 from chemsuite.core.table import Changed
 from chemsuite.core.table.columns import NumberColumn
@@ -48,12 +52,12 @@ from chemsuite.tools.sar.matrix_panel import heat
 from chemsuite.tools.similarity.common import FeatureChooser
 
 from .common import features_task
+from .som_grid import Cell, SomGrid
 
 ROW_COLUMN = "SOM Row"
 COLUMN_COLUMN = "SOM Column"
 COUNT = "Count"
 DELAY_MS = 300
-OIDS_ROLE = Qt.ItemDataRole.UserRole
 
 
 class SomDialog(ToolDialog):
@@ -62,10 +66,15 @@ class SomDialog(ToolDialog):
         self.ctx = ctx
         self.panel: SomPanel | None = None
         inputs = self.section("Input")
-        self.features = FeatureChooser(ctx, metric=False, section=inputs)
-        self.rows = inputs.row("Rows", RowsChoice(ctx))
-
         method = self.section("Method")
+        more = self.section("More Options", collapsed=False)
+        self._inputs, self._more_section = inputs, more
+        self.features = FeatureChooser(ctx, metric=False, section=inputs, more=more)
+        self.rows = inputs.row("Rows", RowsChoice(ctx))
+        self.fit = inputs.row("Fit on", FitChoice(ctx),
+                              help="The rows the map is trained on; the other rows are then "
+                              "placed in their closest cell.")  # fmt: skip
+
         self.grid_rows = QSpinBox()
         self.grid_columns = QSpinBox()
         for spin in (self.grid_rows, self.grid_columns):
@@ -77,15 +86,61 @@ class SomDialog(ToolDialog):
             inline(self.grid_rows, QLabel("×"), self.grid_columns, self.auto),
             help="Rows × columns of cells. Automatic: a size that suits the number of compounds.",
         )
+        self.cells = Segmented((("square", "Square"), ("hexagonal", "Hexagonal")), "square")
+        method.row("Cells", self.cells,
+                   help="Hexagonal cells have six neighbors at the same distance, so groups "
+                   "spread more evenly than on squares.")  # fmt: skip
         self.epochs = QSpinBox()
         self.epochs.setRange(2, 200)
         self.epochs.setValue(20)
         method.row("Training passes", self.epochs, help="Passes over the data while training.")
 
-        self.auto.toggled.connect(lambda *_: self._update())
-        self.rows.changed.connect(lambda *_: self._update())
+        self.neighborhood = QComboBox()
+        for key, title in NEIGHBORHOODS.items():
+            self.neighborhood.addItem(title, key)
+        more.row("Neighborhood", self.neighborhood,
+                 help="How a compound pulls on the cells around its best cell. Gaussian: less "
+                 "with distance. Bubble: every cell within the radius alike.")  # fmt: skip
+        self.start_radius = QDoubleSpinBox()
+        self.start_radius.setRange(0.0, float(MAX_SIDE))
+        self.start_radius.setSingleStep(0.5)
+        self.start_radius.setSpecialValueText("Automatic")
+        more.row("Start radius", self.start_radius,
+                 help="How far the pull reaches at the start, in cells. Automatic: half the "
+                 "grid.")  # fmt: skip
+        self.end_radius = QDoubleSpinBox()
+        self.end_radius.setRange(0.1, float(MAX_SIDE))
+        self.end_radius.setSingleStep(0.1)
+        self.end_radius.setValue(END_RADIUS)
+        more.row("End radius", self.end_radius,
+                 help="How far it reaches at the end: small lets each cell settle on its own "
+                 "compounds.")  # fmt: skip
+        self.init = QComboBox()
+        for key, title in INITS.items():
+            self.init.addItem(title, key)
+        more.row("Start from", self.init,
+                 help="The cells' first values: spread over the plane of the first two "
+                 "principal components, or copied from random compounds.")  # fmt: skip
+        self.wrap = QCheckBox("Join opposite edges")
+        more.row("Wrap edges", self.wrap,
+                 help="The grid wraps around like a torus, so edge cells have neighbors on "
+                 "the far side and nothing crowds into the corners.")  # fmt: skip
+        self.seed = QSpinBox()
+        self.seed.setRange(0, 2_147_483_647)
+        more.row("Seed", self.seed, help="The same seed gives the same map every run.")
+
+        for signal in (self.auto.toggled, self.rows.changed, self.fit.currentIndexChanged,
+                       self.start_radius.valueChanged, self.end_radius.valueChanged):  # fmt: skip
+            signal.connect(lambda *_: self._update())
         self.features.changed.connect(self._update)
         self._update()
+        self.remember(ctx, "som", {
+            "auto": self.auto, "grid_rows": self.grid_rows, "grid_columns": self.grid_columns,
+            "cells": self.cells, "epochs": self.epochs, "fit": self.fit,
+            "neighborhood": self.neighborhood, "start_radius": self.start_radius,
+            "end_radius": self.end_radius, "init": self.init, "wrap": self.wrap,
+            "seed": self.seed, **self.features.remembered(),
+        })  # fmt: skip
 
     def size(self) -> tuple[int, int] | None:
         if self.auto.isChecked():
@@ -94,7 +149,9 @@ class SomDialog(ToolDialog):
 
     def _update(self) -> None:
         if self.auto.isChecked():
-            rows, columns = default_size(len(self.rows.oids()))
+            oids = self.rows.oids()
+            fit = self.fit.rows(oids)
+            rows, columns = default_size(len(oids) if fit is None else len(fit))
             self.grid_rows.setValue(rows)
             self.grid_columns.setValue(columns)
         for spin in (self.grid_rows, self.grid_columns):
@@ -102,7 +159,16 @@ class SomDialog(ToolDialog):
         self.refresh()
 
     def problem(self) -> str:
-        return self.features.problem()
+        problem = self.features.problem()
+        if problem:
+            return problem
+        fit = self.fit.rows(self.rows.oids())
+        if fit is not None and len(fit) < 2:
+            return "Train on at least 2 of the rows mapped."
+        start = self.start_radius.value()
+        if start and start < self.end_radius.value():
+            return "The start radius must not be smaller than the end radius."
+        return ""
 
     def verb(self) -> str:
         return f"Train on {len(self.rows.oids()):,} Rows"
@@ -110,16 +176,31 @@ class SomDialog(ToolDialog):
     def run(self):
         return self.train()
 
+    def options(self) -> dict:
+        """What ``som`` takes besides the features and the grid size."""
+        oids = self.rows.oids()
+        return {
+            "epochs": self.epochs.value(),
+            "fit": self.fit.rows(oids),
+            "hexagonal": self.cells.value() == "hexagonal",
+            "wrap": self.wrap.isChecked(),
+            "neighborhood": self.neighborhood.currentData(),
+            "start_radius": self.start_radius.value() or None,
+            "end_radius": self.end_radius.value(),
+            "init": self.init.currentData(),
+            "seed": self.seed.value(),
+        }
+
     def train(self):
         ctx = self.ctx
         oids = self.rows.oids()
         build, remember = features_task(ctx, self.features, oids)
         size = self.size() or (None, None)
-        epochs = self.epochs.value()
+        options = self.options()
 
         def work(job) -> Som:
             features = build(job)
-            return som(features, *size, epochs=epochs, progress=job.report, cancel=job.cancel_token)
+            return som(features, *size, progress=job.report, cancel=job.cancel_token, **options)
 
         def done(result: Som) -> None:
             remember()
@@ -135,12 +216,14 @@ class SomDialog(ToolDialog):
                 ROW_COLUMN: (oids, NumberColumn.from_floats(r, 0)),
                 COLUMN_COLUMN: (oids, NumberColumn.from_floats(c, 0)),
             },
-            label="Self-organising map",
+            label="Self-organizing map",
         )
         counts = result.counts()
         from .tool import _som_panel
 
-        self.panel = _som_panel(ctx)
+        layout = {"hexagonal": result.hexagonal, "wrap": result.wrap}
+        layout |= {"rows": result.rows, "columns": result.columns}
+        self.panel = _som_panel(ctx, layout)
         ctx.show_message(
             f"Placed {plural(int(counts.sum()), 'compound')} on a {result.rows} × "
             f"{result.columns} map; {plural(int((counts == 0).sum()), 'empty cell')}"
@@ -163,11 +246,10 @@ class SomPanel(ToolPanel):
             self.aggregate.addItem(title, key)
         self.higher_is_better = QCheckBox("Higher is better")
         self.higher_is_better.setChecked(True)
-        self.grid = QTableWidget()
-        self.grid.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        for header in (self.grid.horizontalHeader(), self.grid.verticalHeader()):
-            header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-            header.setMinimumSectionSize(18)
+        self.hexagonal = False  # how the map was trained: drawn the same way
+        self.wrap = False
+        self.trained = (0, 0)  # the trained grid, which may have empty edge rows
+        self.grid = SomGrid()
         self.status = QLabel()
         self.status.setWordWrap(True)
         compact(self.value)
@@ -220,17 +302,18 @@ class SomPanel(ToolPanel):
         table = self.table
         grid = self.grid
         if ROW_COLUMN not in table or COLUMN_COLUMN not in table:
-            grid.setRowCount(0)
-            grid.setColumnCount(0)
-            self.status.setText("Train a map first (Data ▸ Self-Organizing Map).")
+            grid.clear()
+            self.status.setText(
+                "Train a map first (Data ▸ Dimensionality Reduction ▸ Self-Organizing Map)."
+            )
             return
         oids = shown_oids(table)
         r = numbers(table, ROW_COLUMN, oids)
         c = numbers(table, COLUMN_COLUMN, oids)
         ok = np.isfinite(r) & np.isfinite(c)
         oids, r, c = oids[ok], r[ok].astype(int) - 1, c[ok].astype(int) - 1
-        rows = int(r.max()) + 1 if len(r) else 0
-        columns = int(c.max()) + 1 if len(c) else 0
+        rows = max(self.trained[0], int(r.max()) + 1 if len(r) else 0)
+        columns = max(self.trained[1], int(c.max()) + 1 if len(c) else 0)
         counting = self.value.currentText() == COUNT
         self.aggregate.setEnabled(not counting)
         values = None if counting else numbers(table, self.value.currentText(), oids)
@@ -253,31 +336,21 @@ class SomPanel(ToolPanel):
         finite = shown[np.isfinite(shown)]
         low, high = (float(finite.min()), float(finite.max())) if len(finite) else (0.0, 0.0)
         better = self.higher_is_better.isChecked() or counting
-        grid.clear()
-        grid.setRowCount(rows)
-        grid.setColumnCount(columns)
-        grid.setHorizontalHeaderLabels([str(i + 1) for i in range(columns)])
-        grid.setVerticalHeaderLabels([str(i + 1) for i in range(rows)])
+        cells = []
         for k in range(rows * columns):
             members = order[bounds[k] : bounds[k + 1]]
-            item = QTableWidgetItem()
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            if len(members):
-                value = shown[k]
-                text = (
-                    str(len(members))
-                    if counting
-                    else (f"{value:.2f}" if math.isfinite(value) else "–")
-                )
-                item.setText(text)
-                item.setBackground(QBrush(heat(value, low, high, better)))
-                item.setData(OIDS_ROLE, oids[members].tolist())
-                item.setToolTip(
-                    f"Cell {k // columns + 1}, {k % columns + 1}: {len(members)} compound(s)"
-                )
-            else:
-                item.setBackground(QBrush(QColor(235, 235, 235)))
-            grid.setItem(k // columns, k % columns, item)
+            if not len(members):
+                cells.append(Cell())
+                continue
+            value = shown[k]
+            text = (
+                str(len(members)) if counting else (f"{value:.2f}" if math.isfinite(value) else "–")
+            )
+            tip = f"Cell {k // columns + 1}, {k % columns + 1}: {plural(len(members), 'compound')}"
+            if not counting:
+                tip += f"\n{self.value.currentText()}: {text}"
+            cells.append(Cell(text, heat(value, low, high, better), oids[members].tolist(), tip))
+        grid.set_cells(rows, columns, cells, self.hexagonal)
         filled = int((bounds[1:] > bounds[:-1]).sum())
         self.status.setText(
             f"{len(oids):,} compound(s) in {filled:,} of {rows * columns:,} cell(s). "
@@ -285,17 +358,21 @@ class SomPanel(ToolPanel):
         )
 
     def select_cell(self, row: int, column: int) -> list[int]:
-        item = self.grid.item(row, column)
-        oids = item.data(OIDS_ROLE) if item is not None else None
+        cell = self.grid.cell(row, column)
+        oids = cell.oids if cell is not None else []
         if oids:
             self.ctx.selection.set(oids, "som")
-        return oids or []
+        return list(oids)
 
     def state(self) -> dict:
         return {
             "value": self.value.currentText(),
             "aggregate": self.aggregate.currentData(),
             "higher_is_better": self.higher_is_better.isChecked(),
+            "hexagonal": self.hexagonal,
+            "wrap": self.wrap,
+            "rows": self.trained[0],
+            "columns": self.trained[1],
         }
 
     def set_state(self, state: dict) -> None:
@@ -304,6 +381,11 @@ class SomPanel(ToolPanel):
             self.value.setCurrentIndex(index)
         self.aggregate.setCurrentIndex(max(0, self.aggregate.findData(state.get("aggregate"))))
         self.higher_is_better.setChecked(bool(state.get("higher_is_better", True)))
+        self.hexagonal = state.get("hexagonal") is True  # older documents: square cells
+        self.wrap = state.get("wrap") is True
+        size = state.get("rows"), state.get("columns")
+        ok = all(isinstance(n, int) and 0 < n <= MAX_SIDE for n in size)
+        self.trained = (size[0], size[1]) if ok else (0, 0)
         self.rebuild()
 
     def close_panel(self) -> None:

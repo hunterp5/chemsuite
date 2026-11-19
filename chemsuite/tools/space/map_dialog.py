@@ -13,39 +13,31 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Dimensionality Reduction…: PCA, UMAP, t-SNE or PaCMAP coordinates as columns, plotted."""
+"""Data ▸ Dimensionality Reduction ▸ PCA…, UMAP…, t-SNE… or PaCMAP…: the map's coordinates
+as columns, plotted.
+
+The dialog is the same for every method: Input (features, rows, and the rows the map is
+fitted on), Method and More Options (each method's own, from :mod:`.map_options`, plus how
+the features are made), and Output (what the plot is colored and sized by). It opens with the
+settings it last ran with (``ToolDialog.remember``).
+"""
 
 from __future__ import annotations
 
-import importlib.util
-
 import numpy as np
-from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QSpinBox
+from PySide6.QtWidgets import QCheckBox, QComboBox
 
 from chemsuite.analysis import embedding as em
 from chemsuite.app.document.tools import ToolContext
-from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog
+from chemsuite.app.widgets.dialogs import FitChoice, RowsChoice, Segmented, ToolDialog
 from chemsuite.core.table.columns import NumberColumn
 from chemsuite.core.wording import plural
+from chemsuite.plotting.data import colorable_columns, number_columns
 from chemsuite.tools.sar.common import activity_combo
 from chemsuite.tools.similarity.common import FeatureChooser
 
 from .common import features_task
-
-#: the PCA axes offered: (first, second) component, 1-based
-COMPONENT_PAIRS = ((1, 2), (1, 3), (2, 3), (3, 4))
-HELP = {
-    "pca": "Fast and exact; distances along the axes mean something, but two components "
-    "often cannot separate every group.",
-    "umap": "Keeps neighbourhoods together, so series form islands; distances between "
-    "islands mean little. Above 50,000 rows it is fitted on a sample.",
-    "tsne": "Like UMAP, good at local groups; slower, and only for the rows given.",
-    "pacmap": "Keeps local groups and the overall layout together, so distances between "
-    "islands mean more than in UMAP or t-SNE; fast on large sets.",
-}
-#: default neighbours per method (the box is shared, so switching method updates it)
-NEIGHBOURS = {"umap": 15, "pacmap": 10}
-
+from .map_options import NONE, OPTIONS, MethodOptions, PcaOptions
 
 #: methods that hold Python's GIL for seconds (numba): run in a worker process, or the window
 #: freezes while they work (PCA is NumPy, which lets go of it, and reports its progress)
@@ -53,325 +45,122 @@ IN_PROCESS = frozenset(["umap", "tsne", "pacmap"])
 
 
 class SpaceMapDialog(ToolDialog):
-    def __init__(self, ctx: ToolContext) -> None:
-        super().__init__(
-            ctx.parent,
-            "Dimensionality Reduction",
-            guide="dimensionality-reduction",
-        )
+    """One method's map (Data ▸ Dimensionality Reduction has an entry for each)."""
+
+    def __init__(self, ctx: ToolContext, method: str = "umap") -> None:
+        super().__init__(ctx.parent, em.METHODS[method], guide="dimensionality-reduction")
         self.ctx = ctx
+        self.method = method
         self.plot = None
+        self.loadings_panel = None
 
         inputs = self.section("Input")
-        self.features = FeatureChooser(ctx, metric=False, section=inputs, both=True)
+        section = self.section("Method")
+        more = self.section("More Options", collapsed=False)
+        output = self.section("Output")
+        self._inputs, self._method_section = inputs, section
+        self._more_section, self._output = more, output
+        self.features = FeatureChooser(ctx, metric=False, section=inputs, both=True, more=more)
         self.rows = inputs.row("Rows", RowsChoice(ctx))
-
-        method = self.section("Method")
-        self.method = QComboBox()
-        has_umap = importlib.util.find_spec("umap") is not None
-        missing = {
-            "umap": None if has_umap else "UMAP needs the umap-learn package.",
-            "pacmap": None
-            if importlib.util.find_spec("pacmap") is not None
-            else "PaCMAP needs the pacmap package.",
-        }
-        for key, title in em.METHODS.items():
-            self.method.addItem(title, key)
-            if missing.get(key):
-                item = self.method.model().item(self.method.count() - 1)
-                item.setEnabled(False)
-                item.setToolTip(missing[key])
-        self.method.setCurrentIndex(self.method.findData("umap" if has_umap else "pca"))
-        method.row("Method", self.method)
+        self.fit = inputs.row("Fit on", FitChoice(ctx),
+                              help="The rows the map is made from; the other rows are then "
+                              "placed onto it. Fit on a reference set to see where new "
+                              "compounds fall in its space.")  # fmt: skip
         self.dims = Segmented((("2", "2D"), ("3", "3D")), "2")
-        method.row(
+        section.row(
             "Dimensions",
             self.dims,
             help="3D writes three columns and opens a 3D Scatter you can turn.",
         )
-        self.neighbours = QSpinBox()
-        self.neighbours.setRange(2, 200)
-        self.neighbours.setValue(15)
-        method.row(
-            "Neighbours",
-            self.neighbours,
-            help="Fewer keeps local detail; more shows the overall layout.",
-        )
-        self.min_dist = QDoubleSpinBox()
-        self.min_dist.setRange(0.0, 0.99)
-        self.min_dist.setSingleStep(0.05)
-        self.min_dist.setValue(0.1)
-        method.row("Min. distance", self.min_dist, help="How tightly points may pack together.")
-        self.perplexity = QDoubleSpinBox()
-        self.perplexity.setRange(2, 200)
-        self.perplexity.setValue(30)
-        method.row(
-            "Perplexity",
-            self.perplexity,
-            help="Roughly how many neighbours each point attends to.",
-        )
-        self.components = QComboBox()
-        for first, second in COMPONENT_PAIRS:
-            self.components.addItem(f"PC{first} and PC{second}")
-        method.row(
-            "Components",
-            self.components,
-            help="Which principal components make the two axes. Later components show "
-            "differences the first two miss.",
-        )
-        self._method_section = method
-        self._method_key = self.method.currentData()
+        self.settings: MethodOptions = OPTIONS[method](ctx, section, more)
 
-        more = self.section("More Options", collapsed=True)
-        self.distance = QComboBox()
-        for key, title in em.UMAP_METRICS.items():
-            self.distance.addItem(title, key)
-        self.distance.setCurrentIndex(self.distance.findData("jaccard"))
-        more.row(
-            "Distance",
-            self.distance,
-            help="How unlike two compounds are. Jaccard, Dice, Rogers-Tanimoto and Hamming "
-            "work on fingerprint bits alone; with number columns the distance becomes "
-            "Euclidean on z-scored values.",
-        )
-        self.spread = QDoubleSpinBox()
-        self.spread.setRange(0.1, 10.0)
-        self.spread.setSingleStep(0.1)
-        self.spread.setValue(1.0)
-        more.row(
-            "Spread",
-            self.spread,
-            help="The overall scale of the map; with Min. distance, how clumped the islands are.",
-        )
-        self.epochs = QSpinBox()
-        self.epochs.setRange(0, 5000)
-        self.epochs.setSingleStep(50)
-        self.epochs.setSpecialValueText("Automatic")
-        more.row(
-            "Epochs",
-            self.epochs,
-            help="Optimisation rounds. Automatic: 500 for small sets, 200 for large ones.",
-        )
-        self.fit_max = QSpinBox()
-        self.fit_max.setRange(1_000, 1_000_000)
-        self.fit_max.setSingleStep(10_000)
-        self.fit_max.setGroupSeparatorShown(True)
-        self.fit_max.setValue(em.UMAP_FIT_MAX)
-        more.row(
-            "Fit on up to",
-            self.fit_max,
-            help="Larger sets are fitted on a random sample of this many rows and the rest "
-            "placed onto that map: faster, and nearly the same picture.",
-        )
-        self.learning_rate = QDoubleSpinBox()
-        self.learning_rate.setRange(0, 5000)
-        self.learning_rate.setSingleStep(50)
-        self.learning_rate.setSpecialValueText("Automatic")
-        more.row(
-            "Learning rate",
-            self.learning_rate,
-            help="Step size. Automatic scales it with the number of rows; raise it if the map "
-            "looks like a compressed ball.",
-        )
-        self.iterations = QSpinBox()
-        self.iterations.setRange(250, 10_000)
-        self.iterations.setSingleStep(250)
-        self.iterations.setValue(1000)
-        more.row("Iterations", self.iterations, help="More can settle a large map further.")
-        self.exaggeration = QDoubleSpinBox()
-        self.exaggeration.setRange(1.0, 100.0)
-        self.exaggeration.setValue(12.0)
-        more.row(
-            "Exaggeration",
-            self.exaggeration,
-            help="Early exaggeration: higher pushes the groups further apart at the start.",
-        )
-        self.reduce_to = QSpinBox()
-        self.reduce_to.setRange(0, 500)
-        self.reduce_to.setSpecialValueText("Off")
-        self.reduce_to.setValue(0)
-        more.row(
-            "PCA dimensions",
-            self.reduce_to,
-            help="Off: the map is made from the features themselves (fingerprint bits by "
-            "Jaccard for t-SNE). A number: from that many principal components, Euclidean; "
-            "faster on large sets, but bit distances are then not available.",
-        )
-        self.init = QComboBox()
-        self.init.addItem("Random", "random")
-        self.init.addItem("PCA", "pca")
-        more.row(
-            "Start from",
-            self.init,
-            help="PCA keeps the overall layout more stable; Random is the classic t-SNE.",
-        )
-        self.seed = QSpinBox()
-        self.seed.setRange(-1, 2_147_483_647)
-        self.seed.setSpecialValueText("Random")
-        self.seed.setValue(42)
-        more.row(
-            "Seed",
-            self.seed,
-            help="The same seed gives the same map every run (UMAP then uses one processor "
-            "core). Random is faster but differs each time.",
-        )
-        self.mn_ratio = QDoubleSpinBox()
-        self.mn_ratio.setRange(0.0, 10.0)
-        self.mn_ratio.setSingleStep(0.1)
-        self.mn_ratio.setValue(0.5)
-        more.row(
-            "Mid-near pairs",
-            self.mn_ratio,
-            help="Mid-near pairs per neighbour pair; more keeps the overall layout (global "
-            "structure) better.",
-        )
-        self.fp_ratio = QDoubleSpinBox()
-        self.fp_ratio.setRange(0.0, 20.0)
-        self.fp_ratio.setSingleStep(0.5)
-        self.fp_ratio.setValue(2.0)
-        more.row(
-            "Further pairs",
-            self.fp_ratio,
-            help="Further pairs per neighbour pair; more pushes separate groups further apart.",
-        )
-        self.pacmap_distance = QComboBox()
-        for key, title in em.PACMAP_METRICS.items():
-            self.pacmap_distance.addItem(title, key)
-        self.pacmap_distance.setCurrentIndex(self.pacmap_distance.findData("jaccard"))
-        more.row(
-            "PaCMAP distance",
-            self.pacmap_distance,
-            help="Jaccard and Hamming work on fingerprint bits alone, with PCA dimensions Off. "
-            "Angular is the cosine distance.",
-        )
-        self._more_section = more
-        #: distance box -> the bit distance it was switched away from when bits stopped fitting
-        self._bit_choice: dict[QComboBox, str] = {}
+        self.color = QComboBox()
+        self.size = QComboBox()
+        self.color.addItem(NONE, None)
+        self.size.addItem(NONE, None)
+        for name in colorable_columns(ctx.table):
+            self.color.addItem(name, name)
+        for name in number_columns(ctx.table):
+            self.size.addItem(name, name)
+        activity = activity_combo(ctx).currentText()
+        self.color.setCurrentIndex(max(0, self.color.findData(activity or None)))
+        output.row("Color by", self.color, help="The column the plot colors its points by.")
+        output.row("Size by", self.size, help="The number column the plot sizes points by.")
+        self.open_plot = QCheckBox("Open a plot")
+        self.open_plot.setChecked(True)
+        output.row("Plot", self.open_plot, help="Off: only write the map's columns to the table.")
 
         for signal in (
-            self.method.currentIndexChanged,
             self.rows.changed,
             self.features.changed,
             self.dims.changed,
-            self.reduce_to.valueChanged,
-            self.distance.currentIndexChanged,
-            self.min_dist.valueChanged,
-            self.spread.valueChanged,
+            self.fit.currentIndexChanged,
+            self.open_plot.toggled,
+            *self.settings.signals(),
         ):
             signal.connect(lambda *_: self._update())
         self._update()
+        self.remember(ctx, f"space_map_{method}", self._fields())
+
+    def _fields(self) -> dict:
+        fields = {"dims": self.dims, "fit": self.fit, "open_plot": self.open_plot}
+        fields |= self.features.remembered()
+        return fields | self.settings.fields()
 
     def _count(self) -> int:
         return len(self.rows.oids())
+
+    def _fit_rows(self, oids: np.ndarray) -> np.ndarray | None:
+        return self.fit.rows(oids) if self.settings.fits else None
 
     def problem(self) -> str:
         problem = self.features.problem()
         if problem:
             return problem
-        if self._count() < 3:
+        oids = self.rows.oids()
+        if len(oids) < 3:
             return "A map needs at least 3 rows."
-        if self.method.currentData() == "umap":
-            metric = self.distance.currentData()
-            if metric in em.BIT_METRICS and not self.features.fingerprints():
-                return f"{em.UMAP_METRICS[metric]} distance needs fingerprints alone."
-            if self.min_dist.value() > self.spread.value():
-                return "Min. distance must not be larger than the spread."
-        if self.method.currentData() == "pacmap":
-            distance = self.pacmap_distance.currentData()
-            if distance in em.BIT_METRICS and not self._bits_for_pacmap():
-                return (
-                    f"{em.PACMAP_METRICS[distance]} distance needs fingerprints alone, "
-                    "with PCA dimensions Off."
-                )
-        return ""
-
-    def _bits_for_pacmap(self) -> bool:
-        return self.features.fingerprints() and self.reduce_to.value() == 0
-
-    def _fit_bit_distance(self, box: QComboBox, bits: bool) -> None:
-        """Bit distances only where they apply: switch to Euclidean when they stop fitting,
-        and back to the bit distance once they fit again."""
-        model = box.model()
-        for row in range(box.count()):
-            if box.itemData(row) in em.BIT_METRICS:
-                model.item(row).setEnabled(bits)
-        current = box.currentData()
-        blocked = box.blockSignals(True)
-        if not bits and current in em.BIT_METRICS:
-            self._bit_choice[box] = current
-            box.setCurrentIndex(box.findData("euclidean"))
-        elif bits and current == "euclidean" and box in self._bit_choice:
-            box.setCurrentIndex(box.findData(self._bit_choice.pop(box)))
-        elif bits:
-            self._bit_choice.pop(box, None)
-        box.blockSignals(blocked)
+        fit = self._fit_rows(oids)
+        if fit is not None and len(fit) < 5:
+            return "Fit on at least 5 of the rows mapped."
+        return self.settings.problem(
+            rows=len(oids), fitting=fit is not None, bits=self.features.bits()
+        )
 
     def verb(self) -> str:
         return f"Map {self._count():,} Rows"
 
     def _update(self) -> None:
-        method = self.method.currentData()
-        section = self._method_section
-        section.set_help(self.method, HELP[method])
-        if method != self._method_key:  # each method's own default number of neighbours
-            if self.neighbours.value() == NEIGHBOURS.get(self._method_key):
-                self.neighbours.setValue(NEIGHBOURS.get(method, self.neighbours.value()))
-            self._method_key = method
         three = self.dims.value() == "3"
-        self._fit_bit_distance(self.distance, self.features.fingerprints())
-        self._fit_bit_distance(self.pacmap_distance, self._bits_for_pacmap())
-        section.set_row_visible(self.neighbours, method in ("umap", "pacmap"))
-        section.set_row_visible(self.min_dist, method == "umap")
-        section.set_row_visible(self.perplexity, method == "tsne")
-        section.set_row_visible(self.components, method == "pca" and not three)
-        more = self._more_section
-        for widget in (self.distance, self.spread, self.epochs, self.fit_max):
-            more.set_row_visible(widget, method == "umap")
-        for widget in (
-            self.learning_rate,
-            self.iterations,
-            self.exaggeration,
-            self.init,
-        ):
-            more.set_row_visible(widget, method == "tsne")
-        more.set_row_visible(self.reduce_to, method in ("tsne", "pacmap"))
-        for widget in (self.mn_ratio, self.fp_ratio, self.pacmap_distance):
-            more.set_row_visible(widget, method == "pacmap")
-        more.setVisible(method != "pca")
+        columns_only = self.features.kind.currentData() is None
+        self.settings.update(bits=self.features.bits(), three=three, columns_only=columns_only)
+        self._inputs.set_row_visible(self.fit, self.settings.fits)
+        for widget in (self.color, self.size):
+            self._output.set_row_visible(widget, self.open_plot.isChecked())
         self.refresh()
 
     def run(self):
         return self.make_map()
 
     def options(self) -> dict:
-        return {
-            "components": COMPONENT_PAIRS[self.components.currentIndex()],
-            "neighbours": self.neighbours.value(),
-            "min_dist": self.min_dist.value(),
-            "spread": self.spread.value(),
-            "metric": self.distance.currentData(),
-            "epochs": self.epochs.value() or None,
-            "fit_max": self.fit_max.value(),
-            "perplexity": self.perplexity.value(),
-            "learning_rate": self.learning_rate.value() or None,
-            "iterations": self.iterations.value(),
-            "exaggeration": self.exaggeration.value(),
-            "reduce_to": self.reduce_to.value(),
-            "init": self.init.currentData(),
-            "seed": None if self.seed.value() < 0 else self.seed.value(),
-            "mn_ratio": self.mn_ratio.value(),
-            "fp_ratio": self.fp_ratio.value(),
-            "distance": self.pacmap_distance.currentData(),
-            "dims": int(self.dims.value()),
-        }
+        """What ``embed`` is called with (bar the rows to fit on)."""
+        return {"dims": int(self.dims.value()), **self.settings.options(self.rows.oids())}
 
     def make_map(self):
         ctx = self.ctx
         oids = self.rows.oids()
-        method = self.method.currentData()
-        options = self.options()
+        method = self.method
+        options = {"dims": int(self.dims.value()), **self.settings.options(oids)}
+        fit = self._fit_rows(oids)
+        if fit is not None:
+            options["fit"] = fit
         build, remember = features_task(ctx, self.features, oids)
-        color = activity_combo(ctx).currentText() or None  # the plot opens coloured by activity
+        plot = self.open_plot.isChecked()
+        color, size = self.color.currentData(), self.size.currentData()
+        columns = self.features.number_columns()
+        settings = self.settings
+        loadings = isinstance(settings, PcaOptions) and settings.loadings.isChecked()
+        loadings = loadings and self.features.kind.currentData() is None
 
         def work(job):
             features = build(job)
@@ -383,46 +172,83 @@ class SpaceMapDialog(ToolDialog):
 
         def done(result: em.Embedding) -> None:
             remember()
-            self.finish(oids, result, color)
+            self.finish(oids, result, color, size, plot=plot)
+            if loadings and result.loadings is not None:
+                self.show_loadings(result, columns)
 
         return ctx.run(f"Calculating {em.METHODS[method]}…", work, done)
 
-    def finish(self, oids: np.ndarray, result: em.Embedding, color: str | None = None):
+    def finish(
+        self,
+        oids: np.ndarray,
+        result: em.Embedding,
+        color: str | None = None,
+        size: str | None = None,
+        *,
+        plot: bool = True,
+    ):
         ctx = self.ctx
         dims = result.coords.shape[1]
-        columns = map_columns(ctx.table.column_names, em.METHODS[result.method], dims)
+        title = em.METHODS[result.method]
+        if result.components is not None:  # PC1…PCk; the plot takes the chosen ones
+            k = result.components.shape[1]
+            columns = fresh_names(ctx.table.column_names, [f"PC{i + 1}" for i in range(k)])
+            values = result.components
+            settings = self.settings
+            pair = settings.pair() if isinstance(settings, PcaOptions) and dims == 2 else (1, 2, 3)
+            axes = [columns[c - 1] for c in pair[:dims]]
+        else:
+            columns = map_columns(ctx.table.column_names, title, dims)
+            values = result.coords
+            axes = columns
         names = ctx.apply_results(
             {
-                name: (oids, NumberColumn.from_floats(result.coords[:, i], 3))
+                name: (oids, NumberColumn.from_floats(values[:, i], 3))
                 for i, name in enumerate(columns)
             },
-            label=f"{em.METHODS[result.method]} map",
+            label=f"{title} map",
         )
-        columns = [names[c] for c in columns]
-        if color is not None and color not in ctx.table:
-            color = None
-        if dims == 3:
-            self.plot = ctx.open_tool("scatter3d")
-            self.plot.set_spec(x=columns[0], y=columns[1], z=columns[2], color=color)
-        else:
-            self.plot = ctx.open_tool("scatter")
-            self.plot.set_spec(x=columns[0], y=columns[1], color=color)
+        axes = [names[c] for c in axes]
         message = f"Placed {result.placed:,} of {plural(len(oids), 'row')} on the map"
         if result.notes:
             message += "; " + "; ".join(result.notes)
         ctx.show_message(message)
+        if not plot:
+            return None
+        spec = {"color": color if color is not None and color in ctx.table else None}
+        if size is not None and size in ctx.table:
+            spec["size"] = size
+        if dims == 3:
+            self.plot = ctx.open_tool("scatter3d")
+            self.plot.set_spec(x=axes[0], y=axes[1], z=axes[2], **spec)
+        else:
+            self.plot = ctx.open_tool("scatter")
+            self.plot.set_spec(x=axes[0], y=axes[1], **spec)
         return self.plot
+
+    def show_loadings(self, result: em.Embedding, columns: list[str]):
+        from .loadings import open_loadings
+
+        kept = [name for name, keep in zip(columns, result.kept, strict=True) if keep]
+        self.loadings_panel = open_loadings(self.ctx, kept, result.loadings)
+        return self.loadings_panel
+
+
+def fresh_names(existing, names: list[str]) -> list[str]:
+    """*names* as new columns, never an existing one: "PC1", "PC2"; then "PC1 (1)", … — one
+    suffix for the whole set, so they stay recognizably together."""
+    taken = set(existing)
+    run = 0
+    while True:
+        suffix = f" ({run})" if run else ""
+        out = [f"{name}{suffix}" for name in names]
+        if not taken.intersection(out):
+            return out
+        run += 1
 
 
 def map_columns(existing, method: str, dims: int) -> list[str]:
     """New column names for one map, never an existing column: "UMAP 1", "UMAP 2"; the next
     map "UMAP 1 (1)", "UMAP 2 (1)"; then "(2)" and so on. A map's columns share one number,
-    so they stay recognisably together (rename them in the table afterwards)."""
-    taken = set(existing)
-    run = 0
-    while True:
-        suffix = f" ({run})" if run else ""
-        names = [f"{method} {i + 1}{suffix}" for i in range(dims)]
-        if not taken.intersection(names):
-            return names
-        run += 1
+    so they stay recognizably together (rename them in the table afterwards)."""
+    return fresh_names(existing, [f"{method} {i + 1}" for i in range(dims)])

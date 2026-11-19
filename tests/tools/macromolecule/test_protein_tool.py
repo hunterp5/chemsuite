@@ -86,37 +86,34 @@ def menu_of(panel, title: str):
     return menu
 
 
-def test_the_proteins_tools_are_the_viewer_prepare_and_docking(window) -> None:
+def test_the_table_only_opens_the_viewer(window) -> None:
     assert window.tool_action("protein").isEnabled()
-    # files open from the viewer itself; Prepare, Dock and Rescore have dialogs of their own
+    # the table is the way in: what the viewer does (prepare, minimize, dock, rescore) is in
+    # its own menus; Prepare, Inspect and Poses are tools only to reopen their saved panels
     assert [t.id for t in tool.TOOLS] == [
         "protein",
         tool.PREPARE_ID,
         tool.INSPECT_ID,
-        tool.MINIMISE_ID,
-        tool.DOCK_ID,
         tool.POSES_ID,
-        tool.RESCORE_ID,
     ]
-    # Prepare, Inspect and Poses reopen their panels, so they are not in the Protein menu
-    # (the viewer's Tools menu holds the first two); minimising and docking are
-    assert [t.id for t in tool.TOOLS if t.menu] == [
-        "protein",
-        tool.MINIMISE_ID,
-        tool.DOCK_ID,
-        tool.RESCORE_ID,
-    ]
+    assert not [t.id for t in tool.TOOLS if t.menu]
     from chemsuite.macromolecule.ui.poses import PosesPanel
 
     assert PosesPanel.tool_id == tool.POSES_ID
 
 
-def test_the_viewer_has_a_menu_of_its_own(window) -> None:
-    titles = [a.text().replace("&", "") for a in window.menuBar().actions()]
-    protein = window.menuBar().actions()[titles.index("Macromolecule")].menu()
-    assert window.tool_action("protein") in protein.actions()
-    chemistry = window.menuBar().actions()[titles.index("Chemistry")].menu()
-    assert window.tool_action("protein") not in chemistry.actions()
+def test_the_viewer_is_a_button_on_the_menu_bar(window, monkeypatch) -> None:
+    bar = window.menuBar()
+    titles = [a.text().replace("&", "") for a in bar.actions()]
+    button = bar.actions()[titles.index("Macromolecule")]
+    if bar.isNativeMenuBar():  # macOS: a menu holding the viewer
+        assert button.menu().actions() == [window.tool_action("protein")]
+        return
+    assert button.menu() is None  # a button, not a menu
+    opened = []
+    monkeypatch.setattr(window, "open_tool", lambda t, *a, **k: opened.append(t.id))
+    button.trigger()
+    assert opened == ["protein"]
 
 
 def test_the_viewer_opens_as_its_own_window(window, qtbot, monkeypatch) -> None:

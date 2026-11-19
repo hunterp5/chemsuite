@@ -75,6 +75,54 @@ def smiles_of(mol: Chem.Mol) -> str:
             return ""
 
 
+def has_3d(mol: Chem.Mol) -> bool:
+    """Whether *mol*'s (first) conformer has 3D coordinates."""
+    return mol.GetNumConformers() > 0 and mol.GetConformer().Is3D()
+
+
+def as_read(mol: Chem.Mol | None) -> Chem.Mol | None:
+    """A molecule a file reader parsed with its explicit hydrogens, as the table keeps it.
+
+    A 3D structure keeps them: their positions are part of a pose, and 3D descriptors and
+    exports need them. Any other loses them, as RDKit's readers do by default, so 2D cells stay
+    hydrogen-free. None when the hydrogens cannot be removed (the record does not parse).
+    """
+    if mol is None or has_3d(mol):
+        return mol
+    with rdBase.BlockLogs():
+        try:
+            return Chem.RemoveHs(mol)
+        except (RuntimeError, ValueError):
+            return None
+
+
+def without_hydrogens(mol: Chem.Mol) -> Chem.Mol:
+    """*mol* without its explicit hydrogens (RDKit's ``RemoveHs``: isotopes and hydrogens that
+    define stereo stay); *mol* itself when it has none or they cannot be removed."""
+    if not any(atom.GetAtomicNum() == 1 for atom in mol.GetAtoms()):
+        return mol
+    with rdBase.BlockLogs():
+        try:
+            return Chem.RemoveHs(mol)
+        except (RuntimeError, ValueError):
+            return mol
+
+
+def with_hydrogens(mol: Chem.Mol, *, first_conformer: bool = False) -> Chem.Mol:
+    """*mol* with every hydrogen an atom, placed on each conformer; *mol* itself when it has
+    none to add or they cannot be added. *first_conformer* keeps only the first conformer,
+    which is much quicker for a large ensemble."""
+    if not any(atom.GetTotalNumHs() for atom in mol.GetAtoms()):
+        return mol
+    if first_conformer and mol.GetNumConformers() > 1:
+        mol = Chem.Mol(mol, confId=mol.GetConformer().GetId())
+    with rdBase.BlockLogs():
+        try:
+            return Chem.AddHs(mol, addCoords=True)
+        except (RuntimeError, ValueError):
+            return mol
+
+
 def has_query_atoms(mol: Chem.Mol) -> bool:
     """Whether *mol* has wildcard or atom-list atoms (molfile A, Q, X, M, L, ...), which SMILES
     cannot write. R-groups are not counted: SMILES writes them as ``[1*]``."""

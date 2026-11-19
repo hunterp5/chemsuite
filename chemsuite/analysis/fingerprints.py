@@ -23,6 +23,7 @@ which BLAS does far faster than pairwise loops while holding only a tile in memo
 
 from __future__ import annotations
 
+import functools
 import math
 import weakref
 from collections.abc import Callable, Iterator, Sequence
@@ -116,24 +117,118 @@ KINDS: dict[str, FingerprintKind] = {
 }
 DEFAULT_KIND = "morgan2"
 
+# -- variants: another size, radius, or counts ---------------------------------------------------
+#: kinds made by a hashing generator: their size can change, and they can count
+SIZED = ("morgan2", "morgan3", "fcfp4", "rdkit", "atompair", "torsion")
+#: kinds with a radius
+RADIUS = {"morgan2": 2, "morgan3": 3, "fcfp4": 2}
+SIZES = (512, 1024, 2048, 4096)
+RADII = (1, 2, 3, 4)
+DEFAULT_BITS = 2048
+
+
+@dataclass(frozen=True)
+class Variant:
+    """A fingerprint kind with its size, radius and counting spelled out."""
+
+    base: str
+    bits: int
+    radius: int | None
+    counts: bool
+
+    @property
+    def key(self) -> str:
+        """The base key when nothing differs from it, else ``base@b4096,r3,c``."""
+        parts = []
+        if self.bits != KINDS[self.base].bits:
+            parts.append(f"b{self.bits}")
+        if self.radius is not None and self.radius != RADIUS[self.base]:
+            parts.append(f"r{self.radius}")
+        if self.counts:
+            parts.append("c")
+        return f"{self.base}@{','.join(parts)}" if parts else self.base
+
+
+def variant(base: str, bits: int | None = None, radius: int | None = None,
+            counts: bool = False) -> str:  # fmt: skip
+    """The key of *base* (a key of :data:`KINDS`) with another size, radius or counting.
+
+    Only kinds in :data:`SIZED` take a size or counts, and only those in :data:`RADIUS` a
+    radius; anything else raises ``ValueError``.
+    """
+    if base not in KINDS:
+        raise ValueError(f"unknown fingerprint {base!r}")
+    if (bits not in (None, KINDS[base].bits) or counts) and base not in SIZED:
+        raise ValueError(f"{KINDS[base].title} has a fixed size and no counts")
+    if radius is not None and base not in RADIUS:
+        raise ValueError(f"{KINDS[base].title} has no radius")
+    if bits is not None and bits not in SIZES:
+        raise ValueError(f"a fingerprint has {', '.join(map(str, SIZES))} bits, not {bits}")
+    if radius is not None and radius not in RADII:
+        raise ValueError(f"a radius is 1 to {RADII[-1]}, not {radius}")
+    return Variant(base, bits or KINDS[base].bits, radius, counts).key
+
+
+@functools.cache
+def parse(key: str) -> Variant:
+    """The :class:`Variant` a key names (a plain key is its base kind)."""
+    base, _, rest = key.partition("@")
+    if base not in KINDS:
+        raise ValueError(f"unknown fingerprint {key!r}")
+    bits, radius, counts = KINDS[base].bits, RADIUS.get(base), False
+    for part in filter(None, rest.split(",")):
+        if part == "c":
+            counts = True
+        elif part[:1] == "b" and part[1:].isdigit():
+            bits = int(part[1:])
+        elif part[:1] == "r" and part[1:].isdigit():
+            radius = int(part[1:])
+        else:
+            raise ValueError(f"unknown fingerprint {key!r}")
+    if rest:  # check the values
+        variant(base, bits, radius if base in RADIUS else None, counts)
+    return Variant(base, bits, radius, counts)
+
+
+@functools.cache
+def kind_of(key: str) -> FingerprintKind:
+    """The :class:`FingerprintKind` of any key, a variant's with its own title and bits."""
+    if key in KINDS:
+        return KINDS[key]
+    v = parse(key)
+    base = KINDS[v.base]
+    if v.base in RADIUS:
+        family = "FCFP" if v.base == "fcfp4" else "ECFP"
+        name = f"{'Feature Morgan' if v.base == 'fcfp4' else 'Morgan'} r={v.radius}"
+        short = f"{family}{2 * v.radius}"
+        title = f"{name} ({short}), {v.bits} bits"
+    else:
+        short = base.column
+        title = base.title.replace(f"{base.bits} bits", f"{v.bits} bits")
+    if v.bits != base.bits:
+        short += f" {v.bits}"
+    if v.counts:
+        title, short = f"{title}, counts", f"{short} counts"
+    return FingerprintKind(key, title, v.bits, listed=False, short=short,
+                           pool_min_rows=base.pool_min_rows)  # fmt: skip
+
 
 def _generator(key: str):
-    if key in ("morgan2", "morgan3"):
+    v = parse(key)
+    if v.base in ("morgan2", "morgan3"):
+        return rdFingerprintGenerator.GetMorganGenerator(radius=v.radius, fpSize=v.bits)
+    if v.base == "fcfp4":
         return rdFingerprintGenerator.GetMorganGenerator(
-            radius=2 if key == "morgan2" else 3, fpSize=2048
-        )
-    if key == "fcfp4":
-        return rdFingerprintGenerator.GetMorganGenerator(
-            radius=2,
-            fpSize=2048,
+            radius=v.radius,
+            fpSize=v.bits,
             atomInvariantsGenerator=rdFingerprintGenerator.GetMorganFeatureAtomInvGen(),
         )
-    if key == "rdkit":
-        return rdFingerprintGenerator.GetRDKitFPGenerator(maxPath=7, fpSize=2048)
-    if key == "atompair":
-        return rdFingerprintGenerator.GetAtomPairGenerator(fpSize=2048)
-    if key == "torsion":
-        return rdFingerprintGenerator.GetTopologicalTorsionGenerator(fpSize=2048)
+    if v.base == "rdkit":
+        return rdFingerprintGenerator.GetRDKitFPGenerator(maxPath=7, fpSize=v.bits)
+    if v.base == "atompair":
+        return rdFingerprintGenerator.GetAtomPairGenerator(fpSize=v.bits)
+    if v.base == "torsion":
+        return rdFingerprintGenerator.GetTopologicalTorsionGenerator(fpSize=v.bits)
     return None
 
 
@@ -143,7 +238,7 @@ def row_bytes(kind: FingerprintKind) -> int:
 
 
 def mol_bits(mol: Chem.Mol, key: str, generator=None) -> np.ndarray:
-    """One fingerprint as a bool array of ``KINDS[key].bits``."""
+    """One fingerprint as a bool array of ``kind_of(key).bits``."""
     if key == "maccs":
         vector = MACCSkeys.GenMACCSKeys(mol)
         out = np.zeros(vector.GetNumBits(), dtype=np.uint8)
@@ -194,7 +289,7 @@ def pack(bits: np.ndarray, kind: FingerprintKind) -> np.ndarray:
 def fingerprint_chunk(args: tuple[str, Sequence[Cell]]) -> tuple[np.ndarray, np.ndarray]:
     """``(packed rows, valid flags)`` for one chunk (a picklable worker entry point)."""
     key, cells = args
-    kind = KINDS[key]
+    kind = kind_of(key)
     generator = _generator(key)
     bits = np.zeros((len(cells), kind.bits), dtype=np.bool_)
     valid = np.zeros(len(cells), dtype=np.bool_)
@@ -260,7 +355,7 @@ def compute_fingerprints(
     cancel: CancelToken | None = None,
     chunk_rows: int = CHUNK_ROWS,
 ) -> Fingerprints:
-    kind = KINDS[key]
+    kind = kind_of(key)
     parts: list[np.ndarray] = []
     flags: list[np.ndarray] = []
     done = 0
@@ -278,6 +373,57 @@ def compute_fingerprints(
     return Fingerprints(kind, np.concatenate(parts), np.concatenate(flags))
 
 
+def count_chunk(args: tuple[str, Sequence[Cell]]) -> tuple[np.ndarray, np.ndarray]:
+    """``(counts, valid flags)`` for one chunk: how often each hashed feature occurs, capped
+    at 255 (``uint8``), for a key whose base is in :data:`SIZED` (a picklable entry point)."""
+    key, cells = args
+    v = parse(key)
+    if v.base not in SIZED:
+        raise ValueError(f"{KINDS[v.base].title} has no counts")
+    generator = _generator(key)
+    out = np.zeros((len(cells), v.bits), dtype=np.uint8)
+    valid = np.zeros(len(cells), dtype=np.bool_)
+    with rdBase.BlockLogs():
+        for i, cell in enumerate(cells):
+            try:
+                mol = cell_mol(cell)
+                if mol is None:
+                    continue
+                counts = generator.GetCountFingerprintAsNumPy(mol)
+                out[i] = np.minimum(counts, 255)
+                valid[i] = True
+            except (ValueError, RuntimeError):
+                pass
+    return out, valid
+
+
+def compute_counts(
+    cells: Sequence[Cell],
+    key: str,
+    *,
+    executor: Executor | None = None,
+    progress: Callable[[int, int], None] | None = None,
+    cancel: CancelToken | None = None,
+    chunk_rows: int = CHUNK_ROWS,
+) -> tuple[np.ndarray, np.ndarray]:
+    """``(counts, valid flags)`` for every cell: see :func:`count_chunk`."""
+    parts: list[np.ndarray] = []
+    flags: list[np.ndarray] = []
+    done = 0
+    for counts, valid in ordered_map(
+        count_chunk, _chunks(key, cells, chunk_rows), executor, cancel=cancel
+    ):
+        check(cancel)
+        parts.append(counts)
+        flags.append(valid)
+        done += len(valid)
+        if progress is not None:
+            progress(done, len(cells))
+    if not parts:
+        return np.zeros((0, kind_of(key).bits), np.uint8), np.zeros(0, bool)
+    return np.concatenate(parts), np.concatenate(flags)
+
+
 def as_hex(fps: Fingerprints) -> list[str]:
     """Each row's bits as hexadecimal text, bit 0 first (the high bit of the first byte); a
     row that could not be fingerprinted is ""."""
@@ -292,7 +438,7 @@ def query_fingerprint(mol: Chem.Mol, key: str = DEFAULT_KIND) -> Fingerprints:
     packed, valid = fingerprint_chunk((key, [Chem.MolToSmiles(mol)]))
     if not valid[0]:
         raise ValueError("could not fingerprint the query structure")
-    return Fingerprints(KINDS[key], packed, valid)
+    return Fingerprints(kind_of(key), packed, valid)
 
 
 # -- similarity --------------------------------------------------------------------------------
@@ -659,15 +805,8 @@ def fingerprint_task(
     cache = cache_for(table)
     cached = cache.get(column, key, oids)
     generation = cache.generation(column)
-    cells = None
-    if cached is None:
-        structures = table.column(column)
-        slots = table.slots_of(oids)
-        cells = [
-            blob if blob is not None else (text or None)
-            for blob, text in zip(structures.blobs(slots), structures.displays(slots), strict=True)
-        ]
-    use_pool = cells is not None and len(cells) >= KINDS[key].pool_min_rows
+    cells = _cells(table, column, oids) if cached is None else None
+    use_pool = cells is not None and len(cells) >= kind_of(key).pool_min_rows
 
     def compute(job) -> Fingerprints:
         if cached is not None:
@@ -685,3 +824,33 @@ def fingerprint_task(
             cache.put(column, key, oids, fps, generation)
 
     return compute, remember
+
+
+def _cells(table: Table, column: str, oids: np.ndarray) -> list[Cell]:
+    structures = table.column(column)
+    slots = table.slots_of(oids)
+    return [
+        blob if blob is not None else (text or None)
+        for blob, text in zip(structures.blobs(slots), structures.displays(slots), strict=True)
+    ]
+
+
+def counts_task(
+    table: Table,
+    column: str,
+    key: str,
+    oids: np.ndarray,
+    pool: Callable[[], Executor],
+) -> Callable[..., tuple[np.ndarray, np.ndarray]]:
+    """*compute(progress, cancel)* -> ``(counts, valid)`` of *oids* (see :func:`count_chunk`);
+    counts are not cached. Call this on the GUI thread: it reads the cells now."""
+    cells = _cells(table, column, oids)
+    use_pool = len(cells) >= kind_of(key).pool_min_rows
+
+    def compute(
+        progress: Callable[[int, int], None] | None = None, cancel: CancelToken | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        executor = pool() if use_pool else None
+        return compute_counts(cells, key, executor=executor, progress=progress, cancel=cancel)
+
+    return compute

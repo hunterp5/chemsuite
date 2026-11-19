@@ -55,6 +55,8 @@ from PySide6.QtCore import QByteArray, QLineF, QRectF, Qt, QTimer
 from PySide6.QtGui import QIcon, QPainter, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QDockWidget, QMenu, QWidget
 
+from ..table import highlights
+
 if TYPE_CHECKING:
     from .main_window import MainWindow
 
@@ -518,6 +520,9 @@ def capture(window: MainWindow) -> dict[str, Any]:
     alignments = window.view.alignments()
     if alignments:
         out["alignments"] = alignments
+    atom_highlights = highlights.sources(window.view)
+    if atom_highlights:
+        out["atom_highlights"] = atom_highlights
     search = window.search
     if search.is_open or search.edit.text() or search.history:
         out["search"] = {
@@ -554,6 +559,13 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
         for column, core in alignments.items():
             if isinstance(column, str) and isinstance(core, str) and column in table:
                 window.view.set_alignment(column, core)
+    marked = saved.get("atom_highlights")
+    if isinstance(marked, dict):
+        table = window.workspace.table
+        for column, source in marked.items():
+            named = isinstance(column, str) and isinstance(source, str)
+            if named and column in table and source in table:
+                highlights.set_source(window.view, column, source)
     search = saved.get("search")
     if isinstance(search, dict):
         bar = window.search

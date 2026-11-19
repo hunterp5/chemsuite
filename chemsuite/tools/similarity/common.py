@@ -22,18 +22,26 @@ from collections.abc import Callable
 import numpy as np
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QListWidget,
     QListWidgetItem,
     QRadioButton,
+    QSpinBox,
     QWidget,
 )
 
+from chemsuite.analysis.clustering import SCALINGS
 from chemsuite.analysis.fingerprints import (
     DEFAULT_KIND,
     KINDS,
     METRICS,
+    RADII,
+    RADIUS,
+    SIZED,
+    SIZES,
     Fingerprints,
+    variant,
 )
 from chemsuite.analysis.fingerprints import fingerprint_task as cached_fingerprint_task
 from chemsuite.app.document.tools import ToolContext
@@ -76,6 +84,10 @@ class FeatureChooser(QWidget):
 
     With *both* there is no "Compare by": the Fingerprint field (which has a "None" choice) and
     the number columns are always shown, and any combination of the two is used.
+
+    A *more* section (with *both*) adds how the features are made: the fingerprint's size,
+    radius and counting, the fingerprints' share when columns are used too, and how the
+    columns are scaled.
     """
 
     changed = Signal()
@@ -88,6 +100,7 @@ class FeatureChooser(QWidget):
         numbers_allowed: bool = True,
         section,
         both: bool = False,
+        more=None,
     ):
         super().__init__()
         self.ctx = ctx
@@ -151,6 +164,8 @@ class FeatureChooser(QWidget):
         )
         self.columns.setMaximumHeight(120)
         self._show_metric = metric
+        self.more = more
+        self._build_more(more)
         if not ctx.structure_columns():
             if self._free:
                 self.kind.setCurrentIndex(self.kind.findData(None))
@@ -166,7 +181,57 @@ class FeatureChooser(QWidget):
             self.columns.itemChanged,
         ):
             signal.connect(lambda *_: self._changed())
+        for signal in (
+            self.size.currentIndexChanged,
+            self.radius.valueChanged,
+            self.count.toggled,
+            self.weight.valueChanged,
+            self.scaling.currentIndexChanged,
+        ):
+            signal.connect(lambda *_: self.changed.emit())
         self._changed()
+
+    def _build_more(self, more) -> None:
+        """How the features are made (see the class notes); the rows go in *more*."""
+        self.size = QComboBox()
+        for bits in SIZES:
+            self.size.addItem(f"{bits:,} bits", bits)
+        self.radius = QSpinBox()
+        self.radius.setRange(RADII[0], RADII[-1])
+        self.count = QCheckBox("Count each feature")
+        self.weight = QSpinBox()
+        self.weight.setRange(0, 100)
+        self.weight.setSuffix(" %")
+        self.weight.setValue(50)
+        self.scaling = QComboBox()
+        for key, title in SCALINGS.items():
+            self.scaling.addItem(title, key)
+        self._kind_shown = None  # the kind whose size and radius the boxes show
+        if more is not None:
+            more.row(
+                "Fingerprint size",
+                self.size,
+                help="Bits the features are folded onto: more bits, fewer collisions.",
+            )
+            more.row(
+                "Radius", self.radius, help="Bonds out from each atom: 2 is ECFP4, 3 is ECFP6."
+            )
+            more.row(
+                "Counts",
+                self.count,
+                help="How often each feature occurs, not only whether it does. Counts are "
+                "compared by Euclidean-type distances, not Jaccard.",
+            )
+            more.row(
+                "Fingerprint weight",
+                self.weight,
+                help="The fingerprints' share when number columns are ticked too; the "
+                "columns get the rest.",
+            )
+            more.row("Column scaling", self.scaling,
+                     help="How the number columns are put on one scale. Z-score: mean 0, "
+                     "standard deviation 1. Min-max: 0 to 1. Robust: median 0, interquartile "
+                     "range 1, so outliers weigh less. None: as they are.")  # fmt: skip
 
     def _changed(self) -> None:
         if self._free:
@@ -180,7 +245,32 @@ class FeatureChooser(QWidget):
             self._show(self.columns, not self.fingerprints())
         kind = KINDS.get(self.kind.currentData())
         self.section.set_help(self.kind, kind.help if kind is not None else "")
+        if self.more is not None:
+            self._show_more(kind)
         self.changed.emit()
+
+    def _show_more(self, kind) -> None:
+        key = kind.key if kind is not None else None
+        if key != self._kind_shown:  # a new kind starts from its own size and radius
+            self._kind_shown = key
+            if kind is not None:
+                self.size.setCurrentIndex(max(0, self.size.findData(kind.bits)))
+                self.radius.setValue(RADIUS.get(key, 2))
+        more = self.more
+        bits = self.uses_fingerprints()
+        more.set_row_visible(self.size, bits and key in SIZED)
+        more.set_row_visible(self.radius, bits and key in RADIUS)
+        more.set_row_visible(self.count, bits and key in SIZED)
+        more.set_row_visible(self.weight, self.both())
+        more.set_row_visible(self.scaling, self.uses_columns() and bool(self.number_columns()))
+
+    def uses_fingerprints(self) -> bool:
+        """Fingerprints are part of the features (alone or with columns)."""
+        return self.fingerprints() or self.both()
+
+    def uses_columns(self) -> bool:
+        """Number columns are part of the features (alone or with fingerprints)."""
+        return self.both() or not self.fingerprints()
 
     def _show(self, field: QWidget, visible: bool) -> None:
         self.section.set_row_visible(field, visible)
@@ -231,6 +321,40 @@ class FeatureChooser(QWidget):
         if self.both():
             return f"{bits} and {', '.join(self.number_columns())}"
         return ", ".join(self.number_columns())
+
+    def fingerprint_key(self) -> str | None:
+        """The fingerprint with its chosen size and radius (never counts: see
+        :meth:`counts`); None for none."""
+        base = self.kind.currentData()
+        if base is None or not self.uses_fingerprints():
+            return None
+        if self.more is None or base not in SIZED:
+            return base
+        radius = self.radius.value() if base in RADIUS else None
+        return variant(base, self.size.currentData(), radius)
+
+    def counts(self) -> bool:
+        """Count fingerprints rather than bits."""
+        return self.more is not None and self.count.isChecked() and self.kind.currentData() in SIZED
+
+    def bits(self) -> bool:
+        """Fingerprint bits alone: what Jaccard-type distances need."""
+        return self.fingerprints() and not self.counts()
+
+    def fingerprint_weight(self) -> float:
+        return self.weight.value() / 100.0
+
+    def column_scaling(self) -> str:
+        return self.scaling.currentData()
+
+    def remembered(self) -> dict[str, QWidget]:
+        """The fields a dialog remembers (see ``ToolDialog.remember``): not the structure
+        column or the ticked columns, which belong to one table."""
+        fields = {"fingerprint": self.kind}
+        if self.more is not None:
+            fields |= {"size": self.size, "radius": self.radius, "counts": self.count,
+                       "weight": self.weight, "scaling": self.scaling}  # fmt: skip
+        return fields
 
     def number_values(self, oids: np.ndarray) -> list[np.ndarray]:
         return [numbers(self.ctx.table, n, oids) for n in self.number_columns()]

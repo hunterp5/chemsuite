@@ -138,7 +138,7 @@ SEPARATOR_STYLE = (
 PANEL_MIN_WIDTH = 360
 #: tools that share a submenu but come from different modules, in the order shown
 MENU_ORDER: dict[tuple[str, ...], tuple[str, ...]] = {
-    ("Data",): ("cluster", "binning", "space_map", "som"),
+    ("Data",): ("cluster", "binning"),
     ("Tools",): ("calculator", "notepad"),
     ("Chemistry", "3D"): ("conformers", "superpose"),
     ("Chemistry", "Reaction"): ("split-reaction", "retrosynthesis", "enumerate-products"),
@@ -284,8 +284,7 @@ class MainWindow(QMainWindow):
             freeze=lambda count: self.view.set_frozen(count),
             frozen=lambda: self.view.frozen_count,
             align=self.align_drawings,
-            unalign=lambda name: self.view.set_alignment(name, None),
-            aligned=lambda name: name in self.view.alignments(),
+            view=self.view,
         )
         self._lists = ListActions(
             self,
@@ -613,12 +612,7 @@ class MainWindow(QMainWindow):
             )
         )
         edit.addAction(
-            A(
-                "edit.clear_selection",
-                "Clear Selection",
-                self.clear_selection,
-                "Ctrl+Shift+A",
-            )
+            A("edit.clear_selection", "Clear Selection", self.clear_selection, "Ctrl+Shift+A")
         )
         edit.addAction(
             A("edit.delete_rows", "&Delete Selection", self.delete_rows, "Ctrl+Backspace")
@@ -705,16 +699,16 @@ class MainWindow(QMainWindow):
         self._building = "Data"
         data.addSeparator()
         scoring = _menu(data, "S&coring")  # tools fill it; Cluster and Bin Values follow
-        clusters_end = data.addSeparator()  # Dimensionality Reduction, Self-Organizing Map | here
-        sar = _menu(data, "S&AR")  # tools fill it
+        clusters_end = data.addSeparator()
         plot = _menu(data, "&Plot")
+        dimred = _menu(data, "&Dimensionality Reduction")  # the maps and the SOM
+        medchem = _menu(data, "&MedChem")  # then Constellation Plot, TMAP, Chemical Space Network
+        plots_end = data.addSeparator()
+        sar = _menu(data, "S&AR")  # tools fill it
         data.addSeparator()
-        toggle = self.filter_dock.toggleViewAction()
-        toggle.setText("&Filters")
-        register("view.filters", "Filters", "Data", ["Ctrl+Shift+F"])
-        self._commands["view.filters"] = toggle
-        data.addAction(toggle)
         data.addMenu(search)
+        filters = self.filter_dock.toggleViewAction()  # shows or hides the pane, unticked
+        data.addAction(A("view.filters", "&Filters", filters.trigger, "Ctrl+Shift+F"))
         menus: dict[tuple[str, ...], Any] = {
             ("File",): file_menu,
             ("File", "Export"): export_menu,
@@ -730,10 +724,12 @@ class MainWindow(QMainWindow):
             ("Data", "Plot"): plot,
             ("Data", "Table"): table_menu,
             ("Data", "Scoring"): scoring,
+            ("Data", "Dimensionality Reduction"): dimred,
+            ("Data", "MedChem"): medchem,
             ("Data", "SAR"): sar,
         }
         #: tools in these menus go before this action instead of at the end
-        self._tool_slots = {("Data", "Search"): search_tools, ("Data",): sar.menuAction()}
+        self._tool_slots = {("Data", "Search"): search_tools, ("Data",): plots_end}
         places = {"standardize_values": values_end, "calculator": notes_end, "notepad": notes_end}
         places |= {"standardize": standardize_end, "cluster": clusters_end, "binning": clusters_end}
         self._tool_places = places  # these tools go before these actions
@@ -742,7 +738,7 @@ class MainWindow(QMainWindow):
         data.addSeparator()  # the Browser, in a section of its own at the bottom
         data.addAction(self._tool_actions[BROWSER_TOOL])
 
-        self._building = "Settings"  # after the tool menus (Macromolecule); there is no Help
+        self._building = "Settings"  # after the Macromolecule button; there is no Help
         settings = bar.addMenu("&Settings")
         for page, title in PAGES.items():  # the first takes Ctrl+, (the Preferences key)
             first = page == "appearance"
@@ -795,7 +791,7 @@ class MainWindow(QMainWindow):
         register(
             f"tool.{tool.id}",
             tool.title,
-            " ▸ ".join(tool.menu),
+            " ▸ ".join(tool.menu) or tool.bar_button.replace("&", ""),
             [tool.shortcut] if tool.shortcut else [],
         )
         missing = tool.missing()
@@ -806,8 +802,9 @@ class MainWindow(QMainWindow):
         action.triggered.connect(lambda _checked=False, t=tool: self.open_tool(t))
         self._tool_actions[tool.id] = action
         self._commands[f"tool.{tool.id}"] = action
-        if not tool.menu:  # the window places it (Data ▸ Browser)
+        if not tool.menu:  # the window places it (Data ▸ Browser) or it is a menu-bar button
             self.addAction(action)
+            menu_corner.bar_button(self.menuBar(), tool.bar_button, action)
             return
         menu = menus[tool.menu]
         slot = self._tool_places.get(tool.id) or self._tool_slots.get(tool.menu)

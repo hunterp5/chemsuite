@@ -29,11 +29,14 @@ from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import Executor
 from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy as np
 from rdkit import Chem, rdBase
-from rdkit.Chem import rdMMPA
+from rdkit.Chem import rdDepictor, rdMMPA
+from rdkit.Geometry import Point2D
 
+from chemsuite.core.depict import depiction_mol
 from chemsuite.core.jobs import CancelToken, check
 from chemsuite.core.jobs.parallel import ordered_map
 from chemsuite.core.mols import mol_from_blob, mol_from_text
@@ -238,6 +241,114 @@ def transforms(pairs: Sequence[Pair], *, min_pairs: int = 1) -> list[Transform]:
 
 def _orient_key(group: str) -> tuple:
     return (group != HYDROGEN, len(group), group)
+
+
+@dataclass(frozen=True)
+class _Core:
+    """A constant part without its attachment point, laid out once."""
+
+    mol: Chem.Mol  # the constant part minus the dummy atom, with 2D coordinates
+    attach: int  # the core atom the changing part hangs from
+
+
+@lru_cache(maxsize=512)
+def _core(constant: str) -> _Core | None:
+    with rdBase.BlockLogs():
+        mol = Chem.MolFromSmiles(constant)
+        if mol is None:
+            return None
+        dummy = next((a for a in mol.GetAtoms() if a.GetAtomicNum() == 0), None)
+        if dummy is None or dummy.GetDegree() != 1:
+            return None
+        attach = dummy.GetNeighbors()[0]
+        attach.SetNoImplicit(False)  # the hydrogen cut fixed its hydrogen count
+        attach.SetNumExplicitHs(0)
+        edit = Chem.RWMol(mol)
+        edit.RemoveAtom(dummy.GetIdx())
+        core = edit.GetMol()
+        try:
+            Chem.SanitizeMol(core)
+            rdDepictor.Compute2DCoords(core)
+        except (ValueError, RuntimeError):
+            return None
+    index = attach.GetIdx() - (1 if attach.GetIdx() > dummy.GetIdx() else 0)
+    return _Core(core, index)
+
+
+def pair_depiction(
+    mol: Chem.Mol, constant: str, group: str
+) -> tuple[Chem.Mol, list[int], list[int]]:
+    """*mol* (one compound of a pair) laid out on the pair's *constant* part, with the atoms
+    and bonds of its changing *group* to highlight.
+
+    Every compound sharing a constant part is drawn the same way round, so a pair reads as one
+    change. For a hydrogen group only the atom it sits on is highlighted. When the constant
+    part is not found (a drawing that differs, e.g. in charge), the usual drawing comes back
+    with nothing highlighted.
+    """
+    shown = depiction_mol(mol)
+    core = _core(constant)
+    if core is None:
+        return shown, [], []
+    expected = 0 if group == HYDROGEN else _heavy(group)
+    with rdBase.BlockLogs():
+        matches = shown.GetSubstructMatches(core.mol, uniquify=False, maxMatches=1000)
+    for match in matches:
+        changed = _changed(shown, match, match[core.attach], expected)
+        if changed is None:
+            continue
+        copy = Chem.Mol(shown)
+        positions = core.mol.GetConformer().GetPositions()
+        pinned = {
+            atom: Point2D(float(positions[i][0]), float(positions[i][1]))
+            for i, atom in enumerate(match)
+        }
+        with rdBase.BlockLogs():
+            try:
+                rdDepictor.Compute2DCoords(copy, coordMap=pinned, canonOrient=False)
+            except (ValueError, RuntimeError):
+                copy = shown
+        atoms, bonds = changed
+        return copy, atoms, bonds
+    return shown, [], []
+
+
+def _changed(
+    mol: Chem.Mol, match: Sequence[int], attach: int, expected: int
+) -> tuple[list[int], list[int]] | None:
+    """The changing part's atoms and bonds when *match* leaves exactly it hanging from
+    *attach*: one connected piece of *expected* heavy atoms (none for hydrogen)."""
+    matched = set(match)
+    rest = {a.GetIdx() for a in mol.GetAtoms() if a.GetAtomicNum() > 1} - matched
+    if len(rest) != expected:
+        return None
+    if expected == 0:
+        return ([attach], []) if mol.GetAtomWithIdx(attach).GetTotalNumHs() else None
+    cut = [
+        b
+        for b in mol.GetBonds()
+        if (b.GetBeginAtomIdx() in rest) != (b.GetEndAtomIdx() in rest)
+        and b.GetBeginAtomIdx() in matched | rest
+        and b.GetEndAtomIdx() in matched | rest
+    ]
+    if len(cut) != 1 or attach not in (cut[0].GetBeginAtomIdx(), cut[0].GetEndAtomIdx()):
+        return None
+    start = cut[0].GetOtherAtomIdx(attach)
+    reached, todo = {start}, [start]
+    while todo:
+        for neighbor in mol.GetAtomWithIdx(todo.pop()).GetNeighbors():
+            index = neighbor.GetIdx()
+            if index in rest and index not in reached:
+                reached.add(index)
+                todo.append(index)
+    if reached != rest:  # not one connected piece
+        return None
+    inside = [
+        b.GetIdx()
+        for b in mol.GetBonds()
+        if b.GetBeginAtomIdx() in rest and b.GetEndAtomIdx() in rest
+    ]
+    return sorted(rest), [cut[0].GetIdx(), *inside]
 
 
 def readable(group: str) -> str:

@@ -85,6 +85,14 @@ class SettingsHub(QObject):
         change(user)
         return self.save(user)
 
+    def update_quietly(self, change: Callable[[Settings], None]) -> None:
+        """Apply *change* to the user's settings and save, telling no one: for what nothing
+        on screen shows (a dialog's remembered values), so the app is not restyled."""
+        user = self.store.user.copy()
+        change(user)
+        self.store.save(user)
+        self._effective = self.store.effective()
+
     def save(self, user: Settings) -> Settings:
         self.store.save(user)
         return self._broadcast(self.store.effective())

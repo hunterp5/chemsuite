@@ -37,7 +37,14 @@ from rdkit.Chem import rdDepictor
 from chemsuite.conformers import energies
 from chemsuite.core.jobs import CancelToken, Progress, check
 from chemsuite.core.jobs.parallel import ordered_map
-from chemsuite.core.mols import looks_like_molblock, mol_to_blob, smiles_of
+from chemsuite.core.mols import (
+    as_read,
+    looks_like_molblock,
+    mol_to_blob,
+    smiles_of,
+    with_hydrogens,
+    without_hydrogens,
+)
 from chemsuite.core.table import Table
 from chemsuite.core.table.columns import StructureColumn
 
@@ -50,6 +57,9 @@ BLOCK_BYTES = 1 << 20  # ~300 drug-like records per worker task
 _RECORD_END = re.compile(r"^\$\$\$\$[^\n]*(?:\n|\Z)", re.MULTILINE)
 _FIELD_NAME = re.compile(r"<([^>]*)>")
 _EMPTY_MOLBLOCK = "\n  chemsuite\n\n  0  0  0  0  0  0  0  0  0  0999 V2000\nM  END"
+#: what an export does to hydrogens: writes them as stored, adds every one, or removes them
+AS_STORED, ADD_H, REMOVE_H = "stored", "add", "remove"
+HYDROGENS = (AS_STORED, ADD_H, REMOVE_H)
 
 
 # -- reading ------------------------------------------------------------------------------------
@@ -110,7 +120,7 @@ def _parse_record(record: str, out: SdfBlock) -> None:
         molblock, rest = record, ""
     index = len(out.titles)
     out.titles.append(molblock.split("\n", 1)[0].strip())
-    mol = Chem.MolFromMolBlock(molblock) if end >= 0 else None
+    mol = as_read(Chem.MolFromMolBlock(molblock, removeHs=False)) if end >= 0 else None
     if mol is not None and mol.GetNumAtoms() == 0:
         out.blobs.append(b"")  # an empty connection table is a blank structure cell
         out.texts.append("")
@@ -119,7 +129,7 @@ def _parse_record(record: str, out: SdfBlock) -> None:
         out.texts.append(molblock.rstrip("\n"))
     else:
         out.blobs.append(mol_to_blob(mol))
-        out.texts.append(smiles_of(mol) or molblock.rstrip("\n"))
+        out.texts.append(smiles_of(without_hydrogens(mol)) or molblock.rstrip("\n"))
     for name, value in _parse_fields(rest):
         column = out.fields.get(name)
         if column is None:
@@ -191,6 +201,7 @@ def write_sdf(
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
     all_conformers: bool = False,
+    hydrogens: str = AS_STORED,
 ) -> None:
     """Write rows as an SD file. Other columns become data fields (all of them by default).
 
@@ -199,7 +210,11 @@ def write_sdf(
     With *all_conformers*, a row whose molecule has several conformers is written once per
     conformer (lowest energy first, as stored), with a ``Conformer`` field numbering them, and
     each conformer's stored energy, relative energy, population and force field as fields.
+    *hydrogens* writes the hydrogens as stored, adds every one (placed on each conformer) or
+    removes them (:data:`HYDROGENS`).
     """
+    if hydrogens not in HYDROGENS:
+        raise ValueError(f"unknown hydrogens option {hydrogens!r}")
     structure = structure or first_structure_column(table)
     column = table.column(structure)
     if not isinstance(column, StructureColumn):
@@ -216,12 +231,15 @@ def write_sdf(
             values = {name: table.column(name).displays(chunk) for name in fields}
             for i, slot in enumerate(chunk.tolist()):
                 title = titles.display(slot) if titles is not None else ""
-                mol = column.mol(slot) if all_conformers else None
-                conformers = mol.GetNumConformers() if mol is not None else 0
+                mol = column.mol(slot)
+                if mol is not None:
+                    mol = _with(mol, hydrogens)
+                conformers = mol.GetNumConformers() if all_conformers and mol is not None else 0
                 if conformers > 1:
-                    blocks = _conformer_blocks(column, slot, title, mol)
+                    blocks = _conformer_blocks(mol, title)
                 else:
-                    blocks = [_molblock(column, slot, title)]
+                    text = column.display(slot) if mol is None else ""
+                    blocks = [_molblock(mol, text, title)]
                 for index, block in enumerate(blocks):
                     conformer = index if conformers > 1 else None
                     handle.write(block)
@@ -272,9 +290,18 @@ def field_value(text: str) -> str:
     return "\n".join(f" {line}" if line.startswith("$$$$") else line for line in lines)
 
 
-def _molblock(column: StructureColumn, slot: int, title: str, conformer: int | None = None) -> str:
-    """One molfile; *conformer* picks a conformer by position (default: the first)."""
-    mol = column.mol(slot)
+def _with(mol: Chem.Mol, hydrogens: str) -> Chem.Mol:
+    """*mol* with its hydrogens as the export asks."""
+    if hydrogens == ADD_H:
+        return with_hydrogens(mol)
+    if hydrogens == REMOVE_H:
+        return without_hydrogens(mol)
+    return mol
+
+
+def _molblock(mol: Chem.Mol | None, text: str, title: str, conformer: int | None = None) -> str:
+    """One molfile of *mol*, or of the cell's *text* when it holds no valid molecule;
+    *conformer* picks a conformer by position (default: the first)."""
     if mol is not None:
         with rdBase.BlockLogs():
             if not mol.GetNumConformers():
@@ -283,7 +310,6 @@ def _molblock(column: StructureColumn, slot: int, title: str, conformer: int | N
             conf_id = mol.GetConformers()[conformer].GetId() if conformer is not None else -1
             block = _writes(mol, conf_id)
     else:
-        text = column.display(slot)
         block = text if looks_like_molblock(text) else _EMPTY_MOLBLOCK
     return _titled(block, title)
 
@@ -303,13 +329,13 @@ def _titled(block: str, title: str) -> str:
     return f"{title.splitlines()[0] if title else ''}\n{rest}".rstrip("\n")
 
 
-def _conformer_blocks(column: StructureColumn, slot: int, title: str, mol: Chem.Mol) -> list[str]:
-    """A molfile per conformer of *mol* (the molecule in *slot*), in order, the same text
+def _conformer_blocks(mol: Chem.Mol, title: str) -> list[str]:
+    """A molfile per conformer of *mol*, in order, the same text
     RDKit writes for each. RDKit copies the whole ensemble for every molfile, which made
     hundreds of conformers slow, so a V2000 molfile is written once and each conformer's
     coordinates put in its atom lines. Wedge flags follow each conformer's geometry, so a
     molecule with any is written one conformer at a time from a one-conformer copy."""
-    first = _molblock(column, slot, title, 0)
+    first = _molblock(mol, "", title, 0)
     lines = first.split("\n")
     atoms = mol.GetNumAtoms()
     bonds = lines[4 + atoms : 4 + atoms + mol.GetNumBonds()] if len(lines) > 3 else []

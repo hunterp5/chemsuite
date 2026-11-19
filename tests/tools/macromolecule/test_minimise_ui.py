@@ -80,8 +80,7 @@ def shown(window, protein: str) -> bool:
     return display.visible
 
 
-def test_minimise_is_a_tool_and_in_the_viewers_tools_menu(opened) -> None:
-    assert tool.MINIMISE_ID in [t.id for t in tool.TOOLS]
+def test_minimise_is_in_the_viewers_tools_menu(opened) -> None:
     panel = ToolContext(opened).find_panel("protein")
     menu = next(a.menu() for a in panel.menu_bar.actions() if a.text() == "Tools")
     menu.aboutToShow.emit()

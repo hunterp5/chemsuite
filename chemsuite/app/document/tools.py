@@ -53,6 +53,7 @@ from chemsuite.core.table.columns import REACTION, STRUCTURE, Column, StructureC
 from chemsuite.plotting.data import scope_oids
 
 from ..shell.jobs import QUEUE, Job
+from ..table.highlights import set_source
 from ..widgets.panel import ToolPanel as ToolPanel  # what a tool's panel is built on
 from .panel_window import PanelWindow
 
@@ -83,6 +84,8 @@ class Tool:
     saved panels this tool restores (a tool that was renamed or merged into another).
     ``open_at`` opens the tool at a row (a cell's Browse) or, given None, as Data ▸ Browser
     does: the window asks the tool with :data:`BROWSER_TOOL`'s id, never importing it.
+    ``bar_button`` (with an empty ``menu``) puts a button of that name on the menu bar that
+    opens the tool (a menu of that name holding it on macOS, whose menu bar has no buttons).
     """
 
     id: str
@@ -99,6 +102,7 @@ class Tool:
     #: a separator follows this tool in its menu (ends a group)
     separator_after: bool = False
     open_at: Callable[[ToolContext, int | None], Any] | None = None
+    bar_button: str = ""
 
     def missing(self) -> list[str]:
         """Required modules that cannot be imported."""
@@ -450,6 +454,21 @@ class ToolContext:
         """
         return self._window.tool_panels.add_window(widget, title, menu_bar, on_close, docks)
 
+    def tool_options(self, key: str) -> dict:
+        """The values the dialog *key* (its tool id) was last run with, for this user."""
+        from ..shell.settings_hub import settings_hub
+
+        return dict(settings_hub().user.tool_options.get(key, {}))
+
+    def set_tool_options(self, key: str, values: dict) -> None:
+        """Remember *values* as the dialog *key*'s (JSON scalars or lists of them)."""
+        from ..shell.settings_hub import settings_hub
+
+        def change(settings) -> None:
+            settings.tool_options[key] = dict(values)
+
+        settings_hub().update_quietly(change)
+
     def show_dialog(self, dialog: QDialog) -> QDialog:
         """Show a tool's dialog without blocking the window.
 
@@ -479,6 +498,22 @@ class ToolContext:
                 return None
             size = QSize(*fitted_size(mol, size.width(), size.height()))
         return window._images.image(structures, slot, size, window.devicePixelRatioF(), dark)
+
+    def highlight_atoms(self, column: str, source: str | None) -> bool:
+        """Mark the atoms *source*'s values name (``C7``, or ``C7 0.81, N3 0.05``) in the
+        drawings of structure *column*; None stops.
+
+        Display only, saved with the window's layout: the structures are untouched, and the
+        drawings follow *source* if it is written again. Returns False when either column is
+        not there, or *column* is not a structure column.
+        """
+        table = self.table
+        if column not in table or table.kind(column) != STRUCTURE:
+            return False
+        if source is not None and source not in table:
+            return False
+        set_source(self._window.view, column, source)
+        return True
 
     def add_compound(self, text: str) -> int | None:
         """Add a structure (SMILES, molfile, InChI) as a new, selected row, one undo step.

@@ -216,7 +216,7 @@ modified.
 | CoMSIA | Added 2026-11-17. MolManager's `comsia.py` (780 lines): 3D-QSAR fields on aligned conformers. Builds on Superpose for the alignment. After QSAR. |
 | Sites of metabolism, CYP inhibition | Added 2026-11-17, see §7.0f and [SOM_PLAN.md](SOM_PLAN.md). Our own model: a score per atom per P450 isoform, then CYP inhibition on the same package. A gradient boosting machine over 34 RDKit atom descriptors and an isoform one-hot (decided 2026-11-18, after measuring it level with a graph network that cost 8.5M parameters). No external tool, no new dependency — scikit-learn is already one — and the trees are vendored in-tree at about 100 KB, so it works offline with no download. |
 | Structural alerts | Added 2026-11-17. RDKit's FilterCatalog sets (PAINS, Brenk, NIH, ZINC and the rest) as columns or a filter: which alerts a row hits and how many. MolManager's `chem/structural_alerts.py` (213 lines) was marked to copy and never was. Probably a tab or group in Calculate Descriptors, as in MolManager. |
-| MMP neighbourhood map and transform ledger | Added 2026-11-17. MolManager's `mmp_neighborhood_analysis.py` and its map, plot and ledger views: a compound's matched-pair neighbours around it, and every transform with its count and mean activity change. Builds on Matched Molecular Pairs. |
+| MMP neighbourhood map and transform ledger | Added 2026-11-17. MolManager's `mmp_neighborhood_analysis.py` and its map, plot and ledger views: a compound's matched-pair neighbours around it, and every transform with its count and mean activity change. Builds on Matched Molecular Pairs. **2026-11-18:** the Matched Pairs panel draws transformations and pairs (the change highlighted), shows each transformation's Δ spread, and lists the current compound's transformations (Current Compound): a first step toward the neighborhood view. |
 
 **Tier 2: external tools or network access (optional, controlled by policy)**
 
@@ -450,8 +450,14 @@ motivated the switch were measured and dropped too. Full record in [SOM_PLAN.md]
 numpy and the batch driver, with a 250 KB `som_gbm.npz` vendored in-tree — no download, no consent
 prompt, and no scikit-learn at run time (the export is refused unless the numpy path reproduces
 scikit-learn's probabilities, measured at 1.1e-16). Molecule-grouped over ten seeds it reaches
-top-1 0.592, top-2 0.727 and top-3 0.813, which is the tie the decision assumed. The tool, the
-highlight on the structure and the user guide are what remain.
+top-1 0.592, top-2 0.727 and top-3 0.813, which is the tie the decision assumed.
+
+**Done (2026-11-18).** Chemistry ▸ Calculate ▸ Sites of Metabolism… writes the ranked sites, the
+top site, its score and an applicability value per isoform, and the sites are marked on the
+structure column's drawings — the best site strongest, weaker scores fainter. That last part is an
+app feature rather than the tool's: a structure column can mark the atoms any column *names*
+(`C7`, or `C7 0.81, N3 0.05`), through **Highlight Atoms ▸** in its header menu, with each name
+checked against the molecule beside it. CYP inhibition (phase C) is next.
 
 Accuracy is quoted on molecule-grouped splits against `PRIMARY_SOM` alone: counting the secondary
 and tertiary annotation tiers as hits would add about 0.10 top-1 for nothing, so every figure in

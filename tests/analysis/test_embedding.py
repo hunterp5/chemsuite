@@ -133,7 +133,7 @@ def test_umap_and_tsne_settings() -> None:
         features, "umap", neighbours=10, metric="manhattan", spread=2.0, min_dist=0.5, epochs=100
     )
     assert _separated(result.coords[:-1], labels)
-    with pytest.raises(ValueError, match="needs fingerprints"):
+    with pytest.raises(ValueError, match="needs fingerprint bits"):
         embed(features, "umap", metric="dice")
     with pytest.raises(ValueError, match="spread"):
         embed(features, "umap", min_dist=0.9, spread=0.5)

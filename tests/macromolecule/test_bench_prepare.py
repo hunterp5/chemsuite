@@ -129,15 +129,17 @@ def _load(name: str):
 def test_chemsuite_pka_values_match_propka() -> None:
     """P2's mark (docs/prepare/p2-review.md): on PKAD-R's test half, chemsuite's RMSE is no
     worse than PROPKA's on the same residues (the null model, every residue at its model pKa,
-    is not yet beaten by either)."""
+    is not yet beaten by either). Residues bound to a metal in the crystal are left out
+    (``pkad_review.metal_bound``): measured in solution, they titrate without it."""
     pkad = _load("pkad_review")
     if not (pkad.DATA / "chemsuite.csv").is_file() or not (pkad.DATA / "propka").is_dir():
         pytest.skip("no PKAD-R outputs")
     found = {m: pkad.predictions(m) for m in ("null", "propka", "chemsuite")}
     shared = [e for e in pkad.entries() if all(e in f for f in found.values())]
-    test = [e for e in shared if not pkad.training(e)]
+    test = [e for e in shared if not pkad.training(e) and pkad.scored(e)]
     rmse = {m: float(np.sqrt(np.mean([(f[e] - e.pka) ** 2 for e in test])))
             for m, f in found.items()}  # fmt: skip
     print(f"PKAD-R test half (n={len(test)}):", {m: round(v, 2) for m, v in rmse.items()})
     assert len(test) > 250
+    assert len([e for e in shared if not pkad.scored(e)]) < 20  # few are metal-bound
     assert rmse["chemsuite"] <= rmse["propka"] + 0.005

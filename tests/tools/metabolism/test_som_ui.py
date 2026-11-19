@@ -119,3 +119,30 @@ def test_every_run_writes_new_columns_with_one_suffix(chem, qtbot) -> None:
     qtbot.waitUntil(lambda: "Sites (3A4) (2)" in table.column_names, timeout=120_000)
     assert "Top Site (3A4) (2)" in table.column_names
     assert "Score (3A4) (2)" in table.column_names
+
+
+def test_a_run_marks_one_isoform_sites_on_the_structures(chem, qtbot) -> None:
+    from chemsuite.app.table.highlights import sources
+    from chemsuite.tools.metabolism.dialog import shown_isoform
+
+    table = chem.workspace.table
+    dialog = chem.open_tool("predict_som")
+    for isoform, box in dialog.isoforms.items():
+        box.setChecked(isoform in ("1A2", "3A4"))
+    dialog.run()
+    qtbot.waitUntil(lambda: "Sites (3A4)" in table.column_names, timeout=120_000)
+
+    # the ranked column of the most prescribed isoform chosen, not the first in model order
+    assert shown_isoform(["1A2", "3A4"]) == "3A4"
+    assert sources(chem.view) == {"SMILES": "Sites (3A4)"}
+    assert "marked on the structures" in chem.statusBar().currentMessage()
+
+    # with the ranked column turned off, the top site alone is marked
+    chem.clear_structure_highlights()
+    dialog = chem.open_tool("predict_som")
+    for isoform, box in dialog.isoforms.items():
+        box.setChecked(isoform == "2D6")
+    dialog.outputs["sites"].setChecked(False)
+    dialog.run()
+    qtbot.waitUntil(lambda: "Top Site (2D6)" in table.column_names, timeout=120_000)
+    assert sources(chem.view) == {"SMILES": "Top Site (2D6)"}

@@ -193,6 +193,55 @@ def test_mmp_in_workers() -> None:
         assert find_pairs(smiles, act, executor=pool) == serial
 
 
+def _symbols(mol, atoms) -> list[str]:
+    return sorted(mol.GetAtomWithIdx(a).GetSymbol() for a in atoms)
+
+
+def test_pair_depiction_highlights_the_change_and_lays_out_the_constant_part_alike() -> None:
+    from chemsuite.sar.mmp import pair_depiction
+
+    smiles = ["Clc1ccc(cc1)C(=O)N", "COc1ccc(cc1)C(=O)N", "c1ccc(cc1)C(=O)N"]
+    pairs = find_pairs(smiles, np.zeros(3))
+    pair = next(p for p in pairs if {p.from_group, p.to_group} == {"Cl[*:1]", "CO[*:1]"})
+    drawn = {}
+    for row, group in ((pair.a, pair.from_group), (pair.b, pair.to_group)):
+        mol, atoms, bonds = pair_depiction(Chem.MolFromSmiles(smiles[row]), pair.constant, group)
+        drawn[smiles[row]] = mol, atoms
+        expected = ["Cl"] if group == "Cl[*:1]" else ["C", "O"]
+        assert _symbols(mol, atoms) == expected
+        assert len(bonds) == len(atoms)  # the cut bond, plus those inside the change
+    # The amide (the constant part) sits in the same place in both drawings.
+    amide = Chem.MolFromSmarts("NC(=O)c")
+    places = []
+    for mol, _atoms in drawn.values():
+        conf = mol.GetConformer()
+        places.append([tuple(conf.GetAtomPosition(a))[:2] for a in mol.GetSubstructMatch(amide)])
+    assert np.allclose(places[0], places[1], atol=0.01)
+
+
+def test_pair_depiction_of_hydrogen_marks_the_atom_it_sits_on() -> None:
+    from chemsuite.sar.mmp import HYDROGEN, pair_depiction
+
+    mol = Chem.MolFromSmiles("c1ccccc1Cl")  # chlorobenzene, the H side of a para H → X pair
+    shown, atoms, bonds = pair_depiction(mol, "Clc1ccc([*:1])cc1", HYDROGEN)
+    assert bonds == [] and len(atoms) == 1
+    chlorine = next(a.GetIdx() for a in shown.GetAtoms() if a.GetSymbol() == "Cl")
+    ring = shown.GetRingInfo().AtomRings()[0]
+    carbon = next(n.GetIdx() for n in shown.GetAtomWithIdx(chlorine).GetNeighbors())
+    # Para to the chlorine's carbon: three ring bonds away.
+    assert len(Chem.GetShortestPath(shown, carbon, atoms[0])) - 1 == 3 and atoms[0] in ring
+
+
+def test_pair_depiction_on_a_symmetric_constant_part_and_a_mismatch() -> None:
+    from chemsuite.sar.mmp import pair_depiction
+
+    mol = Chem.MolFromSmiles("Clc1ccc(Cl)cc1CCO")
+    shown, atoms, _bonds = pair_depiction(mol, "Clc1ccc(Cl)c([*:1])c1", "OCC[*:1]")
+    assert _symbols(shown, atoms) == ["C", "C", "O"]
+    plain, none, no_bonds = pair_depiction(Chem.MolFromSmiles("CCO"), "c1ccc([*:1])cc1", "Cl[*:1]")
+    assert none == [] and no_bonds == [] and plain.GetNumConformers() == 1
+
+
 def test_sali() -> None:
     smiles = ["c1ccccc1CCO", "c1ccccc1CCN", "c1ccccc1CCC", "CCCCCCCCCC"]
     act = np.array([5.0, 8.0, 5.2, np.nan])

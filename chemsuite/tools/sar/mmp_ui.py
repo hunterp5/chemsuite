@@ -18,28 +18,19 @@
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QComboBox,
-    QHBoxLayout,
-    QPushButton,
-    QSpinBox,
-    QSplitter,
-    QVBoxLayout,
-)
+from PySide6.QtWidgets import QComboBox, QSpinBox
 
 from chemsuite.analysis.selectivity import looks_like_assay
-from chemsuite.app.document.tools import ToolContext, ToolPanel
+from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, ToolDialog
 from chemsuite.core.wording import plural
 from chemsuite.plotting.data import number_columns, numbers
-from chemsuite.sar.mmp import Pair, Transform, find_pairs, readable, transforms
-from chemsuite.tools.similarity.common import labels
+from chemsuite.sar.mmp import Pair, Transform, find_pairs, transforms
 
-from .common import RerunPanel, ResultTable, activity_combo, saved_rows, structure_cells
+from .common import RerunPanel, activity_combo, saved_rows, structure_cells
+from .mmp_panel import NO_ACTIVITY, MmpPanel, panel_title, transform_rows
 
 POOL_MIN_ROWS = 1000  # fragmenting is slow per molecule: worth the worker start-up early
-NO_ACTIVITY = "(none)"
 
 
 class MmpDialog(ToolDialog):
@@ -63,7 +54,7 @@ class MmpDialog(ToolDialog):
         inputs.row(
             "Activity",
             self.activity,
-            help="Transformations are summarised with the activity shift across their pairs.",
+            help="Transformations are summarized with the activity shift across their pairs.",
         )
         self.rows = inputs.row("Rows", RowsChoice(ctx, "shown"))
 
@@ -109,8 +100,8 @@ class MmpDialog(ToolDialog):
         return _compute(
             self.ctx,
             recipe,
-            lambda oids, activity, pairs, found, rows: self.finish(
-                oids, activity, recipe["activity"], pairs, found, recipe, rows
+            lambda oids, activity, pairs, found, rows, cells: self.finish(
+                oids, activity, recipe["activity"], pairs, found, recipe, rows, cells
             ),
         )
 
@@ -123,9 +114,10 @@ class MmpDialog(ToolDialog):
         found: list[Transform],
         recipe=None,
         rows: list[list] | None = None,
+        cells: list | None = None,
     ):
         ctx = self.ctx
-        self.panel = MmpPanel(ctx, oids, activity, name, found, recipe, rows)
+        self.panel = MmpPanel(ctx, oids, activity, name, found, recipe, rows, cells)
         ctx.add_panel(self.panel, self.panel.title())
         ctx.show_message(
             f"Found {plural(len(pairs), 'matched pair')}; "
@@ -134,96 +126,9 @@ class MmpDialog(ToolDialog):
         return self.panel
 
 
-class MmpPanel(ToolPanel):
-    """Transformations, and the pairs behind the chosen one."""
-
-    tool_id = "mmp"
-
-    def __init__(
-        self,
-        ctx: ToolContext,
-        oids,
-        activity,
-        name: str,
-        found: list[Transform],
-        recipe=None,
-        rows: list[list] | None = None,
-    ):
-        """*rows* are :func:`transform_rows` of *found*, made in the job (naming the groups
-        is slow for thousands of transformations)."""
-        super().__init__()
-        self.ctx = ctx
-        self.recipe = recipe or {}
-        self.oids = np.asarray(oids)
-        self.activity = np.asarray(activity)
-        self.name = name
-        self.found = found
-        self.names = labels(ctx, self.oids)
-        self.transforms = ResultTable(["From", "To", "Pairs", "Mean Δ", "SD", "Up", "Down"])
-        self.transforms.fill(rows if rows is not None else transform_rows(found), found)
-        self.transforms.setToolTip(
-            f"Δ = {name} of the “to” compound minus the “from” compound."
-            if name != NO_ACTIVITY
-            else "No activity column was chosen."
-        )
-        self.pairs = ResultTable(["From compound", "To compound", "From", "To", "Δ"])
-        self.transforms.itemSelectionChanged.connect(self.show_pairs)
-        self.transforms.sortByColumn(2, Qt.SortOrder.DescendingOrder)
-        select = QPushButton("Select Compounds")
-        select.setToolTip("Select the compounds in the chosen transformations or pairs.")
-        select.clicked.connect(lambda: self.select_rows())
-        copy = QPushButton("Copy Transformations")
-        copy.clicked.connect(lambda: self.transforms.copy_text())
-        split = QSplitter(Qt.Orientation.Vertical)
-        split.addWidget(self.transforms)
-        split.addWidget(self.pairs)
-        buttons = QHBoxLayout()
-        buttons.addWidget(select)
-        buttons.addStretch(1)
-        buttons.addWidget(copy)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.addWidget(split, 1)
-        layout.addLayout(buttons)
-
-    def title(self) -> str:
-        return _title(self.name)
-
-    def show_pairs(self) -> None:
-        chosen = [t for t in self.transforms.selected_data() if t is not None]
-        pairs = [p for t in chosen for p in t.pairs]
-        self.pairs.fill(
-            [
-                [self.names[p.a], self.names[p.b], self.activity[p.a], self.activity[p.b], p.delta]
-                for p in pairs
-            ],
-            pairs,
-        )
-        heads = ["From compound", "To compound", f"From {self.name}", f"To {self.name}", "Δ"]
-        self.pairs.setHorizontalHeaderLabels(heads)
-
-    def select_rows(self) -> list[int]:
-        pairs = [p for p in self.pairs.selected_data() if p is not None]
-        if pairs:
-            rows = {r for p in pairs for r in (p.a, p.b)}
-        else:
-            chosen = [t for t in self.transforms.selected_data() if t is not None]
-            rows = set().union(*(t.rows() for t in chosen)) if chosen else set()
-        oids = self.oids[sorted(rows)].tolist()
-        if oids:
-            self.ctx.selection.set(oids, "mmp")
-        return oids
-
-    def state(self) -> dict:
-        return dict(self.recipe)
-
-    def close_panel(self) -> None:
-        pass
-
-
 def _compute(ctx: ToolContext, recipe: dict, done):
     """Find the pairs *recipe* describes in the background; then
-    ``done(oids, activity, pairs, found, rows)``."""
+    ``done(oids, activity, pairs, found, rows, cells)`` (*cells*: the structures searched)."""
     oids = np.asarray(recipe["oids"], dtype=np.int64)
     cells = structure_cells(ctx, recipe["structure"], oids)
     name = recipe["activity"]
@@ -243,7 +148,9 @@ def _compute(ctx: ToolContext, recipe: dict, done):
         found = transforms(pairs, min_pairs=min_pairs)
         return pairs, found, transform_rows(found)
 
-    return ctx.run("Finding matched pairs…", work, lambda result: done(oids, activity, *result))
+    return ctx.run(
+        "Finding matched pairs…", work, lambda result: done(oids, activity, *result, cells)
+    )
 
 
 def restore(ctx: ToolContext, state: dict) -> RerunPanel:
@@ -251,23 +158,11 @@ def restore(ctx: ToolContext, state: dict) -> RerunPanel:
     name = state["activity"]
     columns = [state["structure"]] + ([name] if name != NO_ACTIVITY else [])
     recipe = {**state, "oids": saved_rows(ctx, state, *columns)}
-    holder = RerunPanel(MmpPanel.tool_id, _title(name), recipe)
+    holder = RerunPanel(MmpPanel.tool_id, panel_title(name), recipe)
     ctx.add_panel(holder, holder.title())
 
-    def done(oids, activity, _pairs, found, rows) -> None:
-        holder.fill(MmpPanel(ctx, oids, activity, name, found, recipe, rows))
+    def done(oids, activity, _pairs, found, rows, cells) -> None:
+        holder.fill(MmpPanel(ctx, oids, activity, name, found, recipe, rows, cells))
 
     holder.job = _compute(ctx, recipe, done)
     return holder
-
-
-def transform_rows(found: list[Transform]) -> list[list]:
-    """The transformations table's cells, one list per transformation."""
-    return [
-        [readable(t.from_group), readable(t.to_group), t.count, t.mean, t.sd, t.ups, t.downs]
-        for t in found
-    ]
-
-
-def _title(activity: str) -> str:
-    return "Matched Pairs" + (f": {activity}" if activity != NO_ACTIVITY else "")

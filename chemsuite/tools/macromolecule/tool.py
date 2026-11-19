@@ -13,8 +13,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Macromolecule ▸ Macromolecule Viewer: a workspace of its own for macromolecules, in a
-window of its own.
+"""The Macromolecule button on the menu bar: the Macromolecule Viewer, a workspace of its own
+for macromolecules, in a window of its own. The table is only the way in: what the viewer does
+(prepare, minimize, dock, rescore) is in the viewer's own menus.
 
 Structures are opened and fetched from the viewer's File menu (this module hands it those
 commands). A structure is stored in the document as an asset (kind ``protein``, a saved name;
@@ -57,18 +58,13 @@ TOOL_ID = "protein"
 #: Tools ▸ Prepare…, which also reopens its report panel
 #: (``chemsuite.macromolecule.ui.report.TOOL_ID``, kept in step by the tests)
 PREPARE_ID = "protein-prepare"
-#: Tools ▸ Dock… and Rescore Poses… (the viewer's Tools menu holds them too)
-DOCK_ID = "protein-dock"
 #: the Poses panel (``chemsuite.macromolecule.ui.poses.TOOL_ID``, kept in step by the tests)
 POSES_ID = "protein-poses"
 #: Tools ▸ Inspect… and its panel (``chemsuite.macromolecule.ui.inspector.TOOL_ID``)
 INSPECT_ID = "protein-inspect"
-RESCORE_ID = "protein-rescore"
-MINIMISE_ID = "protein-minimise"
 #: the document part holding the protein workspace
 WORKSPACE_KEY = "protein_workspace"  # a saved name: kept, so every document opens
 KIND = "protein"
-MENU = ("Macromolecule",)
 #: the viewer's window: this share of the main window, centred over it
 WINDOW_SHARE = 0.85
 FILE_FILTER = "Structure files (*.pdb *.ent *.cif *.mmcif *.pdb.gz *.ent.gz *.cif.gz)"
@@ -397,7 +393,8 @@ TOOLS = [
     Tool(
         id=TOOL_ID,
         title="Macromolecule Viewer",
-        menu=MENU,
+        menu=(),
+        bar_button="&Macromolecule",
         open=open_viewer,
         restore=lambda ctx, state: open_viewer(ctx, state),
         requires=("gemmi",),
@@ -426,24 +423,6 @@ TOOLS = [
         "each choice to overrule, applied as one undoable edit",
     ),
     Tool(
-        id=MINIMISE_ID,
-        title="Minimise…",
-        menu=MENU,
-        open=open_minimise,
-        requires=("gemmi",),
-        tip="Relax a prepared protein in OpenMM, held near its deposited coordinates, and add "
-        "it as a new protein with a report of how far it moved",
-    ),
-    Tool(
-        id=DOCK_ID,
-        title="Dock…",
-        menu=MENU,
-        open=open_dock,
-        requires=("gemmi",),
-        tip="Dock the document's ligands into a pocket with AutoDock Vina: the poses are kept "
-        "with the protein and shown in the viewer",
-    ),
-    Tool(
         id=POSES_ID,
         title="Poses",
         menu=(),  # this entry reopens the Poses panel with the document
@@ -451,13 +430,5 @@ TOOLS = [
         restore=restore_poses,
         requires=("gemmi",),
         tip="The poses of the last docking run, beside the pocket they were docked into",
-    ),
-    Tool(
-        id=RESCORE_ID,
-        title="Rescore Poses…",
-        menu=MENU,
-        open=open_rescore,
-        requires=("gemmi",),
-        tip="Score poses that already exist where they stand, with Vina or Vinardo",
     ),
 ]

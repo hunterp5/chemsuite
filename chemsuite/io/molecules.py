@@ -36,7 +36,7 @@ from rdkit import Chem, rdBase
 from rdkit.Chem import rdDetermineBonds
 
 from chemsuite.core.jobs import CancelToken, check
-from chemsuite.core.mols import mol_to_blob, smiles_of
+from chemsuite.core.mols import as_read, mol_to_blob, smiles_of, without_hydrogens
 from chemsuite.core.table import Column, Table
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 
@@ -78,7 +78,7 @@ class _Records:
             self.texts.append(text if mol is None else "")
         else:
             self.blobs.append(mol_to_blob(mol))
-            self.texts.append(smiles_of(mol) or text or "?")
+            self.texts.append(smiles_of(without_hydrogens(mol)) or text or "?")
         for name, value in (props or {}).items():
             column = self.fields.setdefault(name, [None] * index)
             column.append(value)
@@ -162,8 +162,9 @@ def _marvin(path: str | Path) -> Iterator[Record]:
 def _maestro(path: str | Path) -> Iterator[Record]:
     with open_binary(path) as (stream, _raw):
         data = stream.read()
-    supplier = Chem.MaeMolSupplier(io.BytesIO(data))
-    for mol in supplier:
+    supplier = Chem.MaeMolSupplier(io.BytesIO(data), removeHs=False)
+    for read in supplier:
+        mol = as_read(read)
         if mol is None:
             yield None, "unreadable Maestro record", "", {}
             continue

@@ -47,6 +47,13 @@ def test_renders_png_quickly_in_light_and_dark() -> None:
     assert per_mol < 0.05, f"{per_mol * 1000:.1f} ms per structure"
 
 
+def test_attachment_points_draw_differently_from_dummy_atoms() -> None:
+    fragment = Chem.MolFromSmiles("Cl[*:1]")
+    plain = render_png(fragment, 120, 60)
+    attached = render_png(fragment, 120, 60, attachments=True)
+    assert attached.startswith(b"\x89PNG") and attached != plain
+
+
 def test_unkekulizable_structure_still_draws() -> None:
     mol = Chem.MolFromSmiles("c1cccc1", sanitize=False)
     mol.UpdatePropertyCache(strict=False)
@@ -73,3 +80,39 @@ def test_aligned_drawings_put_the_core_where_the_core_is_drawn() -> None:
     other = aligned_mol(Chem.MolFromSmiles("CCO"), smarts)  # no core: drawn as usual
     assert other.GetNumConformers() == 1
     assert alignment_core("not [[ a structure") is None
+
+
+def test_graded_highlight_fades_with_the_ranking_and_ties_share_a_color() -> None:
+    from chemsuite.core.depict import graded_colors
+
+    def faded(color: tuple[float, float, float]) -> float:
+        """How far the color has blended away from the full-strength highlight."""
+        return sum(abs(a - b) for a, b in zip(color, colors[7], strict=True))
+
+    colors = graded_colors(((7, 0.81), (3, 0.05), (9, 0.04)))
+    assert list(colors) == [7, 3, 9]
+    assert faded(colors[7]) == 0 and faded(colors[3]) < faded(colors[9])
+    tied = graded_colors(((7, 0.40), (3, 0.40), (9, 0.02)))
+    assert tied[7] == tied[3] != tied[9]  # symmetry-equivalent atoms score the same
+    assert len(set(graded_colors(((7, None), (3, None))).values())) == 1  # no scores, no grading
+    on_dark = graded_colors(((7, 0.81), (3, 0.05)), dark=True)
+    assert on_dark[7] == colors[7] and on_dark[3] != colors[3]  # fades toward the dark base
+    assert on_dark[3][2] < on_dark[7][2]  # toward the dark base, not toward white
+    assert graded_colors(()) == {}
+
+
+def test_highlighted_atoms_follow_the_hydrogens_a_drawing_leaves_out() -> None:
+    from chemsuite.core.depict import drawn_highlight
+
+    flat = Chem.MolFromSmiles("CC(=O)Nc1ccc(O)cc1")
+    atoms, colors = drawn_highlight(depiction_mol(flat), ((3, 0.81), (9, 0.05), (99, 0.01)))
+    assert atoms == [3, 9] and set(colors) == {3, 9}  # the index past the end is left out
+
+    three_d = Chem.AddHs(flat)
+    AllChem.EmbedMolecule(three_d, randomSeed=1)
+    shown = depiction_mol(three_d)  # the hydrogens are not drawn, so the rest renumber
+    assert shown.GetNumAtoms() == flat.GetNumAtoms()
+    hydrogen = flat.GetNumAtoms()
+    atoms, colors = drawn_highlight(shown, ((3, 0.81), (9, 0.05), (hydrogen, 0.01)))
+    assert [shown.GetAtomWithIdx(a).GetSymbol() for a in atoms] == ["N", "C"]
+    assert set(colors) == set(atoms)  # a hydrogen is not a site and is left out

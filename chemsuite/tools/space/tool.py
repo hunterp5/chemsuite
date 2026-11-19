@@ -13,21 +13,44 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Data ▸ Dimensionality Reduction…, Self-Organizing Map…"""
+"""Data ▸ Dimensionality Reduction ▸ PCA…, UMAP…, t-SNE…, PaCMAP… | Self-Organizing Map…"""
 
 from __future__ import annotations
 
 from chemsuite.app.document.tools import Tool, ToolContext
 
-MENU = ("Data",)
+MAP_MENU = ("Data", "Dimensionality Reduction")
+#: the methods in the submenu, in order: title (``embedding.METHODS``), the packages each
+#: needs beyond scikit-learn, and its tooltip
+MAPS = {
+    "pca": ("PCA", (), "Fast and exact; distances along the axes mean something, but two "
+            "components often cannot separate every group."),
+    "umap": ("UMAP", ("umap",), "Keeps neighborhoods together, so series form islands; "
+             "distances between islands mean little. Above 50,000 rows it is fitted on a "
+             "sample."),
+    "tsne": ("t-SNE", (), "Like UMAP, good at local groups; slower, and only for the rows "
+             "given."),
+    "pacmap": ("PaCMAP", ("pacmap",), "Keeps local groups and the overall layout together, so "
+               "distances between islands mean more than in UMAP or t-SNE; fast on large "
+               "sets."),
+}  # fmt: skip
 
 
-def _map(ctx: ToolContext):
-    from .map_dialog import SpaceMapDialog
+def _map(method: str):
+    def open_map(ctx: ToolContext):
+        from .map_dialog import SpaceMapDialog
 
-    dialog = SpaceMapDialog(ctx)
-    ctx.show_dialog(dialog)
-    return dialog
+        dialog = SpaceMapDialog(ctx, method)
+        ctx.show_dialog(dialog)
+        return dialog
+
+    return open_map
+
+
+def _loadings(ctx: ToolContext, state: dict):
+    from .loadings import restore
+
+    return restore(ctx, state)
 
 
 def _som(ctx: ToolContext):
@@ -49,22 +72,32 @@ def _som_panel(ctx: ToolContext, state: dict | None = None):
 
 
 TOOLS = (
+    *(
+        Tool(
+            id=f"space_map_{method}",
+            title=f"{title}…",
+            menu=MAP_MENU,
+            open=_map(method),
+            requires=("sklearn", *packages),
+            tip=f"Map compounds to 2D or 3D by fingerprints, properties or both. {tip}",
+            separator_after=method == "pacmap",  # the Self-Organizing Map follows
+        )
+        for method, (title, packages, tip) in MAPS.items()
+    ),
     Tool(
-        id="space_map",
-        title="Dimensionality Reduction…",
-        menu=MENU,
-        open=_map,
-        requires=("sklearn",),
-        tip="Map compounds to 2D or 3D (PCA, UMAP, t-SNE or PaCMAP) by fingerprints, properties "
-        "or both.",
+        id="pca_loadings",
+        title="PCA Loadings",
+        menu=(),  # a PCA map opens it; this entry reopens it with the document
+        open=lambda ctx: None,
+        restore=_loadings,
+        tip="What each number column contributes to each principal component.",
     ),
     Tool(
         id="som",
         title="Self-Organizing Map…",
-        menu=MENU,
+        menu=MAP_MENU,
         open=_som,
         restore=_som_panel,
-        tip="Bin compounds onto a grid where similar compounds share or neighbour a cell.",
-        separator_after=True,
+        tip="Bin compounds onto a grid where similar compounds share or neighbor a cell.",
     ),
 )

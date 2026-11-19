@@ -25,7 +25,7 @@ from rdkit import Chem, rdBase
 
 from chemsuite.core.jobs import Cancelled, CancelToken
 from chemsuite.core.jobs.parallel import ordered_map
-from chemsuite.core.mols import mol_from_blob, mol_from_text
+from chemsuite.core.mols import has_3d, mol_from_blob, mol_from_text, with_hydrogens
 from chemsuite.core.table.columns import Column, NumberColumn, TextColumn
 
 from .catalog import CATALOG, PKA_KEYS, SHAPE_GROUP
@@ -69,11 +69,14 @@ def compute_chunk(args: tuple[tuple[str, ...], Sequence[Cell]]) -> dict[str, lis
     """
     keys, cells = args
     specs = [CATALOG[key] for key in keys]
+    shapes = any(spec.group == SHAPE_GROUP for spec in specs)
     out: dict[str, list] = {key: [] for key in keys}
     with rdBase.BlockLogs():
         for cell in cells:
             mol = _mol(cell)
             drawn = _as_drawn(mol) if mol is not None else None
+            if mol is not None and shapes and has_3d(mol):  # once, not once per descriptor
+                mol = with_hydrogens(mol, first_conformer=True)
             for spec in specs:
                 value: object
                 if mol is None:

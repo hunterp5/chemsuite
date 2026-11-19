@@ -22,6 +22,7 @@ from collections.abc import Callable
 import numpy as np
 
 from chemsuite.analysis.embedding import Features
+from chemsuite.analysis.fingerprints import counts_task, parse, variant
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.tools.similarity.common import FeatureChooser, fingerprint_task
 
@@ -29,38 +30,44 @@ from chemsuite.tools.similarity.common import FeatureChooser, fingerprint_task
 def features_task(
     ctx: ToolContext, chooser: FeatureChooser, oids: np.ndarray
 ) -> tuple[Callable[[object], Features], Callable[[], None]]:
-    """``(build(job) -> Features, remember())``: *remember* caches fingerprints afterwards."""
-    if chooser.both():
-        compute, keep = fingerprint_task(
-            ctx, chooser.structure.currentText(), chooser.kind.currentData(), oids
+    """``(build(job) -> Features, remember())``: *remember* caches fingerprints afterwards.
+
+    *build* takes the running job (its ``report`` and ``cancel_token``)."""
+    key = chooser.fingerprint_key()
+    use = chooser.uses_columns() and chooser.number_columns()
+    columns = chooser.number_values(oids) if use else []
+    scaling = chooser.column_scaling()
+    weight = chooser.fingerprint_weight()
+
+    def combine(structures, job) -> Features:
+        if not columns:
+            return structures
+        return Features.combined(
+            structures, columns, weight=weight, scaling=scaling, cancel=job.cancel_token
         )
-        columns = chooser.number_values(oids)
-        made = {}
 
-        def build_both(job) -> Features:
-            made["fps"] = compute(job)
-            cancel = getattr(job, "cancel_token", None)
-            return Features.combined(made["fps"], columns, cancel=cancel)
+    if key is None:
+        return (lambda _job: Features.from_columns(columns, scaling)), (lambda: None)
+    structure = chooser.structure.currentText()
+    if chooser.counts():
+        v = parse(key)
+        counted = variant(v.base, v.bits, v.radius, counts=True)
+        compute_counts = counts_task(ctx.table, structure, counted, oids, ctx.process_pool)
 
-        def remember_both() -> None:
-            if "fps" in made:
-                keep(made["fps"])
+        def build_counts(job) -> Features:
+            counts, valid = compute_counts(job.report, job.cancel_token)
+            return combine(Features.from_counts(counts, valid), job)
 
-        return build_both, remember_both
-    if chooser.fingerprints():
-        compute, keep = fingerprint_task(
-            ctx, chooser.structure.currentText(), chooser.kind.currentData(), oids
-        )
-        made = {}
+        return build_counts, (lambda: None)
+    compute, keep = fingerprint_task(ctx, structure, key, oids)
+    made = {}
 
-        def build(job) -> Features:
-            made["fps"] = compute(job)
-            return Features.from_fingerprints(made["fps"])
+    def build(job) -> Features:
+        made["fps"] = compute(job)
+        return combine(Features.from_fingerprints(made["fps"]), job)
 
-        def remember() -> None:
-            if "fps" in made:
-                keep(made["fps"])
+    def remember() -> None:
+        if "fps" in made:
+            keep(made["fps"])
 
-        return build, remember
-    columns = chooser.number_values(oids)
-    return (lambda _job: Features.from_columns(columns)), (lambda: None)
+    return build, remember

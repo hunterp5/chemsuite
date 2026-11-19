@@ -133,6 +133,14 @@ def test_parallel_reading_equals_serial(tmp_path: Path, monkeypatch) -> None:
         assert parallel.column(name).displays(slots) == serial.column(name).displays(slots)
 
 
+def test_a_3d_record_keeps_its_hydrogens(tmp_path: Path) -> None:
+    path = tmp_path / "acetanilide.mol2"
+    path.write_text(mol2_io.mol2_block(embedded("CC(=O)Nc1ccccc1"), "acetanilide"))
+    structures = load_table(path).column("Structure")
+    assert structures.mol(0).GetNumAtoms() == 19  # C8H9NO: 10 heavy atoms and 9 hydrogens
+    assert structures.display(0) == "CC(=O)Nc1ccccc1"
+
+
 @given(st.lists(st.integers(1, 6), min_size=1, max_size=10), st.integers(1, 300))
 def test_blocks_always_end_on_record_boundaries(sizes, block_bytes) -> None:
     records = [f"@<TRIPOS>MOLECULE\nm{i}\n" + "x\n" * n for i, n in enumerate(sizes)]

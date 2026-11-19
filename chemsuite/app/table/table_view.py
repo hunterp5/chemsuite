@@ -61,11 +61,9 @@ from PySide6.QtWidgets import (
 )
 from rdkit import Chem
 
-from chemsuite.analysis.structure_search import match_atoms
 from chemsuite.core.depict import (
     aligned_mol,
     alignment_core,
-    depiction_mol,
     render_png,
     render_reaction_png,
 )
@@ -76,6 +74,7 @@ from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table.columns import REACTION, STRUCTURE, ParsedColumn, ReactionColumn
 
 from .frozen_columns import RowHeader, quiet_column_header
+from .highlights import AtomHighlight, AtomSource, Highlight, marked, resolve
 from .snap import follow_selection, rows_for
 from .structure_clipboard import structure_text_from_mime
 from .table_model import KIND_ROLE, STATUS_ROLE, STRUCTURE_ROLE, TableModel
@@ -97,15 +96,6 @@ _KEEP_COLUMN_MODE = frozenset(
         Qt.Key.Key_Alt,
     }
 )
-
-
-@dataclass(frozen=True)
-class Highlight:
-    """Atoms to highlight in a structure column: those matching *query* (a substructure)."""
-
-    key: str  # identifies the query in the image cache
-    query: Chem.Mol
-    stereo: bool = False
 
 
 @dataclass(frozen=True)
@@ -135,7 +125,7 @@ class StructureImages:
         size: QSize,
         dpr: float,
         dark: bool,
-        highlight: Highlight | None = None,
+        highlight: Highlight | AtomHighlight | None = None,
         alignment: Alignment | None = None,
     ):
         mol = column.obj(slot)  # parses a pending cell on first use
@@ -163,11 +153,11 @@ class StructureImages:
         else:
             atoms: list[int] = []
             bonds: list[int] = []
+            colors: dict[int, tuple[float, float, float]] = {}
             if alignment is not None:
                 mol = aligned_mol(mol, alignment.core)
             if highlight is not None:
-                mol = depiction_mol(mol)
-                atoms, bonds = match_atoms(mol, highlight.query, highlight.stereo)
+                mol, atoms, bonds, colors = marked(mol, highlight, dark)
             png = render_png(
                 mol,
                 width,
@@ -176,6 +166,7 @@ class StructureImages:
                 dark=dark,
                 highlight_atoms=atoms,
                 highlight_bonds=bonds,
+                highlight_colors=colors,
             )
         image = QImage.fromData(png, "PNG")
         image.setDevicePixelRatio(dpr)
@@ -197,8 +188,8 @@ class CellDelegate(QStyledItemDelegate):
     def __init__(self, images: StructureImages, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._images = images
-        #: column name -> atoms to highlight in that column's drawings
-        self.highlights: dict[str, Highlight] = {}
+        #: column name -> what to highlight in that column's drawings
+        self.highlights: dict[str, Highlight | AtomSource] = {}
         #: column name -> the core its drawings are aligned to
         self.alignments: dict[str, Alignment] = {}
 
@@ -221,10 +212,14 @@ class CellDelegate(QStyledItemDelegate):
         if status != "invalid":
             dark = option.palette.color(QPalette.ColorRole.Base).lightness() < 128
             dpr = painter.device().devicePixelRatioF() if painter.device() else 1.0
-            highlight = alignment = None
+            highlight: Highlight | AtomHighlight | AtomSource | None = None
+            alignment = None
             if self.highlights or self.alignments:
-                name = index.model().column_name(index.column())
+                model = index.model()
+                name = model.column_name(index.column())
                 highlight = self.highlights.get(name)
+                if isinstance(highlight, AtomSource):
+                    highlight = resolve(model.table, name, highlight, slot)
                 alignment = self.alignments.get(name)
             image = self._images.image(column, slot, rect.size(), dpr, dark, highlight, alignment)
             if image is not None:
@@ -398,8 +393,8 @@ class TableView(QTableView):
             self._capture_widths()
             self._fit_layout()
 
-    def set_highlight(self, column: str, highlight: Highlight | None) -> None:
-        """Highlight atoms matching a query in *column*'s drawings (None: stop)."""
+    def set_highlight(self, column: str, highlight: Highlight | AtomSource | None) -> None:
+        """Highlight atoms in *column*'s drawings (None: stop); see :mod:`.highlights`."""
         highlights = self.itemDelegate().highlights
         if highlight is None:
             if highlights.pop(column, None) is None:
@@ -407,8 +402,10 @@ class TableView(QTableView):
         else:
             highlights[column] = highlight
         self.viewport().update()
+        for overlay in self._overlays():
+            overlay.viewport().update()
 
-    def highlights(self) -> dict[str, Highlight]:
+    def highlights(self) -> dict[str, Highlight | AtomSource]:
         return dict(self.itemDelegate().highlights)
 
     def set_alignment(self, column: str, core_text: str | None) -> bool:

@@ -321,11 +321,36 @@ openly-licensed set, at a measured cost in accuracy. Record the decision here ei
   isoform choice (3A4, 2D6, 2C9, 1A2 on by default; the other five in a collapsed section) and an
   `OUTPUTS` dict writing, per isoform, the ranked sites, the top site, its score and an
   applicability-domain value.
-- **M5:** showing the sites on the structure. `core/depict.py: render_png` already takes
-  `highlight_atoms`, but `app/table/table_view.py`'s `Highlight` is a column-wide SMARTS query and
-  `StructureImages`' cache key is the molecule blob, so per-row highlights would collide. Add an
-  index-provider `Highlight` variant with a per-row cache-key component, and `highlightAtomColors`
-  for graded scores. Shared rendering, so the full suite runs at the end of this step.
+- **M5 is done (2026-11-18): the sites are marked on the drawings**, and the feature is the
+  app's, not the tool's — a structure column can mark the atoms *any* column names, so nothing in
+  `app` knows what wrote them.
+  - `core/atom_names.py` (Qt-free) reads the convention the tool already wrote: comma-separated
+    `C7`, optionally with a score (`C7 0.81, N3 0.05, C12 0.04`). `atoms_named` checks each name
+    against the molecule beside it — the element must be that atom's element and the index inside
+    the molecule — so a column written for other structures marks nothing instead of the wrong
+    atoms.
+  - `core/depict.py` grew `graded_colors` (the best site at full strength, each weaker *score*
+    fainter, blended toward white or the dark base; equal scores share a shade, so
+    symmetry-equivalent atoms do not invent a ranking), `drawn_highlight` and
+    `render_png(highlight_colors=…)` → RDKit's `highlightAtomColors`. `depiction_mol` now tags
+    each kept atom with its index in the molecule as given, since removing a 3D structure's
+    hydrogens renumbers the rest; the tag is how a site's index survives into the drawing.
+  - `app/table/highlights.py` is a new module that owns every kind of cell highlight: the old
+    `Highlight` (a column-wide substructure query, Structure Search's), the new `AtomSource` (the
+    setting: which column names the atoms) and `AtomHighlight` (one row's resolved atoms, whose
+    `key` carries the cell text, so `StructureImages`' cache key varies per row). `table_view.py`
+    came out 3 lines *shorter* than before the step; `ColumnActions` now takes the view itself
+    instead of four callbacks.
+  - The entry points: **Highlight Atoms ▸** in a structure column's header menu (listing only
+    columns that name atoms of those structures), Clear Highlighting, and the tool itself, which
+    marks the most prescribed isoform it was asked for (3A4, 2D6, 2C9, 1A2) when a run finishes —
+    the ranked `Sites` column if it was written, else `Top Site`. `ToolContext.highlight_atoms`
+    is the only way a tool reaches it.
+  - Saved with the window layout (`atom_highlights`), as Align Drawings is, so a reopened
+    document still marks them.
+  - Tests: `tests/core/test_atom_names.py`, two in `tests/core/test_depict.py`,
+    `tests/app/table/test_atom_highlight_ui.py` and one in `tests/tools/metabolism`. The full
+    suite was run (shared rendering).
 - **M6:** `docs/USER_GUIDE.md` in the same commit as the tool, and the results above.
 
 ## Phase C — CYP inhibition

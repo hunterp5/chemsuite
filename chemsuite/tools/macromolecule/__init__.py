@@ -13,5 +13,5 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Macromolecule ▸ Macromolecule Viewer: open or fetch structures, view them, and their
-ligands as rows."""
+"""The Macromolecule Viewer (the Macromolecule button): open or fetch structures,
+view them, and their ligands as rows."""

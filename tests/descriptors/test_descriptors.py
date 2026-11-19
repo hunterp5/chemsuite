@@ -149,6 +149,24 @@ def test_blank_invalid_and_unparsed_cells() -> None:
     assert columns["MolWt"].kind == "number" and columns["FORMULA"].kind == "text"
 
 
+def test_3d_shape_of_a_structure_without_hydrogens_counts_them() -> None:
+    """Hydrogens weigh in a shape (without them, PMI1 of hexane falls by half): a 3D
+    structure read without them gets them placed, so it scores as the complete one."""
+    from rdkit.Chem import AllChem
+
+    from chemsuite.core.mols import mol_to_blob
+    from chemsuite.descriptors.catalog import SHAPE_GROUP
+
+    full = Chem.AddHs(mol("CCCCCC"))
+    AllChem.EmbedMolecule(full, randomSeed=7)
+    AllChem.MMFFOptimizeMolecule(full)
+    heavy = Chem.RemoveHs(full)
+    keys = tuple(key for key, spec in CATALOG.items() if spec.group == SHAPE_GROUP)
+    with_h, without_h = (compute_chunk((keys, [mol_to_blob(m)])) for m in (full, heavy))
+    for key in ("PMI1", "PMI3", "NPR1", "RadiusOfGyration", "Asphericity"):
+        assert without_h[key][0] == pytest.approx(with_h[key][0], rel=0.01), key
+
+
 def test_integer_counts_and_no_negative_zero() -> None:
     columns = compute_descriptors(["CCO"], ["NumHDonors", "MolLogP"])
     assert columns["NumHDonors"].display(0) == "1"

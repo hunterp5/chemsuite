@@ -24,6 +24,7 @@ them by monkeypatching (Color… has its own dialog, :mod:`.column_colour`).
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 from PySide6.QtGui import QAction, QActionGroup
@@ -34,6 +35,11 @@ from chemsuite.core.table import NUMBER, TEXT, Table
 from chemsuite.core.table import picks as row_picks
 from chemsuite.core.table.columns import REACTION, STRUCTURE, to_number
 from chemsuite.core.wording import plural
+
+from .highlights import atom_name_columns, set_source, sources
+
+if TYPE_CHECKING:
+    from .table_view import TableView
 
 KIND_TITLES = {TEXT: "Text", NUMBER: "Number", STRUCTURE: "Structure", REACTION: "Reaction"}
 #: the Select submenu: title, pick, tooltip (None: a separator)
@@ -74,8 +80,7 @@ class ColumnActions:
         freeze: Callable[[int], object] | None = None,
         frozen: Callable[[], int] = lambda: 0,
         align: Callable[[str], object] | None = None,
-        unalign: Callable[[str], object] | None = None,
-        aligned: Callable[[str], bool] = lambda _name: False,
+        view: TableView | None = None,
     ) -> None:
         self._parent = parent
         self._table = table
@@ -86,8 +91,7 @@ class ColumnActions:
         self._freeze = freeze
         self._frozen = frozen
         self._align = align
-        self._unalign = unalign
-        self._aligned = aligned
+        self._view = view
 
     # -- sorting ------------------------------------------------------------------------------
     def sort(self, name: str, ascending: bool) -> None:
@@ -243,16 +247,8 @@ class ColumnActions:
             through.setEnabled(frozen != position + 1)
             if frozen:
                 add("Unfreeze Columns", lambda: freeze(0))
-        if table.kind(name) == STRUCTURE and self._align is not None:
-            align = self._align
-            aligning = add("Align Drawings…", lambda: align(name))
-            aligning.setToolTip(
-                "Draw every structure that contains a core with the core in the same place "
-                "and orientation; the structures themselves are not changed."
-            )
-            if self._aligned(name) and self._unalign is not None:
-                unalign = self._unalign
-                add("Stop Aligning Drawings", lambda: unalign(name))
+        if table.kind(name) == STRUCTURE:
+            self._drawing_items(menu, name)
         if not menu.isEmpty():
             menu.addSeparator()
         if self._selection is not None:
@@ -325,3 +321,43 @@ class ColumnActions:
             "stored values are not rounded."
         )
         return menu
+
+    def _drawing_items(self, menu: QMenu, name: str) -> None:
+        """What a structure column's drawings can be made to show: a shared core, and the
+        atoms another column names."""
+        view = self._view
+        if self._align is not None:
+            align = self._align
+            aligning = menu.addAction("Align Drawings…")
+            aligning.triggered.connect(lambda _checked=False: align(name))
+            aligning.setToolTip(
+                "Draw every structure that contains a core with the core in the same place "
+                "and orientation; the structures themselves are not changed."
+            )
+            if view is not None and name in view.alignments():
+                stop = menu.addAction("Stop Aligning Drawings")
+                stop.triggered.connect(lambda _checked=False: view.set_alignment(name, None))
+        if view is not None:
+            self._atom_menu(menu, name, view)
+
+    def _atom_menu(self, menu: QMenu, name: str, view: TableView) -> None:
+        """Highlight Atoms ▸: the columns whose values name atoms, the chosen one checked."""
+        columns = atom_name_columns(self._table, name)
+        current = sources(view).get(name)
+        if not columns:
+            return
+        chooser = menu.addMenu("Highlight Atoms")
+        chooser.setToolTipsVisible(True)
+        chooser.menuAction().setToolTip(
+            "Mark the atoms a column names (Top Site, Sites) in this column's drawings, the "
+            "best-scoring atom strongest; the structures themselves are not changed."
+        )
+        group = QActionGroup(chooser)
+        for title, source in [("None", None), *((column, column) for column in columns)]:
+            action = chooser.addAction(title)
+            action.setCheckable(True)
+            action.setChecked(source == current)
+            group.addAction(action)
+            action.triggered.connect(lambda _checked=False, s=source: set_source(view, name, s))
+            if source is None:
+                chooser.addSeparator()

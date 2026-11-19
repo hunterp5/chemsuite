@@ -380,13 +380,19 @@ other machine can pick it up. Update it at the end of a session that leaves work
     isoforms on and the other five under More Options, and Top Site / Score / Sites /
     Applicability columns per isoform; the guide section is `### Sites of Metabolism`, with the
     accuracy table, the `PRIMARY_SOM` definition and why the numbers are below published ones.
-  - **Next: M5**, showing the sites on the structure. It is also what makes the columns fully
-    usable: `Top Site` names an atom as `C7`, and **nothing in the app displays atom indices
-    yet**, so the highlight (or an atom-number option in the depiction) is how a chemist sees
-    which atom is meant. The plan's M5 needs an index-provider `Highlight` variant with a
-    per-row cache-key component, since `StructureImages` keys its cache on the molecule blob and
-    `Highlight` is a column-wide SMARTS query today. Shared rendering, so the full suite runs at
-    the end of that step.
+  - **M5 is done (2026-11-18): the sites are marked on the drawings.** It is an app feature,
+    not the tool's: a structure column marks the atoms *any* column names (`C7`, or
+    `C7 0.81, N3 0.05`), through **Highlight Atoms ▸** in its header menu, each name checked
+    against the molecule in that row. New: Qt-free `core/atom_names.py`; `graded_colors` /
+    `drawn_highlight` / `render_png(highlight_colors=…)` in `core/depict.py`; and
+    `app/table/highlights.py`, which now owns every kind of cell highlight (`Highlight`,
+    `AtomSource`, `AtomHighlight`) — `table_view.py` ended 3 lines shorter than before, and
+    `ColumnActions` takes the view instead of four callbacks. Saved with the window layout, so a
+    reopened document still marks them; a finished run marks the most prescribed isoform it was
+    asked for; `ToolContext.highlight_atoms` is a tool's only way in. Full suite run (shared
+    rendering). The guide is updated in the column-menu list and under Sites of Metabolism.
+    **By hand, still owed:** look at a marked column in the real app, light and dark, and at a
+    3D (conformer) structure column, where the drawing drops hydrogens and the indices shift.
   CYP inhibition is phase C of the same plan, on OpenADMET's open pIC50 data and the Veith panel
   from PubChem.
 

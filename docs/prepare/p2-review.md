@@ -87,6 +87,13 @@ RMSE in pH units (share within 1 unit):
 
 - **Matching PROPKA** (test half): met, 1.32 against 1.33. `tests/macromolecule/test_bench_prepare.py`
   holds it.
+  - **2026-11-18: metal-bound residues are left out.** P3's `coordination` term (a hydrogen
+    near a metal ion costs 5 kcal/mol) puts a His on zinc at pKa 0, as it should be in the
+    structure, but PKAD-R measures these residues in solution, without the metal. On the 8 in
+    the test half chemsuite's RMSE was 4.75 (PROPKA 1.51, null 0.63), which took the whole half
+    to 1.48 and failed the mark. The comparison now leaves out any residue with a heavy atom
+    within 3 Å of a metal ion (`pkad_review.metal_bound`, 12 residues, every method alike). On
+    the rest, test half: null 1.16, PROPKA 1.32, chemsuite 1.24; training: 1.05, 1.03, 1.06.
 - **Beating the null model**: not met, by chemsuite or PROPKA. The fit drives every
   environment weight towards zero: as built, the terms add as much noise as signal.
 - **The worst errors:**

@@ -173,6 +173,18 @@ def test_maestro_round_trip_keeps_titles_and_data(tmp_path) -> None:
     assert [again.cell("Series", o) for o in again.oids] == ["A", "A"]
 
 
+def test_maestro_3d_structures_keep_their_hydrogens(tmp_path) -> None:
+    pose = Chem.AddHs(Chem.MolFromSmiles("CC(=O)Nc1ccccc1"))
+    AllChem.EmbedMolecule(pose, randomSeed=7)
+    path = tmp_path / "pose.mae"
+    writer = Chem.MaeWriter(str(path))
+    writer.write(pose)
+    writer.close()
+    structures = load_table(path).column("Structure")
+    assert structures.mol(0).GetNumAtoms() == pose.GetNumAtoms()
+    assert structures.display(0) == "CC(=O)Nc1ccccc1"
+
+
 def test_inchi_round_trip(tmp_path) -> None:
     out = tmp_path / "out.inchi"
     save_table(sd_table(tmp_path), out)

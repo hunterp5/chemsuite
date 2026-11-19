@@ -32,7 +32,7 @@ import numpy as np
 
 from chemsuite.core.jobs import CancelToken, check
 
-from .clustering import standardize
+from .clustering import scale_columns, standardize
 from .fingerprints import Fingerprints
 
 Progress = Callable[[int, int], None]
@@ -63,6 +63,17 @@ BIT_METRICS = frozenset({"jaccard", "dice", "rogerstanimoto", "hamming"})
 REDUCED_DIMS = 50  # PCA dimensions handed to the SOM (and to t-SNE / PaCMAP when asked)
 TILE_ROWS = 4096
 UMAP_FIT_MAX = 50_000  # larger sets: fit on a sample, then place the rest onto that map
+UMAP_INITS = {"spectral": "Spectral", "pca": "PCA", "random": "Random"}
+#: t-SNE distances for columns, counts and PCA dimensions (bits use Jaccard)
+TSNE_METRICS = {
+    "euclidean": "Euclidean",
+    "cosine": "Cosine",
+    "manhattan": "Manhattan",
+    "chebyshev": "Chebyshev",
+}
+TSNE_EXACT_MAX = 5_000  # exact t-SNE is quadratic in time and memory
+PACMAP_VARIANTS = {"pacmap": "PaCMAP", "localmap": "LocalMAP"}
+GUIDE_GROUPS = 5  # a number column guiding UMAP is cut into this many groups
 
 
 @dataclass
@@ -71,6 +82,11 @@ class Embedding:
     method: str
     explained: tuple[float, ...] = ()  # PCA: share of variance on each axis
     notes: list[str] = field(default_factory=list)
+    #: PCA with more components written: n × k scores of PC1…PCk (NaN without features)
+    components: np.ndarray | None = None
+    #: PCA of columns alone: d × k loadings of each kept column (see ``kept``) on PC1…PCk
+    loadings: np.ndarray | None = None
+    kept: np.ndarray | None = None  # per input column: kept (not constant)
 
     @property
     def placed(self) -> int:
@@ -79,12 +95,14 @@ class Embedding:
 
 @dataclass
 class Features:
-    """What a map is built from: fingerprints, or z-scored number columns (complete rows)."""
+    """What a map is built from: fingerprints (bits or counts), or scaled number columns
+    (complete rows), or both."""
 
     n: int  # input rows
     rows: np.ndarray  # input rows that have features
     fps: Fingerprints | None = None  # of the rows in *rows*
-    matrix: np.ndarray | None = None  # len(rows) × d
+    matrix: np.ndarray | None = None  # len(rows) × d (counts are uint8)
+    kept: np.ndarray | None = None  # columns alone: which input columns were kept
 
     @classmethod
     def from_fingerprints(cls, fps: Fingerprints) -> Features:
@@ -92,43 +110,77 @@ class Features:
         return cls(len(fps), rows, fps=fps.take(rows))
 
     @classmethod
-    def from_columns(cls, columns: Sequence[np.ndarray]) -> Features:
-        x, rows = standardize(columns)
+    def from_counts(cls, counts: np.ndarray, valid: np.ndarray) -> Features:
+        """Count fingerprints (``fingerprints.compute_counts``): not bits, so measured by
+        Euclidean-type distances only."""
+        rows = np.flatnonzero(valid)
+        return cls(len(valid), rows, matrix=np.ascontiguousarray(counts[rows]))
+
+    @classmethod
+    def from_columns(cls, columns: Sequence[np.ndarray], scaling: str = "zscore") -> Features:
+        x, rows, kept = scale_columns(columns, scaling)
         n = len(columns[0]) if columns else 0
-        return cls(n, rows, matrix=np.ascontiguousarray(x, dtype=np.float64))
+        return cls(n, rows, matrix=np.ascontiguousarray(x, dtype=np.float64), kept=kept)
 
     @classmethod
     def combined(
         cls,
-        fps: Fingerprints,
+        structures: Fingerprints | Features,
         columns: Sequence[np.ndarray],
         *,
+        weight: float = 0.5,
+        scaling: str = "zscore",
         dims: int = REDUCED_DIMS,
         progress: Progress | None = None,
         cancel: CancelToken | None = None,
     ) -> Features:
-        """Fingerprints and number columns together, for rows that have both.
+        """Fingerprints (bits, or counts as :class:`Features`) and number columns together,
+        for rows that have both.
 
         The fingerprints are reduced to at most *dims* principal components (streamed, so no
-        dense bit matrix), and the columns are z-scored. Each block is then scaled to the same
-        total variance, so a 2048-bit fingerprint does not drown out three property columns,
-        nor the reverse. Distances on the result are Euclidean.
+        dense bit matrix), and the columns are scaled (*scaling*, see
+        ``clustering.SCALINGS``). Each block is then brought to the same total variance and
+        weighted: *weight* is the fingerprints' share (0.5, the default, counts both alike, so
+        a 2048-bit fingerprint does not drown out three property columns, nor the reverse).
+        Distances on the result are Euclidean.
         """
-        x, column_rows = standardize(columns)
-        rows = np.intersect1d(np.flatnonzero(fps.valid), column_rows)
-        n = len(fps)
+        if not 0.0 <= weight <= 1.0:
+            raise ValueError(f"the fingerprint weight is 0 to 1, not {weight}")
+        if isinstance(structures, Fingerprints):
+            structures = cls.from_fingerprints(structures)
+        x, column_rows = standardize(columns, scaling)
+        rows = np.intersect1d(structures.rows, column_rows)
+        n = structures.n
         if not len(rows) or not x.shape[1]:
             return cls(n, rows, matrix=np.empty((len(rows), 0)))
-        bits = cls(n, rows, fps=fps.take(rows))
-        scores = reduce(bits, dims, progress=progress, cancel=cancel)
+        part = structures.subset(np.searchsorted(structures.rows, rows))
+        scores = reduce(part, dims, progress=progress, cancel=cancel)
         numbers = x[np.searchsorted(column_rows, rows)]
 
-        def unit(block: np.ndarray) -> np.ndarray:
+        def unit(block: np.ndarray, share: float) -> np.ndarray:
+            block = np.asarray(block, dtype=np.float64)
             total = float(block.var(axis=0).sum())
-            return block / np.sqrt(total) if total > 1e-12 else block
+            block = block / np.sqrt(total) if total > 1e-12 else block
+            return block * np.sqrt(2.0 * share)  # equal shares: each block at variance 1
 
-        matrix = np.column_stack([unit(np.asarray(scores, dtype=np.float64)), unit(numbers)])
-        return cls(n, rows, matrix=np.ascontiguousarray(matrix))
+        blocks = [unit(scores, weight)] if weight > 0 else []
+        if weight < 1:
+            blocks.append(unit(numbers, 1.0 - weight))
+        return cls(n, rows, matrix=np.ascontiguousarray(np.column_stack(blocks)))
+
+    def subset(self, index: np.ndarray) -> Features:
+        """The features at positions *index* (into :attr:`rows`)."""
+        if self.fps is not None:
+            return Features(self.n, self.rows[index], fps=self.fps.take(index))
+        return Features(self.n, self.rows[index], matrix=self.matrix[index], kept=self.kept)
+
+    def positions(self, rows: np.ndarray | None) -> np.ndarray | None:
+        """Positions (into :attr:`rows`) of the input *rows* that have features; None for
+        None, or when they are every row with features (nothing is left to place)."""
+        if rows is None:
+            return None
+        found = np.flatnonzero(np.isin(self.rows, rows))
+        return None if len(found) == len(self.rows) else found
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -180,32 +232,51 @@ def pca(
     features: Features,
     dims: int = 2,
     *,
+    fit: np.ndarray | None = None,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """``(scores, explained variance ratios)`` for the rows that have features."""
-    dims = max(1, min(dims, len(features) - 1, features.dims))
-    if features.fps is None:
+    """``(scores, explained variance ratios)`` for the rows that have features; with *fit*
+    (positions into ``features.rows``), the axes come from those rows alone and every row is
+    projected onto them."""
+    scores, ratio, _vectors = pca_axes(features, dims, fit=fit, progress=progress, cancel=cancel)
+    return scores, ratio
+
+
+def pca_axes(
+    features: Features,
+    dims: int = 2,
+    *,
+    fit: np.ndarray | None = None,
+    progress: Progress | None = None,
+    cancel: CancelToken | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``(scores, explained variance ratios, d × dims axes)``: see :func:`pca`."""
+    basis = features if fit is None else features.subset(fit)
+    dims = max(1, min(dims, len(basis) - 1, features.dims))
+    if features.fps is None and features.dims <= 200:
         from sklearn.decomposition import PCA
 
-        model = PCA(n_components=dims, svd_solver="full" if features.dims <= 200 else "auto")
-        scores = model.fit_transform(features.matrix)
-        return scores, model.explained_variance_ratio_
+        model = PCA(n_components=dims, svd_solver="full")
+        model.fit(np.asarray(basis.matrix, dtype=np.float64))
+        scores = model.transform(np.asarray(features.matrix, dtype=np.float64))
+        return scores, model.explained_variance_ratio_, model.components_.T
     # Exact PCA from the covariance, summed tile by tile: d × d (2048² for most fingerprints)
     # is small, and the sums are matrix products, so this streams 200k rows quickly.
-    tiles = features.tiles()
+    tiles = basis.tiles()
+    every = features.tiles()
     d = features.dims
     gram = np.zeros((d, d), dtype=np.float64)
     total = np.zeros(d, dtype=np.float64)
-    steps = 2 * len(tiles) + 1
+    steps = len(tiles) + len(every) + 1
     for i, (start, stop) in enumerate(tiles):
         check(cancel)
-        block = features.dense(start, stop)
+        block = basis.dense(start, stop)
         gram += block.T @ block
         total += block.sum(axis=0)
         if progress is not None:
             progress(i + 1, steps)
-    n = len(features)
+    n = len(basis)
     mean = total / n
     covariance = gram / n - np.outer(mean, mean)
     values, vectors = np.linalg.eigh(covariance)
@@ -218,14 +289,14 @@ def pca(
     variance = max(float(np.clip(np.trace(covariance), 1e-12, None)), 1e-12)
     if progress is not None:
         progress(len(tiles) + 1, steps)
-    scores = np.empty((n, dims), dtype=np.float64)
+    scores = np.empty((len(features), dims), dtype=np.float64)
     shift = mean @ vectors
-    for i, (start, stop) in enumerate(tiles):
+    for i, (start, stop) in enumerate(every):
         check(cancel)
         scores[start:stop] = features.dense(start, stop, np.float64) @ vectors - shift
         if progress is not None:
             progress(len(tiles) + 2 + i, steps)
-    return scores, values / variance
+    return scores, values / variance, vectors
 
 
 def bit_neighbours(
@@ -292,7 +363,7 @@ def _features_for(
     if reduce_to:
         x = reduce(features, max(2, reduce_to), progress=progress, cancel=cancel)
     else:
-        x = features.dense(0, None) if features.fps is not None else features.matrix
+        x = features.dense(0, None)
     return np.ascontiguousarray(x, dtype=np.float32)
 
 
@@ -303,17 +374,39 @@ def reduce(
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> np.ndarray:
-    """At most *dims* columns per row: PCA scores, or the z-scores themselves if fewer."""
+    """At most *dims* columns per row: PCA scores, or the features themselves if fewer."""
     if features.fps is None and features.dims <= dims:
         return features.matrix
     return pca(features, dims, progress=progress, cancel=cancel)[0]
 
 
+def _fit_note(features: Features, fit: np.ndarray | None) -> list[str]:
+    if fit is None:
+        return []
+    return [f"fitted on {len(fit):,} of {len(features):,} compounds; the rest placed onto it"]
+
+
+def _need_fit(fit: np.ndarray | None, minimum: int) -> None:
+    if fit is not None and len(fit) < minimum:
+        raise ValueError(f"A map needs at least {minimum} compounds to fit on.")
+
+
 def pca_map(
-    features: Features, *, components: tuple[int, ...] = (1, 2), dims: int = 2, **kw
+    features: Features,
+    *,
+    components: tuple[int, ...] = (1, 2),
+    dims: int = 2,
+    write: int = 0,
+    fit: np.ndarray | None = None,
+    **kw,
 ) -> Embedding:
     """PCA scores on two components (1-based, e.g. ``(1, 3)`` for PC1 against PC3); a 3D map
-    (*dims* 3) is always PC1, PC2 and PC3."""
+    (*dims* 3) is always PC1, PC2 and PC3.
+
+    *write* (more than the components drawn) also returns the scores of PC1…PC*write* in
+    ``components``; a PCA of columns alone returns their ``loadings`` on those components.
+    *fit* (input rows) fits the axes on those rows and places the rest onto them.
+    """
     _need(features, 3)
     dims = _dims(dims)
     if dims == 3:
@@ -324,17 +417,48 @@ def pca_map(
         or components[0] < 1
     ):
         raise ValueError(f"components must be {dims} increasing numbers from 1, not {components}")
-    last = components[-1]
-    scores, ratio = pca(features, last, **kw)
+    fit = features.positions(fit)
+    _need_fit(fit, 3)
+    last = max(components[-1], write)
+    scores, ratio, axes = pca_axes(features, last, fit=fit, **kw)
     if scores.shape[1] < last:  # fewer components than asked: the missing axes are flat
         pad = last - scores.shape[1]
         scores = np.column_stack([scores, np.zeros((len(scores), pad))])
         ratio = np.concatenate([np.asarray(ratio, dtype=float), np.zeros(pad)])
+        axes = np.column_stack([axes, np.zeros((len(axes), pad))])
     picked = [c - 1 for c in components]
     explained = tuple(float(ratio[i]) for i in picked)
     parts = [f"PC{c} {e:.0%}" for c, e in zip(components, explained, strict=True)]
-    note = ", ".join(parts[:-1]) + f" and {parts[-1]} of the variance"
-    return _scatter(features, scores[:, picked], "pca", dims, explained=explained, notes=[note])
+    notes = [", ".join(parts[:-1]) + f" and {parts[-1]} of the variance"]
+    notes += _fit_note(features, fit)
+    extra = {}
+    if write > len(components):  # PC1 up to *write*, and always up to the ones drawn
+        every = np.full((features.n, last), np.nan)
+        every[features.rows] = scores[:, :last]
+        extra["components"] = every
+    if features.kept is not None:  # columns alone: what each column contributes
+        extra["loadings"] = axes[:, :last]
+        extra["kept"] = features.kept
+    return _scatter(
+        features, scores[:, picked], "pca", dims, explained=explained, notes=notes, **extra
+    )
+
+
+def guide_labels(values: Sequence, groups: int = GUIDE_GROUPS) -> np.ndarray:
+    """Labels that guide a supervised UMAP, one per row: numbers are cut into *groups*
+    groups of about equal size (by quantile), text gives one label per distinct value. A row
+    with no value (NaN, None or "") is -1, which UMAP leaves unlabeled."""
+    if isinstance(values, np.ndarray) and values.dtype.kind in "fiu":
+        x = values.astype(np.float64)
+        out = np.full(len(x), -1, dtype=np.int64)
+        ok = np.isfinite(x)
+        if ok.any():
+            edges = np.unique(np.quantile(x[ok], np.linspace(0, 1, max(2, groups) + 1)[1:-1]))
+            out[ok] = np.searchsorted(edges, x[ok], side="right")
+        return out
+    texts = ["" if v is None else str(v) for v in values]
+    names = {t: i for i, t in enumerate(sorted({t for t in texts if t}))}
+    return np.array([names.get(t, -1) for t in texts], dtype=np.int64)
 
 
 def umap_map(
@@ -348,29 +472,56 @@ def umap_map(
     seed: int | None = 42,
     fit_max: int = UMAP_FIT_MAX,
     dims: int = 2,
+    fit: np.ndarray | None = None,
+    guide: np.ndarray | None = None,
+    guide_weight: float = 0.5,
+    densmap: bool = False,
+    density_weight: float = 2.0,
+    init: str = "spectral",
+    local_connectivity: float = 1.0,
+    repulsion: float = 1.0,
+    negative_samples: int = 5,
+    learning_rate: float = 1.0,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> Embedding:
     """UMAP in *dims* (2 or 3) dimensions. The distance (*metric*) defaults to Jaccard on
-    fingerprint bits and Euclidean on z-scored columns; a fingerprint metric needs
-    fingerprints (see ``UMAP_METRICS``).
+    fingerprint bits and Euclidean otherwise; a fingerprint metric needs fingerprint bits
+    (see ``UMAP_METRICS``).
 
-    Above *fit_max* rows the map is fitted on a random sample and the rest are placed onto it.
-    A *seed* makes the map repeatable, at the cost of running on one core. *epochs* None lets
-    UMAP choose (200 for large sets, 500 for small).
+    The map is fitted on *fit* (input rows; None: all) and the rest are placed onto it; above
+    *fit_max* rows it is fitted on a random sample of those. A *seed* makes the map
+    repeatable, at the cost of running on one core. *epochs* None lets UMAP choose (200 for
+    large sets, 500 for small).
+
+    *guide* (a label per input row, -1 for none; see :func:`guide_labels`) makes the map
+    supervised, pulling rows with the same label together by *guide_weight* (0 to 1).
+    *densmap* keeps how densely packed each region is (weighed by *density_weight*); it
+    cannot place rows, so it fits every row and takes no *fit* or sample. *init* is
+    ``UMAP_INITS``; the rest are UMAP's own settings.
     """
     _need(features, 5)
+    if init not in UMAP_INITS:
+        raise ValueError(f"unknown UMAP start {init!r}")
     import umap  # slow to import (numba): only when a map is made
 
     n = len(features)
     neighbours = max(2, min(neighbours, n - 1))
     metric = metric or ("jaccard" if features.fps is not None else "euclidean")
     if metric in BIT_METRICS and features.fps is None:
-        raise ValueError(f"{UMAP_METRICS[metric]} distance needs fingerprints")
+        raise ValueError(f"{UMAP_METRICS[metric]} distance needs fingerprint bits")
     if min_dist > spread:
         raise ValueError("Min. distance must not be larger than the spread")
+    pool = features.positions(fit)
+    _need_fit(pool, 5)
+    if densmap and pool is not None:
+        raise ValueError("densMAP cannot place rows onto a map: fit it on every row")
+    if densmap and n > fit_max:
+        raise ValueError(f"densMAP fits every row: map at most {fit_max:,} rows")
+    pool = np.arange(n) if pool is None else pool
     rng = np.random.default_rng(seed if seed is not None else 0)
-    fit_rows = np.sort(rng.choice(n, fit_max, replace=False)) if n > fit_max else np.arange(n)
+    sample = len(pool) > fit_max
+    fit_rows = np.sort(rng.choice(pool, fit_max, replace=False)) if sample else pool
 
     def take(index: np.ndarray) -> np.ndarray:
         return features.bits(index) if features.fps is not None else features.matrix[index]
@@ -385,7 +536,16 @@ def umap_map(
         n_epochs=epochs,
         random_state=seed,
         n_jobs=1 if seed is not None else -1,
+        target_weight=guide_weight,
+        densmap=densmap,
+        dens_lambda=density_weight,
+        init=init,
+        local_connectivity=local_connectivity,
+        repulsion_strength=repulsion,
+        negative_sample_rate=negative_samples,
+        learning_rate=learning_rate,
     )
+    labels = None if guide is None else np.asarray(guide, dtype=np.int64)[features.rows]
     check(cancel)
     if progress is not None:
         progress(0, 100)
@@ -394,11 +554,12 @@ def umap_map(
         warnings.filterwarnings("ignore", message=".*inverse_transform.*")
         # Identical fingerprints are "disconnected" under Jaccard; UMAP still places them.
         warnings.filterwarnings("ignore", message=".*isconnect.*")
-        out[fit_rows] = model.fit_transform(take(fit_rows))
+        y = None if labels is None else labels[fit_rows]
+        out[fit_rows] = model.fit_transform(take(fit_rows), y=y)
     notes = []
     rest = np.setdiff1d(np.arange(n), fit_rows)
     if len(rest):
-        notes.append(f"fitted on {len(fit_rows):,} sampled compounds; the rest placed onto it")
+        notes.append(f"fitted on {len(fit_rows):,} of {n:,} compounds; the rest placed onto it")
         chunks = np.array_split(rest, max(1, len(rest) // 10_000))
         for i, chunk in enumerate(chunks):
             check(cancel)
@@ -421,15 +582,21 @@ def tsne_map(
     init: str = "pca",
     seed: int | None = 42,
     dims: int = 2,
+    metric: str = "euclidean",
+    exact: bool = False,
+    angle: float = 0.5,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> Embedding:
-    """t-SNE (Barnes-Hut) in *dims* (2 or 3) dimensions.
+    """t-SNE in *dims* (2 or 3) dimensions: Barnes-Hut, or *exact* (at most
+    ``TSNE_EXACT_MAX`` rows). *angle* is Barnes-Hut's trade-off: lower is more accurate and
+    slower.
 
-    With *reduce_to* it runs on that many PCA dimensions (Euclidean); without, on the features
-    themselves: Jaccard (Tanimoto) on fingerprint bits, Euclidean on z-scored columns.
-    *learning_rate* None is scikit-learn's "auto" (rows / exaggeration / 4); *init* is
-    "pca" (stable layouts) or "random".
+    With *reduce_to* it runs on that many PCA dimensions; without, on the features
+    themselves: Jaccard (Tanimoto) on fingerprint bits, *metric* (``TSNE_METRICS``) on
+    anything else. *learning_rate* None is scikit-learn's "auto" (rows / exaggeration / 4);
+    *init* is "pca" (stable layouts) or "random". t-SNE cannot place rows onto a map, so it
+    always fits every row.
     """
     _need(features, 5)
     from sklearn.manifold import TSNE
@@ -437,13 +604,19 @@ def tsne_map(
     dims = _dims(dims)
     if init not in ("pca", "random"):
         raise ValueError(f"unknown t-SNE start {init!r}")
-    x = _features_for(features, reduce_to, progress=progress, cancel=cancel)
-    jaccard = features.fps is not None and not reduce_to
-    check(cancel)
+    if metric not in TSNE_METRICS:
+        raise ValueError(f"unknown t-SNE distance {metric!r}")
     n = len(features)
+    if exact and n > TSNE_EXACT_MAX:
+        raise ValueError(f"Exact t-SNE takes at most {TSNE_EXACT_MAX:,} compounds.")
+    jaccard = features.fps is not None and not reduce_to
+    if jaccard and exact:  # the bits themselves, every pair measured
+        x, metric = features.bits(np.arange(n)), "jaccard"
+    else:
+        x = _features_for(features, reduce_to, progress=progress, cancel=cancel)
+    check(cancel)
     perplexity = min(perplexity, (n - 1) / 3)
-    metric = "euclidean"
-    if jaccard:
+    if jaccard and not exact:
         # The neighbours t-SNE needs (3 × perplexity), found exactly on the bits, as a sparse
         # distance graph: much faster than scikit-learn's brute-force Jaccard.
         from scipy.sparse import csr_matrix
@@ -472,6 +645,8 @@ def tsne_map(
         early_exaggeration=exaggeration,
         init=init,
         metric=metric,
+        method="exact" if exact else "barnes_hut",
+        angle=angle,
         random_state=seed,
         n_jobs=-1,
     )
@@ -491,6 +666,12 @@ def pacmap_map(
     reduce_to: int | None = None,
     seed: int | None = 42,
     dims: int = 2,
+    fit: np.ndarray | None = None,
+    variant: str = "pacmap",
+    learning_rate: float = 1.0,
+    iterations: tuple[int, int, int] = (100, 100, 250),
+    init: str = "pca",
+    local_threshold: float = 10.0,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> Embedding:
@@ -503,9 +684,21 @@ def pacmap_map(
     is a key of ``PACMAP_METRICS`` (None: Jaccard on fingerprint bits, else Euclidean).
     Jaccard and Hamming find the neighbour pairs exactly on the bits (see :func:`bit_neighbours`);
     the mid-near and further pairs are sampled by Hamming distance.
+
+    *variant* "localmap" is LocalMAP (Wang et al. 2025), which sharpens local groups by
+    dropping neighbour pairs farther apart than *local_threshold* late in the run.
+    *iterations* are the three phases' lengths; *init* is "pca" or "random". With *fit*
+    (input rows) the map is fitted on those and the rest placed onto it, which bit distances
+    cannot do.
     """
     _need(features, 5)
     dims = _dims(dims)
+    if variant not in PACMAP_VARIANTS:
+        raise ValueError(f"unknown PaCMAP variant {variant!r}")
+    if init not in ("pca", "random"):
+        raise ValueError(f"unknown PaCMAP start {init!r}")
+    if len(iterations) != 3 or min(iterations) < 0:
+        raise ValueError("PaCMAP takes three phase lengths of 0 or more")
     bits = features.fps is not None and not reduce_to
     if distance is None:
         distance = "jaccard" if bits else "euclidean"
@@ -513,45 +706,68 @@ def pacmap_map(
         raise ValueError(f"unknown PaCMAP distance {distance!r}")
     if distance in BIT_METRICS and not bits:
         raise ValueError(
-            f"{PACMAP_METRICS[distance]} distance needs fingerprints without PCA dimensions"
+            f"{PACMAP_METRICS[distance]} distance needs fingerprint bits without PCA dimensions"
+        )
+    fit = features.positions(fit)
+    _need_fit(fit, 5)
+    if fit is not None and distance in BIT_METRICS:
+        raise ValueError(
+            f"PaCMAP cannot place rows by {PACMAP_METRICS[distance]} distance: choose another "
+            "distance to fit on some rows"
         )
     import pacmap  # imports numba and faiss: only when a map is made
 
     x = _features_for(features, reduce_to, progress=progress, cancel=cancel)
     check(cancel)
     n = len(features)
-    n_neighbors = max(2, min(neighbours, n - 2))
+    basis = x if fit is None else x[fit]
+    n_neighbors = max(2, min(neighbours, len(basis) - 2))
     pairs = None
     if distance in BIT_METRICS:
         near = bit_neighbours(features.fps, n_neighbors, distance, cancel=cancel)
         pairs = np.column_stack([np.repeat(np.arange(n), n_neighbors), near.ravel()])
         pairs = np.ascontiguousarray(pairs, dtype=np.int32)
         check(cancel)
-    model = pacmap.PaCMAP(
-        n_components=dims,
-        n_neighbors=n_neighbors,
-        MN_ratio=mn_ratio,
-        FP_ratio=fp_ratio,
-        pair_neighbors=pairs,
-        distance="hamming" if distance in BIT_METRICS else distance,
-        apply_pca=False,  # reduced above when asked
-        random_state=seed,
-    )
+    settings = {
+        "n_components": dims,
+        "n_neighbors": n_neighbors,
+        "MN_ratio": mn_ratio,
+        "FP_ratio": fp_ratio,
+        "pair_neighbors": pairs,
+        "distance": "hamming" if distance in BIT_METRICS else distance,
+        "apply_pca": False,  # reduced above when asked
+        "random_state": seed,
+        "lr": learning_rate,
+        "num_iters": tuple(int(i) for i in iterations),
+        "save_tree": fit is not None,
+    }
+    if variant == "localmap":
+        model = pacmap.LocalMAP(low_dist_thres=local_threshold, **settings)
+    else:
+        model = pacmap.PaCMAP(**settings)
     quiet = logging.getLogger("pacmap")  # "random state is set", "high-dimensional data"
     level = quiet.level
     quiet.setLevel(logging.ERROR)
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            coords = model.fit_transform(x, init="pca")
+            fitted = model.fit_transform(basis, init=init)
+            if fit is None:
+                coords = np.asarray(fitted, dtype=np.float64)
+            else:
+                coords = np.empty((n, dims))
+                coords[fit] = fitted
+                rest = np.setdiff1d(np.arange(n), fit)
+                check(cancel)
+                coords[rest] = model.transform(x[rest], basis=basis)
     finally:
         quiet.setLevel(level)
     check(cancel)
-    return _scatter(features, np.asarray(coords, dtype=np.float64), "pacmap", dims)
+    return _scatter(features, coords, "pacmap", dims, notes=_fit_note(features, fit))
 
 
 OPTIONS = {
-    "pca": ("components", "dims", "progress", "cancel"),
+    "pca": ("components", "dims", "write", "fit", "progress", "cancel"),
     "umap": (
         "neighbours",
         "min_dist",
@@ -561,6 +777,16 @@ OPTIONS = {
         "seed",
         "fit_max",
         "dims",
+        "fit",
+        "guide",
+        "guide_weight",
+        "densmap",
+        "density_weight",
+        "init",
+        "local_connectivity",
+        "repulsion",
+        "negative_samples",
+        "learning_rate",
         "progress",
         "cancel",
     ),
@@ -573,6 +799,9 @@ OPTIONS = {
         "init",
         "seed",
         "dims",
+        "metric",
+        "exact",
+        "angle",
         "progress",
         "cancel",
     ),
@@ -584,6 +813,12 @@ OPTIONS = {
         "reduce_to",
         "seed",
         "dims",
+        "fit",
+        "variant",
+        "learning_rate",
+        "iterations",
+        "init",
+        "local_threshold",
         "progress",
         "cancel",
     ),

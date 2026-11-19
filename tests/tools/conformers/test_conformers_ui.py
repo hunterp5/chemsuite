@@ -127,4 +127,9 @@ def test_export_conformers(window, qtbot, tmp_path) -> None:
     assert len(records) == first + 2  # benzene has one conformer, "nonsense" an empty record
     assert records[-1].GetNumAtoms() == 0
     assert records[0].GetProp("ID") == "A"
+    export.hydrogens.set_value("remove")
+    job = export.export(path)
+    qtbot.waitUntil(lambda: not job.running, timeout=30_000)
+    records = list(Chem.SDMolSupplier(str(path), removeHs=False))
+    assert records[0].GetNumAtoms() == 5  # butanol's heavy atoms only
     export.reject()

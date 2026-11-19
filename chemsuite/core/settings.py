@@ -108,6 +108,8 @@ class Settings:
     files: Files = field(default_factory=Files)
     performance: Performance = field(default_factory=Performance)
     jobs: Jobs = field(default_factory=Jobs)
+    #: tool dialog -> setting -> the value last run with (see ``_tool_options``)
+    tool_options: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def copy(self) -> Settings:
         return copy.deepcopy(self)
@@ -161,6 +163,21 @@ def _str_list(v: Any) -> bool:
     return isinstance(v, list) and all(isinstance(s, str) for s in v)
 
 
+def _option(v: Any) -> bool:
+    """A remembered dialog value: a number, text, bool, None, or a list of those."""
+    scalar = (str, int, float, bool, type(None))
+    return isinstance(v, scalar) or (isinstance(v, list) and all(isinstance(x, scalar) for x in v))
+
+
+def _tool_options(v: Any) -> bool:
+    return isinstance(v, dict) and all(
+        isinstance(k, str)
+        and isinstance(o, dict)
+        and all(isinstance(n, str) and _option(x) for n, x in o.items())
+        for k, o in v.items()
+    )
+
+
 def _int_between(lo: int, hi: int):
     return lambda v: isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi
 
@@ -195,6 +212,7 @@ CHECKS = {
     "performance.max_workers": _int_between(0, 1024),
     "performance.graphics": lambda v: v in GRAPHICS_MODES,
     "jobs.notify": lambda v: isinstance(v, bool),
+    "tool_options": _tool_options,
 }
 
 
@@ -208,6 +226,8 @@ def valid(key: str, value: Any) -> bool:
         return isinstance(value, str)
     if group == "shortcuts":
         return _str_list(value)
+    if group == "tool_options":
+        return _tool_options({"_": value})
     return False
 
 

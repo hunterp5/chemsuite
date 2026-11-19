@@ -375,6 +375,7 @@ class ToolDialog(QDialog):
         self.setWindowTitle(title)
         self.job = None
         self.guide_anchor = guide
+        self.memory = None  # see remember()
 
         self.sections = QVBoxLayout()
         self.sections.setSpacing(6)
@@ -424,7 +425,7 @@ class ToolDialog(QDialog):
         layout.addSpacing(4)
         layout.addWidget(rule)
         layout.addWidget(self.footer)
-        bottom = QHBoxLayout()
+        self._bottom = bottom = QHBoxLayout()
         bottom.addWidget(self.guide_button)
         bottom.addStretch(1)
         bottom.addWidget(self.buttons)
@@ -441,6 +442,27 @@ class ToolDialog(QDialog):
         section = Section(title, collapsed=collapsed)
         self.sections.addWidget(section)
         return section
+
+    def remember(self, ctx, key: str, fields) -> None:
+        """Open with the values *fields* (name -> widget) were last run with, keep them on
+        each run, and add a Defaults button that sets them back (see ``memory.Memory``).
+        Call it once the fields exist and are connected."""
+        from .memory import Memory
+
+        self.memory = Memory(ctx, key, fields)
+        self.memory.restore()
+        button = QPushButton("Defaults")
+        button.setToolTip("Set every setting back to its default")
+        button.setAutoDefault(False)
+        button.clicked.connect(self.reset_defaults)
+        self._bottom.insertWidget(1, button)
+        self.defaults_button = button
+        self.refresh()
+
+    def reset_defaults(self) -> None:
+        if self.memory is not None:
+            self.memory.reset()
+            self.refresh()
 
     # -- what subclasses say ----------------------------------------------------------------
     def problem(self) -> str:
@@ -482,6 +504,8 @@ class ToolDialog(QDialog):
             self.refresh()
             return
         self.job = self.run()
+        if self.memory is not None:
+            self.memory.save()
         super().accept()
 
     def done(self, result: int) -> None:

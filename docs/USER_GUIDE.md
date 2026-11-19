@@ -44,11 +44,13 @@ Each document has its own window. From top to bottom:
   | Edit | Undo, Copy and Paste, selecting rows (Select All, Invert, Clear, Delete Selection) |
   | Tools | Random ▸ (Random Numbers and Random Rows) and Standardize Values; Calculator and Notepad; Sketcher |
   | Chemistry | Standardize; Calculate ▸ (Descriptors, pKa) and 3D ▸ (Generate Conformers, Superpose); Similarity ▸ (Similarity Search, Diverse Subset), Reaction ▸ (Split Reactions, Retrosynthesis), Enumerate ▸ (Reaction Products, R-Groups on a Core, Recombine Fragments), Decompose ▸ (R-Group Decomposition, Fragments, Central Ring), Routes |
-  | Data | Table ▸ and Lists ▸; Scoring ▸, Cluster and Bin Values; Dimensionality Reduction and Self-Organizing Map; SAR ▸ and Plot ▸; Filters and Search ▸; Browser |
+  | Data | Table ▸ and Lists ▸; Scoring ▸, Cluster and Bin Values; Plot ▸, Dimensionality Reduction ▸, MedChem ▸, Constellation Plot, TMAP and Chemical Space Network; SAR ▸; Search ▸ and Filters; Browser |
   | Data ▸ Table | Operations ▸ (Add Compound, Add Rows, Add Column, Split Column, Join Columns), Statistics |
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
-  | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape, MedChem ▸ |
-  | Protein | Macromolecule Viewer: the workspace for proteins, with its own menus |
+  | Data ▸ Dimensionality Reduction | PCA, UMAP, t-SNE, PaCMAP; Self-Organizing Map |
+  | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape |
+  | Data ▸ MedChem | BOILED-Egg, Golden Triangle, Lipophilic Efficiency (LipE) |
+  | Macromolecule | A button, not a menu: opens the Macromolecule Viewer, the workspace for proteins, with its own menus (on macOS, a menu holding Macromolecule Viewer) |
   | Settings | Theme, Hotkeys, External and General (each its own dialog), Status Bar, User Guide (this guide), Log Folder, About |
 
   - Every command that a tool adds appears in these menus. If a command is greyed out, its
@@ -166,6 +168,11 @@ window of its own; a window that already holds a table does not take dropped fil
 | RD file | `.rdf`, `.rd` | Reactions with their data: a **Reaction** column, and one column per data field (`$DTYPE`). Registry numbers go in an **ID** column. As with SD files, a record whose reaction does not parse is kept and marked invalid. Molecule records (`$MFMT`) go in a **Structure** column. |
 | RXN file | `.rxn` | One reaction, as a one-row table. |
 | chemsuite document | `.csd` | Everything exactly as it was saved (see below). |
+
+**Hydrogens.** In SD, mol2 and Maestro files, a structure with 3D coordinates keeps the
+hydrogens the file gives it (all of them, or only the polar ones of a docked pose), since their
+positions are part of the structure and 3D descriptors need them. A 2D structure is read
+without them, as drawn. The cell shows the SMILES without hydrogens either way.
 
 Any of these except Excel and binary ChemDraw (`.cdx`) can also be gzip-compressed
 (`compounds.sdf.gz`). The text encoding is detected
@@ -309,6 +316,16 @@ Right-click a column header for:
   and orientation, so a series lines up down the column. Structures without the core keep
   their usual drawing. Only the drawings change, not the structures. **Stop Aligning
   Drawings** brings the usual drawings back. The core is saved with the document's layout.
+- **Highlight Atoms ▸** (Structure columns). Mark the atoms another column names on the
+  drawings: the submenu lists the columns whose values name atoms of these structures, such as
+  Top Site (3A4) or Sites (3A4) from [Sites of Metabolism](#sites-of-metabolism). The
+  best-scoring atom is marked strongest and the others more faintly, in the order the column
+  lists them, so a ranking reads at a glance; a column naming one atom marks that atom alone.
+  **None** stops, and so does Data ▸ Search ▸ Clear Highlighting. A value naming an atom the
+  molecule in that row does not have (the wrong element, or an index past the end) marks
+  nothing, so a column written for other structures is ignored rather than drawn wrongly. Only
+  the drawings change, and the choice is saved with the document's layout; write the column
+  again and the marks move with it.
 - **Select ▸** picks shown rows by this column's value, top to bottom: **Empty**, **Not Empty**,
   **First Occurrence** (the first row of each value), **Duplicates** (every row whose value
   appears in a row above it, so deleting them keeps one of each) and **All Duplicated Values**
@@ -1224,7 +1241,7 @@ The 3D plots use the same toolbar as the 2D ones:
 
 ### Constellation Plot
 
-**Data ▸ Plot ▸ Constellation Plot** shows the analog series in a set and how they relate
+**Data ▸ Constellation Plot** shows the analog series in a set and how they relate
 (Naveja and Medina-Franco, *Front. Chem.* 2019, 7, 510).
 
 - **Cores.** Each compound is cut at its retrosynthetic (RECAP) bonds. Every fragment that
@@ -1261,7 +1278,7 @@ The 3D plots use the same toolbar as the 2D ones:
 
 ### Chemical Space Network
 
-**Data ▸ Plot ▸ Chemical Space Network** draws each compound as a point and joins the ones that
+**Data ▸ Chemical Space Network** draws each compound as a point and joins the ones that
 are alike (Maggiora and Bajorath, *J. Comput.-Aided Mol. Des.* 2014, 28, 795; Zwierzyna et al.,
 *J. Comput.-Aided Mol. Des.* 2015, 29, 113).
 
@@ -1287,7 +1304,7 @@ are alike (Maggiora and Bajorath, *J. Comput.-Aided Mol. Des.* 2014, 28, 795; Zw
 
 ### TMAP
 
-**Data ▸ Plot ▸ TMAP** lays a large set out as a tree (Probst and Reymond, *J. Cheminf.* 2020,
+**Data ▸ TMAP** lays a large set out as a tree (Probst and Reymond, *J. Cheminf.* 2020,
 12, 12). Each compound is joined to its most similar compounds (**Neighbours**, by Tanimoto on
 Morgan fingerprints, radius 2); the tree keeps the shortest of those links that join every
 compound once, and is laid out so that each compound sits on a branch beside its closest
@@ -1314,7 +1331,7 @@ Both plots:
 
 ### MedChem plots
 
-The Data ▸ Plot ▸ MedChem menu has three plots. Each one first calculates any properties it needs that
+The Data ▸ MedChem menu has three plots. Each one first calculates any properties it needs that
 are not already columns, then plots them. To calculate them again anyway, tick **Recalculate
 existing columns** under **More Options**. Hover over **Plot** for what the plot shows.
 
@@ -1358,7 +1375,10 @@ calculating MW again adds "MW (2)".
   to make) to 10 (very hard), from how common the molecule's fragments are in known compounds
   and a penalty for size, stereocentres, macrocycles and unusual ring fusions. Most drug-like
   compounds score 2-4.
-- **3D shape descriptors** use a 3D structure when the cell has conformers.
+- **3D shape descriptors** use a 3D structure when the cell has conformers, with all its
+  hydrogens: they carry mass, and without them PMI and PBF can be a tenth to over half too
+  low. A structure read without some of them (a pose with only polar hydrogens, say) gets
+  the missing ones placed before it is measured; the table is not changed.
 - **MOE-type (VSA)** are Labute's binned surface-area descriptors (2000), with MOE's names and
   bins, computed by RDKit (MOE itself is not needed; values can differ slightly from MOE's).
   Each sums the surface area of the atoms whose property (Crippen logP, molar refractivity,
@@ -1474,6 +1494,12 @@ scores a molecule in about a millisecond.
   - Phase II metabolism (glucuronidation, sulfation), non-P450 enzymes and the structures of the
     metabolites themselves are out of scope.
   - Treat the ranking as a screening aid, not a measurement.
+- **On the structures.** When a run finishes, the sites of the most prescribed isoform you
+  asked for (CYP3A4 first, then 2D6, 2C9, 1A2, else the first isoform of the run) are marked on
+  that structure column's drawings: the ranked Sites column if you asked for it, otherwise the
+  Top Site column. That is how you see which atom `C7` means, since the table does not number
+  atoms. Right-click the structure column's header for **Highlight Atoms ▸** to mark another
+  isoform's column instead, or Data ▸ Search ▸ Clear Highlighting to stop.
 - **Cancelling** keeps the rows already found.
 
 ### Standardize
@@ -1577,6 +1603,12 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 Writes every conformer as its own SD record, carrying the row's other columns. Choose **All**,
 **Shown** or **Selected** rows (Selected when rows are selected), then **Export** asks for the
 file.
+
+**Hydrogens** sets what is written: **As Stored** (the default) writes each structure as the
+table holds it, **Add** writes every hydrogen, placing missing ones on each conformer, and
+**Remove** writes heavy atoms only (deuterium and hydrogens that define stereo stay). The
+table itself is not changed. Conformers made by Generate Conformers already carry every
+hydrogen.
 
 Each record has a **Conformer** field numbering it (when the row has several). Conformers that
 carry energies also get **Energy (kcal/mol)**, **Relative Energy (kcal/mol)** (ΔE above the
@@ -1721,12 +1753,14 @@ tooltips give the reason. Settings ▸ General ▸ 3D graphics can force softwar
 
 ### Macromolecules
 
-**Macromolecule ▸ Macromolecule Viewer** (Ctrl+Shift+R) opens a workspace for macromolecules —
+The **Macromolecule** button on the menu bar (Ctrl+Shift+R; on macOS, **Macromolecule ▸
+Macromolecule Viewer**) opens a workspace for macromolecules —
 proteins, nucleic acids, glycans and their complexes: a window of its own, titled after the
 document, with its own menu bar (on macOS the menu bar at the top of the screen switches to the
 viewer's menus while it is in front). It is not docked beside the table; it closes with its
-document and reopens with it, in the same size and place. Everything the viewer does is in its
-menus and the right-click menus:
+document and reopens with it, in the same size and place. The table is only the way in:
+everything the viewer does (preparing, minimizing, docking, rescoring) is in its own menus and
+the right-click menus:
 
 - **File:** **Open…** (Ctrl+O; PDB or mmCIF files, gzipped or not, and session files,
   `.cspx`), **Fetch from PDB…** (Ctrl+Shift+O; download an entry by its ID, such as 1ATP),
@@ -2705,7 +2739,23 @@ at one place. H → X changes are included.
 - Set the **Largest change**, in heavy atoms, and **Min. pairs**, the number of pairs a
   transformation needs to be listed. **Activity** is optional: "(none)" lists the pairs
   without activity shifts.
-- Transformations (A → B) are summarised over all their pairs, with the activity shift.
+- Transformations (A → B) are summarized over all their pairs, with the activity shift:
+  **Pairs**, **Mean Δ**, **SD**, and how many pairs go **Up** and **Down**. Δ is the "to"
+  compound's activity minus the "from" compound's.
+- The panel draws each transformation's **From** and **To** groups, the attachment point as a
+  wavy line. They sort, and **Copy Transformations** copies them, as SMILES (`*Cl`, `H`).
+- Choosing a transformation (or several) lists its pairs below, both compounds drawn the same
+  way round on the part they share, with the changed part highlighted (for H, the atom it sits
+  on).
+- Above the pairs, a strip shows one dot per pair on the Δ axis (green up, red down), with zero
+  and the mean marked: a tight cluster is a consistent change, a wide spread is not. Click a dot
+  to choose its pair. The strip is hidden when no activity column was chosen.
+- Double-click a pair to go to one of its compounds in the table: its "from" columns go to the
+  "from" compound, the others to the "to" compound.
+- **Current Compound** lists only the transformations of the table's current row, and follows
+  it as you move through the table. It is saved with the document.
+- **Select Compounds** selects the compounds of the chosen pairs, or of the chosen
+  transformations when no pair is chosen.
 
 ### Activity Cliffs (SALI)
 
@@ -2723,42 +2773,83 @@ Data ▸ SAR ▸ Activity Cliffs… lists similar compounds with very different 
 
 ### Dimensionality Reduction
 
-Data ▸ Dimensionality Reduction… places compounds on a 2D or 3D map by
-fingerprints, number columns, or both. Choose a **Fingerprint** (or **None**) and tick any
-**Columns**: a fingerprint alone maps by its bits, columns alone by their z-scores, and a
-fingerprint with ticked columns uses the two together, for rows that have all of them: the
-fingerprints are reduced to their principal components, the columns are z-scored, and the two
-are weighted equally so neither drowns out the other (distances are Euclidean).
-**Dimensions: 2D** writes two columns and opens a scatter plot;
-**3D** writes three and opens a 3D Scatter (a 3D PCA map is always PC1, PC2 and PC3).
+Data ▸ Dimensionality Reduction ▸ **PCA…**, **UMAP…**, **t-SNE…** or **PaCMAP…** places
+compounds on a 2D or 3D map by fingerprints, number columns, or both. Each dialog opens with
+the settings it last ran with; **Defaults** sets every setting back.
 
-| Method | Options | More Options (folded) |
+**Input**
+
+- **Fingerprint** (or **None**) and any ticked **Columns**: a fingerprint alone maps by its
+  bits, columns alone by their scaled values, and a fingerprint with ticked columns uses the
+  two together, for rows that have all of them (the fingerprints are reduced to their principal
+  components, both blocks are brought to the same spread and weighted, and distances are
+  Euclidean).
+- **Rows**: the rows to map.
+- **Fit on** (not t-SNE): **All rows**, **Shown rows**, **Selected rows** or a **List**. The map
+  is made from those rows, and the other rows are then placed onto it, so you can fit on a
+  reference set and see where new compounds fall in its space. The status bar says how many
+  rows it was fitted on. Fit on at least 5 of the rows mapped.
+
+**Method** and **More Options** (open). The fingerprint and column settings are in More
+Options for every method:
+
+| Setting | What it does |
+|---|---|
+| **Fingerprint size** | 512, 1,024, 2,048 (the default) or 4,096 bits, for Morgan, FCFP, RDKit, atom-pair and torsion fingerprints |
+| **Radius** | 1 to 4 bonds, for Morgan and FCFP (each starts from its own: 2 for ECFP4 and FCFP4, 3 for ECFP6) |
+| **Counts** | How often each feature occurs, not only whether it does. Counts are compared by Euclidean-type distances, so bit distances (Jaccard and the like) are then not available |
+| **Fingerprint weight** | With a fingerprint and columns: the fingerprints' share, 0 to 100% (default 50%); the columns get the rest |
+| **Column scaling** | **Z-score** (the default: mean 0, standard deviation 1), **Min-max** (0 to 1), **Robust** (median 0, interquartile range 1, so outliers weigh less) or **None** |
+
+| Method | Method section | More Options |
 |---|---|---|
-| PCA | **Components**: PC1 and PC2 (the default), PC1 and PC3, PC2 and PC3, or PC3 and PC4 | — |
-| UMAP | Neighbours, Min. distance | **Distance** (Jaccard, the default, Dice, Rogers-Tanimoto, Hamming, Euclidean, Manhattan, Cosine, Correlation), **Spread**, **Epochs**, **Fit on up to** (rows; larger sets are fitted on a sample of this size and the rest placed onto that map; default 50,000), **Seed** |
-| PaCMAP | Neighbours (default 10) | **Mid-near pairs** (per neighbour pair; default 0.5), **Further pairs** (default 2), **PaCMAP distance** (Jaccard, the default, Hamming, Euclidean, Manhattan, Angular), **PCA dimensions** (default Off), **Seed** |
-| t-SNE | Perplexity | **Learning rate** (Automatic or a number), **Iterations**, **Exaggeration** (early exaggeration), **PCA dimensions** (default Off: Jaccard on fingerprint bits; a number runs t-SNE on that many principal components), **Start from** (Random, the default, or PCA), **Seed** |
+| PCA | **Dimensions**, **Components**: PC1 and PC2 (the default), PC1 and PC3, PC2 and PC3, or PC3 and PC4 | **Write components** (Plotted only, or 3 to 20: writes PC1 to PCn as columns), **Loadings** (number columns without a fingerprint: opens a PCA Loadings panel of each column's weight on each component) |
+| UMAP | **Dimensions**, **Neighbors**, **Min. distance**, **Guide by** (None or a column), **Groups** (number guide, default 5), **Guide weight** (default 0.5) | **Distance** (Jaccard, the default, Dice, Rogers-Tanimoto, Hamming, Euclidean, Manhattan, Cosine, Correlation), **Spread**, **Epochs**, **Fit on up to** (default 50,000), **Start from** (Spectral, the default, PCA, Random), **densMAP**, **Density weight** (default 2), **Local connectivity**, **Repulsion**, **Negative samples**, **Learning rate**, **Seed** |
+| t-SNE | **Dimensions**, **Perplexity** | **Learning rate** (Automatic or a number), **Iterations**, **Exaggeration**, **PCA dimensions** (default Off), **Distance** (Euclidean, Cosine, Manhattan, Chebyshev; for columns, counts or PCA dimensions), **Algorithm** (Exact, or Barnes-Hut when unticked), **Angle** (Barnes-Hut), **Start from** (Random, the default, or PCA), **Seed** |
+| PaCMAP | **Dimensions**, **Neighbors** (default 10), **Variant** (PaCMAP or LocalMAP) | **Mid-near pairs** (default 0.5), **Further pairs** (default 2), **Distance** (Jaccard, the default, Hamming, Euclidean, Manhattan, Angular), **PCA dimensions** (default Off), **Local distance limit** (LocalMAP, default 10), **Learning rate**, **Iterations** (the three phases, 100, 100 and 250), **Start from** (PCA, the default, or Random), **Seed** |
+
+**Output**
+
+- **Color by** (the activity column when there is one, or None) and **Size by** (None or a
+  number column): what the plot shows.
+- **Plot**: untick **Open a plot** to only write the map's columns.
+
+Notes:
 
 - **Jaccard** (Tanimoto), **Dice**, **Rogers-Tanimoto** and **Hamming** compare fingerprint
-  bits, so they need a fingerprint with no columns ticked (and, for PaCMAP, **PCA dimensions**
-  Off). When they don't apply the distance switches to Euclidean, and back once they do.
+  bits, so they need a fingerprint alone, with no columns ticked and **Counts** off (and, for
+  PaCMAP, **PCA dimensions** Off). When they don't apply the distance switches to Euclidean,
+  and back once they do. PaCMAP cannot place rows by a bit distance, so with **Fit on** choose
+  another distance.
 - **PCA dimensions** is Off by default, so t-SNE and PaCMAP map the features themselves.
   Setting a number first reduces the features to that many principal components, which is
   faster on large sets (bit distances are then not available).
+- **Guide by** makes UMAP supervised: compounds with the same value of the column are pulled
+  together. A text column's values are the groups; a number column is cut into **Groups** of
+  about equal size. Rows without a value are placed by their features alone. **Guide weight**
+  runs from 0 (the features alone shape the map) to 1 (the guide column does).
+- **densMAP** keeps how dense each region is: tight groups stay small and loose ones spread
+  out. It cannot place rows, so it needs **Fit on** set to all rows and at most **Fit on up
+  to** rows.
+- **LocalMAP** (Wang et al., 2025) sharpens PaCMAP's local groups by letting go of neighbor
+  pairs that end up farther apart on the map than the **Local distance limit**.
+- **Exact** t-SNE measures every pair and takes at most 5,000 rows; Barnes-Hut approximates far
+  points, more accurately and more slowly at a lower **Angle**.
 - **Min. distance** must not be larger than **Spread**.
 - **Seed**: the same seed gives the same map every run (UMAP then runs on one processor core).
   Set it to **Random** for a faster map that differs each time.
-- PCA's note in the status bar gives the share of the variance on each chosen component.
-- **PaCMAP** (Wang et al., 2021) balances neighbour, mid-near and further pairs, so it keeps
+- PCA's note in the status bar gives the share of the variance on each chosen component. With
+  **Write components** the columns are named "PC1", "PC2", … and the plot uses the chosen
+  pair. The PCA Loadings panel is saved with the document.
+- **PaCMAP** (Wang et al., 2021) balances neighbor, mid-near and further pairs, so it keeps
   local groups like UMAP while distances between groups mean more. With Jaccard or Hamming its
-  neighbours are found exactly on the fingerprint bits, which takes longer on very large sets
+  neighbors are found exactly on the fingerprint bits, which takes longer on very large sets
   than a few PCA dimensions do.
 - t-SNE on very large sets (over 50,000 rows) can take many minutes; UMAP and PaCMAP are
   quicker there.
 - The map is written to new columns named after the method: "UMAP 1", "UMAP 2" (and
   "UMAP 3" in 3D). A map never replaces a column: the next UMAP map writes "UMAP 1 (1)",
   "UMAP 2 (1)", the one after "(2)", and so on. Rename them in the table if you like.
-- The plot opens coloured by the activity column when there is one; change it with the cog.
 - A map needs at least 3 rows.
 - The job shows as "Calculating UMAP…" (or PCA / t-SNE / PaCMAP) in the status bar until
   the plot opens. UMAP, t-SNE and PaCMAP run in a separate process, so the window stays
@@ -2766,13 +2857,24 @@ are weighted equally so neither drowns out the other (distances are Euclidean).
 
 ### Self-Organizing Map
 
-Data ▸ Self-Organizing Map… trains a grid of cells. Similar compounds land in
-the same or neighbouring cells.
+Data ▸ Dimensionality Reduction ▸ Self-Organizing Map… trains a grid of cells. Similar
+compounds land in the same or neighboring cells. Like the maps, it opens with the settings it
+last ran with, and **Defaults** sets them back.
 
+- **Input.** Compare by a fingerprint or by number columns; **Rows**; **Fit on** trains the map
+  on those rows only and then places every row in its closest cell.
 - **Grid.** Set rows × columns, or tick **Automatic** to let the size follow the number of
-  compounds; **Training passes** sets how long it trains.
-- **Output.** Each compound's cell is written to a column. A panel shows the grid coloured by any
-  column, with **Higher is better** for activity.
+  compounds; **Cells** are **Square** or **Hexagonal** (six neighbors at the same distance, so
+  groups spread more evenly); **Training passes** sets how long it trains.
+- **More Options** (open): the fingerprint settings above, **Neighborhood** (**Gaussian**, whose
+  pull fades with distance, or **Bubble**, which pulls every cell within the radius alike),
+  **Start radius** (Automatic: half the grid) and **End radius** (default 0.7) in cells,
+  **Start from** (**PCA plane**, the default, or **Random compounds**), **Wrap edges** (the grid
+  joins opposite edges like a torus, so nothing crowds into the corners) and **Seed**.
+- **Output.** Each compound's cell is written to the "SOM Row" and "SOM Column" columns. A
+  panel draws the grid as squares or hexagons, colored by the count or by any number column,
+  with **Higher is better** for activity. Click a cell to select its compounds; hover over it
+  for its count and value.
 
 ---
 

@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
-"""Layout and Log, at the right end of the menu bar.
+"""Layout and Log, at the right end of the menu bar, and tools' buttons on it (Macromolecule).
 
 Windows and Linux show them as two buttons in the menu bar's corner. macOS has one menu bar
 for the whole app, so they go in a Window menu there instead.
@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QHBoxLayout, QMenu, QToolButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QMenu, QMenuBar, QToolButton, QWidget
 
 from ..shell.jobs_ui import FAILED_COLOUR, JobsIndicator
 from . import dock_layout
@@ -73,6 +73,22 @@ def install(window: MainWindow, layout: QMenu, log: QAction) -> None:
         row.addWidget(button)
     bar.setCornerWidget(corner, Qt.Corner.TopRightCorner)
     window.layout_button, window.log_button = layout_button, log_button
+
+
+def bar_button(bar: QMenuBar, title: str, action: QAction) -> QAction | None:
+    """A button named *title* on the menu bar that triggers *action* (a menu of that name
+    holding *action* on macOS, whose native menu bar shows menus only). None for no *title*."""
+    if not title:
+        return None
+    if bar.isNativeMenuBar():
+        menu = bar.addMenu(title)
+        menu.addAction(action)
+        return menu.menuAction()
+    button = bar.addAction(title)
+    button.setToolTip(action.toolTip())
+    button.setEnabled(action.isEnabled())
+    button.triggered.connect(action.trigger)
+    return button
 
 
 class LogButton(QToolButton):

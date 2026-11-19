@@ -29,10 +29,13 @@ from .kit import (
     inline,
     selected_only,
 )
+from .memory import FitChoice, Memory
 
 __all__ = [
     "FIELD_WIDTH",
     "LABEL_WIDTH",
+    "FitChoice",
+    "Memory",
     "RowsChoice",
     "Section",
     "Segmented",

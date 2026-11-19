@@ -148,7 +148,8 @@ class MetabolismDialog(ToolDialog):
     def run(self):
         ctx = self.ctx
         oids = self.rows.oids()
-        cells = ctx.structure_inputs(self.structure.currentText(), oids)
+        structures = self.structure.currentText()
+        cells = ctx.structure_inputs(structures, oids)
         isoforms = self.chosen_isoforms()
         chosen = self.chosen()
 
@@ -156,9 +157,14 @@ class MetabolismDialog(ToolDialog):
             return predict_metabolism(cells, isoforms, progress=job.report, cancel=job.cancel_token)
 
         def done(results: SiteResults) -> None:
-            finish(ctx, oids[: len(results)], results, isoforms, chosen)
+            finish(ctx, oids[: len(results)], results, isoforms, chosen, structures)
 
         return ctx.run("Finding sites of metabolism…", work, done, keep_partial=True)
+
+
+def shown_isoform(isoforms: list[str]) -> str:
+    """The isoform whose sites are marked on the structures: the most prescribed one chosen."""
+    return next((name for name in COMMON_ISOFORMS if name in isoforms), isoforms[0])
 
 
 def finish(
@@ -167,8 +173,10 @@ def finish(
     results: SiteResults,
     isoforms: list[str],
     chosen: list[str],
+    structures: str = "",
 ) -> dict[str, str]:
-    """Write the chosen columns for *oids* (the rows *results* covers), always as new columns."""
+    """Write the chosen columns for *oids* (the rows *results* covers), always as new columns,
+    and mark one isoform's sites on the drawings in *structures*."""
     names = column_names(isoforms)
     values: dict[str, list[object]] = {
         "top": [
@@ -195,5 +203,9 @@ def finish(
     )
     if results.failed:
         message += f"; {plural(results.failed, 'structure')} could not be processed"
+    shown = shown_isoform(isoforms)
+    source = written.get(f"Sites ({shown})") or written.get(f"Top Site ({shown})")
+    if source is not None and ctx.highlight_atoms(structures, source):
+        message += f"; CYP{shown}'s sites are marked on the structures"
     ctx.show_message(message)
     return written

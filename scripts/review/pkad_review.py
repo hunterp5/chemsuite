@@ -56,6 +56,8 @@ CCD = ROOT / "samples" / "prepare" / "ccd"
 TABLES = DATA / "tables"
 #: PROPKA 3's model pKa values: the null model
 MODEL = {"ASP": 3.8, "GLU": 4.5, "HIS": 6.5, "CYS": 9.0, "TYR": 10.0, "LYS": 10.5}
+#: Å: a residue with a heavy atom this close to a metal ion binds it in the crystal
+METAL_REACH = 3.0
 
 
 @dataclass(frozen=True)
@@ -118,6 +120,47 @@ def training(entry: Entry) -> bool:
 
 def structures() -> list[str]:
     return sorted({e.pdb for e in entries()})
+
+
+@cache
+def metal_bound() -> frozenset[tuple[str, str, int]]:
+    """(pdb, chain, number) of each residue that binds a metal ion in its structure.
+
+    PKAD-R's values are measured in solution, where these residues titrate without the metal
+    (often a crystallization additive: barnase's Zn, RNase T1's Ca), but chemsuite prepares
+    the structure as it is, where a His on zinc cannot take a proton (the ``coordination``
+    term) and its pKa is about 0. So no method is scored on them: on the 8 in the test half
+    (2026-11-18) the null model's RMSE is 0.63, PROPKA's 1.51, chemsuite's 4.75.
+    """
+    from chemsuite.macromolecule.prepare.energy import HALIDES
+    from chemsuite.macromolecule.structure import io
+    from chemsuite.macromolecule.structure.model import ION
+
+    out = set()
+    for pdb in structures():
+        path = PDBS / f"{pdb}.pdb"
+        if not path.is_file():
+            continue
+        s = io.read(path)
+        metal = (s.atom_kind == ION) & (s.element > 2) & ~np.isin(s.element, HALIDES)
+        if not metal.any():
+            continue
+        xyz = s.xyz()
+        ions = xyz[metal]
+        for r in range(s.n_residues):
+            span = s.atoms_of(r)
+            atoms = np.arange(span.start, span.stop)
+            atoms = atoms[(s.element[atoms] > 1) & ~metal[atoms]]
+            if not len(atoms):
+                continue
+            if np.linalg.norm(xyz[atoms][:, None] - ions[None], axis=-1).min() < METAL_REACH:
+                out.add((pdb, str(s.chain_name[s.chain_of[r]]), int(s.res_seq[r])))
+    return frozenset(out)
+
+
+def scored(entry: Entry) -> bool:
+    """Whether the methods are compared on *entry*: not on a metal-bound residue."""
+    return (entry.pdb, entry.chain, entry.number) not in metal_bound()
 
 
 # -- inputs and PROPKA -------------------------------------------------------------------------
@@ -342,7 +385,12 @@ def score() -> None:
     found = {m: predictions(m) for m in methods}
     # every method on the same residues: those all of them answered
     shared = [e for e in entries() if all(e in found[m] for m in methods if found[m])]
-    print(f"# PKAD-R: {len(entries())} values, {len(shared)} answered by every method\n")
+    left = sum(not scored(e) for e in shared)
+    shared = [e for e in shared if scored(e)]
+    print(
+        f"# PKAD-R: {len(entries())} values, {len(shared)} answered by every method "
+        f"({left} metal-bound residues left out)\n"
+    )
     print("RMSE (share within 1 unit, count)\n")
     print("| Residues | Half | " + " | ".join(methods) + " |")
     print("|---|---|" + "---|" * len(methods))

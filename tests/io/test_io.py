@@ -24,8 +24,12 @@ import numpy as np
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from rdkit import Chem
+from rdkit.Chem import AllChem
 
+from chemsuite.conformers import energies
 from chemsuite.core.jobs.parallel import process_pool
+from chemsuite.core.mols import mol_to_blob
 from chemsuite.core.table import NUMBER, TEXT, Table
 from chemsuite.core.table.columns import STRUCTURE, StructureColumn
 from chemsuite.io import sdf as sdf_io
@@ -113,6 +117,57 @@ def test_sdf_round_trip(drug_sdf: Path, tmp_path: Path) -> None:
     save_table(table, out)
     again = load_table(out)
     assert all_cells(again) == all_cells(table)
+
+
+def _ensemble(smiles: str, count: int) -> Chem.Mol:
+    mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    AllChem.EmbedMultipleConfs(mol, count, randomSeed=7)
+    for conformer in mol.GetConformers():
+        for prop in (energies.ENERGY, energies.RELATIVE, energies.POPULATION):
+            conformer.SetDoubleProp(prop, float(conformer.GetId()))
+    return mol
+
+
+def test_sdf_keeps_the_hydrogens_of_3d_records_and_drops_those_of_2d_ones(tmp_path) -> None:
+    three_d = _ensemble("CC(=O)Nc1ccccc1", 1)
+    flat = Chem.AddHs(Chem.MolFromSmiles("CCO"))
+    AllChem.Compute2DCoords(flat)
+    path = tmp_path / "mixed.sdf"
+    path.write_text("".join(Chem.MolToMolBlock(m) + "\n$$$$\n" for m in (three_d, flat)))
+    table = load_table(path)
+    structures = table.column("Structure")
+    assert structures.mol(0).GetNumAtoms() == three_d.GetNumAtoms()  # the pose's hydrogens
+    assert structures.mol(1).GetNumAtoms() == 3  # a 2D cell stays hydrogen-free, as before
+    assert all_cells(table)["Structure"] == ["CC(=O)Nc1ccccc1", "CCO"]
+
+
+@pytest.mark.parametrize("hydrogens", [sdf_io.AS_STORED, sdf_io.ADD_H, sdf_io.REMOVE_H])
+def test_sdf_export_adds_or_removes_hydrogens_on_every_conformer(tmp_path, hydrogens) -> None:
+    full = _ensemble("CC(=O)Nc1ccccc1", 3)
+    heavy = Chem.RemoveHs(full)
+    table = Table()
+    table.add_rows(
+        {"Structure": StructureColumn.from_parsed([mol_to_blob(heavy), mol_to_blob(full)],
+                                                  ["CC(=O)Nc1ccccc1"] * 2)},
+        undoable=False,
+    )  # fmt: skip
+    out = tmp_path / "out.sdf"
+    sdf_io.write_sdf(table, out, all_conformers=True, hydrogens=hydrogens)
+    records = list(Chem.SDMolSupplier(str(out), removeHs=False))
+    want = {
+        sdf_io.AS_STORED: [heavy.GetNumAtoms()] * 3 + [full.GetNumAtoms()] * 3,
+        sdf_io.ADD_H: [full.GetNumAtoms()] * 6,
+        sdf_io.REMOVE_H: [heavy.GetNumAtoms()] * 6,
+    }[hydrogens]
+    assert [r.GetNumAtoms() for r in records] == want
+    assert [r.GetProp("Conformer") for r in records] == ["1", "2", "3"] * 2
+    assert all(r.HasProp("Energy (kcal/mol)") for r in records)
+    for record in records:  # each record has its own geometry, not another's coordinates
+        assert Chem.MolToSmiles(Chem.RemoveHs(record)) == "CC(=O)Nc1ccccc1"
+        xyz = record.GetConformer().GetPositions()
+        lengths = [np.linalg.norm(xyz[b.GetBeginAtomIdx()] - xyz[b.GetEndAtomIdx()])
+                   for b in record.GetBonds()]  # fmt: skip
+        assert min(lengths) > 0.9 and max(lengths) < 1.6
 
 
 def test_sdf_writes_2d_coordinates_for_smiles_input(tmp_path: Path) -> None:

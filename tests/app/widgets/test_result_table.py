@@ -50,3 +50,37 @@ def test_a_large_fill_is_quick(qtbot) -> None:
     table.fill(rows, rows)
     assert table.rowCount() == 100_000
     assert time.perf_counter() - start < 0.5  # no per-cell items: cells format when drawn
+
+
+def test_drawing_cells_sort_and_copy_by_text_and_draw_once_per_size(qtbot) -> None:
+    from rdkit import Chem
+
+    from chemsuite.app.widgets.result_table import DRAWING_ROLE, Drawing
+    from chemsuite.core.depict import render_png
+
+    def drawing(smiles: str) -> Drawing:
+        mol = Chem.MolFromSmiles(smiles)
+        return Drawing(
+            smiles,
+            lambda w, h, scale, dark: render_png(mol, w, h, scale=scale, dark=dark),
+            caption=smiles,
+        )
+
+    table = ResultTable(["Structure", "Value"], row_height=80, drawing_width=120)
+    qtbot.addWidget(table)
+    table.resize(400, 300)
+    table.fill([[drawing("CCO"), 2], [drawing("CC"), 1], [drawing("c1ccccc1"), 3]], [0, 1, 2])
+    table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+    assert [table.row_data(r) for r in range(3)] == [2, 1, 0]  # c1ccccc1, CC, CCO
+    assert table.copy_text().splitlines()[1:] == ["c1ccccc1\t3", "CC\t1", "CCO\t2"]
+    index = table.result_model.index(0, 0)
+    assert isinstance(index.data(DRAWING_ROLE), Drawing)
+    assert index.data(Qt.ItemDataRole.ToolTipRole) == "c1ccccc1"
+    assert table.columnWidth(0) >= 120
+    table.show()
+    qtbot.waitExposed(table)
+    table.grab()
+    drawn = table.drawings.drawn
+    assert drawn == 3  # each visible structure once
+    table.grab()
+    assert table.drawings.drawn == drawn  # repainting reuses the pictures
