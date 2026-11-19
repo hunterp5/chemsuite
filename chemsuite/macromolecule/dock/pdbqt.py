@@ -132,7 +132,9 @@ def ligand(mol: Chem.Mol) -> str:
 
 
 def poses(text: str) -> list[Chem.Mol]:
-    """Vina's output PDBQT as one molecule per pose, bond orders and hydrogens restored."""
+    """Vina's output PDBQT as one molecule per pose, bond orders and hydrogens restored, and
+    stereo read from the pose's own geometry (a ligand docked with a center or double bond left
+    undefined is still one isomer in each pose, as a pose read from a file would say)."""
     from meeko import PDBQTMolecule, RDKitMolCreate
 
     try:
@@ -146,6 +148,7 @@ def poses(text: str) -> list[Chem.Mol]:
             one = Chem.Mol(mol)
             one.RemoveAllConformers()
             one.AddConformer(Chem.Conformer(conformer), assignId=True)
+            Chem.AssignStereochemistryFrom3D(one)
             out.append(one)
     if not out:
         raise PdbqtError("The docking output held no poses.")

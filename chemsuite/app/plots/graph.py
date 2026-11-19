@@ -31,9 +31,10 @@ import pyqtgraph as pg
 
 from chemsuite.analysis.fingerprints import DEFAULT_KIND, TooManyPairs, fingerprint_task
 from chemsuite.analysis.graphs.csn import Network, mmp_edges, network, similarity_edges
+from chemsuite.analysis.graphs.mhfp import MinHashes, compute_mhfp
 from chemsuite.analysis.graphs.tmap import Tree, tmap
 from chemsuite.core.table import Table
-from chemsuite.core.table.columns import NUMBER
+from chemsuite.core.table.columns import NUMBER, flat_inputs
 from chemsuite.plotting.data import numbers
 from chemsuite.plotting.style import scale_bins, scale_colors
 
@@ -44,6 +45,8 @@ from .spec import Hover, PlotSpec
 TMAP = "tmap"
 NETWORK = "network"
 GRAPH_KINDS = (TMAP, NETWORK)
+#: what makes compounds a TMAP's neighbors (:attr:`PlotSpec.fingerprint`; saved names)
+FINGERPRINTS = {"ecfp4": "ECFP4", "mhfp6": "MHFP6"}
 #: how a network's edges join compounds (:attr:`PlotSpec.edges`)
 EDGES = {"similarity": "Similarity", "mmp": "Matched Pairs"}
 #: how edges are coloured (:attr:`PlotSpec.edge_color`)
@@ -72,6 +75,10 @@ class GraphFinder(Finder):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._cells: list = []
+        self._cells_hash = 0
+        #: the last MHFP6 values and the cells' hash they were made from: a Neighbours change
+        #: reuses them (encoding is most of an MHFP6 TMAP's time)
+        self._mhfp: tuple[int, MinHashes] | None = None
 
     def job_title(self, spec: PlotSpec) -> str:
         return "Calculating TMAP…" if spec.kind == TMAP else "Calculating Chemical Space Network…"
@@ -85,12 +92,13 @@ class GraphFinder(Finder):
         if len(oids) < 3:
             self.message = "⚠ Fewer than three structures."
             return None
-        self._cells = table.column(column).worker_inputs(table.slots_of(oids))
+        self._cells = flat_inputs(table.column(column), table.slots_of(oids))
         if spec.kind == TMAP:
-            settings: tuple = (spec.neighbours,)
+            settings: tuple = (spec.neighbours, spec.fingerprint)
         else:
             settings = (spec.edges, round(spec.threshold, 3), spec.singletons)
-        return (spec.kind, column, *settings, oids.tobytes(), hash(tuple(self._cells)))
+        self._cells_hash = hash(tuple(self._cells))
+        return (spec.kind, column, *settings, oids.tobytes(), self._cells_hash)
 
     def work(self, spec: PlotSpec, oids: np.ndarray) -> Callable[[object], Outcome]:
         oids = oids.copy()
@@ -108,6 +116,20 @@ class GraphFinder(Finder):
                 return Drawn(oids, net), "", None
 
             return pairs
+        if spec.kind == TMAP and spec.fingerprint == "mhfp6":
+            cells, cells_hash = self._cells, self._cells_hash
+
+            def hashed(handle=None) -> Outcome:
+                job = _job_args(handle)
+                kept = self._mhfp
+                if kept is not None and kept[0] == cells_hash:
+                    values = kept[1]
+                else:
+                    values = compute_mhfp(cells, executor=executor, cancel=job.get("cancel"))
+                    self._mhfp = (cells_hash, values)
+                return Drawn(oids, tmap(values, spec.neighbours, **job)), "", None
+
+            return hashed
         compute, remember = fingerprint_task(
             self.table, spec.structure or "", DEFAULT_KIND, oids, lambda: executor
         )

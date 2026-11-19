@@ -72,5 +72,7 @@ void main()
     bool first = s < 0.5 * len;
     vec4 base = first ? v_color0 : v_color1;
     float flags = first ? v_flags.x : v_flags.y;
+    if (slab.w > 0.0 && -p.z < slab.w && mod(floor(flags / 4.0), 2.0) > 0.5)
+        discard;                               // ghosted, in front of the focused ligand
     fragColor = vec4(look(base.rgb, n, dir, flags, -p.z), base.a);
 }

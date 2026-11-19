@@ -32,6 +32,9 @@ Condie, T. and Ganesan, P. (2005). "LSH Forest: self-tuning indexes for similari
   band, are its candidates.
 - **Exact rerank.** Each candidate's Tanimoto is computed from the packed bits, and the best
   *k* kept, so the similarities are those every other tool in chemsuite reports.
+
+MHFP6 (:mod:`.mhfp`) is a MinHash already: its values go straight into the forest at every
+size, and candidates are ranked by the share of values two rows agree on.
 """
 
 from __future__ import annotations
@@ -43,6 +46,8 @@ import numpy as np
 from chemsuite.analysis.embedding import bit_neighbours
 from chemsuite.analysis.fingerprints import Fingerprints, from_counts
 from chemsuite.core.jobs import CancelToken, check
+
+from .mhfp import MinHashes, agreement
 
 Progress = Callable[[int, int], None]
 
@@ -58,7 +63,7 @@ SEED = 42
 
 
 def knn(
-    fps: Fingerprints,
+    fps: Fingerprints | MinHashes,
     k: int,
     *,
     exact_max: int = EXACT_MAX,
@@ -67,7 +72,8 @@ def knn(
     cancel: CancelToken | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """``(index, similarity)``, each ``n × k``: every row's *k* most similar rows, most similar
-    first. Invalid rows, and the places a row has no neighbour for, hold -1 and NaN."""
+    first. Invalid rows, and the places a row has no neighbour for, hold -1 and NaN. MHFP
+    rows always go through the forest (all their pairs would take far longer than bits')."""
     n = len(fps)
     index = np.full((n, k), -1, dtype=np.int64)
     sim = np.full((n, k), np.nan)
@@ -76,7 +82,7 @@ def knn(
         return index, sim
     sub = fps.take(ok)
     kk = min(k, len(ok) - 1)
-    if len(ok) <= exact_max:
+    if isinstance(sub, Fingerprints) and len(ok) <= exact_max:
         found, scores = bit_neighbours(
             sub, kk, "jaccard", scores=True, progress=progress, cancel=cancel
         )
@@ -131,7 +137,7 @@ def _candidates(
     """``n × (trees · 2 · window)`` candidate rows (-1 past either end of a band)."""
     n, perms = hashes.shape
     width = perms // trees
-    out = np.full((n, trees, 2 * window), -1, dtype=np.int64)
+    out = np.full((n, trees, 2 * window), -1, dtype=np.int32)  # rows fit: half the memory
     offsets = np.r_[np.arange(-window, 0), np.arange(1, window + 1)]
     for t in range(trees):
         check(cancel)
@@ -145,20 +151,41 @@ def _candidates(
     return out.reshape(n, -1)
 
 
+def _scorer(fps: Fingerprints | MinHashes) -> tuple[Callable, int]:
+    """``(score(start, stop, rows) -> similarities, bytes per row)``: exact Tanimoto for bits,
+    the share of agreeing values for MHFP."""
+    if isinstance(fps, MinHashes):
+        hashes = fps.hashes
+
+        def agree(start: int, stop: int, rows: np.ndarray) -> np.ndarray:
+            return agreement(hashes[start:stop, None, :], hashes[rows])
+
+        return agree, hashes.shape[1] * hashes.itemsize
+    words, counts = fps.words, fps.counts
+
+    def tanimoto(start: int, stop: int, rows: np.ndarray) -> np.ndarray:
+        common = np.bitwise_count(words[start:stop, None, :] & words[rows]).sum(axis=2)
+        return from_counts(common, counts[start:stop, None], counts[rows], "tanimoto")
+
+    return tanimoto, words.shape[1] * words.itemsize
+
+
 def _rerank(
-    fps: Fingerprints,
+    fps: Fingerprints | MinHashes,
     candidates: np.ndarray,
     k: int,
     progress: Progress | None,
     cancel: CancelToken | None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """The best *k* of each row's *candidates* (``n × c``, -1 for none) by exact Tanimoto:
-    ``(index, similarity)``, most similar first, -1 and NaN where there are fewer."""
+    """The best *k* of each row's *candidates* (``n × c``, -1 for none) by exact Tanimoto (or,
+    for MHFP, MinHash agreement): ``(index, similarity)``, most similar first, -1 and NaN where
+    there are fewer."""
     n = len(fps)
     index = np.full((n, k), -1, dtype=np.int64)
     sim = np.full((n, k), np.nan)
-    words, counts = fps.words, fps.counts
-    step = max(1, RERANK_CELLS // max(candidates.shape[1], 1))
+    score_of, row_bytes = _scorer(fps)
+    pairs = max(1, RERANK_CELLS * 256 // max(row_bytes, 1))  # the same memory as 2048 bits
+    step = max(1, pairs // max(candidates.shape[1], 1))
     chunks = range(0, n, step)
     for done, start in enumerate(chunks):
         check(cancel)
@@ -167,9 +194,7 @@ def _rerank(
         repeat = np.zeros(cand.shape, dtype=bool)
         repeat[:, 1:] = cand[:, 1:] == cand[:, :-1]
         cand[repeat | (cand == np.arange(start, stop)[:, None])] = -1
-        safe = np.maximum(cand, 0)
-        common = np.bitwise_count(words[start:stop, None, :] & words[safe]).sum(axis=2)
-        score = from_counts(common, counts[start:stop, None], counts[safe], "tanimoto")
+        score = score_of(start, stop, np.maximum(cand, 0))
         score[cand < 0] = -1.0
         take = min(k, score.shape[1])
         top = np.argpartition(-score, take - 1, axis=1)[:, :take]
@@ -187,7 +212,7 @@ def _rerank(
 
 
 def lsh_neighbours(
-    fps: Fingerprints,
+    fps: Fingerprints | MinHashes,
     k: int,
     *,
     perms: int = PERMS,
@@ -205,7 +230,8 @@ def lsh_neighbours(
     neighbour of a neighbour is often a neighbour: Dong, W., Moses, C. and Li, K. (2011).
     "Efficient k-nearest neighbor graph construction for generic similarity measures."
     *WWW '11*, 577–586)."""
-    hashes = minhash(fps, perms, seed=seed, cancel=cancel)
+    hashes = fps.hashes if isinstance(fps, MinHashes) else minhash(fps, perms, seed=seed,
+                                                                   cancel=cancel)  # fmt: skip
     candidates = _candidates(hashes, trees, window, cancel)
     del hashes
     index, sim = _rerank(fps, candidates, k, None, cancel)

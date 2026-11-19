@@ -38,7 +38,14 @@ from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import FIELD_WIDTH, RowsChoice, ToolDialog
 from chemsuite.core.jobs import Cancelled
 from chemsuite.core.wording import plural
-from chemsuite.descriptors.catalog import CATALOG, COMMON, GROUPS, PKA_KEYS, in_group
+from chemsuite.descriptors.catalog import (
+    CATALOG,
+    COMMON,
+    GROUPS,
+    PKA_KEYS,
+    SHAPE_GROUP,
+    in_group,
+)
 from chemsuite.descriptors.compute import compute_descriptors
 
 #: Below this many rows the work runs on the job's thread: starting worker processes costs more.
@@ -235,7 +242,11 @@ class DescriptorDialog(ToolDialog):
         ctx = self.ctx
         name = self.structure.currentText()
         oids = self.rows.oids()
-        cells = ctx.structure_inputs(name, oids)  # workers parse unparsed cells
+        # Workers parse unparsed cells; only the 3D shape descriptors need every conformer.
+        if any(CATALOG[key].group == SHAPE_GROUP for key in keys):
+            cells = ctx.structure_inputs(name, oids)
+        else:
+            cells = ctx.flat_structure_inputs(name, oids)
 
         n = len(cells)
         steps = (1 if keys else 0) + len(fingerprints)

@@ -827,12 +827,9 @@ def fingerprint_task(
 
 
 def _cells(table: Table, column: str, oids: np.ndarray) -> list[Cell]:
-    structures = table.column(column)
-    slots = table.slots_of(oids)
-    return [
-        blob if blob is not None else (text or None)
-        for blob, text in zip(structures.blobs(slots), structures.displays(slots), strict=True)
-    ]
+    from chemsuite.core.table.columns import flat_inputs
+
+    return flat_inputs(table.column(column), table.slots_of(oids))
 
 
 def counts_task(

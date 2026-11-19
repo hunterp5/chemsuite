@@ -31,7 +31,7 @@ from PySide6.QtGui import QGuiApplication, QImage
 from rdkit import Chem, rdBase
 
 from chemsuite.core.depict import render_png
-from chemsuite.core.mols import smiles_of
+from chemsuite.core.mols import as_drawn, smiles_of
 from chemsuite.core.structure_input import molblock_of
 
 #: (key, menu title) in menu order
@@ -53,9 +53,9 @@ def structure_text(mol: Chem.Mol, fmt: str) -> str:
         if fmt == "smiles":
             return smiles_of(mol)
         if fmt == "inchi":
-            return Chem.MolToInchi(mol) or ""
+            return Chem.MolToInchi(as_drawn(mol)) or ""
         if fmt == "inchikey":
-            return Chem.MolToInchiKey(mol) or ""
+            return Chem.MolToInchiKey(as_drawn(mol)) or ""
     raise ValueError(f"unknown text format {fmt!r}")
 
 

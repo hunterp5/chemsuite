@@ -36,7 +36,7 @@ from PySide6.QtGui import QImage
 from rdkit import Chem
 
 from chemsuite.core.table import Table
-from chemsuite.core.table.columns import NUMBER
+from chemsuite.core.table.columns import NUMBER, flat_inputs
 from chemsuite.plotting.data import numbers
 from chemsuite.plotting.geometry import box_mask, lasso_mask
 from chemsuite.plotting.style import (
@@ -103,7 +103,7 @@ class CoreFinder(Finder):
         if not column or column not in table:
             self.message = "Choose a structure column."
             return None
-        self._cells = table.column(column).worker_inputs(table.slots_of(oids))
+        self._cells = flat_inputs(table.column(column), table.slots_of(oids))
         fraction = spec.core_percent / 100.0
         return (fraction, spec.min_compounds, spec.layout, oids.tobytes(), hash(tuple(self._cells)))
 

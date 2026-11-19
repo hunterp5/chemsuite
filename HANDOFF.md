@@ -1,4 +1,4 @@
-# Handoff: state of play (updated 2026-11-18, on Windows)
+# Handoff: state of play (updated 2026-11-19, on Windows)
 
 The rules live in `CLAUDE.md`; this file is only what is in flight, so the next session on the
 other machine can pick it up. Update it at the end of a session that leaves work open.
@@ -352,6 +352,25 @@ other machine can pick it up. Update it at the end of a session that leaves work
   over the kept hits) does not stop on cancel, so a cancel with 3D on still runs 3D on them.
 
 ## Next
+
+- **Open items on finished features, closed 2026-11-19 on Windows** (ROADMAP §7.0b–f; plan in
+  Claude's plan file on the Windows PC, `hashed-tickling-liskov.md`): kept rows whose protein
+  was removed show a red Protein cell; faded structure in front of a focused ligand is cut (the
+  three `pro_*.frag` shaders rebuilt with qsb from a scratch PySide6-Addons 6.12.0); MHFP6 for
+  TMAP; TMAP measured to 250k on ChEMBL 37 and beside tmap-silicon
+  ([docs/chemspace/bench.md](docs/chemspace/bench.md)); 2D work on a 3D column reads the
+  cell's SMILES, and 2D descriptors no longer read InChI stereo from the first conformer.
+  - **On the Mac:** run `tests/core/test_children.py`, `tests/core/test_parallel.py` and
+    `tests/app/shell/test_exit.py` (§7.0's process-group path has never run), and check the
+    focused-pocket cut on Metal (Focus a ligand, turn the view: no ribbon in front of it).
+  - **Open, for a decision:** TMAP's layout is visibly worse than tmap-silicon's FM³ (clumps,
+    crossings); see the bench notes.
+  - **Found, not fixed:** British spellings the user sees: Prepare's "Optimise" option, TMAP's
+    "Neighbours" row, Settings "New Colours", the custom theme's "Colours"/"Choose Colour",
+    plot tooltips with "colour/coloured", MPO's "Near a centre", Standardize's "stereocentre".
+    Saved keys keep their spelling.
+  - `samples/chembl/chembl_37_chemreps.txt.gz` (2,897,819 compounds, Windows PC only, not
+    committed) feeds the benches above 49k; copy it to the Mac to rerun them there.
 
 - **In progress: sites of metabolism** (ROADMAP §7.0f, plan and the whole record in
   [`docs/SOM_PLAN.md`](docs/SOM_PLAN.md); Claude's plan file on the Windows PC,

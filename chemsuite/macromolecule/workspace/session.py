@@ -152,6 +152,7 @@ class WorkbenchSession:
         self.pose: displays.Display | None = None  # a row's own pose, in its protein
         self.pose_row: int | None = None  # that row
         self._posed_in = None  # the protein's structure the pose was placed in
+        self._pose_atoms: np.ndarray | None = None  # the pose's own atoms in its display
         self._site: np.ndarray | None = None  # the focused pocket's residues (for its skin)
         self.measurements: list[tuple[Point, ...]] = []
         self.measuring = 0  # how many atoms the next measurement takes (0: not measuring)
@@ -684,6 +685,7 @@ class WorkbenchSession:
         shown.show(replaced, scenes.STICK)
         shown.ghost = ~(site | waters)
         self.pose, self.pose_row, self._posed_in = display, oid, s
+        self._pose_atoms = mine
         self._changed(rebuilt=True)
         self.focusChanged.emit()
         return True
@@ -702,6 +704,22 @@ class WorkbenchSession:
         if shown is None or not shown.visible:
             return None
         return shown, ~shown.ghost
+
+    def focused_ligand(self) -> tuple[displays.Display, np.ndarray] | None:
+        """The focused ligand's display and its atoms there; for a pose, the pose's display and
+        the pose's own atoms."""
+        if self.pose is not None:
+            if not self.pose.visible or self._pose_atoms is None:
+                return None
+            return self.pose, self._pose_atoms
+        found = self.focused_residue()
+        if found is None:
+            return None
+        shown = self.display(found[0])
+        if shown is None or not shown.visible:
+            return None
+        s = shown.structure
+        return shown, (s.residue_of == found[1]) & shown.active
 
     def focused_residue(self) -> tuple[str, int] | None:
         if self.focused is None:

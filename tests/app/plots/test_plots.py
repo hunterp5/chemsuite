@@ -335,6 +335,7 @@ def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -
         "core_percent": 67,
         "labels": True,
         "neighbours": 10,
+        "fingerprint": "ecfp4",
         "edges": "similarity",
         "threshold": 0.65,
         "edge_color": "plain",

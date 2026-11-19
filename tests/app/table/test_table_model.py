@@ -76,6 +76,29 @@ def test_structure_status(model: TableModel, table: Table) -> None:
     assert model.data(model.index(1, 0), Qt.ItemDataRole.ToolTipRole).startswith("Invalid")
 
 
+def test_a_row_whose_protein_was_removed_is_marked(qapp, qtmodeltester) -> None:
+    from chemsuite.core.table import Asset, PutAsset
+
+    table = Table()
+    protein = Asset("1ABC", "protein", "1ABC kinase", b"atoms", {})
+    table.add_rows({"ID": ["ATP"], "Protein": ["1ABC"]}, undoable=False,
+                   extra_ops=[PutAsset("1ABC", None, protein)])  # fmt: skip
+    model = TableModel(table)
+    qtmodeltester.check(model, force_py=True)
+    cell = model.index(0, model.column_index("Protein"))
+    fg, tip = Qt.ItemDataRole.ForegroundRole, Qt.ItemDataRole.ToolTipRole
+    assert model.data(cell, fg) is None and model.data(cell, tip) is None
+    repainted: list[int] = []
+    model.dataChanged.connect(lambda tl, br: repainted.append(tl.column()))
+    table.remove_rows([], label="Remove protein 1ABC", extra_ops=[PutAsset("1ABC", protein, None)])
+    assert repainted == [cell.column()]
+    assert model.data(cell, fg) is not None
+    assert model.data(cell, tip) == "Protein 1ABC is not in this document"
+    assert model.data(model.index(0, model.column_index("ID")), fg) is None
+    table.undo()
+    assert model.data(cell, fg) is None
+
+
 def test_editing_goes_through_the_table_and_is_undoable(model: TableModel, table: Table) -> None:
     changed: list[tuple[int, int]] = []
     model.dataChanged.connect(lambda tl, br: changed.append((tl.row(), br.row())))

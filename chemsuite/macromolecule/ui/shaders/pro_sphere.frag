@@ -50,6 +50,8 @@ void main()
     c = v_sphere.xyz;
     if (-p.z < slab.x || -p.z > slab.y)
         discard;
+    if (slab.w > 0.0 && -p.z < slab.w && mod(floor(v_flags / 4.0), 2.0) > 0.5)
+        discard;                               // ghosted, in front of the focused ligand
     vec3 n = normalize(p - c);
     vec4 clip = proj * vec4(p, 1.0);
     float z = clip.z / clip.w;

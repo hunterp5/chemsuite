@@ -36,7 +36,7 @@ from rdkit import Chem, rdBase
 from rdkit.Chem import rdDetermineBonds
 
 from chemsuite.core.jobs import CancelToken, check
-from chemsuite.core.mols import as_read, mol_to_blob, smiles_of, without_hydrogens
+from chemsuite.core.mols import as_drawn, as_read, mol_to_blob, smiles_of, without_hydrogens
 from chemsuite.core.table import Column, Table
 from chemsuite.core.table.columns import NumberColumn, StructureColumn
 
@@ -281,7 +281,7 @@ def write_molecules(
         elif fmt == INCHI:
             for _, mol in named:
                 name = mol.GetProp("_Name")
-                handle.write(Chem.MolToInchi(mol) + (f"\t{name}" if name else "") + "\n")
+                handle.write(Chem.MolToInchi(as_drawn(mol)) + (f"\t{name}" if name else "") + "\n")
         elif fmt == MRV:
             handle.write(Chem.MolToMrvBlock(named[0][1]))
         else:

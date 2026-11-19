@@ -31,7 +31,7 @@ from chemsuite.descriptors.catalog import CATALOG, PKA_KEYS
 from chemsuite.descriptors.compute import compute_descriptors
 from chemsuite.plotting.data import numbers
 from chemsuite.tools.descriptors.dialog import PKA_POOL_MIN_ROWS, POOL_MIN_ROWS
-from chemsuite.tools.sar.common import activity_combo, structure_cells
+from chemsuite.tools.sar.common import activity_combo
 
 LIPE_COLUMN = "LipE"
 
@@ -138,7 +138,7 @@ class MedChemPlotDialog(ToolDialog):
             self.finish()
             return None
         oids = ctx.table.oids.copy()
-        cells = structure_cells(ctx, self.structure.currentText(), oids)
+        cells = ctx.flat_structure_inputs(self.structure.currentText(), oids)  # 2D only
         pka = bool(PKA_KEYS.intersection(keys))
         use_pool = len(cells) >= (PKA_POOL_MIN_ROWS if pka else POOL_MIN_ROWS)
 

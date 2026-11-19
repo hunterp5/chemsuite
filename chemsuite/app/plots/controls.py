@@ -48,7 +48,7 @@ from chemsuite.plotting.style import COLOR_MAPS, DEFAULT_MAP, parse_range
 from chemsuite.sar.constellation import MAPS, SUMMARIES
 
 from ..widgets.flow_layout import compact
-from .graph import EDGE_COLORS, EDGES, GRAPH_KINDS, NETWORK, TMAP
+from .graph import EDGE_COLORS, EDGES, FINGERPRINTS, GRAPH_KINDS, NETWORK, TMAP
 from .spec import PlotSpec, Range
 
 NONE = "(none)"
@@ -108,6 +108,7 @@ STATE_KEYS = (
     "core_percent",
     "labels",
     "neighbours",
+    "fingerprint",
     "edges",
     "threshold",
     "edge_color",
@@ -258,6 +259,7 @@ class PlotControls(QObject):
             ("Min compounds", self.min_compounds),
             ("Core size", self.core_percent),
             ("Neighbours", self.neighbours),
+            ("Fingerprint", self.fingerprint),
             ("Edges", self.edges),
             ("Threshold", self.threshold),
             ("Edge color", self.edge_color),
@@ -278,7 +280,9 @@ class PlotControls(QObject):
         self.kind.currentIndexChanged.connect(self._kind_changed)
         for combo in (self.x, self.y, self.z, self.curve, self.guide, self.aggregate, self.cmap):
             combo.currentIndexChanged.connect(self.changed)
-        for combo in (self.structure, self.core_summary, self.layout, self.edge_color):
+        for combo in (
+            self.structure, self.core_summary, self.layout, self.edge_color, self.fingerprint
+        ):  # fmt: skip
             combo.currentIndexChanged.connect(self.changed)
         self.edges.currentIndexChanged.connect(self._column_changed)  # Threshold shows or hides
         for spin in (self.neighbours, self.threshold):
@@ -353,6 +357,14 @@ class PlotControls(QObject):
             "Each compound is first joined to this many of its most similar compounds; the tree "
             "keeps the closest links (more: fewer separate trees, slower)"
         )
+        self.fingerprint = QComboBox()
+        for key, title in FINGERPRINTS.items():
+            self.fingerprint.addItem(title, key)
+        self.fingerprint.setToolTip(
+            "What makes compounds neighbors: ECFP4 (Morgan, radius 2) by Tanimoto, or MHFP6, "
+            "the MinHash fingerprint TMAP was designed with (Probst and Reymond, 2018), by the "
+            "share of its values two compounds agree on"
+        )
         self.edges = QComboBox()
         for key, title in EDGES.items():
             self.edges.addItem(title, key)
@@ -376,7 +388,7 @@ class PlotControls(QObject):
         self.singletons = QCheckBox("Singletons")
         self.singletons.setChecked(True)
         self.singletons.setToolTip("Draw compounds with no edge, in rows after the clusters")
-        compact(self.edges, self.edge_color, chars=16)
+        compact(self.edges, self.edge_color, self.fingerprint, chars=16)
 
     @property
     def controls(self) -> tuple[QObject, ...]:
@@ -408,6 +420,7 @@ class PlotControls(QObject):
             self.core_percent,
             self.series_labels,
             self.neighbours,
+            self.fingerprint,
             self.edges,
             self.threshold,
             self.edge_color,
@@ -450,6 +463,7 @@ class PlotControls(QObject):
             core_percent=self.core_percent.value(),
             labels=self.series_labels.isChecked(),
             neighbours=self.neighbours.value(),
+            fingerprint=self.fingerprint.currentData(),
             edges=self.edges.currentData(),
             threshold=round(self.threshold.value(), 2),
             edge_color=self.edge_color.currentData(),
@@ -494,6 +508,7 @@ class PlotControls(QObject):
             "core_percent": spec.core_percent,
             "labels": spec.labels,
             "neighbours": spec.neighbours,
+            "fingerprint": spec.fingerprint,
             "edges": spec.edges,
             "threshold": spec.threshold,
             "edge_color": spec.edge_color,
@@ -513,6 +528,7 @@ class PlotControls(QObject):
             pick = {"curve": self.curve, "guide": self.guide, "aggregate": self.aggregate}
             pick["summary"], pick["layout"] = self.core_summary, self.layout
             pick["edges"], pick["edge_color"] = self.edges, self.edge_color
+            pick["fingerprint"] = self.fingerprint
             checks = {"fit": self.fit, "errors": self.errors, "drop": self.drop}
             checks["reverse"], checks["labels"] = self.reverse, self.series_labels
             checks["singletons"] = self.singletons
@@ -628,7 +644,7 @@ class PlotControls(QObject):
                 self.size_range,
                 self.point_sizes,
             ),
-            TMAP: (self.structure, self.neighbours, self.color, self.size),
+            TMAP: (self.structure, self.neighbours, self.fingerprint, self.color, self.size),
             NETWORK: (self.structure, self.edges, self.edge_color, self.singletons)
             + ((self.threshold,) if self.edges.currentData() == "similarity" else ())
             + (self.color, self.size),

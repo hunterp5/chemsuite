@@ -1305,14 +1305,22 @@ are alike (Maggiora and Bajorath, *J. Comput.-Aided Mol. Des.* 2014, 28, 795; Zw
 ### TMAP
 
 **Data ▸ TMAP** lays a large set out as a tree (Probst and Reymond, *J. Cheminf.* 2020,
-12, 12). Each compound is joined to its most similar compounds (**Neighbours**, by Tanimoto on
-Morgan fingerprints, radius 2); the tree keeps the shortest of those links that join every
-compound once, and is laid out so that each compound sits on a branch beside its closest
-relatives. Series show as branches; distances between far branches mean little.
+12, 12). Each compound is joined to its most similar compounds (**Neighbours**, by the
+**Fingerprint**); the tree keeps the shortest of those links that join every compound once, and
+is laid out so that each compound sits on a branch beside its closest relatives. Series show as
+branches; distances between far branches mean little.
 
-- Up to 10,000 compounds the neighbours are exact. Larger sets find them with MinHash and a
-  forest of sorted prefixes, as TMAP does, then check them with the exact similarity: about nine
-  in ten of the true ten nearest are found. 50,000 compounds take about 15 seconds.
+- **ECFP4** (the default) compares Morgan fingerprints, radius 2, by Tanimoto, as the
+  similarity tools do. Up to 10,000 compounds the neighbours are exact. Larger sets find them
+  with MinHash and a forest of sorted prefixes, as TMAP does, then check them with the exact
+  similarity: about nine in ten of the true ten nearest are found. 50,000 compounds take about
+  10 seconds, 250,000 under a minute (and about 1.2 GB of memory).
+- **MHFP6** is the fingerprint TMAP was designed with (Probst and Reymond, *J. Cheminf.* 2018,
+  10, 66): each compound's substructures up to three bonds from an atom, written as SMILES,
+  reduced to 256 MinHash values. Two compounds' similarity is the share of values they agree
+  on, an estimate of the overlap of their substructures. Its values go straight into the
+  forest at every size. Working out MHFP6 is much slower than ECFP4: about a minute for 50,000
+  compounds and four for 250,000.
 - If some compounds share no neighbour with the rest, there are several trees, placed side by
   side.
 
@@ -1320,6 +1328,7 @@ relatives. Series show as branches; distances between far branches mean little.
 |---|---|
 | Structure | The structure column. |
 | Neighbours | How many most similar compounds each is first joined to (10 to start). |
+| Fingerprint | **ECFP4** or **MHFP6**: what makes compounds neighbors. |
 
 Both plots:
 
@@ -1379,6 +1388,12 @@ calculating MW again adds "MW (2)".
   hydrogens: they carry mass, and without them PMI and PBF can be a tenth to over half too
   low. A structure read without some of them (a pose with only polar hydrogens, say) gets
   the missing ones placed before it is measured; the table is not changed.
+- **Every other descriptor** sees a 3D structure as drawn: without its explicit hydrogens or
+  its conformers, so it gives what the same compound's 2D cell gives. **InChI** and
+  **InChIKey** in particular keep a stereocenter or double bond the structure leaves undefined
+  undefined, rather than reading it from the first conformer's geometry; the Calculator, Copy As
+  and InChI export give the same. A structure read from a file, taken from a protein or docked
+  has its stereo set from its own geometry, so its InChI says which isomer it is.
 - **MOE-type (VSA)** are Labute's binned surface-area descriptors (2000), with MOE's names and
   bins, computed by RDKit (MOE itself is not needed; values can differ slightly from MOE's).
   Each sums the surface area of the atoms whose property (Crippen logP, molar refractivity,
@@ -1566,7 +1581,7 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
     ligands (Wang et al., *J. Chem. Inf. Model.* 2023, 63, 6525), the closest of 10
     conformers was 0.84 Å from the crystal pose on average, against 0.99 Å for ETKDG with
     its default settings.
-  - CONFORGE gives the same conformers every run, uses its own force field (**Optimise with**
+  - CONFORGE gives the same conformers every run, uses its own force field (**Optimize with**
     and **Seed** are greyed out), and always applies the energy window if it is ticked.
   - Macrocycles are sampled with 200 trial conformers each, which takes several seconds per
     molecule (an 18-membered lactam: about 7 s).
@@ -1576,7 +1591,7 @@ order of the ChEMBL structure pipeline and RDKit's MolStandardize:
 
 - **Input:** the structure column and **All**, **Shown** or **Selected** rows.
 - **Method:** the **Generator**, **Conformers** per molecule, **Distinct above** (the RMSD for
-  two conformers to count as distinct), the force field (**Optimise with**), and an **Energy
+  two conformers to count as distinct), the force field (**Optimize with**), and an **Energy
   window** (tick it to drop conformers more than that many kcal/mol above the lowest). The
   random **Seed** is under **More Options**.
 - **Output.** The conformers go into a new 3D structure column, lowest energy first, with
@@ -1789,7 +1804,8 @@ the right-click menus:
   table's rows link to stays), **Duplicate** (a copy, `name-copy`, looking the same and keeping
   its preparation record) and **Delete…** (or press Delete). When ligand rows in the table name
   it you choose **Delete Rows** or **Keep Rows**; either way one Undo brings it all back. A
-  kept row whose structure is gone says so on the viewer's status line when you make it
+  kept row whose structure is gone shows its **Protein** cell in red in the table (its tooltip
+  names the missing structure), and says so on the viewer's status line when you make it
   current.
 - **Edit:** **Undo** and **Redo** (Ctrl+Z, Ctrl+Y: the document's last step, named in
   the menu, whether made here or in the table), **Copy** (Ctrl+C: the selected atoms as PDB
@@ -1948,7 +1964,8 @@ or not, with the rows you chose.
   touching it) with its interactions and a see-through skin over the pocket coloured by
   hydrophobicity, fades the rest of the protein and hides other small molecules. A slice of
   depth around the pocket follows the camera, with the back of the pocket fading into the
-  background. **Pocket Surface ▸** in the same menu turns the skin off or on (**Show**) and
+  background; faded parts of the protein between you and the ligand are cut away, so a ribbon
+  never crosses in front of it. **Pocket Surface ▸** in the same menu turns the skin off or on (**Show**) and
   sets its **Style** and **Transparency**; the skin is of its protein's surface kind. **Clear
   Focus** undoes the fading.
 - **Measure ▸ Distance / Angle / Dihedral**, then click two, three or four atoms. Esc stops

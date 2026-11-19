@@ -111,7 +111,7 @@ class ConformerDialog(ToolDialog):
         self.force_field = QComboBox()
         for key, title in FORCE_FIELDS.items():
             self.force_field.addItem(title, key)
-        method.row("Optimise with", self.force_field)
+        method.row("Optimize with", self.force_field)
         self.use_window = QCheckBox()
         self.window = QDoubleSpinBox()
         self.window.setRange(0.5, 200.0)

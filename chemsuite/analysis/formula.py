@@ -312,13 +312,16 @@ def _descriptor(key: str) -> Callable[..., Value]:
     def apply(n: int, x: Value) -> Value:
         from rdkit import rdBase
 
-        from chemsuite.descriptors.catalog import CATALOG
+        from chemsuite.core.mols import as_drawn
+        from chemsuite.descriptors.catalog import CATALOG, SHAPE_GROUP
 
         item = CATALOG[key]
         out: list[object] = []
         with rdBase.BlockLogs():
             for mol in _mols(x, n):
                 try:
+                    if mol is not None and item.group != SHAPE_GROUP:
+                        mol = as_drawn(mol)  # as the Descriptors tool sees it
                     out.append(None if mol is None else item.fn(mol))
                 except (RuntimeError, ValueError, ArithmeticError):
                     out.append(None)

@@ -851,11 +851,19 @@ def test_focus_shows_the_pocket_and_fades_the_rest(panel, qtbot) -> None:
     assert 0 < far - near < 60
     fog_start, fog_end = panel.view.fog
     assert near < fog_start < fog_end == pytest.approx(far)  # the back half of the pocket fades
+    # faded structure in front of the ligand is cut: from just in front of the ATP's nearest atom
+    _xy, depth = panel.view.camera.project(
+        shown.xyz[s.residue_of == atp], panel.view.width(), panel.view.height()
+    )
+    cut = panel.view.ghost_near
+    assert near <= cut < depth.min() and cut == pytest.approx(max(depth.min() - 1.5, near))
     panel.view.camera.zoom(0.5)
     panel.view.camera_changed()
     assert panel.view.slab != (near, far)  # the slab follows the camera
+    assert panel.view.ghost_near != cut  # and so does the cut
     session.clear_focus()
     assert not shown.ghost.any() and panel.view.slab[1] > 1e8 and panel.view.fog is None
+    assert panel.view.ghost_near == 0.0
 
 
 def test_focus_draws_a_skin_over_the_pocket(panel) -> None:

@@ -39,6 +39,7 @@ from PySide6.QtGui import QColor
 
 from chemsuite.core.table import NUMBER, Changed, Table
 from chemsuite.core.table import events as ev
+from chemsuite.core.table.assets import LINK_COLUMNS
 from chemsuite.core.table.columns import REACTION, STRUCTURE, NumberColumn, ParsedColumn
 from chemsuite.core.table.summary import column_summary, format_title
 
@@ -54,6 +55,8 @@ STATUS_ROLE = Qt.ItemDataRole.UserRole + 4
 _RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
 _LEFT = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
 _TOOLTIP_CHARS = 400
+#: a link column's cell naming an asset the document no longer has (the invalid-structure red)
+_MISSING = QColor(200, 40, 40)
 
 Index = QModelIndex | QPersistentModelIndex
 
@@ -185,7 +188,12 @@ class TableModel(QAbstractTableModel):
                     if mol is not None and mol.GetNumAtoms():
                         return preview_html(mol, text)
                 return text[:_TOOLTIP_CHARS]
+        elif role == Qt.ItemDataRole.ForegroundRole:
+            return _MISSING if self._table.missing_link(name, slot) is not None else None
         elif role == Qt.ItemDataRole.ToolTipRole:
+            missing = self._table.missing_link(name, slot)
+            if missing is not None:
+                return f"{name} {missing} is not in this document"
             text = column.display(slot)
             return text[:_TOOLTIP_CHARS] if len(text) > 40 or "\n" in text else None
         return None
@@ -266,6 +274,8 @@ class TableModel(QAbstractTableModel):
             self._resync()
             return
         for change in event.changes:
+            if isinstance(change, ev.AssetsChanged):
+                self._links_changed()
             if isinstance(change, ev.CellsChanged) and change.column in self._columns:
                 rows = self.rows_of_oids(change.oids)
                 rows = rows[rows >= 0]
@@ -278,6 +288,16 @@ class TableModel(QAbstractTableModel):
                     self.dataChanged.emit(
                         self.index(int(rows.min()), col), self.index(int(rows.max()), col)
                     )
+
+    def _links_changed(self) -> None:
+        """Repaint the link columns: an asset added or removed (or its undo) marks or clears
+        the cells that name it."""
+        if not len(self._slots):
+            return
+        for column in LINK_COLUMNS.values():
+            if column in self._columns:
+                col = self._columns.index(column)
+                self.dataChanged.emit(self.index(0, col), self.index(len(self._slots) - 1, col))
 
     def _resync(self) -> None:
         table = self._table

@@ -745,6 +745,21 @@ class Table:
         """The document's assets by id, in the order they were added (read only)."""
         return self._asset_store.assets
 
+    def missing_link(self, name: str, slot: int) -> str | None:
+        """The id a cell of a link column (:data:`~.assets.LINK_COLUMNS`) names when the document
+        has no asset of that kind with it, as for rows kept after their protein was removed;
+        None for a present asset, an empty cell or any other column."""
+        from .assets import LINK_COLUMNS
+
+        kind = next((k for k, column in LINK_COLUMNS.items() if column == name), None)
+        if kind is None or name not in self._columns:
+            return None
+        text = self._columns[name].display(slot)
+        if not text:
+            return None
+        asset = self._asset_store.assets.get(str(text))
+        return None if asset is not None and asset.kind == kind else str(text)
+
     def set_assets(self, assets: Sequence[Asset]) -> None:
         """Install assets read from a file. Not undoable, like :meth:`from_columns`."""
         self._asset_store.set_assets(assets)

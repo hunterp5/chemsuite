@@ -17,20 +17,27 @@
 """Speed and recall of the chemical-space graphs (ROADMAP §7.0d: TMAP and Chemical Space
 Networks).
 
-The sets are BindingDB subsets under ``samples/`` (local data, not committed). Their SMILES are
-cached under ``samples/chemspace/`` on first use. Steps::
+The sets are local data under ``samples/`` (not committed): BindingDB's 49,189 distinct
+compounds up to that many, and above it the first *n* distinct compounds of ChEMBL 37's
+``chembl_37_chemreps.txt.gz`` (CC BY-SA 3.0) in ``samples/chembl/``. Their SMILES are cached
+under ``samples/chemspace/`` on first use. Steps::
 
-    python scripts/review/chemspace_bench.py smiles             # cache SMILES from the SDFs
-    python scripts/review/chemspace_bench.py knn [--n 50000]    # exact against LSH: recall, time
-    python scripts/review/chemspace_bench.py tmap [--n 100000]  # the whole TMAP pipeline, timed
-    python scripts/review/chemspace_bench.py csn [--n 5000]     # a network at a threshold, timed
+    python -I scripts/review/chemspace_bench.py smiles             # cache BindingDB's SMILES
+    python -I scripts/review/chemspace_bench.py knn [--n 50000]    # exact against LSH: recall
+    python -I scripts/review/chemspace_bench.py tmap [--n 100000]  # the whole TMAP, timed
+    python -I scripts/review/chemspace_bench.py csn [--n 5000]     # a network, timed
 
-``tmap`` also writes ``samples/chemspace/tmap_<n>.png`` to look at.
+``knn`` and ``tmap`` take ``--fingerprint ecfp4`` (the default) or ``mhfp6``, and ``--perms``
+(MinHash values: the forest's for ECFP4, MHFP6's own). ``tmap`` also writes
+``samples/chemspace/tmap_<fingerprint>_<n>.png`` to look at, and reports peak memory and the
+tree's weight.
 """
 
 from __future__ import annotations
 
 import argparse
+import gzip
+import sys
 import time
 from pathlib import Path
 
@@ -43,6 +50,38 @@ from chemsuite.core.jobs.parallel import default_workers
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "samples" / "chemspace"
 SOURCES = ("bindingdb_pubchem_unique.sdf", "bindingdb_subset_50k.sdf")
+CHEMBL = ROOT / "samples" / "chembl" / "chembl_37_chemreps.txt.gz"
+
+
+def peak_mb() -> float:
+    """The process's peak memory so far (MB)."""
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        class Counters(ctypes.Structure):
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                        ("PeakWorkingSetSize", ctypes.c_size_t),
+                        ("WorkingSetSize", ctypes.c_size_t),
+                        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                        ("PagefileUsage", ctypes.c_size_t),
+                        ("PeakPagefileUsage", ctypes.c_size_t)]  # fmt: skip
+
+        counters = Counters()
+        counters.cb = ctypes.sizeof(counters)
+        kernel = ctypes.windll.kernel32
+        kernel.GetCurrentProcess.restype = wintypes.HANDLE  # a 64-bit -1, not an int
+        info = kernel.K32GetProcessMemoryInfo
+        info.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+        info(kernel.GetCurrentProcess(), ctypes.byref(counters), counters.cb)
+        return counters.PeakWorkingSetSize / 1e6
+    import resource
+
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return peak / 1e6 if sys.platform == "darwin" else peak / 1e3
 
 
 def smiles() -> list[str]:
@@ -67,9 +106,42 @@ def smiles() -> list[str]:
     return out
 
 
+def chembl(n: int) -> list[str]:
+    """The first *n* distinct SMILES of ChEMBL's chemreps file, cached in ``chembl_<n>.smi``."""
+    cache = DATA / f"chembl_{n}.smi"
+    if cache.exists():
+        return cache.read_text(encoding="utf-8").split("\n")
+    out: list[str] = []
+    seen: set[str] = set()
+    with gzip.open(CHEMBL, "rt", encoding="utf-8") as lines:
+        next(lines)  # the header
+        for line in lines:
+            parts = line.split("\t")
+            if len(parts) > 1 and parts[1] and parts[1] not in seen:
+                seen.add(parts[1])
+                out.append(parts[1])
+                if len(out) == n:
+                    break
+    if len(out) < n:
+        raise SystemExit(f"{CHEMBL.name} holds only {len(out):,} compounds")
+    DATA.mkdir(parents=True, exist_ok=True)
+    cache.write_text("\n".join(out), encoding="utf-8")
+    return out
+
+
+def cells_for(n: int) -> list[str]:
+    """*n* SMILES: BindingDB's while it has enough, else ChEMBL's."""
+    bindingdb = smiles()
+    return bindingdb[:n] if n <= len(bindingdb) else chembl(n)
+
+
+def _source(n: int) -> str:
+    return "" if n <= len(smiles()) else "chembl_"
+
+
 def fingerprints(n: int) -> Fingerprints:
-    """Morgan (r=2) fingerprints of the first *n* SMILES, cached as ``morgan2_<n>.npz``."""
-    cache = DATA / f"morgan2_{n}.npz"
+    """Morgan (r=2) fingerprints of *n* compounds, cached as ``morgan2_<n>.npz``."""
+    cache = DATA / f"{_source(n)}morgan2_{n}.npz"
     if cache.exists():
         saved = np.load(cache)
         from chemsuite.analysis.fingerprints import KINDS
@@ -77,11 +149,34 @@ def fingerprints(n: int) -> Fingerprints:
         return Fingerprints(KINDS["morgan2"], saved["packed"], saved["valid"])
     from concurrent.futures import ProcessPoolExecutor
 
-    cells = smiles()[:n]
+    cells = cells_for(n)
     with ProcessPoolExecutor(default_workers()) as pool:
         fps = compute_fingerprints(cells, "morgan2", executor=pool)
     np.savez(cache, packed=fps.packed, valid=fps.valid)
     return fps
+
+
+def mhfp(n: int, perms: int):
+    """MHFP6 of *n* compounds with *perms* values each, cached as ``mhfp6_<perms>_<n>.npz``."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    from chemsuite.analysis.graphs.mhfp import MinHashes, compute_mhfp
+
+    cache = DATA / f"{_source(n)}mhfp6_{perms}_{n}.npz"
+    if cache.exists():
+        saved = np.load(cache)
+        return MinHashes(saved["hashes"], saved["valid"])
+    cells = cells_for(n)
+    with ProcessPoolExecutor(default_workers()) as pool:
+        values = _timed("MHFP6", lambda: compute_mhfp(cells, perms, executor=pool))
+    np.savez(cache, hashes=values.hashes, valid=values.valid)
+    return values
+
+
+def vectors(n: int, fingerprint: str, perms: int):
+    """The valid rows of *n* compounds' fingerprints of either kind."""
+    fps = fingerprints(n) if fingerprint == "ecfp4" else mhfp(n, perms)
+    return fps.take(np.flatnonzero(fps.valid))
 
 
 def _timed(label: str, fn):
@@ -91,10 +186,14 @@ def _timed(label: str, fn):
     return out
 
 
-def run_knn(n: int, k: int, sample: int, trees: int, window: int, perms: int, refine: int) -> None:
+def run_knn(n: int, k: int, sample: int, trees: int, window: int, perms: int, refine: int,
+            fingerprint: str = "ecfp4") -> None:  # fmt: skip
     from chemsuite.analysis.embedding import bit_neighbours
     from chemsuite.analysis.graphs.knn import lsh_neighbours
 
+    if fingerprint == "mhfp6":
+        run_knn_mhfp(n, k, sample, trees, window, perms, refine)
+        return
     fps = fingerprints(n).take(np.flatnonzero(fingerprints(n).valid))
     print(f"{len(fps):,} valid fingerprints, k = {k}")
     found, sims = _timed(
@@ -122,6 +221,31 @@ def run_knn(n: int, k: int, sample: int, trees: int, window: int, perms: int, re
         _timed("exact (bit_neighbours)", lambda: bit_neighbours(fps, k, "jaccard"))
 
 
+def run_knn_mhfp(n: int, k: int, sample: int, trees: int, window: int, perms: int,
+                 refine: int) -> None:  # fmt: skip
+    """Recall of the MHFP6 forest against every pair's agreement, for sampled rows."""
+    from chemsuite.analysis.graphs.knn import lsh_neighbours
+
+    values = vectors(n, "mhfp6", perms)
+    print(f"{len(values):,} valid MHFP6 ({perms} values), k = {k}")
+    found, sims = _timed(
+        f"LSH (trees {trees}, window {window}, refine {refine})",
+        lambda: lsh_neighbours(values, k, trees=trees, window=window, refine=refine),
+    )
+    rows = np.sort(np.random.default_rng(0).choice(len(values), min(sample, len(values)),
+                                                   replace=False))  # fmt: skip
+    exact = np.empty((len(rows), k))
+    hashes = values.hashes
+    for i, row in enumerate(rows):
+        sim = (hashes == hashes[row]).mean(axis=1)
+        sim[row] = -1
+        exact[i] = np.sort(sim)[::-1][:k]
+    got = np.nan_to_num(sims[rows], nan=-1.0)
+    print(f"recall@{k} on {len(rows):,} rows: {np.mean(got >= exact[:, -1:] - 1e-9):.3f}")
+    print(f"mean agreement of the k-th neighbour: exact {exact[:, -1].mean():.3f}, "
+          f"LSH {np.nanmean(sims[rows, -1]):.3f}")  # fmt: skip
+
+
 def draw(path: Path, coords: np.ndarray, a: np.ndarray, b: np.ndarray, size: int = 2000) -> None:
     """The layout as a PNG: grey edges, dark points."""
     from PySide6.QtCore import QLineF, QPointF
@@ -145,24 +269,24 @@ def draw(path: Path, coords: np.ndarray, a: np.ndarray, b: np.ndarray, size: int
     print(f"wrote {path}")
 
 
-def run_tmap(n: int, k: int) -> None:
+def run_tmap(n: int, k: int, fingerprint: str = "ecfp4", perms: int = 256) -> None:
     from chemsuite.analysis.graphs.knn import knn, knn_edges
     from chemsuite.analysis.graphs.layout import layout
     from chemsuite.analysis.graphs.trees import components, spanning_forest
 
-    fps = fingerprints(n)
-    fps = fps.take(np.flatnonzero(fps.valid))
-    print(f"{len(fps):,} valid fingerprints, k = {k}")
+    fps = vectors(n, fingerprint, perms)
+    print(f"{len(fps):,} valid {fingerprint}, k = {k}; peak so far {peak_mb():,.0f} MB")
     start = time.perf_counter()
     index, sim = _timed("neighbours", lambda: knn(fps, k))
     a, b, s = knn_edges(index, sim)
-    ta, tb, _ = _timed("spanning forest", lambda: spanning_forest(len(fps), a, b, 1.0 - s))
+    ta, tb, tw = _timed("spanning forest", lambda: spanning_forest(len(fps), a, b, 1.0 - s))
     labels = components(len(fps), ta, tb)
     sizes = np.bincount(labels)
     print(f"{len(sizes):,} trees; largest {sizes[0]:,}; singletons {(sizes == 1).sum():,}")
     coords = _timed("layout", lambda: layout(len(fps), ta, tb, labels))
-    print(f"total: {time.perf_counter() - start:.1f} s")
-    draw(DATA / f"tmap_{len(fps)}.png", coords, ta, tb)
+    print(f"total: {time.perf_counter() - start:.1f} s; peak memory {peak_mb():,.0f} MB")
+    print(f"tree weight (sum of 1 - similarity): {float(np.sum(tw)):,.1f}")
+    draw(DATA / f"tmap_{fingerprint}_{len(fps)}.png", coords, ta, tb)
 
 
 def run_csn(n: int, threshold: float) -> None:
@@ -192,9 +316,12 @@ def main() -> None:
     p.add_argument("--window", type=int, default=10)
     p.add_argument("--perms", type=int, default=128)
     p.add_argument("--refine", type=int, default=1)
+    p.add_argument("--fingerprint", choices=("ecfp4", "mhfp6"), default="ecfp4")
     p = sub.add_parser("tmap")
     p.add_argument("--n", type=int, default=50_000)
     p.add_argument("--k", type=int, default=10)
+    p.add_argument("--fingerprint", choices=("ecfp4", "mhfp6"), default="ecfp4")
+    p.add_argument("--perms", type=int, default=256)
     p = sub.add_parser("csn")
     p.add_argument("--n", type=int, default=5000)
     p.add_argument("--threshold", type=float, default=0.65)
@@ -202,9 +329,18 @@ def main() -> None:
     if args.step == "smiles":
         print(f"{len(smiles()):,} SMILES")
     elif args.step == "knn":
-        run_knn(args.n, args.k, args.sample, args.trees, args.window, args.perms, args.refine)
+        run_knn(
+            args.n,
+            args.k,
+            args.sample,
+            args.trees,
+            args.window,
+            args.perms,
+            args.refine,
+            args.fingerprint,
+        )
     elif args.step == "tmap":
-        run_tmap(args.n, args.k)
+        run_tmap(args.n, args.k, args.fingerprint, args.perms)
     elif args.step == "csn":
         run_csn(args.n, args.threshold)
 

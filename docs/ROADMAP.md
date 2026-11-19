@@ -311,9 +311,9 @@ bioactive conformation**: the pose of a ligand crystallised in its protein.
   default). The default's energy window and MMFF clean-up make ETKDG worse at 50 and 250;
   plain ETKDG gives 0.747 / 0.623 Å there. CONFORGE is now the default Generator, with
   `cdpkit` in the base install where it has wheels. Where ETKDG is the default (no cdpkit), its energy window starts off.
-- **Ship.** The new generator becomes the default behind the same tool, and ETKDG stays
-  available. It keeps partial results on cancel and runs in the process pool. The user guide
-  states the benchmark numbers.
+- **Shipped (checked 2026-11-19).** CONFORGE is the default behind the same tool, and ETKDG
+  stays available. It keeps partial results on cancel and runs in the process pool. The user
+  guide states the benchmark numbers.
 
 **Process:** this work starts in plan mode. Write the plan (benchmark set, licences, metrics,
 candidate methods, acceptance threshold) and get it approved before writing code.
@@ -337,10 +337,12 @@ conformer quality; this item is about scale.
   1k × 300 (190 conformers on average) every step the user waits on meets its target once
   three fixes were in: the molecule cache is limited by size (memory over the blobs 434 →
   238 MB), Overlay works out the bond graph once (559 → 51 ms), and exporting every
-  conformer writes one molfile per molecule (114 → 37 s). **Open:** 2D-only work on a 3D
-  column (substructure search, fingerprints, 2D descriptors) loads every conformer in the
-  workers, 6–30× slower than on the 2D column; the report weighs handing those tools the
-  cell's SMILES against keeping conformers outside the cells. No storage change yet.
+  conformer writes one molfile per molecule (114 → 37 s). **Done 2026-11-19:** 2D-only work
+  on a 3D column loaded every conformer in the workers, 6–30× slower than on the 2D column;
+  it now reads a cell's SMILES when the blob is over 4 KB (`StructureColumn.flat_inputs`,
+  `ToolContext.flat_structure_inputs`): screen fingerprints 3.0 → 0.52 s, substructure search
+  416 → 40 ms, MolWt + TPSA 1.7 → 0.14 s at 1k × 300. Parity tests found and fixed InChI
+  reading undefined stereo from the first conformer. Conformers stay in the cells.
 
 ### 7.0d High priority: TMAP and Chemical Space Networks (added 2026-11-11)
 
@@ -349,10 +351,18 @@ conformer quality; this item is about scale.
   engine in `chemsuite/analysis/graphs` (no `tmap` dependency);
 - the user guide has a section for each.
 
-Still open:
-- TMAP checked against `tmap-silicon` side by side;
-- TMAP above 49k compounds;
-- MHFP6 as a fingerprint choice.
+**Done 2026-11-19** ([chemspace/bench.md](chemspace/bench.md)):
+- **MHFP6 as a fingerprint choice** for TMAP (ECFP4 stays the default; the network stays on
+  ECFP4): RDKit's encoder, 256 MinHash values put straight into the forest
+  (`analysis/graphs/mhfp.py`). Encoding is its cost: about a minute for 50,000 compounds.
+- **Above 49k**, on ChEMBL 37: 250,000 compounds in 52 s and 1.2 GB on ECFP4, 82 s (plus 152 s
+  of encoding) and 1.5 GB on MHFP6; the forest's candidates went to int32 to get there.
+- **Beside `tmap-silicon`** on the same MHFP6 values: chemsuite finds more of the true ten
+  nearest (0.93 against 0.62–0.72), joins closer compounds and is 2–3× faster.
+
+Still open, found by that comparison: **the layout.** tmap-silicon's (OGDF FM³) spreads the
+tree with each branch apart; chemsuite's packs branches into clumps, crosses them, and leaves
+space unused, worse at 250,000. The trees are nearly the same; the drawing is not.
 
 Two more chemical-space plots, next to the Constellation Plot. Both are big new features, so
 each starts in plan mode. Their graph layout and drawing code may be shared, so plan them
@@ -399,9 +409,9 @@ the same polish as the table and the dockable plots and tools.
   potential at eps 4r); transparency per surface and for the pocket skin; carving around the
   selection. SES of about 6,000 heavy atoms takes 3 s and its potential 5 s, both in the
   background.
-- **Still to polish:** ghosted ribbons in front of a focused pocket can cross the ligand (cut
-  them with a front slab or fade them further); marking a kept row whose protein was removed in
-  the table itself.
+- **Polished 2026-11-19:** faded structure between the eye and a focused ligand is cut away
+  (a ghost-only near plane at the ligand's front, following the camera), so ribbons no longer
+  cross it; a kept row whose protein was removed shows its Protein cell in red with a tooltip.
 - **Workspace:** the viewer stays its own window with its own menus. Its Protein menu in the main
   window grows as the phases land (align, dock, prepare, simulate), each opening or driving the
   viewer.

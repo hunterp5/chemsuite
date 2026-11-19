@@ -121,6 +121,7 @@ class RhiView(QRhiWidget):
         self.fog: tuple[float, float] | None = None  # view depths; None: the scene's back half
         self.depth_cue = True  # fade with depth at all (fog)
         self.ghost = 0.75  # how far ghosted atoms fade into the background
+        self.ghost_near = 0.0  # view depth in front of which ghosted atoms are cut; 0: none
         self._rhi_key = None  # the address of the QRhi the GPU resources belong to
         self._broken = False  # the GPU cannot run the shaders: draw nothing
         self._press: QPointF | None = None
@@ -219,6 +220,13 @@ class RhiView(QRhiWidget):
     def set_slab(self, near: float, far: float) -> None:
         """Draw only what lies between these view depths (Å in front of the eye)."""
         self.slab = (near, far)
+        self.update()
+
+    def set_ghost_near(self, depth: float) -> None:
+        """Cut ghosted (faded) atoms nearer the eye than this view depth (Å), so they cannot
+        hide what is in focus; 0 cuts none. Only views whose shaders read it (the
+        macromolecule view's) honor it."""
+        self.ghost_near = max(float(depth), 0.0)
         self.update()
 
     def set_fog(self, fog: tuple[float, float] | None) -> None:
@@ -373,7 +381,7 @@ class RhiView(QRhiWidget):
             frame[37:39] = (1e7, 1e7 + 1.0)  # fog starts far behind everything
         frame[39] = 1.0 if camera.orthographic else 0.0
         frame[40:44] = self.background.getRgbF()
-        frame[44:47] = (self.slab[0], self.slab[1], self.ghost)
+        frame[44:48] = (self.slab[0], self.slab[1], self.ghost, self.ghost_near)
         frame[48:52] = self.highlight.getRgbF()
         return frame
 

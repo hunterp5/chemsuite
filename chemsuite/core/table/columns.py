@@ -647,6 +647,38 @@ class StructureColumn(ParsedColumn):
         """The RDKit molecule (cached and shared: copy it before modifying), or None."""
         return self.obj(slot)
 
+    def flat_inputs(self, slots: np.ndarray) -> list[bytes | str | None]:
+        """:meth:`worker_inputs` for work that needs only the 2D structure, read-only: a cell
+        whose blob is large (many conformers) is handed its text instead, which parses in a
+        fraction of the time and is the same molecule (a 3D cell's text is the canonical
+        SMILES of its structure without explicit hydrogens, which 2D work removes anyway).
+        Multi-line (molfile) and SMARTS texts keep their blob."""
+        return [
+            text if blob and len(blob) > FLAT_MIN_BYTES and _plain_smiles(text) else
+            (blob if blob is not None else (text or None))
+            for blob, text in zip(self._blobs[slots].tolist(), self.displays(slots), strict=True)
+        ]  # fmt: skip
+
+
+#: blobs above this size (about ten conformers of a drug-sized molecule) go to 2D work as text
+FLAT_MIN_BYTES = 4096
+#: text that only SMARTS has: a pasted molfile with query atoms is displayed as SMARTS
+_SMARTS_ONLY = ("[#", ";", "&", "~", "$(", "!")
+
+
+def flat_inputs(column: Column, slots: np.ndarray) -> list[bytes | str | None]:
+    """:meth:`StructureColumn.flat_inputs` of a structure column; any other parsed column's
+    :meth:`~ParsedColumn.worker_inputs`."""
+    if isinstance(column, StructureColumn):
+        return column.flat_inputs(slots)
+    if isinstance(column, ParsedColumn):
+        return column.worker_inputs(slots)
+    raise TypeError(f"{column.kind} cells are not structures")
+
+
+def _plain_smiles(text: str) -> bool:
+    return bool(text) and "\n" not in text and not any(s in text for s in _SMARTS_ONLY)
+
 
 class ReactionColumn(ParsedColumn):
     """Reactions, one per cell: the display text is reaction SMILES (as typed or read, or

@@ -106,6 +106,29 @@ def test_removing_a_protein_and_its_rows_is_one_undo_step() -> None:
     assert "1ABC" not in table.assets and len(table) == 3  # the rows kept
 
 
+def test_kept_rows_name_a_missing_protein_until_it_comes_back() -> None:
+    table = _table()
+    protein = _protein()
+    oids = table.add_rows({"ID": ["ATP", "ADP"], "Protein": ["1ABC", ""]},
+                          extra_ops=[PutAsset("1ABC", None, protein)])  # fmt: skip
+    atp, adp = (int(s) for s in table.slots_of(oids))
+    assert table.missing_link("Protein", atp) is None
+    table.remove_rows([], label="Remove protein 1ABC", extra_ops=[PutAsset("1ABC", protein, None)])
+    assert table.missing_link("Protein", atp) == "1ABC"
+    assert table.missing_link("Protein", adp) is None  # an empty cell names nothing
+    assert table.missing_link("ID", atp) is None  # not a link column
+    table.undo()
+    assert table.missing_link("Protein", atp) is None
+
+
+def test_an_asset_of_another_kind_does_not_satisfy_a_link() -> None:
+    table = _table()
+    other = Asset("1ABC", "surface", "not a protein", b"x", {})
+    oids = table.add_rows({"ID": ["ATP"], "Protein": ["1ABC"]},
+                          extra_ops=[PutAsset("1ABC", None, other)])  # fmt: skip
+    assert table.missing_link("Protein", int(table.slots_of(oids)[0])) == "1ABC"
+
+
 def test_copied_rows_take_the_proteins_they_name() -> None:
     table = _table()
     table.add_rows({"Protein": ["1ABC", "2XYZ", "1ABC"]},

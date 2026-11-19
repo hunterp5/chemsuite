@@ -74,6 +74,7 @@ def test_a_network_joins_alike_compounds(network) -> None:
     assert panel.title() == "Network: SMILES"
     form, controls = panel.options.form, panel.controls
     assert form.isRowVisible(controls.threshold) and not form.isRowVisible(controls.neighbours)
+    assert not form.isRowVisible(controls.fingerprint)
 
 
 def test_clicking_a_node_selects_its_row_and_hover_shows_it(network) -> None:
@@ -142,7 +143,28 @@ def test_tmap_draws_a_tree(window, qtbot) -> None:
     assert len(graph.a) == 8 - trees
     assert panel.summary.text().startswith("8 compounds · ")
     assert panel.options.form.isRowVisible(panel.controls.neighbours)
+    assert panel.options.form.isRowVisible(panel.controls.fingerprint)
     assert not panel.options.form.isRowVisible(panel.controls.threshold)
+
+
+def test_tmap_on_mhfp6_is_saved_and_reopens(window, qtbot) -> None:
+    panel = open_plot(window, qtbot, "tmap")
+    before = panel.renderer.data
+    panel.set_spec(fingerprint="mhfp6")
+    qtbot.waitUntil(
+        lambda: panel.renderer.data is not None and panel.renderer.data is not before,
+        timeout=60_000,
+    )
+    graph = panel.renderer.data.graph
+    assert len(graph.a) == 8 - (graph.component.max() + 1)
+    state = panel.state()
+    assert state["fingerprint"] == "mhfp6"
+    again = window.open_tool("scatter")
+    again.set_state(state)
+    qtbot.waitUntil(lambda: again.renderer.data is not None, timeout=60_000)
+    assert again.spec() == panel.spec()
+    again.set_state({**state, "fingerprint": "no such"})  # damaged: back to ECFP4
+    assert again.spec().fingerprint == "ecfp4"
 
 
 def test_the_options_are_saved_with_the_plot(network, qtbot) -> None:
@@ -167,6 +189,24 @@ def test_a_filter_finds_the_graph_again(network, qtbot) -> None:
         timeout=60_000,
     )
     assert len(panel.renderer.data.oids) == 6  # D has no pIC50, H is 4
+
+
+def test_tmap_keeps_its_mhfp6_values(window, qtbot, monkeypatch) -> None:
+    import chemsuite.app.plots.graph as graph
+
+    panel = open_plot(window, qtbot, "tmap")
+    panel.set_spec(fingerprint="mhfp6")
+    qtbot.waitUntil(lambda: panel.renderer.data is not None, timeout=60_000)
+    calls = []
+    real = graph.compute_mhfp
+    monkeypatch.setattr(
+        graph,
+        "compute_mhfp",
+        lambda cells, *a, **kw: calls.append(len(cells)) or real(cells, *a, **kw),
+    )
+    panel.set_spec(neighbours=4)
+    qtbot.waitUntil(lambda: panel.renderer.data is not None, timeout=60_000)
+    assert calls == []  # the first build kept them
 
 
 def test_tmap_keeps_its_fingerprints(window, qtbot, monkeypatch) -> None:

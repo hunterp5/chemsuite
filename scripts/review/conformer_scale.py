@@ -202,8 +202,8 @@ def run_count(count: int, pool) -> None:
 
     report.row("2D layout for a cell picture (200 rows)", pictures(TWO_D), pictures(THREE_D))
 
-    def inputs(name: str) -> list:
-        return columns[name].worker_inputs(rows)
+    def inputs(name: str) -> list:  # as the 2D tools read cells: big 3D ones as SMILES
+        return columns[name].flat_inputs(rows)
 
     def fingerprints(name: str) -> str:
         took, _ = timed(lambda: compute_fingerprints(inputs(name), SCREEN_KIND, executor=pool))

@@ -55,7 +55,7 @@ from chemsuite.analysis.structure_search import (
 )
 from chemsuite.core.lists import ListError
 from chemsuite.core.table import Table
-from chemsuite.core.table.columns import STRUCTURE
+from chemsuite.core.table.columns import STRUCTURE, flat_inputs
 
 from ..shell.jobs import QUICK, Job
 from ..widgets.dialogs import FIELD_WIDTH, RowsChoice, Segmented, ToolDialog
@@ -117,14 +117,12 @@ class StructureSearcher:
         table = self.table
         oids = table.oids.copy() if oids is None else np.asarray(oids, dtype=np.int64)
         compute, remember = fingerprint_task(table, column, query.screen_kind, oids, self._pool)
-        structures = table.column(column)
-        slots = table.slots_of(oids)
-        blobs = structures.blobs(slots)
-        texts = structures.displays(slots)
+        # A cell not parsed yet has no blob: the worker parses its text; so does one with many
+        # conformers, which the search does not need.
+        cells = flat_inputs(table.column(column), table.slots_of(oids))
 
         def cells_at(rows: np.ndarray) -> list:
-            # A cell not parsed yet has no blob: the worker parses its text.
-            return [blobs[i] if blobs[i] is not None else (texts[i] or None) for i in rows.tolist()]
+            return [cells[i] for i in rows.tolist()]
 
         # Too few rows to ever need workers: do not start the process pool for them.
         pool = self._pool if len(oids) >= SEARCH_POOL_MIN_ROWS else (lambda: None)

@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 
 #: Å beyond the focused pocket kept in the slab
 SLAB_PAD = 2.0
+#: Å in front of the focused ligand that faded structure may still come
+LIGAND_PAD = 1.5
 
 
 class PocketCamera(QObject):
@@ -51,6 +53,7 @@ class PocketCamera(QObject):
         if found is None:
             view.set_slab(*NO_SLAB)
             view.set_fog(None)
+            view.set_ghost_near(0.0)
             return
         shown, atoms = found
         positions = shown.xyz[atoms]
@@ -69,5 +72,18 @@ class PocketCamera(QObject):
         radius = float(np.linalg.norm(positions - centre, axis=1).max()) + SLAB_PAD
         _xy, depth = view.camera.project(centre[None], view.width(), view.height())
         middle = float(depth[0])
-        view.set_slab(max(middle - radius, 0.0), middle + radius)
+        near = max(middle - radius, 0.0)
+        view.set_slab(near, middle + radius)
         view.set_fog((middle, middle + radius))
+        view.set_ghost_near(self._ligand_front(view, near))
+
+    def _ligand_front(self, view, near: float) -> float:
+        """The view depth just in front of the focused ligand: faded structure nearer the eye
+        than this is cut, so a ribbon passing in front cannot hide the ligand. The pocket's own
+        residues are not faded, so they stay."""
+        found = self.panel.session.focused_ligand()
+        if found is None or not found[1].any():
+            return 0.0
+        shown, atoms = found
+        _xy, depth = view.camera.project(shown.xyz[atoms], view.width(), view.height())
+        return max(float(depth.min()) - LIGAND_PAD, near)

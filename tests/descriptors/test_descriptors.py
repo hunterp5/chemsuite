@@ -89,10 +89,27 @@ def test_every_descriptor_runs_on_a_drug(pka) -> None:
     assert not blank, "\n".join(blank)
 
 
+@pytest.mark.parametrize("smiles", ["CC(N)C(=O)O", "CC=CC", "OC1CCC(C)CC1"])
+def test_inchi_of_3d_conformers_keeps_the_stereo_the_structure_leaves_open(smiles) -> None:
+    """Conformers of a structure with an undefined center or double bond each have some
+    geometry; the InChI must not take the first one's for the compound's."""
+    from rdkit.Chem import AllChem
+
+    from chemsuite.core.mols import mol_to_blob
+
+    three_d = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    AllChem.EmbedMultipleConfs(three_d, 5, randomSeed=3)
+    out = compute_chunk((("INCHI", "INCHIKEY"), [mol_to_blob(three_d), smiles]))
+    assert out["INCHI"][0] == out["INCHI"][1] and "/t" not in out["INCHI"][0]
+    assert "/b" not in out["INCHI"][0]
+    assert out["INCHIKEY"][0] == out["INCHIKEY"][1]
+
+
 def _why(key: str, three_d: Chem.Mol) -> str:
     """What computing *key* on its own gives or raises, to say why a descriptor came out
     blank."""
-    from chemsuite.descriptors.compute import SHAPE_GROUP, _as_drawn
+    from chemsuite.core.mols import as_drawn as _as_drawn
+    from chemsuite.descriptors.compute import SHAPE_GROUP
 
     spec = CATALOG[key]
     try:
@@ -221,3 +238,33 @@ def test_worker_processes_give_the_same_result() -> None:
     for key in inline:
         rows = np.arange(len(cells))
         assert inline[key].displays(rows) == pooled[key].displays(rows)
+
+
+def test_every_inchi_key_of_a_3d_cell_is_the_same(tmp_path) -> None:
+    """The Descriptors tool, the Calculator, Copy As and InChI export give one 3D cell (its
+    center undefined, its first conformer one isomer) one InChIKey."""
+    from rdkit.Chem import AllChem
+
+    from chemsuite.analysis.formula import MOL, Value, parse
+    from chemsuite.app.table.structure_copy import structure_text
+    from chemsuite.core.mols import mol_to_blob
+    from chemsuite.core.table import Table
+    from chemsuite.core.table.columns import StructureColumn
+    from chemsuite.io.molecules import write_molecules
+
+    mol = Chem.AddHs(Chem.MolFromSmiles("CC(N)C(=O)O"))
+    AllChem.EmbedMultipleConfs(mol, 3, randomSeed=1)
+    flat = Chem.MolToInchiKey(Chem.MolFromSmiles("CC(N)C(=O)O"))
+    assert Chem.MolToInchiKey(mol) != flat  # the first conformer would say which isomer
+
+    tool = compute_descriptors([mol_to_blob(mol)], ["INCHIKEY"])["INCHIKEY"].values()[0]
+    formula = parse("InChIKey([Structure])", ["Structure"])
+    calculated = formula.evaluate({"Structure": Value(MOL, np.array([mol], object))}, 1)
+    copied = structure_text(mol, "inchikey")
+    blobs, texts = np.array([mol_to_blob(mol)], object), np.array(["CC(N)C(=O)O"], object)
+    table = Table.from_columns({"Structure": StructureColumn(blobs, texts)})
+    write_molecules(table, tmp_path / "out.inchi", structure="Structure")
+    exported = Chem.MolToInchiKey(
+        Chem.MolFromInchi((tmp_path / "out.inchi").read_text().split("\t")[0].strip())
+    )
+    assert [tool, calculated.data[0], copied, exported] == [flat] * 4

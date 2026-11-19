@@ -21,13 +21,14 @@ as minimum spanning trees." *J. Cheminf.* 12, 12. The steps are the paper's:
 
 1. the *k* nearest neighbours of every compound (:mod:`.knn`: exact up to 10,000 compounds,
    MinHash and a prefix forest above);
-2. the graph joining each compound to them, weighted by 1 − Tanimoto;
+2. the graph joining each compound to them, weighted by 1 − similarity (Tanimoto on bit
+   fingerprints, or the share of agreeing values for MHFP6, :mod:`.mhfp`);
 3. its minimum spanning tree (a forest when the graph falls apart);
 4. a layout of the tree (:mod:`.layout`, multilevel force), its components packed.
 
 Each compound is a point; branches hold its nearest relatives. This is chemsuite's own code
-(no part of the ``tmap`` package or OGDF): the neighbours rank by the same Tanimoto every other
-chemsuite tool uses.
+(no part of the ``tmap`` package or OGDF): on bit fingerprints the neighbours rank by the same
+Tanimoto every other chemsuite tool uses.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from chemsuite.core.jobs import CancelToken
 
 from .knn import SEED, knn, knn_edges
 from .layout import layout
+from .mhfp import MinHashes
 from .trees import components, spanning_forest
 
 Progress = Callable[[int, int], None]
@@ -69,14 +71,15 @@ class Tree:
 
 
 def tmap(
-    fps: Fingerprints,
+    fps: Fingerprints | MinHashes,
     k: int = NEIGHBOURS,
     *,
     seed: int = SEED,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> Tree:
-    """The TMAP of *fps*. Progress runs over the neighbour search, then the layout."""
+    """The TMAP of *fps* (bit fingerprints, or MHFP6 values). Progress runs over the
+    neighbour search, then the layout."""
     n = len(fps)
     ok = np.flatnonzero(fps.valid)
     coords = np.full((n, 2), np.nan)

@@ -85,6 +85,18 @@ def test_a_ligand_survives_the_round_trip_through_pdbqt(pocket) -> None:
     assert rdMolAlign.CalcRMS(grown, heavy) < 0.01
 
 
+def test_a_pose_is_the_isomer_its_geometry_is() -> None:
+    """Docked with its center left undefined, each pose is still one isomer: its tags say which,
+    so its SMILES and InChI do too."""
+    mol = Chem.AddHs(Chem.MolFromSmiles("CC(O)c1ccccc1"))
+    AllChem.EmbedMolecule(mol, randomSeed=3)
+    (pose,) = pdbqt.poses(pdbqt.ligand(mol))
+    expected = Chem.Mol(mol)
+    Chem.AssignStereochemistryFrom3D(expected)
+    assert "@" in Chem.MolToSmiles(pose)
+    assert Chem.MolToSmiles(Chem.RemoveHs(pose)) == Chem.MolToSmiles(Chem.RemoveHs(expected))
+
+
 def test_a_ligand_with_no_pose_cannot_be_docked() -> None:
     flat = Chem.MolFromSmiles("CCO")
     with pytest.raises(pdbqt.PdbqtError, match="3D"):

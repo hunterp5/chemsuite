@@ -49,7 +49,13 @@ from chemsuite.core.jobs import Cancelled
 from chemsuite.core.lists import RowLists
 from chemsuite.core.selection import Selection
 from chemsuite.core.table import Table
-from chemsuite.core.table.columns import REACTION, STRUCTURE, Column, StructureColumn
+from chemsuite.core.table.columns import (
+    REACTION,
+    STRUCTURE,
+    Column,
+    StructureColumn,
+    flat_inputs,
+)
 from chemsuite.plotting.data import scope_oids
 
 from ..shell.jobs import QUEUE, Job
@@ -301,6 +307,13 @@ class ToolContext:
         :meth:`StructureColumn.worker_inputs`), in *oids* order."""
         table = self.table
         return table.column(column).worker_inputs(table.slots_of(oids))
+
+    def flat_structure_inputs(self, column: str, oids: Sequence[int] | np.ndarray) -> list:
+        """:meth:`structure_inputs` for read-only work on the 2D structure (descriptors,
+        fingerprints, searches): cells with many conformers come as their SMILES (see
+        :meth:`StructureColumn.flat_inputs`)."""
+        table = self.table
+        return flat_inputs(table.column(column), table.slots_of(oids))
 
     def distinct_values(self, column: str, oids: Sequence[int] | np.ndarray) -> list[str]:
         """*column*'s distinct cell texts over *oids*, first seen first, blanks left out.

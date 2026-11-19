@@ -108,6 +108,19 @@ def without_hydrogens(mol: Chem.Mol) -> Chem.Mol:
             return mol
 
 
+def as_drawn(mol: Chem.Mol) -> Chem.Mol:
+    """A 3D structure as drawn: without its explicit hydrogens and conformers, so 2D work
+    (H counts, SMILES, InChI…) on it matches the same compound's 2D cell. Without conformers
+    InChI cannot read stereo from the first one's geometry, which for a center or double bond
+    the structure leaves undefined is the embedding's chance (a structure read from a file or a
+    pose has its stereo set from its geometry already). *mol* itself when it is not 3D."""
+    if not mol.GetNumConformers() or not mol.GetConformer().Is3D():
+        return mol
+    drawn = Chem.Mol(without_hydrogens(mol))
+    drawn.RemoveAllConformers()
+    return drawn
+
+
 def with_hydrogens(mol: Chem.Mol, *, first_conformer: bool = False) -> Chem.Mol:
     """*mol* with every hydrogen an atom, placed on each conformer; *mol* itself when it has
     none to add or they cannot be added. *first_conformer* keeps only the first conformer,

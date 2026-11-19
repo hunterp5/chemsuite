@@ -33,6 +33,8 @@ void main()
     float selected = mod(flags, 2.0);
     float hover = mod(floor(flags / 2.0), 2.0);
     float ghost = mod(floor(flags / 4.0), 2.0);
+    if (slab.w > 0.0 && -v_pos.z < slab.w && ghost > 0.5)
+        discard;                               // ghosted, in front of the focused ligand
     vec3 colour = mix(v_color.rgb, highlight.rgb, 0.45 * selected);
     vec3 shade = colour * (0.35 + 0.65 * diffuse) + vec3(0.22 * spec);
     shade += highlight.rgb * rim * 0.6 * selected + vec3(rim * 0.6 * hover);
