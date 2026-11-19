@@ -251,6 +251,11 @@ other machine can pick it up. Update it at the end of a session that leaves work
     - Titration still loses to titration off (test half 0.884 against 0.893), so it stays off.
     - Next: run Poisson–Boltzmann and ML pKa tools through that benchmark (licences checked
       first) before building either. Constant-pH MD is the MD-side option.
+  - **Research for the next round, 2026-11-19** ([`docs/prepare/p6-research.md`](docs/prepare/p6-research.md)):
+    licenses checked; KaML-CBtree and pKAI+ (MIT) first, MCCE4 + NextGenPB next, PypKa only if
+    DelPhi's registration suits the user; pKa-ANI and KaML-ESM excluded. Proposed first step:
+    a per-site-pKa hook in `prepare_states.py`, with PROPKA scored through it as the bar. No
+    code yet.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 
