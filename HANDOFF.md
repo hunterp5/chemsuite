@@ -243,9 +243,14 @@ other machine can pick it up. Update it at the end of a session that leaves work
     takes about 3 s (the target was 2 s; it is in the background) and its potential 5.5 s.
     Open: a whole-protein Mesh at Normal quality is dense (Coarse thins it); ligands without
     hydrogens take their template's charges, which can be neutral (ATP).
-  - **Next (protein):** try Prepare, Inspect and docking by hand in the app; a second
-    titration round (PROPKA-style H-bond determinants, His titrated for charge only) is listed
-    in p2-review.md §4.
+  - **Next (protein):** try Prepare, Inspect and docking by hand in the app.
+  - **Titration, second round, done 2026-11-19** ([`docs/prepare/p5-review.md`](docs/prepare/p5-review.md)):
+    - Judged on states with `scripts/review/prepare_states.py` (`build --jobs 6`, about
+      2.5 min; `score --fast`, seconds). Its pickled cases live in
+      `samples/prepare/state_cases.pkl`.
+    - Titration still loses to titration off (test half 0.884 against 0.893), so it stays off.
+    - Next: run Poisson–Boltzmann and ML pKa tools through that benchmark (licences checked
+      first) before building either. Constant-pH MD is the MD-side option.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 
@@ -449,7 +454,8 @@ other machine can pick it up. Update it at the end of a session that leaves work
    options). Owed: the by-hand pass on a 1k × 300 document and the same benches on the Mac.
    Conformer energies (2026-11-17) are also owed a by-hand run in the app with 3D drawing.
 2. Bioactive conformers (§7.0b) or protein Phase 1, Alignment (§7a), each starting in plan mode.
-   (Graceful exit, once listed here, is done: ROADMAP §7.0.)
+   (Graceful exit is done and checked on Windows; on the Mac, run its three tests and the
+   by-hand checks in ROADMAP §7.0.)
 
 Still owed by the user: the ChemDraw hotkey list.
 

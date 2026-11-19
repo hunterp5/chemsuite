@@ -372,6 +372,25 @@ def _planar(s: Structure, atom: int) -> bool:
 
 
 # -- helpers ---------------------------------------------------------------------------------------
+#: each protein group's protonated and deprotonated forms, by its name in MODEL_PKA
+GROUP_FORMS = {"ASP": ("ASH", "ASP"), "GLU": ("GLH", "GLU"), "HIS": ("HIP", "HIE"),
+               "LYS": ("LYS", "LYN"), "TYR": ("TYR", "TYM"), "CYS": ("CYS", "CYM"),
+               "NTERM": ("NH3+", NEUTRAL_N)}  # fmt: skip
+_GROUP_OF_FORM = {form: name for name, forms in GROUP_FORMS.items() for form in forms}
+
+
+def group(site: Site) -> str:
+    """The protein group a titrating site is (a key of :data:`MODEL_PKA`), or "" for a ligand or
+    a site that does not titrate."""
+    if not site.titrating or site.kind == LIGAND:
+        return ""
+    for st in site.states:
+        name = _GROUP_OF_FORM.get(st.form)
+        if name:
+            return name
+    return ""
+
+
 def make_state(
     label: str,
     names: list[str],

@@ -166,7 +166,9 @@ A site whose second state is within ~1 kcal/mol is marked **⚠ ambiguous**.
 - **P2**: the coupled site graph with protein titration (PROPKA parity on PKAD). Done
   2026-11-12 at PROPKA's accuracy on PKAD-R; titration stays off by default until it beats the
   null model and keeps the neutron marks
-  ([`prepare/p2-review.md`](prepare/p2-review.md)).
+  ([`prepare/p2-review.md`](prepare/p2-review.md)). A second round (2026-11-19) judged it on
+  the states it writes, on the neutron set. It still does not beat titration off, so it stays
+  off ([`prepare/p5-review.md`](prepare/p5-review.md)).
 - **P3**: ligand sites, waters and metals in the graph. The named cases pass. Populations and ⚠.
   Done 2026-11-13 (`ligand_sites.py`, `waters.py`, the named cases in
   `tests/macromolecule/prepare/test_named_cases.py`).

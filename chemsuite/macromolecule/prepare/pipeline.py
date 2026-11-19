@@ -59,6 +59,12 @@ AUTO = "auto"
 HIS_FORMS = ("HID", "HIE", "HIP")
 WATER_REACH = 5.0  # Å from a ligand atom, for NEAR_LIGANDS
 POCKET_REACH = 6.0  # Å from a ligand atom: the residues that titrate with titrate=POCKET
+#: how sure the model must be (the other form's share at the pH) before a protein group leaves
+#: the form its model pKa gives it in water: 0.5 is a plain majority. The populations and pKa
+#: values the report shows are not changed by it. Fitting it on the neutron set
+#: (``scripts/review/prepare_states.py``) pushed every threshold to 0.95–0.99 and still did not
+#: beat titration off (docs/prepare/p5-review.md), so it stays a plain majority.
+SWITCH = {"ASP": 0.5, "GLU": 0.5, "HIS": 0.5, "LYS": 0.5, "TYR": 0.5, "CYS": 0.5, "NTERM": 0.5}
 AMBIGUOUS = 1.0  # a site whose next best state is closer than this is marked ⚠
 #: a rotor whose chosen orientation scores better than this makes a hydrogen bond; one that
 #: does not is free to spin, so its near ties say nothing (as a water's do not) and it is
@@ -245,7 +251,7 @@ def prepare(
             at = done.at(options.ph)
             states_at = [np.array([np.interp(options.ph, done.grid, column) for column in pop.T])
                          for pop in done.populations]  # fmt: skip
-            picked = _majority(table, weights, picked, at, states_at)
+            picked = _majority(table, weights, picked, at, states_at, options.ph)
             for i, (site, k, fraction) in enumerate(zip(found, done.pka, at, strict=True)):
                 if site.kind == sites.LIGAND:
                     form = site.states[picked[i]].form
@@ -329,16 +335,28 @@ def _pocket(s: Structure) -> np.ndarray:
     return near
 
 
+def protonated(group: str, share: float, ph: float, switch: Mapping[str, float] = SWITCH) -> bool:
+    """Whether a protein *group* (a key of :data:`.sites.MODEL_PKA`) whose protonated share at
+    *ph* is *share* is written protonated: in its form in water at that pH, unless the other
+    form's share reaches the group's threshold in *switch* (a plain majority without one)."""
+    usual = sites.MODEL_PKA[group] > ph
+    needed = switch.get(group, 0.5)
+    if usual:
+        return 1.0 - share < needed
+    return share >= needed
+
+
 def _majority(
     table: energy.Tables,
     weights: Weights,
     picked: list[int],
     share: list[float],
     populations_at: list[np.ndarray],
+    ph: float,
 ) -> list[int]:
     """*picked*, with every titrating site in its most populated form (the lowest energy can
     differ, as a form with many rotor states gains from their number). A protein group's form
-    is its proton count; a ligand's, its protomer or tautomer."""
+    is its proton count, chosen by :func:`protonated`; a ligand's, its protomer or tautomer."""
     allowed = {}
     for i, (n, fraction) in enumerate(zip(table.protons, share, strict=True)):
         site = table.sites[i]
@@ -349,7 +367,9 @@ def _majority(
             best = max(weight, key=lambda form: weight[form])
             allowed[i] = np.array([st.form == best for st in site.states])
         elif len(n) and n.max() > n.min():
-            allowed[i] = n == (n.max() if fraction >= 0.5 else n.min())
+            name = sites.group(site)
+            up = protonated(name, fraction, ph) if name else fraction >= 0.5
+            allowed[i] = n == (n.max() if up else n.min())
     if all(mask[picked[i]] for i, mask in allowed.items()):
         return picked
     return solve.solve(table, weights, allowed=allowed)

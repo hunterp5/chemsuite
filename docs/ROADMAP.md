@@ -240,10 +240,9 @@ modified.
 
 ## 7. Proposed order
 
-### 7.0 Done on Windows: graceful exit (added 2026-11-11, built 2026-11-15)
+### 7.0 Done on Windows, owed a Mac check: graceful exit (added 2026-11-11, built 2026-11-15)
 
-Closing the last document window (or Quit) shuts chemsuite down completely, whatever is in
-flight:
+Closing the last document window shuts chemsuite down completely, whatever is in flight:
 - **The prompt** counts every job the user started, from every window, and names the
   background tasks that stop with them; background work alone stops without asking
   (`app/shell/quitting.py`). A window closed while others stay open asks only about its own
@@ -264,10 +263,15 @@ flight:
 
 `tests/app/shell/test_exit.py` starts a stuck job, a busy pool worker, an external program with
 a child of its own, background work, the Log and a tool window, closes the last window and
-checks that the app and every process it started are gone. It passes on Windows. Still to do:
-run `tests/core/test_children.py`, `tests/core/test_parallel.py` and
-`tests/app/shell/test_exit.py` on macOS (the process-group path has not run yet), and by hand
-dock several ligands, quit mid-run, and check Activity Monitor, Task Manager or `ps` on each OS.
+checks that the app and every process it started are gone. It passes on Windows, and on
+2026-11-19 a scripted run docked eight ligands with the bundled Vina (four `vina.exe` at once):
+closing the window mid-run ended the app in 0.4 s with no Vina left, and killing the app
+outright ended them too (the Job Object).
+
+Still to do, on macOS only: run `tests/core/test_children.py`, `tests/core/test_parallel.py`
+and `tests/app/shell/test_exit.py` (the process-group path has not run yet); by hand, dock
+several ligands, close the window mid-run and check Activity Monitor or `ps`; and check that
+⌘Q from the application menu goes through the same prompt and shutdown.
 
 ### 7.0b High priority: bioactive-quality conformers (added 2026-11-11)
 
@@ -529,8 +533,20 @@ pip extra.
      crystal water overruled (`Decisions`, pinned states re-solved around), Re-survey, Apply as
      one edit, and the report records what was chosen by hand. The ⚠ rule is one function
      (`pipeline.warns`) for the report and the review. A one-click "use the other choice" on a
-     report line was planned and dropped: Inspect is the route. Next: a second titration round (PROPKA-style H-bond determinants) to beat the null model
-     and turn titration on, and the receptor export for docking (phase 2).
+     report line was planned and dropped: Inspect is the route.
+     **2026-11-19: titration judged on states, not pKa values**
+     ([`prepare/p5-review.md`](prepare/p5-review.md)). On the neutron set, with a benchmark of
+     states (`scripts/review/prepare_states.py`), titration still does not beat titration off:
+     0.884 against 0.893 on the test half. That holds even with PROPKA-style determinants and a
+     per-type threshold a group must pass to leave its form in water. So titration **stays off
+     by default**. A titrating His now keeps P1's hard clash on its neutral states.
+     **Kept options**, each to be run through that benchmark as a benchmark-only tool before
+     anything is built:
+     - Poisson–Boltzmann titration;
+     - an ML protein-pKa model;
+     - constant-pH MD for the sites marked ⚠ (in the OpenMM worker).
+
+     Also next: the receptor export for docking (phase 2).
    - **Repair:** missing heavy atoms and caps from the CCD templates; short loops closed, longer
      gaps capped and marked ⚠.
    - **Hydrogens and states, protein and ligand together:** one coupled site graph covers His

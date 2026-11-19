@@ -66,6 +66,11 @@ Ligand sites (:mod:`.ligand_sites`) titrate, and add:
 - ``ligand_coulomb``: a ligand's charges with the charged groups around it (as ``coulomb``,
   with a weight of its own), so methotrexate's N1 takes a proton opposite Asp27.
 
+A titrating His keeps P1's hard ``clash`` and ``lone`` for its neutral states, which decide
+its flip and tautomer; only HIP's are moved to ``bump`` and ``repel`` (2026-11-19,
+docs/prepare/p5-review.md). How sure the model must be before a group leaves its form in
+water is decided after the populations, not in the energy (``pipeline.SWITCH``).
+
 For titrating, ligand and water sites, ``coordination`` counts each hydrogen within
 :data:`COORDINATION_REACH` of a metal ion: a group bound to a metal gives up the proton
 facing it (a sulfonamide N⁻ on zinc).
@@ -84,6 +89,7 @@ from scipy.spatial import cKDTree
 from ..structure.model import ION, WATER, Structure
 from . import ions
 from .hydrogens import HYDROGEN
+from .sites import HIS as HIS_SITE
 from .sites import LIGAND, POLAR, RT_LN10, Site, State
 from .sites import WATER as WATER_SITE
 
@@ -438,12 +444,27 @@ def _coordination(batch: Batch, env: Environment) -> np.ndarray:
     return (near * (batch.hydrogen & batch.valid)[:, :, None]).sum(axis=(1, 2))
 
 
-def _softened(table: np.ndarray) -> np.ndarray:
-    """*table* with its clash and lone terms moved to bump and repel."""
+def _softened(table: np.ndarray, soft: np.ndarray) -> np.ndarray:
+    """*table* with its clash and lone terms moved to bump and repel in the entries the mask
+    *soft* holds (broadcast against the table less its last axis)."""
     out = table.copy()
-    out[..., BUMP], out[..., CLASH] = table[..., CLASH], 0.0
-    out[..., REPEL], out[..., LONE] = table[..., LONE], 0.0
+    soft = np.broadcast_to(soft, table.shape[:-1])
+    out[..., BUMP] = np.where(soft, table[..., CLASH], table[..., BUMP])
+    out[..., CLASH] = np.where(soft, 0.0, table[..., CLASH])
+    out[..., REPEL] = np.where(soft, table[..., LONE], table[..., REPEL])
+    out[..., LONE] = np.where(soft, 0.0, table[..., LONE])
     return out
+
+
+def soft_states(site: Site) -> np.ndarray:
+    """Which states of *site* are scored with bump and repel: every state of a titrating group
+    but a His, whose neutral states keep P1's hard clash (it decides the flip and tautomer)
+    and whose HIP alone is softened; none of a site that does not titrate."""
+    if not site.titrating:
+        return np.zeros(len(site.states), dtype=bool)
+    if site.kind == HIS_SITE:
+        return np.array([st.tautomer == "HIP" for st in site.states])
+    return np.ones(len(site.states), dtype=bool)
 
 
 def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
@@ -451,8 +472,9 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
     energies and proton counts."""
     env = environment(s, sites)
     batches = [of_states(site.states, site.titrating) for site in sites]
+    soft = [soft_states(site) for site in sites]
     single = []
-    for site, batch in zip(sites, batches, strict=True):
+    for i, (site, batch) in enumerate(zip(sites, batches, strict=True)):
         points = batch.xyz[batch.valid]
         near = sorted({j for found in env.tree.query_ball_point(points, REACH) for j in found})
         keep = np.array([j for j in near if int(env.atoms[j]) not in site.excluded],
@@ -461,7 +483,7 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
         own = priors(site, ph) + terms + _charged(site, batch, env)
         if site.titrating or site.kind in (LIGAND, WATER_SITE):
             own[:, COORDINATION] = _coordination(batch, env)
-        single.append(_softened(own) if site.titrating else own)
+        single.append(_softened(own, soft[i]) if site.titrating else own)
     pairs = {}
     if sites:
         centres = np.array([b.xyz[b.valid].mean(axis=0) for b in batches])
@@ -493,7 +515,7 @@ def tables(s: Structure, sites: list[Site], ph: float = 7.0) -> Tables:
             elif both:
                 table[..., COULOMB] = coulomb(batches[i], batches[j])
             if titrating:
-                table = _softened(table)
+                table = _softened(table, soft[i][:, None] | soft[j][None, :])
             if np.abs(table).max() > 1e-9:
                 pairs[(i, j)] = table
     counts = [protons(site) if site.titrating else np.zeros(len(site.states)) for site in sites]
