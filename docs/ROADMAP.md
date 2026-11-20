@@ -434,6 +434,8 @@ P0 sets, which the current worker can measure; M5b is the plan's short explicit-
 which needs solvation, ions, a thermostat and a production loop that `chemsuite/simulate` does
 not have yet, so it is planned with §7a 5. Prepare's Minimise stays off by default until M5b.
 A by-hand Prepare + Minimise run on 181L with the real env is still owed (see HANDOFF).
+Loops built by Prepare ([LOOPS_PLAN.md](LOOPS_PLAN.md)) are relaxed here: their atoms are in
+`Prepared.built`, so they move freely while the deposited atoms are held.
 
 ### 7.0e High priority: our own Uni-pKa (revised 2026-11-12)
 
@@ -557,8 +559,13 @@ pip extra.
      - constant-pH MD for the sites marked ⚠ (in the OpenMM worker).
 
      Also next: the receptor export for docking (phase 2).
-   - **Repair:** missing heavy atoms and caps from the CCD templates; short loops closed, longer
-     gaps capped and marked ⚠.
+   - **Repair:** missing heavy atoms and caps from the CCD templates; a residue missing alone
+     built (done 2026-11-15). **Loops of 2 to N residues closed** by CCD on Ramachandran-sampled
+     backbones, with side chains from the templates and relaxed by Minimize (plan approved
+     2026-11-19 in [LOOPS_PLAN.md](LOOPS_PLAN.md): L0 a benchmark of cut loops against
+     PDBFixer, L1 the Qt-free closure, L2 Prepare, Inspect and the dialog, L3 measured before
+     it is on by default; N set by L3, about 8–12). Longer gaps and missing terminal tails stay
+     capped and marked ⚠.
    - **Hydrogens and states, protein and ligand together:** one coupled site graph covers His
      tautomers, Asn/Gln/His flips, titratable residues, OH/SH/NH₃ rotors, pocket waters, metal
      sites and the ligand's protomers and tautomers. Ligand states come from chemsuite pKa (U4).

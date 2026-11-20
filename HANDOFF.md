@@ -259,6 +259,10 @@ other machine can pick it up. Update it at the end of a session that leaves work
     against P1's 0.893 (cases rebuilt with site keys; the old pickle is beside it as
     `state_cases.before-keys.pkl`). Next: KaML-CBtree and pKAI+ in a WSL bench venv, each
     writing `samples/prepare/out/pka/<tool>/<ID>.csv`.
+  - **Loop modeler planned 2026-11-19** ([`docs/LOOPS_PLAN.md`](docs/LOOPS_PLAN.md); ROADMAP
+    §7a.3): gaps of 2 to N residues closed by CCD in a new Qt-free `prepare/loops.py`, relaxed
+    by Minimize. L0, the benchmark of cut loops against PDBFixer (benchmark-only, in the
+    OpenMM env), starts when the user says so; nothing is built yet.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 
