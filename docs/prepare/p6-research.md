@@ -92,3 +92,57 @@ If a tool beats P1 on the test half, shipping it is a separate plan:
 
 Data to check before any training of our own (not proposed now): PKAD-3's download terms. Its
 site did not load on 2026-11-19, and the paper names no data license.
+
+## 5. Steps 1 and 2 done: the hook, and PROPKA as the bar (2026-11-19)
+
+**The hook.** `prepare_states.py score --tools a,b` adds a column per tool, read from
+`samples/prepare/out/pka/<tool>/<ID>.csv` (chain, res_seq, icode, group, pka; group a key of
+`sites.MODEL_PKA`, so `NTERM` for an N-terminus).
+- Each value gives its group's protonated share at the crystal pH (Henderson–Hasselbalch).
+  `pipeline.protonated` turns the share into a form, as titration does.
+- A group the file leaves out keeps its form in water at that pH.
+- The titrated tables are then solved with those forms fixed, so His tautomer and flip are
+  chosen as titration on chooses them.
+- Only entries every listed tool covers are scored.
+- The cases now carry each site's key (`Case.keys`), so `build --redo` was needed once.
+- `prepare_states.py propka` turns `prepare_review.py propka`'s `.pka` files into these CSVs
+  (262 entries).
+
+A tool with no values does not reproduce the null column, by design. The null holds every
+group in its pH 7 form, while the hook (like the pipeline) uses the form at the crystal pH: at
+pH 5.5 every His is charged. Checked on all 15,243 scored sites: each lands in its form in
+water at the crystal pH, except the 150 His in entries at pH 6.5 (His's model pKa), where the
+tie goes to the charged form, as it does in the pipeline.
+
+**PROPKA 3.5.1 on the test half** (124 entries, default weights, `score --test --tools propka`):
+
+| Question | Null | P1 | Titration | PROPKA |
+|---|---|---|---|---|
+| Asp state | 99.3% | 99.3% | 98.4% | 95.7% |
+| Asp unusual found | 0/13 | 0/13 | 1/13 | 4/13 |
+| Asp wrong switches | 0 | 0 | 19 | 73 |
+| Glu state | 98.2% | 98.2% | 94.3% | 91.5% |
+| Glu unusual found | 0/34 | 0/34 | 17/34 | 14/34 |
+| Glu wrong switches | 0 | 0 | 90 | 140 |
+| Lys, Tyr, Cys unusual found | 0/40 | 0/40 | 0/40 | 0/40 |
+| His charge | 68.7% | **72.6%** | 63.5% | 66.7% |
+| His charged found | 0/261 | 72/261 | 169/261 | 62/261 |
+| His wrongly charged | 0 | 39 | 212 | 78 |
+| His tautomer | 43.2% | **63.3%** | 58.0% | 57.7% |
+| His orientation | 50.3% | **87.6%** | 84.8% | 86.4% |
+| Objective | 0.817 | **0.893** | 0.866 | 0.864 |
+
+The training half agrees (P1 0.901, PROPKA 0.876).
+
+- **PROPKA loses to P1, and slightly to our own titration.** It finds about a third of the
+  unusual Asp and Glu, at about 3 wrong switches for each find.
+- **Its His calls are worse than P1's on every His question.** P1 charges a His only where
+  its neighbors make that the best state. PROPKA charges fewer correct ones and more wrong
+  ones, and each wrong HIP also costs a tautomer.
+- **The bar for the next tools is therefore P1's 0.893, not PROPKA's.** For a pKa tool to pass
+  it, wrong switches must stay below about one per find. KaML-CBtree's reported precision
+  (§3) is the only claim in reach of that. Lys, Tyr and Cys anions were not found by anything
+  so far (40 on the test half).
+- A margin (a switch only when the pKa clears the pH by some units) is the obvious knob for any
+  tool. `SWITCH` already takes a threshold per group, so it can be tried without new code by
+  passing thresholds to `decide_external`.

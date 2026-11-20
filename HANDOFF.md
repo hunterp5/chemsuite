@@ -254,8 +254,11 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - **Research for the next round, 2026-11-19** ([`docs/prepare/p6-research.md`](docs/prepare/p6-research.md)):
     licenses checked; KaML-CBtree and pKAI+ (MIT) first, MCCE4 + NextGenPB next, PypKa only if
     DelPhi's registration suits the user; pKa-ANI and KaML-ESM excluded. Proposed first step:
-    a per-site-pKa hook in `prepare_states.py`, with PROPKA scored through it as the bar. No
-    code yet.
+    a per-site-pKa hook in `prepare_states.py`, with PROPKA scored through it as the bar.
+    Done the same day (p6 §5): `score --tools propka`; PROPKA scores 0.864 on the test half
+    against P1's 0.893 (cases rebuilt with site keys; the old pickle is beside it as
+    `state_cases.before-keys.pkl`). Next: KaML-CBtree and pKAI+ in a WSL bench venv, each
+    writing `samples/prepare/out/pka/<tool>/<ID>.csv`.
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 

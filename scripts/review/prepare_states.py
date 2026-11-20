@@ -25,10 +25,19 @@ a set of weights then needs no structure work: each table is solved as the pipel
     python scripts/review/prepare_states.py build [--jobs N] [--redo]
     python scripts/review/prepare_states.py score [--test] [--fast]  # null, P1, titration
     python scripts/review/prepare_states.py fit     # the titration weights, training half
+    python scripts/review/prepare_states.py propka  # PROPKA's .pka files as per-site CSVs
+    python scripts/review/prepare_states.py score --tools propka,kaml  # and external pKa
 
 Per residue type it counts the share of states right, the unusual states found (a protonated
 Asp or Glu, a neutral Lys, a Tyr or Cys anion, a charged His) and the wrong switches (a usual
 state called unusual). His also has its charge, tautomer and orientation.
+
+An external tool is scored from per-site pKa values (``samples/prepare/out/pka/<tool>/<ID>.csv``,
+columns chain, res_seq, icode, group, pka; group a key of ``sites.MODEL_PKA``). Each value sets
+its group's form at the crystal pH through ``pipeline.protonated`` (the Henderson–Hasselbalch
+share); a group the file leaves out keeps its form in water. The titrated tables are then
+solved with those forms fixed, so His tautomer and flip are chosen as titration chooses them.
+Only entries every listed tool covers are scored (docs/prepare/p6-research.md).
 """
 
 from __future__ import annotations
@@ -71,6 +80,8 @@ class Case:
     p1: object  # energy.Tables with titrate=OFF
     sites: list[Scored]  # indices into titrated
     p1_sites: list[Scored]  # His only, indices into p1
+    #: per site of titrated: (chain, res_seq, icode, group) for a protein group that titrates
+    keys: tuple = ()
 
 
 # pickled under this module's name, so the cases load however the script is started
@@ -109,6 +120,19 @@ def _scored(s, found, expected, kinds) -> list[Scored]:
     return out
 
 
+def _keys(s, found) -> tuple:
+    """Each site's (chain, res_seq, icode, group), or None for one that is not a titrating
+    protein group: how an external tool's values find their site."""
+    from chemsuite.macromolecule.prepare import sites
+
+    out = []
+    for site in found:
+        r, group = site.residue, sites.group(site)
+        out.append((str(s.chain_name[s.chain_of[r]]), int(s.res_seq[r]), str(s.icode[r]).strip(),
+                    group) if group else None)  # fmt: skip
+    return tuple(out)
+
+
 def _nterm(forms: list[str]) -> bool:
     """An N-terminus (its backbone NH3+), which shares its residue's name and number with the
     side chain the neutron data score."""
@@ -132,7 +156,7 @@ def _case(pdb_id: str) -> Case | str:
         kinds = {sites.HIS, sites.ACID, sites.ROTOR}
         return Case(pdb_id, ph, energy.tables(s, everything, ph), energy.tables(s, p1, ph),
                     _scored(s, everything, expected, kinds),
-                    _scored(s, p1, expected, {sites.HIS}))  # fmt: skip
+                    _scored(s, p1, expected, {sites.HIS}), _keys(s, everything))  # fmt: skip
     except (ValueError, RuntimeError, KeyError) as error:
         return f"{pdb_id} failed: {error}"
 
@@ -216,6 +240,83 @@ def decide_fast(table, weights, ph: float, switch) -> list[int]:
             for i, p in enumerate(at)]  # fmt: skip
 
 
+# -- external per-site pKa values ----------------------------------------------------------------
+PKA = pr.DATA / "out" / "pka"
+Key = tuple[str, int, str, str]  # chain, res_seq, icode, group
+
+
+def external(tool: str, pdb_id: str) -> dict[Key, float]:
+    """*tool*'s pKa values for *pdb_id*, by site."""
+    import csv
+
+    with (PKA / tool / f"{pdb_id}.csv").open(newline="") as handle:
+        return {(row["chain"], int(row["res_seq"]), row["icode"].strip(), row["group"]):
+                float(row["pka"]) for row in csv.DictReader(handle)}  # fmt: skip
+
+
+def decide_external(case: Case, pkas: dict[Key, float], weights, switch=None) -> list[int]:
+    """The titrated tables solved with each protein group in the form its external pKa gives
+    at the crystal pH (its form in water where there is none)."""
+    from chemsuite.macromolecule.prepare import sites, solve
+    from chemsuite.macromolecule.prepare.pipeline import protonated
+
+    if not case.keys:
+        raise SystemExit("the cases predate external scoring: build --redo")
+    table, allowed = case.titrated, {}
+    for i, key in enumerate(case.keys):
+        n = table.protons[i]
+        if key is None or not len(n) or n.max() == n.min():
+            continue
+        group = key[3]
+        pka = pkas.get(key, sites.MODEL_PKA[group])
+        share = 1.0 / (1.0 + 10.0 ** (case.ph - pka))
+        up = protonated(group, share, case.ph, SWITCH if switch is None else switch)
+        allowed[i] = n == (n.max() if up else n.min())
+    return solve.solve(table, weights, allowed=allowed)
+
+
+#: PROPKA's group names where they differ from ours (its C- does not titrate here)
+_PROPKA_GROUP = {"N+": "NTERM"}
+
+
+def propka_csv() -> None:
+    """PROPKA 3.5.1's summaries (``prepare_review.py propka``) as per-site CSVs."""
+    import csv
+
+    from chemsuite.macromolecule.prepare.sites import MODEL_PKA
+
+    out = PKA / "propka"
+    out.mkdir(parents=True, exist_ok=True)
+    done = 0
+    for path in sorted((pr.DATA / "out" / "propka").glob("*.pka")):
+        rows, summary = [], False
+        for line in path.read_text().splitlines():
+            if line.startswith("SUMMARY OF THIS PREDICTION"):
+                summary = True
+                continue
+            if not summary:
+                continue
+            if line.startswith("-----") and rows:
+                break
+            parts = line.split()
+            group = _PROPKA_GROUP.get(parts[0], parts[0]) if parts else ""
+            if len(parts) < 4 or group not in MODEL_PKA:
+                continue
+            seq, icode = parts[1], ""
+            if not seq.lstrip("-").isdigit():  # an insertion code rides on the number
+                seq, icode = seq[:-1], seq[-1]
+            try:
+                rows.append((parts[2], int(seq), icode, group, float(parts[3])))
+            except ValueError:
+                continue
+        with (out / f"{path.stem}.csv").open("w", newline="") as handle:
+            writer = csv.writer(handle, lineterminator="\n")
+            writer.writerow(("chain", "res_seq", "icode", "group", "pka"))
+            writer.writerows(rows)
+        done += 1
+    print(done, "PROPKA summaries written to", out)
+
+
 @dataclass
 class Counts:
     right: int = 0
@@ -266,6 +367,12 @@ def evaluate(chosen: list[Case], weights, method: str, switch=None) -> dict[str,
                 got = "HIE" if sc.name == "HIS" else USUAL[sc.name]
                 right = sc.right[sc.forms.index("HIE")] if sc.name == "HIS" else None
                 _tally(out, sc.name, sc.truth, got, right)
+            continue
+        if method.startswith("ext:"):
+            picked = decide_external(case, external(method[4:], case.pdb_id), weights)
+            for sc in scored:
+                k = picked[sc.index]
+                _tally(out, sc.name, sc.truth, sc.forms[k], sc.right[k])
             continue
         if method == "p1":
             picked = pr_solve(case.p1, weights)
@@ -322,6 +429,14 @@ def score() -> None:
     chosen = [c for c in every if pr.training(c.pdb_id) != half]
     label = "test" if half else "training"
     methods = ("null", "p1", "fast") if "--fast" in sys.argv else ("null", "p1", "titrated", "fast")
+    tools = [t for t in pr._option("tools").split(",") if t]
+    if tools:
+        covered = [c for c in chosen
+                   if all((PKA / t / f"{c.pdb_id}.csv").exists() for t in tools)]  # fmt: skip
+        if len(covered) < len(chosen):
+            print(f"{len(chosen) - len(covered)} entries left out: not every tool covers them")
+        chosen = covered
+        methods = (*methods, *(f"ext:{t}" for t in tools))
     results = {m: evaluate(chosen, weights, m, FITTED_SWITCH) for m in methods}
     p1_default = evaluate(chosen, Weights(), "p1")
     assert {k: v.right for k, v in p1_default.items()} == {
@@ -389,7 +504,7 @@ def _weight(weights, name: str) -> float:
     return float(weights.vector()[TERMS.index(name)])
 
 
-STEPS = {"build": build, "score": score, "fit": fit}
+STEPS = {"build": build, "score": score, "fit": fit, "propka": propka_csv}
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
