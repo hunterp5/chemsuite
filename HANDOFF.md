@@ -370,6 +370,22 @@ other machine can pick it up. Update it at the end of a session that leaves work
   screened with 3D on; cancel midway). Known gap: a file screen's second stage (every method
   over the kept hits) does not stop on cancel, so a cancel with 3D on still runs 3D on them.
 
+- **Merged to `main` 2026-11-24 (Windows): `fe1361a`.** Six commits — Auto QSAR, the ligands
+  Kekule fix, the metal-site restraints, CYP phase C, this file, and the GPL headers. Two
+  sessions were editing the repo at once, so `docs/ROADMAP.md` and `docs/USER_GUIDE.md` were
+  split hunk by hunk across the commits they belong to. The full suite passed on Windows
+  (3361 passed, 48 skipped, 2 xfailed, 15:11).
+  - **CI's macOS job is red and was red before this work**, on
+    `tests/metabolism/test_sites.py::test_the_shipped_model_reproduces_the_golden_scores`:
+    paracetamol on 1A2, 2 of 11 atoms off by 0.0066 (0.0412 against the golden 0.0347), far
+    outside the 5e-07 the test allows. Windows and Ubuntu pass, so it is a macOS arm64
+    numeric divergence in the shipped GBM, not a wrong model. Whoever picks up the SoM work
+    should decide whether the golden scores get a platform tolerance or the export is made
+    bit-stable; until then a red CI on macOS means nothing new.
+  - CI's `lint` job had also been failing for several pushes: six files had no GPL header.
+    `scripts/check_gpl_headers.py --fix` writes CRLF, so run `ruff format` or convert to LF
+    before committing on Windows.
+
 ## Next
 
 - **Open items on finished features, closed 2026-11-19 on Windows** (ROADMAP §7.0b–f; plan in
