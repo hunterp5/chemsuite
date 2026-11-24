@@ -1,4 +1,4 @@
-# Handoff: state of play (updated 2026-11-19, on Windows)
+# Handoff: state of play (updated 2026-11-24, on Windows)
 
 The rules live in `CLAUDE.md`; this file is only what is in flight, so the next session on the
 other machine can pick it up. Update it at the end of a session that leaves work open.
@@ -467,8 +467,33 @@ other machine can pick it up. Update it at the end of a session that leaves work
     - `table_view.py` was at its line budget, so the drawing half moved to
       **`app/table/cells.py`** (`Alignment`, `StructureImages`, `CellDelegate`); the budget in
       `tests/test_architecture.py` came down from 1,139 to 976.
-  CYP inhibition is phase C of the same plan, on OpenADMET's open pIC50 data and the Veith panel
-  from PubChem.
+  - **Phase C, step C1 is done (2026-11-24, Windows): CYP inhibition has data and a baseline.**
+    Three uncommitted-data scripts in `scripts/cyp/` — `fetch.py` (OpenADMET's
+    `cyp-challenge-train-test` at the pinned commit `5ab9dd9`, each file checked by SHA-256,
+    into the uncommitted `samples/cyp/`), `curate.py` (chemsuite's own standardizer, InChIKey
+    dedupe) and `benchmark.py` (ECFP4 counts + the 104 cheap 2D descriptors, Murcko
+    scaffold-grouped folds, 3 seeds, a shuffled-label null, the unblinded 750 as a check).
+    `docs/SOM_PLAN.md`'s Phase C section is rewritten as a record of what was measured.
+    - **The data is clean but small.** 5,655 rows gave 5,655 distinct compounds: no duplicates,
+      no salts, nothing unreadable, no train/test overlap, and **no censoring** (the pIC50s are
+      continuous, one row at the minimum per isoform). But 4,905 is the *union*: per isoform
+      the training set is only 1,285–2,335 compounds.
+    - **Scaffold-split out of fold:** 3A4 R² 0.570 / Spearman 0.753; 2C9 0.338 / 0.574;
+      1A2 0.226 / 0.485; 2D6 0.096 / 0.331. The null came back at noise (R² −0.12 to −0.16), so
+      nothing is leaking. Accuracy tracks `n`, not chemistry: the limit is data, not method.
+    - **2D6 scores R² −0.670 on the unblinded file** — worse than the mean — because that set
+      was built by hit expansion over 1A2/2C9/3A4 hits only (its assay was still in
+      development), so its test mean is 3.27 against a training mean of 4.78. The external
+      check is unusable for 2D6, and its training values may not share the others' assay
+      footing.
+    - **The recommendation written into the plan: ship 3A4 only**, gated on three things —
+      the license (Apache-2.0 is Hugging Face *metadata only*; no license text, no copyright
+      holder, no word on the measurements), QSAR step 4 for `apply.py` and `.csqm`, and a
+      scaffold-held-out slice kept aside from the start. **Not yet accepted by the user.**
+    - Still open from the plan: whether predicted pKa earns its cost (seconds per molecule
+      against microseconds), measured on a subsample; and running the pool through
+      `qsar.search.run` (`benchmark.py --engine`) to see what the full search adds. Neither was
+      run, to avoid two CPU-heavy jobs at once.
 
 - **Saved for later: SQL import** (File ▸ Import from Database, read-only queries; SQLite
   built in, PostgreSQL/MySQL/Oracle/SQL Server through optional extras). The plan was approved
@@ -492,9 +517,11 @@ other machine can pick it up. Update it at the end of a session that leaves work
   new protein `X-prep`/`X-min`; see M4 in the plan). **M5a is done** (2026-11-24, Windows PC:
   `scripts/review/minimise_review.py`, `tests/simulate/test_bench_minimise.py`; numbers under
   M5 in the plan): 167 of 262 neutron entries minimize, RMSD and clash score pass, neutron marks
-  unchanged, surface Lys NH₃ swing in GBn2. **Next: the 19 defect failures** listed there
-  (4G0C's Zn-bound sulfonamide first; TYM with no template; uncapped chain ends; Mn(III);
-  heme refused as a raw OpenFF error), lowering the test's `DEFECTS` ratchet as each is fixed.
+  unchanged, surface Lys NH₃ swing in GBn2. The five Zn sulfonamides (4G0C…) now build (an
+  RDKit radical on aromatic S), and every transition-metal site is held as Prepare left it
+  (they collapsed onto the bare ion before). **Next: the 14 defects left** (TYM with no
+  template; uncapped chain ends; Mn(III); 13HO's guessed bonds; heme refused as a raw OpenFF
+  error), lowering the test's `DEFECTS` ratchet as each is fixed.
   The run's outputs are local (`samples/prepare/out/{chemsuite-prep,chemsuite-min,minimise}`),
   so the Mac needs its own run (`run --only ID,…` reruns some). On Windows `run` keeps the PC
   awake itself (it slept mid-run once); on the Mac use `caffeinate -i`. A by-hand run with the real env (Prepare + Minimise on 181L)
