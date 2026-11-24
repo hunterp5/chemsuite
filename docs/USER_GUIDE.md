@@ -24,7 +24,7 @@ read Ctrl as ⌘.
 10. [Chemistry: descriptors, pKa, standardizing, conformers and retrosynthesis](#10-chemistry-descriptors-pka-standardizing-conformers-and-retrosynthesis)
 11. [Table and analysis tools](#11-table-and-analysis-tools)
 12. [Similarity](#12-similarity)
-13. [SAR](#13-sar)
+13. [SAR and QSAR](#13-sar-and-qsar)
 14. [Chemical space](#14-chemical-space)
 15. [Settings](#15-settings)
 16. [The log and reporting problems](#16-the-log-and-reporting-problems)
@@ -2641,7 +2641,7 @@ Data ▸ Cluster… groups compounds using one of three methods:
 
 ---
 
-## 13. SAR
+## 13. SAR and QSAR
 
 ### Fragments
 
@@ -2789,6 +2789,115 @@ Data ▸ SAR ▸ Activity Cliffs… lists similar compounds with very different 
   by zero.
 
 ---
+
+### Auto QSAR
+
+Data ▸ QSAR ▸ Auto QSAR… fits the best model it can for one column of measured values, and
+chooses the features, the model and its settings itself. Give it the **Target** — the property
+or activity to predict — and it does the rest.
+
+- **Rows.** The compounds the model learns from. Rows with no value in the target column, or
+  whose structure cannot be read, are left out; the dialog says so before you start if too few
+  are left. **20 is the fewest** a model can be judged on.
+- **Target.** A number to predict, or a column of labels to assign. **Predict** shows which it
+  detected; change it to treat a numeric code (1, 2, 3) as classes rather than as a quantity.
+- **Effort.** How many models to try.
+
+  | | What it does |
+  |---|---|
+  | Quick | A few settings for each of the four cheapest model kinds. Use it to see whether the data supports a model at all. |
+  | Standard | Every model kind, two dozen settings each. The default. |
+  | Thorough | Eighty settings each, for the last fraction of accuracy once the data is worth it. |
+
+- **Test on.** How the held-out compounds are chosen, which decides what the reported score
+  means.
+
+  | | What question it answers |
+  |---|---|
+  | Scaffolds | Can it predict a chemical series it has never seen? Whole Murcko scaffolds are held out together. The default, and the honest one. |
+  | Clusters | The same question with Butina clusters instead of scaffolds, for sets where the scaffolds are all alike. |
+  | Random | Can it predict a compound much like ones it has seen? Flattering, and the right choice only when the new compounds really will be close analogs. |
+  | A column | Train on the early rows and test on the later ones, ordered by a column you choose — a date, a batch number. What the model will actually be asked to do. |
+
+More Options holds the pool and the arithmetic:
+
+- **Features from.** Descriptors, fingerprints (Morgan counts) and the table's own numeric
+  columns. The target, and any column named after it, are never offered to the model.
+- **Confidence** is how often the interval, or the set of classes, should contain the truth.
+  It is *checked* on held-out compounds, not assumed.
+- **Most features** caps what the model may end up using. A model on twenty features is one a
+  chemist can argue with.
+- **Seed.** The same seed, rows and settings give the same model. Change it to see how much
+  the answer depends on where the folds fell.
+
+#### What the columns mean
+
+The columns a fit writes are **out of fold**: every number comes from a model fitted without
+that row. The prediction beside a compound is therefore not what the finished model thinks of
+a compound it learned from — it is what it would have said had it never seen it. That is the
+only honest thing to put in the table, and it is why these numbers differ from
+[Apply Model](#apply-model) run on the same rows.
+
+| Column | What it holds |
+|---|---|
+| `<target> Predicted` | The prediction. For classes, the chosen label. |
+| `<target> Confidence` | Classes only: the score for the label it chose. |
+| `<target> Low`, `<target> High` | The ends of the interval, at the confidence asked for. |
+| `<target> Possible` | Classes only: every label the model cannot rule out. Blank means it cannot place the compound at all at this confidence — a useful warning. |
+| `<target> Residual` | Measured minus predicted. For classes, `<target> Correct` is Yes or No. |
+| `<target> Distance` | How far the compound sits from the training set. |
+| `<target> In Domain` | No when that distance is past the 95th percentile of the training set's own distances: the model is extrapolating, and its interval should not be trusted. |
+| `<target> Fold` | Which held-out fold produced the row's numbers. |
+
+#### The QSAR Models panel
+
+A fit opens it, and Data ▸ QSAR ▸ QSAR Models reopens it. Models belong to the **document**:
+they are saved with it and are there when you open it again.
+
+| Tab | What it shows |
+|---|---|
+| Scores | Every metric, measured out of fold. R², Q², RMSE, MAE and Spearman for a number; ROC-AUC, PR-AUC, MCC, balanced accuracy and calibration error for classes. |
+| Leaderboard | What else was tried and what it scored. A narrow win means the choice of model hardly matters and the features are doing the work. |
+| Features | The features the model ended up using, and where each came from. |
+| History | One line per fit or refit: the date, what was done, how many compounds, and the score. |
+
+**Save Model…** writes a `.csqm` file — arrays and text, never code — to use in another
+document or send to a colleague. **A model file carries the compounds it was trained on**,
+both their keys and their measured values, because that is what makes it refinable. Do not
+pass one outside the project if the data is confidential.
+
+**Export for Python…** writes the fitted scikit-learn object as a `.joblib` pickle for a
+notebook, beside a manifest naming the versions it needs, the feature list, and a short script
+showing how to build those features. It is offered for a model fitted in the current session,
+since a reopened model is arrays rather than a scikit-learn object. chemsuite **never reads a
+pickle back**: loading one runs whatever code it contains, so Apply Model… accepts `.csqm`
+only.
+
+### Apply Model
+
+Data ▸ QSAR ▸ Apply Model… predicts with a model this document already holds, or with a
+`.csqm` file (**Open…**). It writes the prediction, the interval and the domain columns for the
+rows you choose, skips any whose structure cannot be read, and says how many came out outside
+the model's domain.
+
+The features are rebuilt from the model's own recipe, so the document needs a structure column
+but nothing else prepared in advance.
+
+### Refine Model
+
+Data ▸ QSAR ▸ Refine Model… fits a model again once more data has been measured. The recipe is
+kept — the same target, features and split — so the model's history stays comparable; only the
+rows and the **Effort** change.
+
+Compounds are matched by InChIKey. A row the model was already trained on **replaces** its old
+value, a new compound is **added**, and a compound the model remembers that is no longer in the
+table cannot be refitted, so it is left out and the count is recorded in the History tab.
+
+Refining is a genuine refit, not a nudge: the fill values, the chosen features, the settings
+and the calibration are all learned again from the larger set, and the new score is measured
+the same way the first one was. **Replace the old model** is on by default; turn it off to keep
+both and compare their scores before dropping one.
+
 
 ## 14. Chemical space
 

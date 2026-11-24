@@ -41,6 +41,7 @@ TOOL_MODULES: tuple[str, ...] = (
     "chemsuite.tools.statistics.tool",
     "chemsuite.tools.similarity.tool",
     "chemsuite.tools.sar.tool",
+    "chemsuite.tools.qsar.tool",
     "chemsuite.tools.mpo.tool",
     "chemsuite.tools.selectivity.tool",
     "chemsuite.tools.space.tool",

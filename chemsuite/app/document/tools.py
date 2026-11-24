@@ -315,6 +315,18 @@ class ToolContext:
         table = self.table
         return flat_inputs(table.column(column), table.slots_of(oids))
 
+    def texts(self, column: str, oids: Sequence[int] | np.ndarray) -> list[str]:
+        """*column*'s cell texts for *oids*, in *oids* order ("" for a blank cell).
+
+        What a tool needs when a column holds labels rather than numbers: the classes a model
+        predicts, a series name, a flag. Numbers come from ``plotting.data.numbers`` instead,
+        which gives a float array with NaN for a blank.
+        """
+        table = self.table
+        if not column or column not in table:
+            return ["" for _ in np.asarray(oids, dtype=np.int64)]
+        return list(table.column(column).displays(table.slots_of(oids)))
+
     def distinct_values(self, column: str, oids: Sequence[int] | np.ndarray) -> list[str]:
         """*column*'s distinct cell texts over *oids*, first seen first, blanks left out.
 

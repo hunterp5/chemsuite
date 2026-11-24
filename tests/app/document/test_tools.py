@@ -61,7 +61,7 @@ def test_menu_bar_order(window) -> None:
         ["Scoring", "Cluster…", "Bin Values…"],
         ["Plot", "Dimensionality Reduction", "MedChem", "Constellation Plot", "TMAP",
          "Chemical Space Network"],
-        ["SAR"],
+        ["SAR", "QSAR"],
         ["Search", "Filters"],
         ["Browser"],
     ]  # fmt: skip
@@ -262,3 +262,18 @@ def test_work_that_holds_the_gil_runs_in_a_worker_process(window) -> None:
     with pytest.raises(Cancelled):
         ctx.in_process(job, time.sleep, 5)
     assert time.monotonic() - started < 2
+
+
+def test_texts_gives_a_label_column_row_for_row(window) -> None:
+    """``ToolContext.texts`` is how a tool reads labels, the counterpart of
+    ``plotting.data.numbers`` for floats: tools may not reach into a column themselves."""
+    from chemsuite.app.document.tools import ToolContext
+
+    table = window.workspace.table
+    table.add_column("Series", ["acid", "", "base"])
+    ctx = ToolContext(window)
+    oids = table.oids
+    assert ctx.texts("Series", oids) == ["acid", "", "base"]
+    assert ctx.texts("Series", oids[::-1]) == ["base", "", "acid"], "in the order asked for"
+    assert ctx.texts("No Such Column", oids) == ["", "", ""], "a missing column is blank"
+    assert ctx.texts("", oids) == ["", "", ""]

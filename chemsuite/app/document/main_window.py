@@ -706,6 +706,7 @@ class MainWindow(QMainWindow):
         medchem = _menu(data, "&MedChem")  # then Constellation Plot, TMAP, Chemical Space Network
         plots_end = data.addSeparator()
         sar = _menu(data, "S&AR")  # tools fill it
+        qsar = _menu(data, "&QSAR")  # Auto QSAR and the models it saves
         data.addSeparator()
         data.addMenu(search)
         filters = self.filter_dock.toggleViewAction()  # shows or hides the pane, unticked
@@ -728,6 +729,7 @@ class MainWindow(QMainWindow):
             ("Data", "Dimensionality Reduction"): dimred,
             ("Data", "MedChem"): medchem,
             ("Data", "SAR"): sar,
+            ("Data", "QSAR"): qsar,
         }
         #: tools in these menus go before this action instead of at the end
         self._tool_slots = {("Data", "Search"): search_tools, ("Data",): plots_end}

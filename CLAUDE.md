@@ -124,6 +124,15 @@ changes.
   PDB2PQR's `AMBER.DAT` (BSD-3), shipped as `macromolecule/look/data/amber_charges.json` with
   PDB2PQR's licence beside it (`scripts/build_amber_charges.py`); only the numbers, never
   pdb2pqr itself.
+- Auto QSAR/QSPR is chemsuite's own engine on numpy, scipy and scikit-learn
+  (`chemsuite/qsar/`, `docs/QSAR_PLAN.md`, decided 2026-11-23). QSARtuna (Apache-2.0) is the
+  design reference, never a dependency; QSPRpred and Optuna are out. **chemprop and torch stay
+  out of the app**, so there is no neural candidate in the zoo; chemprop may come back only as
+  an optional external engine with its own interpreter, like OpenMM. Models are fitted with
+  scikit-learn and **applied in numpy**: a `.csqm` archive is a `.npz` plus a JSON manifest,
+  read with `allow_pickle=False`, and the export refuses to write when the numpy prediction
+  differs from scikit-learn's by more than 1e-9. The app never loads a pickle; "Export for
+  Python" writes one for use outside chemsuite and nothing reads it back.
 - The user's email is private; never put it in requests to outside services.
 
 ## Two machines
