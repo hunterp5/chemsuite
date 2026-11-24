@@ -257,8 +257,15 @@ other machine can pick it up. Update it at the end of a session that leaves work
     a per-site-pKa hook in `prepare_states.py`, with PROPKA scored through it as the bar.
     Done the same day (p6 §5): `score --tools propka`; PROPKA scores 0.864 on the test half
     against P1's 0.893 (cases rebuilt with site keys; the old pickle is beside it as
-    `state_cases.before-keys.pkl`). Next: KaML-CBtree and pKAI+ in a WSL bench venv, each
-    writing `samples/prepare/out/pka/<tool>/<ID>.csv`.
+    `state_cases.before-keys.pkl`).
+    **pKAI+ done 2026-11-24 (p6 §6):** `scripts/review/pka_tools.py` in the WSL conda env
+    `pka-bench`. The PROPKA CSVs had dropped about 5% of sites (numbers ≥ 1000, insertion
+    codes); fixed, and the bar is now 0.866 on the test half. pKAI+ scores 0.874, so nothing beats
+    P1's 0.893. Check `prepare_states.py coverage --tools X` before scoring a new tool, and score
+    with `--fast` (the full run takes 3.5 h). **Next: KaML-CBtree**, `pka_tools.py kaml --jobs 10`
+    once `libc6:i386` is installed in WSL (sudo, by the user); score it with and without the 43
+    entries that overlap its training proteins (`out/pka/kaml_overlap.json`). After that, try a
+    His margin for pKAI+ (training half only).
   - **Loop modeler planned 2026-11-19** ([`docs/LOOPS_PLAN.md`](docs/LOOPS_PLAN.md); ROADMAP
     §7a.3): gaps of 2 to N residues closed by CCD in a new Qt-free `prepare/loops.py`, relaxed
     by Minimize. L0, the benchmark of cut loops against PDBFixer (benchmark-only, in the

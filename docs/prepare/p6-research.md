@@ -146,3 +146,75 @@ The training half agrees (P1 0.901, PROPKA 0.876).
 - A margin (a switch only when the pKa clears the pH by some units) is the obvious knob for any
   tool. `SWITCH` already takes a threshold per group, so it can be tried without new code by
   passing thresholds to `decide_external`.
+
+## 6. Step 3: pKAI+, and the PROPKA bar corrected (2026-11-24)
+
+**The runner.** `scripts/review/pka_tools.py` runs in WSL in its own conda env (`pka-bench`:
+Python 3.11, pKAI 1.2.0 with torch 1.13.1, numpy < 2, pycaret 3.3.2, catboost 1.2.10,
+biopandas). It imports nothing from chemsuite. Every tool gets the input PROPKA got
+(`samples/prepare/inputs/<ID>.pdb`), cleaned the same way:
+- ATOM records of the 20 standard amino acids only, with no hydrogens and the first
+  conformation. Neither tool reads HETATM records by design, so ligands, metals and waters are
+  invisible to both.
+- Each chain is renumbered 1, 2, … and the values are mapped back. Without this, pKAI drops
+  every atom with an insertion code (16 entries have them) and KaML reads numbers as integers.
+- Half of the inputs' Asn/Gln/His side chains are flipped at random (as for every method).
+
+**Coverage, checked before scoring** (`prepare_states.py coverage --tools …`). A value whose
+key matches no site falls back to the water form without a word, so this is checked first.
+- **pKAI+** covers 100% of the Asp, Glu, His, Cys, Tyr and Lys sites. It gives no N-terminus
+  values; pKAI 1.2.0 skips termini (a TODO in its code), so they keep their water form.
+- The 8 entries without protein (nucleic acids alone, e.g. 1V9G) get empty files.
+- The runner loads `pKAI+_model.pt` explicitly; pKAI's own default is the plain pKAI model.
+
+**The PROPKA bar of §5 was off.** Its CSVs dropped about 5% of sites, and those sites were
+scored in their water forms:
+- PROPKA glues numbers of 1000 and up to the group (`ASP1008 B`). The whitespace split missed
+  them.
+- PROPKA prints no insertion codes, so `TYR 184` (really 184A in 1NTP) never matched.
+
+`propka_csv` now reads the summary with a regex. A number takes the insertion code of the one
+residue of that name it can be. Coverage went from about 95% to 99.6%; what is left is
+PROPKA's own merging of residues that share a number (3VXF's light chain). The old CSVs are
+kept as `out/pka/propka.before-fix`.
+
+**Scores** (`score --tools propka.before-fix,propka,pkai`; every entry is covered, 138
+training, 124 test):
+
+| Test half | P1 | Titration | PROPKA (§5) | PROPKA (fixed) | pKAI+ |
+|---|---|---|---|---|---|
+| Asp unusual found | 0/13 | 1/13 | 4/13 | 4/13 | 0/13 |
+| Asp wrong switches | 0 | 19 | 73 | 76 | 11 |
+| Glu unusual found | 0/34 | 17/34 | 14/34 | 17/34 | 1/34 |
+| Glu wrong switches | 0 | 90 | 140 | 143 | 9 |
+| Lys, Tyr, Cys unusual found | 0/40 | 0/40 | 0/40 | 0/40 | 0/40 |
+| His charged found | 72/261 | 169/261 | 62/261 | 61/261 | 115/261 |
+| His wrongly charged | 39 | 212 | 78 | 70 | 142 |
+| His tautomer | **63.3%** | 58.0% | 57.7% | 58.6% | 57.7% |
+| His orientation | **87.6%** | 84.8% | 86.4% | 86.6% | 85.8% |
+| Objective | **0.893** | 0.866 | 0.864 | 0.866 | 0.874 |
+
+Training half: P1 0.901, titration 0.855, PROPKA 0.876 → 0.883 after the fix, pKAI+ 0.880.
+
+- **Nothing passes P1.** pKAI+ is the best tool on the test half (0.874) but loses to P1 on
+  both halves.
+- **The fix moves PROPKA a little** (test 0.864 → 0.866, training 0.876 → 0.883). It finds
+  three more unusual Glu and is still at about 3 to 4 wrong switches per find. The conclusion
+  of §5 stands.
+- **pKAI+ is what its design predicts** (§3). Its shrinkage toward the model pKa leaves Asp
+  and Glu almost always in the usual form: 1 find against 20 wrong switches on the test half.
+  It does not reach the buried acids.
+- **Its His calls cost more than they gain.** pKAI+ charges 115 of 261 truly charged His, but
+  also 142 neutral ones; P1 charges 72 and 39. Every wrong HIP also costs a tautomer. A margin
+  on His (§5's `SWITCH` knob, chosen on the training half) is the one setting likely to help it.
+- Scoring all four built-in methods with three tools took 3.5 h, almost all of it the full
+  `titrated` solve. Pass `--fast` when only the external columns are new (fast matches
+  titrated to within 0.1 point here).
+
+**KaML-CBtree** is set up but not yet run. Its repo ships DSSP and RIDA only as prebuilt
+Linux binaries, and the user chose to run them in WSL. The 32-bit `mkdssp` needs
+`libc6:i386`. Its runner (`pka_tools.py kaml`) runs each chain alone, since KaML takes
+single chains, so inter-chain contacts are lost. **Leakage:** 43 of the 262 entries share a
+UniProt accession with KaML's training rows (mostly carbonic anhydrase II, 12; lysozyme, 9;
+RNase A, 4), 3 share a PDB ID, and 24 have no UniProt DBREF to check. KaML is to be scored
+with and without the overlapping entries (`out/pka/kaml_overlap.json`).

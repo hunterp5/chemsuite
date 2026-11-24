@@ -27,6 +27,7 @@ a set of weights then needs no structure work: each table is solved as the pipel
     python scripts/review/prepare_states.py fit     # the titration weights, training half
     python scripts/review/prepare_states.py propka  # PROPKA's .pka files as per-site CSVs
     python scripts/review/prepare_states.py score --tools propka,kaml  # and external pKa
+    python scripts/review/prepare_states.py coverage --tools pkai  # sites each tool's CSVs match
 
 Per residue type it counts the share of states right, the unusual states found (a protonated
 Asp or Glu, a neutral Lys, a Tyr or Cys anion, a charged His) and the wrong switches (a usual
@@ -43,6 +44,7 @@ Only entries every listed tool covers are scored (docs/prepare/p6-research.md).
 from __future__ import annotations
 
 import pickle
+import re
 import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -275,12 +277,59 @@ def decide_external(case: Case, pkas: dict[Key, float], weights, switch=None) ->
     return solve.solve(table, weights, allowed=allowed)
 
 
+def coverage() -> None:
+    """How many of each entry's titrating groups every tool in ``--tools`` gives a value for,
+    by group: a key that does not match falls back to the form in water without a word, so
+    check this before scoring."""
+    from collections import Counter
+
+    for tool in [t for t in pr._option("tools").split(",") if t]:
+        have, want, extra, missed = Counter(), Counter(), 0, []
+        for case in cases():
+            if not (PKA / tool / f"{case.pdb_id}.csv").exists():
+                continue
+            pkas = external(tool, case.pdb_id)
+            keys = set()
+            for i, key in enumerate(case.keys):
+                n = case.titrated.protons[i]
+                if key is None or not len(n) or n.max() == n.min():
+                    continue
+                keys.add(key)
+                want[key[3]] += 1
+                if key in pkas:
+                    have[key[3]] += 1
+                elif len(missed) < 8:
+                    missed.append((case.pdb_id, *key))
+            extra += len(set(pkas) - keys)
+        print(f"## {tool}")
+        for group in sorted(want):
+            share = 100 * have[group] / want[group]
+            print(f"  {group:6} {have[group]:5}/{want[group]:<5} {share:.1f}%")
+        print(f"  rows matching no titrating site: {extra}")
+        print("  unmatched, first few:", missed)
+
+
 #: PROPKA's group names where they differ from ours (its C- does not titrate here)
 _PROPKA_GROUP = {"N+": "NTERM"}
 
 
+#: a summary line: group, number (glued to the group from 1000 up), chain, pKa
+_PROPKA_LINE = re.compile(r"^\s*(N\+|[A-Z]{3})\s*(-?\d+)\s+(\S)\s+(-?\d+\.\d+)")
+
+
+def _icodes(pdb_id: str) -> dict[tuple[str, int, str], set[str]]:
+    """The insertion codes each (chain, number, residue name) of an input carries."""
+    out: dict[tuple[str, int, str], set[str]] = {}
+    for line in (pr.DATA / "inputs" / f"{pdb_id}.pdb").read_text().splitlines():
+        if line.startswith("ATOM"):
+            key = (line[21], int(line[22:26]), line[17:20])
+            out.setdefault(key, set()).add(line[26].strip())
+    return out
+
+
 def propka_csv() -> None:
-    """PROPKA 3.5.1's summaries (``prepare_review.py propka``) as per-site CSVs."""
+    """PROPKA 3.5.1's summaries (``prepare_review.py propka``) as per-site CSVs. PROPKA prints no
+    insertion codes, so a number takes the code of the one residue of that name it can be."""
     import csv
 
     from chemsuite.macromolecule.prepare.sites import MODEL_PKA
@@ -289,7 +338,7 @@ def propka_csv() -> None:
     out.mkdir(parents=True, exist_ok=True)
     done = 0
     for path in sorted((pr.DATA / "out" / "propka").glob("*.pka")):
-        rows, summary = [], False
+        rows, summary, codes = [], False, _icodes(path.stem)
         for line in path.read_text().splitlines():
             if line.startswith("SUMMARY OF THIS PREDICTION"):
                 summary = True
@@ -298,17 +347,14 @@ def propka_csv() -> None:
                 continue
             if line.startswith("-----") and rows:
                 break
-            parts = line.split()
-            group = _PROPKA_GROUP.get(parts[0], parts[0]) if parts else ""
-            if len(parts) < 4 or group not in MODEL_PKA:
+            match = _PROPKA_LINE.match(line)
+            group = _PROPKA_GROUP.get(match[1], match[1]) if match else ""
+            if group not in MODEL_PKA:
                 continue
-            seq, icode = parts[1], ""
-            if not seq.lstrip("-").isdigit():  # an insertion code rides on the number
-                seq, icode = seq[:-1], seq[-1]
-            try:
-                rows.append((parts[2], int(seq), icode, group, float(parts[3])))
-            except ValueError:
-                continue
+            chain, seq = match[3], int(match[2])
+            found = codes.get((chain, seq, group), set())
+            icode = next(iter(found)) if len(found) == 1 else ""
+            rows.append((chain, seq, icode, group, float(match[4])))
         with (out / f"{path.stem}.csv").open("w", newline="") as handle:
             writer = csv.writer(handle, lineterminator="\n")
             writer.writerow(("chain", "res_seq", "icode", "group", "pka"))
@@ -504,7 +550,7 @@ def _weight(weights, name: str) -> float:
     return float(weights.vector()[TERMS.index(name)])
 
 
-STEPS = {"build": build, "score": score, "fit": fit, "propka": propka_csv}
+STEPS = {"build": build, "score": score, "fit": fit, "propka": propka_csv, "coverage": coverage}
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
