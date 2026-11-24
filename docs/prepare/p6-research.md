@@ -224,18 +224,27 @@ alone, since KaML takes single chains, so inter-chain contacts are lost.
 - Coverage: 100% of the Asp, Glu, His, Cys, Tyr and Lys sites; no N-termini (KaML has none).
 
 **A bug in KaML's published feature code.** The first run scored 0.774 on the test half, below
-the null method (0.817). Features regenerated for 20 of KaML's own training structures (1KSM,
-4LZT, …, fetched from the PDB) were compared with its training table, column by column. All
-matched closely except the four backbone hydrogen-bond distances (DA1, DA2, DD1, DD2), which
-were about 14 Å off: `features.bbh_dis` computes `x1 - y1` where it means `x1 - x2`. The models
-were trained on correct distances, so the published prediction script feeds them wrong ones.
-- `pka_tools.py` replaces `bbh_dis` with the correct distance; KaML's clone is untouched.
-- On those training proteins the fix roughly halves the error (MAE His 0.53 → 0.23,
-  Lys 0.86 → 0.48, Asp 0.36 → 0.18).
-- A downward bias remains on Lys (−0.47) and Tyr (−0.63). It goes away when each row gets its
-  true `group_code`, a categorical feature that the published inference always sets to 0, an
-  unseen category. That is how KaML ships, so it is left as is.
-- Casting `charge` to a float, as the training table has it, changes nothing.
+the null method (0.817). `pka_tools.py kaml-check` regenerates the features for 20 of KaML's
+own training chains (fetched from the PDB: 1IG5, 1IGV, 1KQV, 1KSM, 3ICB, 4ICB, 2BCA, 2LZT, 1BPI,
+1JV8, 4PTI, 1GS9, 1LE2, 1NFN, 1TGU, 2OVO, 1LSE, 1LYS, 1PPF, 2ZTA; 269 rows; six are calbindin
+variants) and compares them with its training table, column by column.
+- With KaML's published code, the four backbone hydrogen-bond distances (DA1, DA2, DD1, DD2)
+  are 9–10 Å off on average (max 40 Å). `features.bbh_dis` computes `x1 - y1` where it means
+  `x1 - x2`. The models were trained on correct distances, so the published prediction script
+  feeds them wrong ones.
+- `pka_tools.py` replaces `bbh_dis` with the correct distance; KaML's clone is untouched. With
+  it, DA1–DD2 match to 0.00–0.04 Å on average.
+- Every other numeric column matches to within 0.3 on average (the atom counts within 15 Å
+  to about 1, since a deposited file and the authors' copy can differ by a few atoms). No row
+  has a 999 placeholder on one side only. The secondary-structure codes match in 99–100% of
+  rows. `charge` is an int where the table has a float; casting it changes no prediction.
+- Prediction error against experiment on those rows, as shipped (`group_code` 0) → with the fix:
+  Asp MAE 0.29 → 0.14 (n 38), Glu 0.31 → 0.23 (66), Lys 0.92 → 0.44 (140), Tyr 0.98 → 0.63
+  (21), His 0.35 → 0.11 (4).
+- What remains is a downward bias on Lys (−0.43) and Tyr (−0.62, from 21 rows only). It
+  mostly goes away when each row gets its true `group_code` (Lys −0.00, Tyr −0.22), a
+  categorical feature that the published inference always sets to 0, an unseen category. That
+  is how KaML ships, so it is left as is.
 - The first run's CSVs are kept as `out/pka/kaml.published-distance`.
 
 **Leakage.** 43 of the 262 entries share a UniProt accession with KaML's training rows (mostly
@@ -291,6 +300,10 @@ and not on the entries free of KaML's training proteins. The test-half objective
   switches for each find.
 - **Lys, Tyr and Cys:** 40 unusual states on the test half. Only KaML finds any (8, at 268
   wrong switches), and its margins take them away again.
+
+- **A hybrid (a tool's acids, P1's His) does not help either.** Every tool's Asp and Glu state
+  shares are below P1's (99.3%, 98.2% on the test half), so swapping in any tool's acid calls
+  lowers the objective.
 
 Recommendation: keep titration off and ship none of these tools. Step 4 (MCCE4 + NextGenPB) was
 conditional on step 3 showing that pKa quality moves the states score. It doesn't for these

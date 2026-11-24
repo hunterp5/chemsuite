@@ -24,6 +24,7 @@ It imports nothing from chemsuite, and nothing here reaches the app's environmen
 
     python scripts/review/pka_tools.py pkai [--jobs N] [--redo]   # pKAI+ (the "+" model)
     python scripts/review/pka_tools.py kaml [--jobs N] [--redo]   # KaML-CBtree, one chain at a time
+    python scripts/review/pka_tools.py kaml-check [--published]  # vs its training table
 
 Every tool gets the input PROPKA got (``samples/prepare/inputs/<ID>.pdb``), cleaned the same
 way: ATOM records of the 20 standard amino acids, no hydrogens, the first conformation, and
@@ -176,10 +177,11 @@ def _kaml_start() -> None:
     def cached(command, *args, **kwargs):
         if not command.startswith(features.DSSP_PATH):
             return run(command, *args, **kwargs)
-        if command not in seen:
+        key = (os.getcwd(), command)  # the same file name in another work folder is another file
+        if key not in seen:
             seen.clear()
-            seen[command] = run(command, *args, **kwargs)
-        return seen[command]
+            seen[key] = run(command, *args, **kwargs)
+        return seen[key]
 
     features.subprocess = SimpleNamespace(check_output=cached, DEVNULL=subprocess.DEVNULL)
     features.bbh_dis = _distance  # its own takes x1 - y1 for x1 - x2
@@ -253,7 +255,112 @@ def _features(text: str):
 STEPS = {"pkai": (pkai_one, _pkai_start), "kaml": (kaml_one, _kaml_start)}
 
 
+# -- checking KaML's features against its own training table -----------------------------------
+def kaml_check() -> None:
+    """Regenerates KaML's features for some of its own training structures (public PDB IDs,
+    fetched from RCSB) and compares them with its training table column by column; then
+    predicts them with ``group_code`` 0 (as its inference writes it) and with the true one.
+    ``--published`` keeps KaML's own ``bbh_dis``; ``--count N`` structures (default 20)."""
+    import csv
+    from collections import Counter, defaultdict
+
+    import numpy as np
+    import pandas as pd
+
+    _kaml_start()
+    if "--published" in sys.argv:
+        import importlib
+
+        _KAML["features"].bbh_dis = importlib.reload(_KAML["features"]).bbh_dis
+    features = _KAML["features"]
+    rows: dict[str, dict] = {}
+    for path in sorted((KAML / "train_test_split").glob("*.csv")):
+        with path.open() as handle:
+            for row in csv.DictReader(handle):
+                rows[row["info"].strip()] = row
+    by_chain: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for row in rows.values():
+        by_chain[(row["PDB_ID"].strip(), row["Chain"].strip())].append(row)
+    rich = Counter({k: sum(r["Res_Name"] in ("TYR", "LYS", "CYS") for r in v)
+                    for k, v in sorted(by_chain.items())})  # fmt: skip
+    picked = [k for k, _ in rich.most_common(int(_option("count") or 20))]
+    diffs: dict[str, list[float]] = defaultdict(list)
+    errors: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
+    for pdb_id, chain in picked:
+        found = by_chain[(pdb_id, chain)]
+        try:
+            table, kept = _check_features(features, pdb_id, chain, found)
+        except UnboundLocalError as error:  # its own: no DSSP line for the first site
+            print(f"{pdb_id} {chain} skipped: {error}")
+            continue
+        table = table[_NUM + _CAT].copy()
+        table[_NUM] = table[_NUM].apply(pd.to_numeric, errors="coerce")
+        true = table.copy()
+        true["group_code"] = [int(found[k]["group_code"]) for k in kept]
+        preds = [(_KAML["acid"].predict(t), _KAML["base"].predict(t)) for t in (table, true)]
+        for k, row_index in enumerate(kept):
+            row = found[row_index]
+            for name in _NUM:
+                try:
+                    ours, theirs = float(table.iloc[k][name]), float(row[name])
+                except ValueError:
+                    continue
+                if not (np.isnan(ours) or np.isnan(theirs)):
+                    diffs[name].append(abs(ours - theirs))
+            for name in _CAT[:-1]:  # group_code is 0 at inference by design
+                diffs[name].append(float(str(table.iloc[k][name]).strip() != row[name].strip()))
+            base = row["Res_Name"] in ("HIS", "LYS")
+            got = [float(p[1 if base else 0][k]) for p in preds]
+            errors[row["Res_Name"]].append((float(row["Expt_pKa"]), *got))
+    print(f"{len(picked)} chains: {', '.join(p for p, _ in picked)}")
+    _check_report(diffs, errors)
+
+
+def _check_features(features, pdb_id: str, chain: str, found: list[dict]):
+    """KaML's features for one training chain, from the deposited file (its first model)."""
+    import urllib.request
+
+    url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
+    text = urllib.request.urlopen(url, timeout=60).read().decode()
+    lines = []
+    for line in text.splitlines():
+        if line.startswith("ENDMDL"):  # the first model of an NMR entry
+            break
+        if (line.startswith("ATOM") and line[21] == chain and line[17:20] in STANDARD
+                and line[16] in " A" and line[76:78].strip() not in ("H", "D")):  # fmt: skip
+            lines.append(line[:16] + " " + line[17:])
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        (work / "tools").symlink_to(KAML / "tools")
+        os.chdir(work)
+        try:
+            name = f"{pdb_id}_{chain}.pdb"
+            (work / name).write_text("\n".join(lines) + "\nEND\n")
+            sites = [[chain, r["Res_Name"], r["Res_ID"].strip()] for r in found]
+            return _features(features.generate([name, *sites]))
+        finally:
+            os.chdir(tempfile.gettempdir())
+
+
+def _check_report(diffs, errors) -> None:
+    import numpy as np
+
+    print(f"{'feature':22} {'rows':>5} {'mean |diff|':>11} {'max':>8} {'> 900':>6}")
+    for name, d in diffs.items():
+        a = np.array(d)
+        print(f"{name:22} {len(a):5} {a.mean():11.3f} {a.max():8.2f} {(a > 900).sum():6}")
+    print("\nprediction against experiment: group_code 0 (shipped) | the true group_code")
+    for name, values in sorted(errors.items()):
+        v = np.array(values)
+        shipped, true = v[:, 1] - v[:, 0], v[:, 2] - v[:, 0]
+        print(f"{name} n {len(v):3}  MAE {np.abs(shipped).mean():.2f} bias {shipped.mean():+.2f}"
+              f" | MAE {np.abs(true).mean():.2f} bias {true.mean():+.2f}")  # fmt: skip
+
+
 def run() -> None:
+    if sys.argv[1] == "kaml-check":
+        kaml_check()
+        return
     tool = sys.argv[1]
     one, start = STEPS[tool]
     redo = "--redo" in sys.argv
