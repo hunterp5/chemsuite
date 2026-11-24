@@ -28,6 +28,8 @@ a set of weights then needs no structure work: each table is solved as the pipel
     python scripts/review/prepare_states.py propka  # PROPKA's .pka files as per-site CSVs
     python scripts/review/prepare_states.py score --tools propka,kaml  # and external pKa
     python scripts/review/prepare_states.py coverage --tools pkai  # sites each tool's CSVs match
+    python scripts/review/prepare_states.py score --fast --tools kaml --skip ids.txt  # IDs left out
+    python scripts/review/prepare_states.py margin --tools pkai --jobs 10  # thresholds, training
 
 Per residue type it counts the share of states right, the unusual states found (a protonated
 Asp or Glu, a neutral Lys, a Tyr or Cys anion, a charged His) and the wrong switches (a usual
@@ -415,7 +417,7 @@ def evaluate(chosen: list[Case], weights, method: str, switch=None) -> dict[str,
                 _tally(out, sc.name, sc.truth, got, right)
             continue
         if method.startswith("ext:"):
-            picked = decide_external(case, external(method[4:], case.pdb_id), weights)
+            picked = decide_external(case, external(method[4:], case.pdb_id), weights, switch)
             for sc in scored:
                 k = picked[sc.index]
                 _tally(out, sc.name, sc.truth, sc.forms[k], sc.right[k])
@@ -474,6 +476,10 @@ def score() -> None:
     half = "--test" in sys.argv
     chosen = [c for c in every if pr.training(c.pdb_id) != half]
     label = "test" if half else "training"
+    if pr._option("skip"):  # a file of IDs to leave out, e.g. a tool's training proteins
+        skip = set(Path(pr._option("skip")).read_text().split())
+        chosen = [c for c in chosen if c.pdb_id not in skip]
+        label += f", without {pr._option('skip')}"
     methods = ("null", "p1", "fast") if "--fast" in sys.argv else ("null", "p1", "titrated", "fast")
     tools = [t for t in pr._option("tools").split(",") if t]
     if tools:
@@ -505,6 +511,77 @@ FIT_GRID: dict[str, tuple[float, ...]] = {
     "bump": (4.0, 8.0, 16.0, 32.0),
     "repel": (0.0, 2.0, 4.0, 8.0),
 }  # what p5-review.md searched (ionic stays 0: it also scores P1's His)
+
+
+#: the cases one file per entry, so parallel workers each load only their own (the whole
+#: pickle is 1.7 GB)
+SPLIT = pr.DATA / "state_cases"
+
+
+def split_cases() -> None:
+    """Writes :data:`SPLIT` from :data:`CASES` once (again when the cases are newer)."""
+    stamp = SPLIT / "stamp"
+    if stamp.exists() and stamp.stat().st_mtime >= CASES.stat().st_mtime:
+        return
+    SPLIT.mkdir(exist_ok=True)
+    for case in cases():
+        with (SPLIT / f"{case.pdb_id}.pkl").open("wb") as handle:
+            pickle.dump(case, handle)
+    stamp.touch()
+
+
+def _evaluate_some(job) -> dict[str, Counts]:
+    ids, weights, method, switch = job
+    chosen = []
+    for pdb_id in ids:
+        with (SPLIT / f"{pdb_id}.pkl").open("rb") as handle:
+            chosen.append(pickle.load(handle))
+    return evaluate(chosen, weights, method, switch)
+
+
+def margin() -> None:
+    """One tool's switch thresholds (``--tools X``; ``--groups HIS,GLU,ASP`` by default), each
+    searched over the shares of :data:`FIT_GRID` on the training half only, then scored once
+    on the test half: a switch only where the tool's pKa clears the pH by a margin."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    from chemsuite.macromolecule.prepare.energy import Weights
+
+    weights, tool = FITTED or Weights(), pr._option("tools")
+    method = f"ext:{tool}"
+    split_cases()
+    covered = [i for i in pr.entries() if (PKA / tool / f"{i}.csv").exists()
+               and (SPLIT / f"{i}.pkl").exists()]  # fmt: skip
+    train = [i for i in covered if pr.training(i)]
+    test = [i for i in covered if not pr.training(i)]
+    jobs = int(pr._option("jobs") or 1)
+    with ProcessPoolExecutor(jobs) as pool:
+
+        def counts(ids: list[str], switch: dict[str, float]) -> dict[str, Counts]:
+            n = jobs * 2
+            chunks = [ids[k::n] for k in range(n)]
+            parts = pool.map(_evaluate_some, [(c, weights, method, switch) for c in chunks if c])
+            out: dict[str, Counts] = {}
+            for part in parts:
+                for name, c in part.items():
+                    total = out.setdefault(name, Counts())
+                    total.right, total.total = total.right + c.right, total.total + c.total
+            return out
+
+        switch = dict(SWITCH)
+        best = objective(counts(train, switch))
+        print("training, default:", round(best, 4), flush=True)
+        for group in [g for g in pr._option("groups").split(",") if g] or ["HIS", "GLU", "ASP"]:
+            for value in _SHARES:
+                tried = {**switch, group: value}
+                got = objective(counts(train, tried))
+                if got > best + 1e-6:
+                    best, switch = got, tried
+            print(f"{group} {switch[group]} training {best:.4f}", flush=True)
+        results = {"default": counts(test, SWITCH), "margin": counts(test, switch)}
+    print(f"## {tool} on the test half ({len(test)} entries), switch {switch}\n")
+    print(table_of(results))
+    print("\nobjective:", {m: round(objective(r), 4) for m, r in results.items()})
 
 
 def _with(weights, switch: dict[str, float], name: str, value: float):
@@ -550,7 +627,8 @@ def _weight(weights, name: str) -> float:
     return float(weights.vector()[TERMS.index(name)])
 
 
-STEPS = {"build": build, "score": score, "fit": fit, "propka": propka_csv, "coverage": coverage}
+STEPS = {"build": build, "score": score, "fit": fit, "propka": propka_csv, "coverage": coverage,
+         "margin": margin}  # fmt: skip
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")

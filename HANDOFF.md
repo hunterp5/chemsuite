@@ -258,14 +258,14 @@ other machine can pick it up. Update it at the end of a session that leaves work
     Done the same day (p6 §5): `score --tools propka`; PROPKA scores 0.864 on the test half
     against P1's 0.893 (cases rebuilt with site keys; the old pickle is beside it as
     `state_cases.before-keys.pkl`).
-    **pKAI+ done 2026-11-24 (p6 §6):** `scripts/review/pka_tools.py` in the WSL conda env
-    `pka-bench`. The PROPKA CSVs had dropped about 5% of sites (numbers ≥ 1000, insertion
-    codes); fixed, and the bar is now 0.866 on the test half. pKAI+ scores 0.874, so nothing beats
-    P1's 0.893. Check `prepare_states.py coverage --tools X` before scoring a new tool, and score
-    with `--fast` (the full run takes 3.5 h). **Next: KaML-CBtree**, `pka_tools.py kaml --jobs 10`
-    once `libc6:i386` is installed in WSL (sudo, by the user); score it with and without the 43
-    entries that overlap its training proteins (`out/pka/kaml_overlap.json`). After that, try a
-    His margin for pKAI+ (training half only).
+    **External pKa tools done 2026-11-24 (p6 §6–8): none beats P1, so titration stays off.**
+    `scripts/review/pka_tools.py` runs pKAI+ and KaML-CBtree in the WSL conda env `pka-bench`.
+    Test-half objectives: P1 0.893, pKAI+ 0.874, PROPKA 0.866 (its CSVs had dropped about 5% of
+    sites; fixed), KaML 0.779, or 0.851 with margins. Leaving out KaML's training proteins changes
+    nothing. KaML's published `bbh_dis` has a bug (`x1 - y1`), which the runner corrects.
+    Every tool loses on His. The bench tools are `prepare_states.py coverage`, `score --skip`
+    and `margin --jobs N`; score with `--fast`, since the full run takes 3.5 h.
+    MCCE4 + NextGenPB (step 4) is not worth starting unless the user wants PB checked anyway.
   - **Loop modeler planned 2026-11-19** ([`docs/LOOPS_PLAN.md`](docs/LOOPS_PLAN.md); ROADMAP
     §7a.3): gaps of 2 to N residues closed by CCD in a new Qt-free `prepare/loops.py`, relaxed
     by Minimize. L0, the benchmark of cut loops against PDBFixer (benchmark-only, in the

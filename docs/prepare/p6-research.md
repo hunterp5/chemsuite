@@ -211,10 +211,88 @@ Training half: P1 0.901, titration 0.855, PROPKA 0.876 → 0.883 after the fix, 
   `titrated` solve. Pass `--fast` when only the external columns are new (fast matches
   titrated to within 0.1 point here).
 
-**KaML-CBtree** is set up but not yet run. Its repo ships DSSP and RIDA only as prebuilt
-Linux binaries, and the user chose to run them in WSL. The 32-bit `mkdssp` needs
-`libc6:i386`. Its runner (`pka_tools.py kaml`) runs each chain alone, since KaML takes
-single chains, so inter-chain contacts are lost. **Leakage:** 43 of the 262 entries share a
-UniProt accession with KaML's training rows (mostly carbonic anhydrase II, 12; lysozyme, 9;
-RNase A, 4), 3 share a PDB ID, and 24 have no UniProt DBREF to check. KaML is to be scored
-with and without the overlapping entries (`out/pka/kaml_overlap.json`).
+## 7. Step 3 continued: KaML-CBtree, and margins (2026-11-24)
+
+**Running it.** KaML's repo ships DSSP and RIDA only as prebuilt Linux binaries. The user chose
+to run them in WSL; the 32-bit `mkdssp` needs `libc6:i386`. `pka_tools.py kaml` runs each chain
+alone, since KaML takes single chains, so inter-chain contacts are lost.
+- It loads the two finalized models once per worker and runs DSSP once per chain. KaML runs
+  it again for every residue, and the output does not change.
+- A residue KaML cannot compute features for (a missing side-chain atom gives an error row with
+  one field too many; 42 entries have one) gets no value and keeps its form in water. Blank
+  numeric features go to pycaret's imputer as NaN, as they would in training.
+- Coverage: 100% of the Asp, Glu, His, Cys, Tyr and Lys sites; no N-termini (KaML has none).
+
+**A bug in KaML's published feature code.** The first run scored 0.774 on the test half, below
+the null method (0.817). Features regenerated for 20 of KaML's own training structures (1KSM,
+4LZT, …, fetched from the PDB) were compared with its training table, column by column. All
+matched closely except the four backbone hydrogen-bond distances (DA1, DA2, DD1, DD2), which
+were about 14 Å off: `features.bbh_dis` computes `x1 - y1` where it means `x1 - x2`. The models
+were trained on correct distances, so the published prediction script feeds them wrong ones.
+- `pka_tools.py` replaces `bbh_dis` with the correct distance; KaML's clone is untouched.
+- On those training proteins the fix roughly halves the error (MAE His 0.53 → 0.23,
+  Lys 0.86 → 0.48, Asp 0.36 → 0.18).
+- A downward bias remains on Lys (−0.47) and Tyr (−0.63). It goes away when each row gets its
+  true `group_code`, a categorical feature that the published inference always sets to 0, an
+  unseen category. That is how KaML ships, so it is left as is.
+- Casting `charge` to a float, as the training table has it, changes nothing.
+- The first run's CSVs are kept as `out/pka/kaml.published-distance`.
+
+**Leakage.** 43 of the 262 entries share a UniProt accession with KaML's training rows (mostly
+carbonic anhydrase II, 12; lysozyme, 9; RNase A, 4), 3 share a PDB ID, and 24 have no UniProt
+DBREF to check. The lists are `out/pka/kaml_overlap.txt` and `kaml_overlap_or_unknown.txt`
+for `score --skip`.
+
+**Scores** (`score --fast --test --tools kaml`; objective):
+
+| Test half | Entries | Null | P1 | PROPKA | pKAI+ | KaML |
+|---|---|---|---|---|---|---|
+| All | 124 | 0.817 | **0.893** | 0.866 | 0.874 | 0.779 |
+| Without overlap | 103 | 0.827 | **0.907** | 0.875 | 0.880 | 0.782 |
+| Without overlap or unknown | 88 | 0.830 | **0.908** | 0.877 | 0.883 | 0.789 |
+
+Training half: KaML 0.793 (P1 0.901). The leakage does not change the picture.
+
+- **KaML loses on Cys and Tyr.** It switches 84 of 165 usual Cys to thiolate and 177 of 1,141
+  usual Tyr to the anion (test half). Its training labels explain the Cys calls: their median
+  is 6.3, because the Cys pKas people measure are mostly perturbed active-site ones. KaML's
+  predicted medians on these inputs are Cys 6.9, Tyr 8.5, Lys 9.1.
+- **On Asp and Glu it is more careful than PROPKA:** Glu 12/34 found with 52 wrong switches
+  (PROPKA 17/34, 143); Asp 0/13 with 34. That is still about 4 wrong switches for each find.
+- **His:** 105/261 charged found, 178 wrongly charged, tautomer 51.6% (P1 63.3%).
+
+**Margins** (`margin --tools X --jobs 10`). Each group's threshold is searched over the shares
+0.5–0.99 on the training half, then the test half is scored once. 90 min for both tools.
+
+| Test half | KaML default | KaML margin | pKAI+ default | pKAI+ margin |
+|---|---|---|---|---|
+| Thresholds | 0.5 | Cys, Glu, Tyr 0.99; Asp 0.95; His 0.8 | 0.5 | His 0.6 |
+| Cys wrong switches | 84 | 6 | 0 | 0 |
+| Tyr wrong switches | 177 | 33 | 0 | 0 |
+| Glu found / wrong | 12 / 52 | 4 / 27 | 1 / 9 | 1 / 9 |
+| His charged found / wrongly | 105 / 178 | 79 / 147 | 115 / 142 | 93 / 133 |
+| Objective | 0.779 | 0.851 | **0.874** | 0.869 |
+
+- Margins take most of KaML's damage away, but what is left is still below pKAI+ and P1.
+- pKAI+'s His margin gains 0.0003 on the training half and loses 0.005 on the test half: noise.
+  Its defaults stand.
+
+## 8. Where this leaves titration (2026-11-24)
+
+**No external pKa tool beats P1**: not PROPKA, pKAI+ or KaML-CBtree, with or without margins,
+and not on the entries free of KaML's training proteins. The test-half objectives are P1
+0.893, pKAI+ 0.874, PROPKA 0.866, KaML 0.851 with margins.
+
+- **Every tool loses on His.** P1 charges a His only where its hydrogen-bond network makes HIP
+  the best state, and so holds the tautomer and orientation scores (63.3%, 87.6%). Every pKa
+  tool charges more His wrongly than P1 does, and each wrong HIP also costs a tautomer.
+- **The unusual acid states are where the tools could help**, and none finds them cleanly. The
+  best ratio is pKAI+'s, which finds almost none. PROPKA and KaML each make about 3–4 wrong
+  switches for each find.
+- **Lys, Tyr and Cys:** 40 unusual states on the test half. Only KaML finds any (8, at 268
+  wrong switches), and its margins take them away again.
+
+Recommendation: keep titration off and ship none of these tools. Step 4 (MCCE4 + NextGenPB) was
+conditional on step 3 showing that pKa quality moves the states score. It doesn't for these
+three, so it is not worth starting unless the user wants Poisson–Boltzmann checked for its own
+sake. Constant-pH MD (openmm-cph) stays the later, MD-side option.

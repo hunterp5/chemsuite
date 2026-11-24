@@ -43,6 +43,7 @@ import tempfile
 import time
 from multiprocessing import Pool
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "samples" / "prepare"
@@ -164,6 +165,7 @@ def _kaml_start() -> None:
     """Loads the two finalized models once per worker, and runs DSSP once per chain: KaML runs it
     again for every residue of the same file, and the output does not change."""
     sys.path.insert(0, str(KAML))
+    os.chdir(tempfile.gettempdir())  # pycaret writes logs.log to the current folder
     import features
     from pycaret.regression import load_model
 
@@ -179,8 +181,16 @@ def _kaml_start() -> None:
             seen[command] = run(command, *args, **kwargs)
         return seen[command]
 
-    features.subprocess = type("Subprocess", (), {"check_output": staticmethod(cached)})
+    features.subprocess = SimpleNamespace(check_output=cached, DEVNULL=subprocess.DEVNULL)
+    features.bbh_dis = _distance  # its own takes x1 - y1 for x1 - x2
     _KAML["features"] = features
+
+
+def _distance(x1, y1, z1, x2, y2, z2) -> float:
+    """The backbone hydrogen-bond distances (DA1, DA2, DD1, DD2) as KaML's training table has
+    them. Its published ``bbh_dis`` subtracts y1 from x1, which puts these four features
+    about 14 Å off the training values (checked on its own training proteins: 1KSM, 4LZT, …)."""
+    return float(((x1 - x2) ** 2 + (y1 - y2) ** 2 + (z1 - z2) ** 2) ** 0.5)
 
 
 def kaml_one(pdb_id: str) -> str:
@@ -194,13 +204,12 @@ def kaml_one(pdb_id: str) -> str:
         try:
             rows = _kaml_chains(pdb_id, work, found)
         finally:
-            os.chdir(ROOT)
+            os.chdir(tempfile.gettempdir())
     save("kaml", pdb_id, rows)
     return f"{pdb_id} {len(rows)} sites {time.perf_counter() - start:.1f} s"
 
 
 def _kaml_chains(pdb_id: str, work: Path, found) -> list[tuple[str, int, str, str, float]]:
-    import io
 
     import pandas as pd
 
@@ -212,17 +221,33 @@ def _kaml_chains(pdb_id: str, work: Path, found) -> list[tuple[str, int, str, st
             continue
         path = work / f"{pdb_id}_{chain}.pdb"
         write(path, {chain: residues})
-        text = _KAML["features"].generate([path.name, *sites])
-        table = pd.read_csv(io.StringIO(text))
-        if len(table) != len(sites):
-            raise ValueError(f"chain {chain}: {len(table)} feature rows for {len(sites)} sites")
+        table, kept = _features(_KAML["features"].generate([path.name, *sites]))
+        if not kept:
+            continue
         table = table[_NUM + _CAT]
+        table[_NUM] = table[_NUM].apply(pd.to_numeric, errors="coerce")  # " " → NaN, imputed
         acid, base = _KAML["acid"].predict(table), _KAML["base"].predict(table)
-        for k, (_, name, number) in enumerate(sites):
+        for k, row in enumerate(kept):
+            _, name, number = sites[row]
             (seq, icode), _ = residues[int(number) - 1]
             pka = base[k] if name in ("HIS", "LYS") else acid[k]
             rows.append((chain, seq, icode, name, round(float(pka), 3)))
     return rows
+
+
+def _features(text: str):
+    """KaML's feature table, read as KaML-CBtree.py reads it, without the rows it could not
+    compute (a residue missing a side-chain atom gets an error row with one field too many),
+    and the indices of the rows kept. A residue left out gets no value: its form in water."""
+    import io
+
+    import pandas as pd
+
+    lines = text.strip().splitlines()
+    width = lines[0].count(",")
+    kept = [k for k, line in enumerate(lines[1:]) if line.count(",") == width]
+    table = pd.read_csv(io.StringIO("\n".join([lines[0]] + [lines[k + 1] for k in kept])))
+    return table, kept
 
 
 STEPS = {"pkai": (pkai_one, _pkai_start), "kaml": (kaml_one, _kaml_start)}
