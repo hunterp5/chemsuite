@@ -429,8 +429,10 @@ optional WSL interpreter. M0 (the feasibility gates) passed on 2026-11-15
 `chemsuite/simulate`'s spec, build and result) and M2 (the OpenMM worker, its runner and the
 shared JSON-lines client) done the same day, as are M3 (the minimisation protocol and its
 measured result) and M4 (Minimise in Prepare and Protein ▸ Minimise…, each result a new
-protein). **M5, the benchmark, is next**, and it splits: M5a is the minimisation metrics on the
-P0 sets, which the current worker can measure; M5b is the plan's short explicit-solvent MD gate,
+protein). **M5, the benchmark,** splits: M5a is the minimization metrics on the
+P0 sets, **done 2026-11-24** (167 of 262 neutron entries minimized; RMSD median 0.26 Å, clash
+score 28 → 2 per 1000 atoms, neutron marks unchanged; 19 entries fail for defects, listed in the
+plan, which are next); M5b is the plan's short explicit-solvent MD gate,
 which needs solvation, ions, a thermostat and a production loop that `chemsuite/simulate` does
 not have yet, so it is planned with §7a 5. Prepare's Minimise stays off by default until M5b.
 A by-hand Prepare + Minimise run on 181L with the real env is still owed (see HANDOFF).

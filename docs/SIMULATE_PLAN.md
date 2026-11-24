@@ -269,6 +269,51 @@ without instability and keeps the ligand in the pocket. It becomes Prepare's def
 if the clash score improves, the RMSD limit holds, the neutron marks do not regress, and the MD
 runs clean.
 
+**M5a done 2026-11-24** (the minimization metrics; M5b, the MD gate, is planned with §7a 5).
+`scripts/review/minimise_review.py run` prepares each of the 262 P0 neutron entries as the
+`chemsuite` variant and minimizes it with `MinimiseSettings()` (ff14SB + Sage + TIP3P, GBn2,
+CUDA), writing both models from the same run (`out/chemsuite-prep`, `out/chemsuite-min`) and
+the numbers (`out/minimise/<ID>.json`); `score` reports them.
+`tests/simulate/test_bench_minimise.py` (`-m bench`) reads that run and gates on it. About
+1.5 h on the Windows PC. The slow part is Prepare's ligand pKa (up to 10 min on some ligands,
+about 13 s per protonation form), not OpenMM (median 7 s).
+
+- **Coverage:** 167 of 262 minimized. 76 fail by design: 23 nonstandard residues (LLP, PCA,
+  SUI, CRQ…), 18 hemes (OpenFF's charge model refuses iron), 13 glycans, 11 covalent
+  ligands, 7 nucleic acids, 4 ligands with atoms missing. **19 fail for a defect**, the
+  test's ratchet:
+  - ligand hydrogen missing (6): the carbonic anhydrase sulfonamides bound to Zn (4G0C,
+    a named case, 5C8I, 6BBS, 6BC9, 6BCC; "an atom is missing a hydrogen (S)") and 13HO;
+  - Prepare picks tyrosinate (TYM), which has no ff14SB template (5): 5TKI, 7T5D, 7T5E,
+    8E1W, 8RK1;
+  - a chain end left without OXT or cap (3): 1IU6, 3VXF, 5KWF;
+  - Mn(III) with no ion template (2): 6KK8, 7KKS;
+  - one each: an Arg with 22 atoms for a 24-atom template (2INQ), a ligand topology OpenFF
+    refuses (5VG1), NaN coordinates in the worker (6H1M).
+  Hemes fail in the worker with OpenFF's raw `ValueError`; build should name them as a
+  `Problem` instead.
+- **Heavy atoms held** (from the prepared start): RMSD median 0.26, p95 0.30, max 0.41 Å; two
+  entries over the 0.3 Å limit (2XQZ, 3INS), nine with a ⚠. Pocket median 0.31, p95 0.62 Å;
+  ligand median 0.38, p95 1.04, max 2.79 Å. The ligands that move most are additives in the
+  solvent (FMT, MPD, NO2, PEO, D3O in 9KVM, 9KVL, 4AR4, 9BVY); real ligands moving about 1 Å
+  are ADP in two kinases (21FE, 7F4X) and 8DG in 9MBE. Whether stage 3 holds ligands tightly
+  enough is a question for M5b.
+- **Clash score** (our own, Probe-like: pairs more than three bonds apart, hydrogens
+  included, overlapping by 0.4 Å or more, H-bonds excepted, per 1000 atoms): median
+  28.3 → 2.3, p95 65.7 → 10.2; worse after in no entry.
+- **Neutron marks** (the same 167 entries): unchanged. Asn orientation 85.6 → 85.8%, ligand
+  polar-H count 95.9 → 95.6%, every other mark equal.
+- **Polar hydrogens against the deposit's D**, as the share whose parent→H direction is
+  turned more than 60° from the deposit's (drift of the parent atom cannot cause that):
+  Ser/Thr/Tyr/Cys 39.0 → 37.6% and waters 47.0 → 41.5% (better); Lys NH₃ 0.9 → 8.9% and
+  N-termini 3.7 → 7.2% (worse: surface amines swing in implicit solvent, the CE–NZ axis
+  tilting, not only the NH₃ turning); ligands 25.1 → 26.4%. Distance alone misleads here:
+  the held atoms drift by about 0.25 Å, carrying their hydrogens with them.
+- Named cases: 4PDJ, 7D6G, 2ZYE, 5MO0, 5MOQ, 4JEC and 5T8H all minimize (RMSD 0.24–0.28 Å,
+  ligand 0.17–0.57 Å, clashes 69–112 → 3–8); 4G0C fails (above).
+
+Prepare's Minimize stays off by default: M5b is still owed, and the 19 defects come first.
+
 ## Later phases this design carries (ROADMAP §7a 5–7, stated here so nothing is painted into a corner)
 
 The `SystemSpec` + worker pair is the single entry point for all of it:

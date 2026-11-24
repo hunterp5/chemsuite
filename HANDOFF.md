@@ -489,8 +489,16 @@ other machine can pick it up. Update it at the end of a session that leaves work
   **M3 is done** (2026-11-15: `Prepared.built`, restraints per class of atom, tightening,
   `simulate/minimise.py` measuring the result; the tuning findings are under M3 in the plan).
   **M4 is done** (2026-11-15: Minimise in Prepare and Protein ▸ Minimise…, each result a
-  new protein `X-prep`/`X-min`; see M4 in the plan). **M5, the benchmark, is next**; a by-hand
-  run with the real env (Prepare + Minimise on 181L) is still owed. Two constraints for M4
+  new protein `X-prep`/`X-min`; see M4 in the plan). **M5a is done** (2026-11-24, Windows PC:
+  `scripts/review/minimise_review.py`, `tests/simulate/test_bench_minimise.py`; numbers under
+  M5 in the plan): 167 of 262 neutron entries minimize, RMSD and clash score pass, neutron marks
+  unchanged, surface Lys NH₃ swing in GBn2. **Next: the 19 defect failures** listed there
+  (4G0C's Zn-bound sulfonamide first; TYM with no template; uncapped chain ends; Mn(III);
+  heme refused as a raw OpenFF error), lowering the test's `DEFECTS` ratchet as each is fixed.
+  The run's outputs are local (`samples/prepare/out/{chemsuite-prep,chemsuite-min,minimise}`),
+  so the Mac needs its own run (`run --only ID,…` reruns some). On Windows `run` keeps the PC
+  awake itself (it slept mid-run once); on the Mac use `caffeinate -i`. A by-hand run with the real env (Prepare + Minimise on 181L)
+  is still owed. Two constraints for M4
   found in M3 are in the plan's M4 section (`built` is kept and unioned across re-prepares;
   minimise only from the prepared model). To run the real-env tests
   here: `$env:CHEMSUITE_OPENMM_PYTHON = "$HOME\miniforge3\envs\cs-sim-m0\python.exe"` then
