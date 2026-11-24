@@ -594,6 +594,12 @@ pip extra.
    using the GPU when present. Results: the trajectory in the models bar, RMSD, RMSF per residue
    (cartoon coloured by it), ligand RMSD and interaction occupancy as rows for the line plots,
    and clustered representative frames as rows. Trajectories live beside the document.
+   **Metal sites need a real force-field model** (added 2026-11-24): minimization holds each
+   transition metal's contacts at the distances Prepare left them and keeps its other
+   neighbors from closing in, because a bare nonbonded Zn²⁺ pulls an anion and its neighbors
+   in (the carbonic anhydrase sulfonamides, SIMULATE_PLAN M5a). Restraints are enough for a
+   minimization but not for MD: a bonded model (MCPB.py-style parameters for each site) or a
+   cationic dummy-atom model, chosen per metal, measured on the P0 metal entries.
 6. **Binding free energy.** MM-GBSA/PBSA rescoring of poses and trajectories first; then
    relative binding free energy (openfe) with an atom mapper, network setup and convergence
    checks that refuse to report a number that has not converged.

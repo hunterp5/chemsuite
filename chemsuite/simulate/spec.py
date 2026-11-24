@@ -70,6 +70,8 @@ HEAVY = "heavy atoms"  # everything, the heavy atoms held by restraints (none on
 MOVING = (HYDROGENS, HEAVY)
 #: the classes of heavy atom a stage restrains, each with its own constant
 RESTRAINED = ("backbone", "side_chains", "ligands", "waters", "ions")
+#: every constant a stage holds things with, as its JSON names them
+HELD = (*RESTRAINED, "contacts")
 KCAL_PER_A2 = 418.4  # kJ/mol/nm² in one kcal/mol/Å²
 
 
@@ -310,7 +312,9 @@ class ForceFieldSpec:
 class Stage:
     """One minimisation stage: what moves, and how hard each class of deposited heavy atom is
     held where it started (kJ/mol/nm², harmonic; 0 leaves it free). Heavy atoms Prepare built
-    are never held: no deposited position says where they belong."""
+    are never held: no deposited position says where they belong. *contacts* holds each
+    transition metal's contacts at the distance Prepare left them (kJ/mol/nm²): a bare
+    nonbonded metal ion pulls an anion in and its neighbours with it."""
 
     name: str
     moving: str  # one of MOVING
@@ -319,11 +323,12 @@ class Stage:
     ligands: float = 0.0  # small molecules
     waters: float = 0.0
     ions: float = 0.0
+    contacts: float = 0.0  # a metal to the N, O and S it binds, at their starting distance
 
     def __post_init__(self) -> None:
         if self.moving not in MOVING:
             raise SpecError(f"A stage moves {' or '.join(MOVING)}, not '{self.moving}'")
-        if min(self.restraints()) < 0:
+        if min(self.restraints()) < 0 or self.contacts < 0:
             raise SpecError("A restraint is not negative")
 
     def restraints(self) -> tuple[float, ...]:
@@ -332,13 +337,16 @@ class Stage:
 
     def to_json(self) -> dict[str, Any]:
         return {"name": self.name, "moving": self.moving,
-                **dict(zip(RESTRAINED, self.restraints(), strict=True))}  # fmt: skip
+                **dict(zip(RESTRAINED, self.restraints(), strict=True)),
+                "contacts": self.contacts}  # fmt: skip
 
 
 def _kcal(value: float) -> float:
     return value * KCAL_PER_A2
 
 
+#: kcal/mol/Å² on a metal's contacts: about a bond's stiffness, since nothing else holds them
+CONTACTS = 1000.0
 #: the staged protocol of the plan (M3). Hydrogens alone first. Then side chains and waters
 #: settle round them with the backbone, ligands and ions held firmly and side chains lightly
 #: (free side chains at a charged surface swing into each other a whole ångström). Last, the
@@ -347,9 +355,9 @@ def _kcal(value: float) -> float:
 STAGES = (
     Stage("Hydrogens", HYDROGENS),
     Stage("Side chains and waters", HEAVY, backbone=_kcal(10), side_chains=_kcal(1),
-          ligands=_kcal(10), waters=_kcal(1), ions=_kcal(10)),
+          ligands=_kcal(10), waters=_kcal(1), ions=_kcal(10), contacts=_kcal(CONTACTS)),
     Stage("Complex", HEAVY, backbone=_kcal(1), side_chains=_kcal(1), ligands=_kcal(0.25),
-          waters=_kcal(1), ions=_kcal(10)),
+          waters=_kcal(1), ions=_kcal(10), contacts=_kcal(CONTACTS)),
 )  # fmt: skip
 
 
@@ -386,9 +394,9 @@ class MinimiseSpec:
         for s in _list(saved, "stages"):
             if (not isinstance(s, dict) or not isinstance(s.get("name"), str)
                     or not isinstance(s.get("moving"), str)
-                    or not all(_is(s.get(k, 0.0), float) for k in RESTRAINED)):  # fmt: skip
+                    or not all(_is(s.get(k, 0.0), float) for k in HELD)):  # fmt: skip
                 raise SpecError("A stage has a name, what moves and its restraints")
-            held = {k: float(s.get(k, 0.0)) for k in RESTRAINED}
+            held = {k: float(s.get(k, 0.0)) for k in HELD}
             stages.append(Stage(s["name"], s["moving"], **held))
         tolerance, iterations, limit, tighten = (
             saved.get(k) for k in ("tolerance", "max_iterations", "rmsd_limit", "tighten")
@@ -432,8 +440,9 @@ class MinimiseSettings:
 
     def protocol(self) -> MinimiseSpec:
         stages = tuple(
-            replace(stage, **{k: v * self.restraints
-                              for k, v in zip(RESTRAINED, stage.restraints(), strict=True)})
+            replace(stage, contacts=stage.contacts * self.restraints,
+                    **{k: v * self.restraints
+                       for k, v in zip(RESTRAINED, stage.restraints(), strict=True)})
             for stage in STAGES
         )  # fmt: skip
         return MinimiseSpec(stages=stages, rmsd_limit=self.rmsd_limit)

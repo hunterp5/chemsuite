@@ -90,8 +90,19 @@ def test_force_fields_and_protocol_round_trip_and_refuse_nonsense() -> None:
     side, whole = protocol.stages[1], protocol.stages[2]
     assert side.backbone > side.side_chains > 0 and whole.ligands < whole.backbone
     assert MinimiseSpec.from_json(json.loads(json.dumps(protocol.to_json()))) == protocol
+    # a metal's contacts held in every stage that moves heavy atoms, harder than any atom
+    assert protocol.stages[0].contacts == 0
+    assert all(s.contacts > max(s.restraints()) for s in (side, whole))
+    older = protocol.to_json()
+    for stage in older["stages"]:
+        del stage["contacts"]  # a protocol saved before metal contacts were held
+    assert all(s.contacts == 0 for s in MinimiseSpec.from_json(older).stages)
+    halved = spec.MinimiseSettings(restraints=0.5).protocol()
+    assert halved.stages[2].contacts == whole.contacts / 2
     with pytest.raises(SpecError):
         spec.Stage("x", spec.HEAVY, ions=-1.0)
+    with pytest.raises(SpecError):
+        spec.Stage("x", spec.HEAVY, contacts=-1.0)
     with pytest.raises(SpecError):
         MinimiseSpec(tighten=-1)
     with pytest.raises(SpecError):

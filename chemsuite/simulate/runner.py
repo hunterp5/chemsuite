@@ -148,13 +148,16 @@ class Simulator(LineWorker):
         *,
         platform: str = "",
         free: Sequence[int] = (),
+        contacts: Sequence[tuple[int, int]] = (),
+        kept_out: Sequence[tuple[int, int]] = (),
         progress: Progress | None = None,
         cancel: CancelToken | None = None,
     ) -> Minimised:
         """Minimise *system* from *xyz* (Å, the spec's order), stage by stage, every heavy atom
-        held to where it started but the *free* ones (indices: the atoms Prepare built).
-        Cancelling stops it between iterations: :class:`Cancelled` carries what it got to (or
-        None)."""
+        held to where it started but the *free* ones (indices: the atoms Prepare built), and
+        each metal's *contacts* (index pairs) held at their starting distance and the pairs in
+        *kept_out* no closer than they start. Cancelling stops it between iterations:
+        :class:`Cancelled` carries what it got to (or None)."""
         body = {
             "system": system.to_json(),
             "forcefield": forcefield.to_json(),
@@ -162,6 +165,8 @@ class Simulator(LineWorker):
             "protocol": (protocol or MinimiseSpec()).to_json(),
             "platform": platform,
             "free": sorted(int(i) for i in free),
+            "contacts": sorted([int(i), int(j)] for i, j in contacts),
+            "kept_out": sorted([int(i), int(j)] for i, j in kept_out),
         }
 
         def event(found: dict) -> None:

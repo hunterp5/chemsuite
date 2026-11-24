@@ -31,6 +31,8 @@ from chemsuite.simulate.minimise import (
     closest_contact,
     free_atoms,
     measure,
+    metal_contacts,
+    metal_shell,
     minimise,
 )
 from chemsuite.simulate.runner import Minimised, Simulator
@@ -102,6 +104,34 @@ def test_an_ion_beside_a_water_is_no_contact() -> None:
                         residues, ((0, 1, 1), (0, 2, 1)))  # fmt: skip
     xyz = np.array([[0.0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0], [1.0, 1.0, 1.0]])
     assert closest_contact(system, xyz) is None
+
+
+def _zinc_site() -> tuple[SystemSpec, np.ndarray]:
+    """A Zn²⁺ with a water on it (2.0 Å), a second water further out (3.5 Å), a Na⁺ (2.4 Å) and
+    a far water (8 Å)."""
+    residues = (Residue("HOH", "A", 1, "", "water", "A/HOH 1", 0, 3),
+                Residue("HOH", "A", 2, "", "water", "A/HOH 2", 3, 3),
+                Residue("HOH", "A", 3, "", "water", "A/HOH 3", 6, 3),
+                Residue("ZN", "A", 4, "", "ion", "A/ZN 4", 9, 1),
+                Residue("NA", "A", 5, "", "ion", "A/NA 5", 10, 1))  # fmt: skip
+    element = (8, 1, 1) * 3 + (30, 11)
+    names = ("O", "H1", "H2") * 3 + ("ZN", "NA")
+    bonds = tuple((3 * w, 3 * w + k, 1) for w in range(3) for k in (1, 2))
+    system = SystemSpec(tuple(range(1, 12)), element, names, (0,) * 9 + (2, 1), residues, bonds)
+    water = np.array([[0.0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]])
+    xyz = np.vstack([water + [2.0, 0, 0], water + [0, 3.5, 0], water + [0, 0, 8.0],
+                     [[0.0, 0, 0]], [[0, 0, -2.4]]])  # fmt: skip
+    return system, xyz
+
+
+def test_a_metals_contacts_and_shell_are_read_as_prepare_reads_them() -> None:
+    system, xyz = _zinc_site()
+    none = np.zeros(system.n_atoms, dtype=bool)
+    assert metal_contacts(system, xyz, none) == [(9, 0)]  # the water's O, not the Na⁺
+    assert metal_shell(system, xyz, none) == [(9, 3)]  # the next water, not the far one
+    built = none.copy()
+    built[0] = True  # an atom Prepare built has no deposited distance to keep
+    assert metal_contacts(system, xyz, built) == []
 
 
 @pytest.fixture

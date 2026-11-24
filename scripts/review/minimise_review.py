@@ -376,6 +376,13 @@ def score() -> None:
             print(f"- {pdb_id}: RMSD {x['rmsd']:.2f}, pocket {x.get('rmsd_pocket') or 0:.2f}, "
                   f"ligand {x.get('rmsd_ligand') or 0:.2f} Å; clashes "
                   f"{r['clashes_before']} → {r['clashes_after']}")  # fmt: skip
+    print("\n## Metal sites\n")
+    sites = metal_sites(done)
+    print(f"- {len(sites)} transition metals in {len({s[0] for s in sites})} entries; "
+          "largest change in a contact's distance:", _line(s[2] for s in sites))  # fmt: skip
+    for pdb_id, metal, change, came in sites:
+        if change > 0.2 or came:
+            print(f"- {pdb_id} {metal}: contact changed {change:.2f} Å; came in: {came}")
     print("\n## Neutron marks\n")
     print(f"| Question | {PREP} | {MIN} |\n|---|---|---|")
     tallies = {m: marks(m, [r["id"] for r in done]) for m in (PREP, MIN)}
@@ -390,6 +397,43 @@ def score() -> None:
     for group, method, d, a in h_table(done):
         print(f"| {group} | {method} | {_line(d)} | {np.mean(d <= 0.5):.1%} "
               f"| {np.mean(d > 1.0):.1%} | {np.mean(a > TURNED):.1%} |")  # fmt: skip
+
+
+#: Å: a heavy atom this near a metal after minimization that was not its contact has come in
+METAL_NEWCOMER = 2.6
+
+
+def metal_sites(done: list[dict]) -> list[tuple[str, str, float, list[str]]]:
+    """Each transition metal of the entries *done*: (entry, metal, the largest change in a
+    contact's distance (Å), the heavy atoms that came within :data:`METAL_NEWCOMER` of it
+    from further out).
+    Contacts as Prepare reads them: an N, O or S within ``METAL_CONTACT`` of the metal."""
+    from chemsuite.macromolecule.prepare.hydrogens import METAL_CONTACT, SOFT_METALS
+
+    found = []
+    for r in done:
+        models = [gemmi.read_structure(str(OUT / m / f"{r['id']}.pdb"))[0] for m in (PREP, MIN)]
+        atoms = []
+        for model in models:
+            atoms.append({(ch.name, str(res.seqid), res.name, a.name): a for ch in model
+                          for res in ch for a in res})  # fmt: skip
+        before, after = atoms
+        for key, metal in before.items():
+            if metal.element.atomic_number not in SOFT_METALS or key not in after:
+                continue
+            here, there = metal.pos, after[key].pos
+            contacts = [k for k, a in before.items() if k != key and k in after
+                        and a.element.atomic_number in (7, 8, 16)
+                        and a.pos.dist(here) < METAL_CONTACT]  # fmt: skip
+            change = max((abs(after[k].pos.dist(there) - before[k].pos.dist(here))
+                          for k in contacts), default=0.0)  # fmt: skip
+            came = [f"{k[2]} {k[1]}/{k[3]} {a.pos.dist(there):.2f}" for k, a in after.items()
+                    if k != key and k not in contacts and a.element.name != "H"
+                    and a.pos.dist(there) < METAL_NEWCOMER
+                    and (k not in before
+                         or before[k].pos.dist(here) >= METAL_NEWCOMER)]  # fmt: skip
+            found.append((r["id"], f"{key[2]} {key[1]}", change, came))
+    return found
 
 
 def h_table(done: list[dict]):

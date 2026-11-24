@@ -2162,6 +2162,8 @@ Each new protein is shown in place of the one it was made from, which is hidden;
 the new ones and shows the original again. The minimisation runs in three stages: hydrogens
 only; then side chains and waters, with the backbone, ligands and ions held; then the whole
 complex, each heavy atom held near its deposited position. Atoms Prepare built are never held.
+A transition metal (Zn, Cu, Ni, Co, Fe, Mn, Cd…) keeps its site as Prepare left it: each N, O
+or S bound to it stays at its distance, and its other neighbors within 6 Å come no closer.
 While the deposited heavy atoms end further than the **RMSD Limit**, the last stage runs again
 held twice as hard (up to three times).
 

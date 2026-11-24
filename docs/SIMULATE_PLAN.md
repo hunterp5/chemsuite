@@ -283,7 +283,23 @@ about 13 s per protonation form), not OpenMM (median 7 s).
   ligands, 7 nucleic acids, 4 ligands with atoms missing. **19 fail for a defect**, the
   test's ratchet:
   - ligand hydrogen missing (6): the carbonic anhydrase sulfonamides bound to Zn (4G0C,
-    a named case, 5C8I, 6BBS, 6BC9, 6BCC; "an atom is missing a hydrogen (S)") and 13HO;
+    a named case, 5C8I, 6BBS, 6BC9, 6BCC; "an atom is missing a hydrogen (S)") and 13HO.
+    **The five sulfonamides fixed 2026-11-24** (14 defects left): RDKit's `AssignRadicals`
+    gives an aromatic S with a fixed hydrogen count a radical, so `prepared_form` now checks on a
+    Kekulé copy. They minimized, but **the Zn site collapsed in all five**: the sulfonamide N⁻
+    went from 2.0–2.4 to 1.71 Å, a sulfonyl O came in to 1.8 Å, and in 4G0C and 6BBS a water
+    came in and His119 left. Every metal site did the same (76 transition metals in 49
+    entries: contacts changed by a median 0.34 Å, max 2.75; Asp/Glu and waters came in to
+    1.6–2.1 Å on Ni, Co, Cu, Mn and Cd). A bare nonbonded ion overbinds; the RMSD limit did not
+    catch it. **Fixed 2026-11-24 with restraints** (`minimise.metal_contacts`/`metal_shell`,
+    `Stage.contacts`): each transition metal's contacts as Prepare reads them (an N, O or S
+    within 2.9 Å) are held at their prepared distance at 1000 kcal/mol/Å² (100 let the N⁻ in by
+    0.6 Å against a 2500 kJ/mol/nm pull), and its other heavy atoms within 6 Å kept no closer
+    than they start (4 Å let Glu106 in from 4.06 Å in 4G0C). After: contacts change by a median
+    0.04 Å, max 0.10, nothing comes in; RMSD and clashes unchanged, ligands median 0.63 →
+    0.55 Å. The bench test holds it (`test_the_metal_sites_hold`). A real metal model for MD
+    is in ROADMAP §7a 5. 13HO is something else: its A1D has no dictionary entry and the
+    geometry guess left every bond single;
   - Prepare picks tyrosinate (TYM), which has no ff14SB template (5): 5TKI, 7T5D, 7T5E,
     8E1W, 8RK1;
   - a chain end left without OXT or cap (3): 1IU6, 3VXF, 5KWF;
@@ -320,6 +336,8 @@ The `SystemSpec` + worker pair is the single entry point for all of it:
 - **MD** (phase 5): solvation and ions, restraints from any selection, minimise/heat/equilibrate/
   produce, checkpoints, GPU; trajectories beside the document (needs a narrow `ToolContext`
   method for the document's folder — `Workspace.path` is not exposed and is `None` when unsaved).
+  Metal sites need a real model there (a bonded MCPB.py-style site or a cationic dummy-atom
+  model, per metal): the restraints that hold them in a minimization (M5a) are not dynamics.
 - **MM-GBSA** runs in the same worker with GBn2 and needs no AmberTools; **MM-PBSA**, GIST/3D-RISM
   solvent analysis and **openfe** RBFE are the pieces that need the WSL (or Linux) interpreter.
 - Also reachable with this stack, worth considering in that order: **GCMC water placement** and

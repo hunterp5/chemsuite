@@ -35,9 +35,12 @@ Requests
         ``text``). Every protein residue and cap is given its template by name (never matched by
         graph alone), and every residue's charge in the system must be the spec's formal charge.
         Built systems are kept, by the whole request, charges included.
-    ``minimise`` ``{"system", "forcefield", "positions", "protocol", "platform", "free"}``
+    ``minimise`` ``{"system", "forcefield", "positions", "protocol", "platform", "free",
+    "contacts", "kept_out"}``
         the staged minimisation of :class:`~.spec.MinimiseSpec`, each class of heavy atom held to
-        where it started but those in ``free`` (atoms Prepare built); the last stage run again
+        where it started but those in ``free`` (atoms Prepare built), and each metal contact (an
+        atom pair in ``contacts``) at its starting distance, the pairs in ``kept_out`` no
+        closer than they start; the last stage run again
         with its restraints doubled while the held atoms end further than the limit. Sends
         ``{"stage", "iteration", "energy"}`` events as it goes and stops between iterations when
         asked; ``stages`` in the reply holds every run, and ``rmsd`` the held atoms' at the end.
@@ -389,7 +392,12 @@ def minimise(request, inbox, ident):
     start = numpy.asarray(flat, dtype=float).reshape(n, 3) / NM  # nm
     free = {int(i) for i in request.get("free", [])}
     held = [(i, c) for i, c in zip(made.heavy, made.classes) if i not in free]
-    run = Run(made, protocol, platform, properties, start, held, inbox, ident)
+    contacts = [(int(i), int(j)) for i, j in request.get("contacts", [])]
+    kept_out = [(int(i), int(j)) for i, j in request.get("kept_out", [])]
+    if any(not (0 <= i < n and 0 <= j < n) for i, j in contacts + kept_out):
+        raise ValueError("a metal contact names an atom the system does not have")
+    run = Run(made, protocol, platform, properties, start, held, inbox, ident, contacts,
+              kept_out)
     positions = start
     for stage in protocol["stages"]:
         if inbox.stop.is_set():
@@ -428,10 +436,12 @@ class Run:
     (one stopped part-way counts: the minimiser leaves them no worse than it found them);
     :attr:`began_last` where it began."""
 
-    def __init__(self, made, protocol, platform, properties, start, held, inbox, ident):
+    def __init__(self, made, protocol, platform, properties, start, held, inbox, ident,
+                 contacts=(), kept_out=()):
         self.made, self.protocol = made, protocol
         self.platform, self.properties = platform, properties
-        self.start, self.held = start, held
+        self.start, self.held, self.contacts = start, held, contacts
+        self.kept_out = kept_out
         self.inbox, self.ident = inbox, ident
         self.stages = []
         self.first_energy = None
@@ -459,6 +469,20 @@ class Run:
                     restraint.addParticle(i, [constants[c], x, y, z])
             restraint.setForceGroup(1)
             system.addForce(restraint)
+            k = float(stage.get("contacts", 0.0)) * scale
+            if k > 0:
+                for pairs, energy in ((self.contacts, "0.5*k*(r-r0)^2"),
+                                      (self.kept_out, "0.5*k*min(0, r-r0)^2")):
+                    if not pairs:
+                        continue
+                    bound = openmm.CustomBondForce(energy)
+                    bound.addPerBondParameter("k")
+                    bound.addPerBondParameter("r0")
+                    for i, j in pairs:
+                        r0 = float(((self.start[i] - self.start[j]) ** 2).sum() ** 0.5)
+                        bound.addBond(i, j, [k, r0])
+                    bound.setForceGroup(1)
+                    system.addForce(bound)
         context = openmm.Context(system, openmm.VerletIntegrator(0.001), self.platform,
                                  self.properties)
         context.setPositions(positions)

@@ -33,6 +33,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from chemsuite.core.jobs import Cancelled, CancelToken
+from chemsuite.macromolecule.prepare.hydrogens import METAL_CONTACT, SOFT_METALS
 from chemsuite.macromolecule.structure.model import Structure
 
 from . import build, spec
@@ -43,6 +44,8 @@ from .spec import ForceFieldSpec, MinimiseSpec, SystemSpec
 POCKET = 5.0  # Å: heavy atoms this near a small molecule's are its pocket
 CONTACT_SEARCH = 4.0  # Å: contacts are looked for this far out
 MOVED_MOST = 5  # residues listed as moving most
+#: Å: heavy atoms this near a metal that are not its contacts are kept from coming closer
+METAL_SHELL = 6.0
 
 
 @dataclass(frozen=True)
@@ -75,8 +78,10 @@ def minimise(
     free = free_atoms(charged, built)
     try:
         done = worker.minimise(charged, forcefield, start, protocol, platform=platform,
-                               free=free.nonzero()[0].tolist(), progress=progress,
-                               cancel=cancel)  # fmt: skip
+                               free=free.nonzero()[0].tolist(),
+                               contacts=metal_contacts(charged, start, free),
+                               kept_out=metal_shell(charged, start, free),
+                               progress=progress, cancel=cancel)  # fmt: skip
     except Cancelled as stopped:
         partial = stopped.partial
         if not isinstance(partial, Minimised):
@@ -89,6 +94,41 @@ def free_atoms(system: SystemSpec, built: Iterable[int]) -> np.ndarray:
     """Which of *system*'s atoms are heavy atoms Prepare built (a mask in the spec's order)."""
     wanted = np.fromiter((int(u) for u in built), dtype=np.int64)
     return np.isin(np.array(system.uid, dtype=np.int64), wanted) & (np.array(system.element) != 1)
+
+
+def metal_contacts(system: SystemSpec, xyz: np.ndarray, free: np.ndarray) -> list[tuple[int, int]]:
+    """Each transition metal's contacts as Prepare reads them (``prepare.hydrogens``): an N, O
+    or S of another residue within :data:`METAL_CONTACT` of it at *xyz* (Å), as (metal, atom)
+    index pairs. Atoms Prepare built (*free*) are left out, like their positions."""
+    element = np.array(system.element)
+    residue_of = np.array(system.residue_of())
+    kinds = np.array([r.kind for r in system.residues])
+    metals = np.flatnonzero((kinds[residue_of] == spec.ION) & np.isin(element, list(SOFT_METALS))
+                            & ~free)  # fmt: skip
+    polar = np.flatnonzero(np.isin(element, [7, 8, 16]) & (kinds[residue_of] != spec.ION) & ~free)
+    if not len(metals) or not len(polar):
+        return []
+    near = cKDTree(xyz[polar]).query_ball_point(xyz[metals], METAL_CONTACT)
+    return [(int(m), int(polar[k])) for m, found in zip(metals.tolist(), near, strict=True)
+            for k in sorted(found)]  # fmt: skip
+
+
+def metal_shell(system: SystemSpec, xyz: np.ndarray, free: np.ndarray) -> list[tuple[int, int]]:
+    """The heavy atoms within :data:`METAL_SHELL` of a transition metal that are not its
+    contacts (:func:`metal_contacts`), as (metal, atom) pairs: kept from coming closer than
+    they start, since a bare metal ion pulls them in too."""
+    element = np.array(system.element)
+    residue_of = np.array(system.residue_of())
+    kinds = np.array([r.kind for r in system.residues])
+    metals = np.flatnonzero((kinds[residue_of] == spec.ION) & np.isin(element, list(SOFT_METALS))
+                            & ~free)  # fmt: skip
+    heavy = np.flatnonzero((element != 1) & (kinds[residue_of] != spec.ION))
+    if not len(metals) or not len(heavy):
+        return []
+    contacts = set(metal_contacts(system, xyz, free))
+    near = cKDTree(xyz[heavy]).query_ball_point(xyz[metals], METAL_SHELL)
+    return [(int(m), int(heavy[k])) for m, found in zip(metals.tolist(), near, strict=True)
+            for k in sorted(found) if (int(m), int(heavy[k])) not in contacts]  # fmt: skip
 
 
 def measure(

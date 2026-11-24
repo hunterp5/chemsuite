@@ -40,7 +40,7 @@ pytestmark = [
 RMSD_LIMIT = 0.3  # Å, MinimiseSettings' default
 #: entries that fail for a defect (``minimise_review.DEFECTS``; the rest of the failures are
 #: what chemsuite does not simulate by design). A ratchet: lower it as defects are fixed
-DEFECTS = 19
+DEFECTS = 14
 #: the share of minimised entries whose held heavy atoms end within the limit
 WITHIN_LIMIT = 0.95
 #: how far a neutron mark may fall from the prepared model's (minimisation keeps the states;
@@ -51,6 +51,9 @@ TURN_SLACK = 0.01
 #: surface lysines swing in implicit solvent: 0.9% of NH3 hydrogens turned after Prepare,
 #: 8.9% after Minimise (2026-11-24); a ceiling, so it does not quietly get worse
 LYS_TURNED = 0.10
+#: Å a transition metal's contact may change by (held since 2026-11-24; a bare ion pulled them
+#: in by up to 2.75 Å, median 0.34)
+METAL_CONTACT_SLACK = 0.15
 
 
 @pytest.fixture(scope="module")
@@ -125,3 +128,11 @@ def test_minimisation_does_not_turn_the_polar_hydrogens_away(review, rows) -> No
     rotor = "OH/SH rotor"
     assert turned[rotor, review.MIN] <= turned[rotor, review.PREP] + TURN_SLACK
     assert turned["Lys NH3", review.MIN] <= LYS_TURNED
+
+
+def test_the_metal_sites_hold(review, rows) -> None:
+    sites = review.metal_sites(_done(rows))
+    changes = np.array([change for _id, _metal, change, _came in sites])
+    print(f"{len(sites)} metals; largest contact change {changes.max():.2f} Å")
+    assert sites and changes.max() <= METAL_CONTACT_SLACK
+    assert [(i, metal, came) for i, metal, _c, came in sites if came] == []
