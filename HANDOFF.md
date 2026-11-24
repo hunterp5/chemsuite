@@ -427,8 +427,39 @@ other machine can pick it up. Update it at the end of a session that leaves work
     reopened document still marks them; a finished run marks the most prescribed isoform it was
     asked for; `ToolContext.highlight_atoms` is a tool's only way in. Full suite run (shared
     rendering). The guide is updated in the column-menu list and under Sites of Metabolism.
-    **By hand, still owed:** look at a marked column in the real app, light and dark, and at a
-    3D (conformer) structure column, where the drawing drops hydrogens and the indices shift.
+  - **The M5 by-hand check is done (2026-11-23, Windows)**, by a script that drives the real
+    window offscreen (not committed; it is in the scratchpad). A 2D SMILES column and a 3D
+    column read from an SDF mark the same atoms in every row, light and dark, and the dark
+    theme's faded marks stay legible on the dark base.
+    - **The index shift is real in the 3D case and is handled.** The SDF reader keeps a 3D
+      record's explicit hydrogens (`io/sdf.py`, `removeHs=False`), so testosterone is 49 atoms
+      in the table and its top site is `C15`, where the 2D cell's is `C7`; the drawing leaves
+      the hydrogens out and `depiction_mol`'s `_depictSourceAtom` tags carry each site to the
+      atom it means. A molblock pasted into a cell goes the other way (`core/mols.py`,
+      RDKit's default `removeHs=True`), so that column has no hydrogens to shift.
+      `tests/core/test_depict.py` now renumbers a molecule with its hydrogens *between* the
+      heavy atoms — the earlier test used `AddHs`, which appends them and so never moved an
+      index; without the tags it marks a carbon instead of the nitrogen.
+    - Sites columns are named for the molecules of the column the run saw, so pointing a 3D
+      column's drawings at a 2D column's Sites marks almost nothing. That is the guard working
+      (element and index are both checked), but element and index can coincide, so a stray
+      mark is possible: worth a line in the guide only if it ever confuses anyone.
+  - **The hover preview marks the atoms too (2026-11-23**, at the user's request). The large
+    drawing a structure cell shows on hover came from the model's tooltip and so knew nothing
+    of highlights; `CellDelegate.helpEvent` now answers for a marked structure cell and
+    `preview_html` takes the highlight and the column's alignment, so the enlarged drawing is
+    the cell's drawing: a structure search's match is marked too, and an aligned column's
+    layout is kept.
+    - **A theme bug came out of it:** `_dark()` read `QToolTip.palette()`, which Qt freezes the
+      first time anything reads it — the preview itself, on the first structure hovered — so
+      after a switch to the dark theme in Preferences the preview drew a white-backed
+      structure on the dark tooltip. It reads the application's palette now. The test runs the
+      start-up-then-switch sequence in a process of its own, since the state cannot be
+      reproduced once a suite has touched the palette. This is the same family as the menu-bar
+      corner `QToolButton` issue above (a run-time theme switch not reaching a widget).
+    - `table_view.py` was at its line budget, so the drawing half moved to
+      **`app/table/cells.py`** (`Alignment`, `StructureImages`, `CellDelegate`); the budget in
+      `tests/test_architecture.py` came down from 1,139 to 976.
   CYP inhibition is phase C of the same plan, on OpenADMET's open pIC50 data and the Veith panel
   from PubChem.
 

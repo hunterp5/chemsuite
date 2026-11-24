@@ -20,8 +20,6 @@ from __future__ import annotations
 
 import csv
 import io
-from collections import OrderedDict
-from dataclasses import dataclass
 
 import numpy as np
 from PySide6.QtCore import (
@@ -32,58 +30,44 @@ from PySide6.QtCore import (
     QModelIndex,
     QPoint,
     QPointF,
-    QRect,
-    QSize,
     Qt,
     QTimer,
     Signal,
 )
 from PySide6.QtGui import (
-    QColor,
     QFont,
     QFontMetrics,
     QGuiApplication,
-    QImage,
     QMouseEvent,
-    QPainter,
-    QPalette,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QFrame,
     QHeaderView,
-    QStyle,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
     QTableView,
     QWidget,
 )
-from rdkit import Chem
 
 from chemsuite.core.depict import (
-    aligned_mol,
     alignment_core,
-    render_png,
-    render_reaction_png,
 )
 from chemsuite.core.mols import looks_like_molblock
 from chemsuite.core.reactions import looks_like_rxn_block, parse_reaction
 from chemsuite.core.selection import Selection
 from chemsuite.core.structure_input import read_structure
-from chemsuite.core.table.columns import REACTION, STRUCTURE, ParsedColumn, ReactionColumn
+from chemsuite.core.table.columns import REACTION, STRUCTURE, ReactionColumn
 
+from .cells import DRAWN, Alignment, CellDelegate, StructureImages
 from .frozen_columns import RowHeader, quiet_column_header
-from .highlights import AtomHighlight, AtomSource, Highlight, marked, resolve
+from .highlights import AtomSource, Highlight
 from .snap import follow_selection, rows_for
 from .structure_clipboard import structure_text_from_mime
-from .table_model import KIND_ROLE, STATUS_ROLE, STRUCTURE_ROLE, TableModel
+from .table_model import KIND_ROLE, TableModel
 
 STRUCTURE_ROW_HEIGHT = 110
 STRUCTURE_COLUMN_WIDTH = 200
 REACTION_COLUMN_WIDTH = 440
-#: Column kinds whose cells are drawn as pictures.
-DRAWN = (STRUCTURE, REACTION)
 MAX_AUTO_COLUMN_WIDTH = 320
 #: keys that leave a column selection made on the header in place
 _KEEP_COLUMN_MODE = frozenset(
@@ -98,147 +82,8 @@ _KEEP_COLUMN_MODE = frozenset(
 )
 
 
-@dataclass(frozen=True)
-class Alignment:
-    """Drawings in a structure column laid out to match *core* (display only)."""
-
-    text: str  # the core as the user gave it (SMILES or SMARTS); also its cache key
-    core: Chem.Mol
-
-
 #: the header property listing the sections to draw highlighted (see ``theme.PolishStyle``)
 HIGHLIGHTED = "highlighted_sections"
-
-
-class StructureImages:
-    """Rendered structure pictures, keyed by molecule, size and highlight, within a byte budget."""
-
-    def __init__(self, max_bytes: int = 192 * 1024**2) -> None:
-        self._cache: OrderedDict[tuple, QImage] = OrderedDict()
-        self._bytes = 0
-        self.max_bytes = max_bytes
-
-    def image(
-        self,
-        column: ParsedColumn,
-        slot: int,
-        size: QSize,
-        dpr: float,
-        dark: bool,
-        highlight: Highlight | AtomHighlight | None = None,
-        alignment: Alignment | None = None,
-    ):
-        mol = column.obj(slot)  # parses a pending cell on first use
-        if mol is None:
-            return None
-        blob = column.blobs(np.array([slot]))[0]
-        key = (
-            blob,
-            size.width(),
-            size.height(),
-            round(dpr, 2),
-            dark,
-            highlight.key if highlight else None,
-            alignment.text if alignment and column.kind != REACTION else None,
-        )
-        image = self._cache.get(key)
-        if image is not None:
-            self._cache.move_to_end(key)
-            return image
-        width, height = int(size.width() * dpr), int(size.height() * dpr)
-        if column.kind == REACTION:
-            png = render_reaction_png(mol, width, height, scale=dpr, dark=dark)
-            if png is None:
-                return None
-        else:
-            atoms: list[int] = []
-            bonds: list[int] = []
-            colors: dict[int, tuple[float, float, float]] = {}
-            if alignment is not None:
-                mol = aligned_mol(mol, alignment.core)
-            if highlight is not None:
-                mol, atoms, bonds, colors = marked(mol, highlight, dark)
-            png = render_png(
-                mol,
-                width,
-                height,
-                scale=dpr,
-                dark=dark,
-                highlight_atoms=atoms,
-                highlight_bonds=bonds,
-                highlight_colors=colors,
-            )
-        image = QImage.fromData(png, "PNG")
-        image.setDevicePixelRatio(dpr)
-        self._cache[key] = image
-        self._bytes += image.sizeInBytes()
-        while self._bytes > self.max_bytes and self._cache:
-            _, old = self._cache.popitem(last=False)
-            self._bytes -= old.sizeInBytes()
-        return image
-
-    def clear(self) -> None:
-        self._cache.clear()
-        self._bytes = 0
-
-
-class CellDelegate(QStyledItemDelegate):
-    """Draws structure cells as pictures; every other cell is drawn by Qt as text."""
-
-    def __init__(self, images: StructureImages, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._images = images
-        #: column name -> what to highlight in that column's drawings
-        self.highlights: dict[str, Highlight | AtomSource] = {}
-        #: column name -> the core its drawings are aligned to
-        self.alignments: dict[str, Alignment] = {}
-
-    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
-        if index.data(KIND_ROLE) not in DRAWN:
-            super().paint(painter, option, index)
-            return
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-        opt.text = ""
-        widget = option.widget
-        style = widget.style() if widget is not None else QApplication.style()
-        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, widget)
-
-        status = index.data(STATUS_ROLE)
-        rect = option.rect.adjusted(3, 3, -3, -3)
-        if status == "blank" or rect.width() < 8 or rect.height() < 8:
-            return
-        column, slot = index.data(STRUCTURE_ROLE)
-        if status != "invalid":
-            dark = option.palette.color(QPalette.ColorRole.Base).lightness() < 128
-            dpr = painter.device().devicePixelRatioF() if painter.device() else 1.0
-            highlight: Highlight | AtomHighlight | AtomSource | None = None
-            alignment = None
-            if self.highlights or self.alignments:
-                model = index.model()
-                name = model.column_name(index.column())
-                highlight = self.highlights.get(name)
-                if isinstance(highlight, AtomSource):
-                    highlight = resolve(model.table, name, highlight, slot)
-                alignment = self.alignments.get(name)
-            image = self._images.image(column, slot, rect.size(), dpr, dark, highlight, alignment)
-            if image is not None:
-                painter.drawImage(rect.topLeft(), image)
-                return
-        self._paint_invalid(painter, rect, column.display(slot))
-
-    @staticmethod
-    def _paint_invalid(painter: QPainter, rect: QRect, text: str) -> None:
-        painter.save()
-        painter.setPen(QColor(200, 40, 40))
-        first_line = next((line for line in text.splitlines() if line.strip()), text)
-        painter.drawText(
-            rect,
-            Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
-            f"Invalid structure\n{first_line[:60]}",
-        )
-        painter.restore()
-
 
 #: Within this many pixels of the table's edge, a dragged column scrolls the table.
 EDGE_ZONE = 56

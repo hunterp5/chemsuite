@@ -315,7 +315,8 @@ Right-click a column header for:
   (SMILES or SMARTS); every structure that contains it is drawn with the core in the same place
   and orientation, so a series lines up down the column. Structures without the core keep
   their usual drawing. Only the drawings change, not the structures. **Stop Aligning
-  Drawings** brings the usual drawings back. The core is saved with the document's layout.
+  Drawings** brings the usual drawings back. The core is saved with the document's layout, and
+  the larger drawing you get by hovering over a cell is laid out on it too.
 - **Highlight Atoms ▸** (Structure columns). Mark the atoms another column names on the
   drawings: the submenu lists the columns whose values name atoms of these structures, such as
   Top Site (3A4) or Sites (3A4) from [Sites of Metabolism](#sites-of-metabolism). The
@@ -362,7 +363,9 @@ Right-click a column header for:
   The stored values are not rounded, so sorting, filters and tools still use the full numbers,
   and editing a cell starts from the number as typed. The quick search and Find match what the
   cells show.
-- **Hover over a structure cell** for a larger drawing of the structure.
+- **Hover over a structure cell** for a larger drawing of the structure, drawn as the cell
+  draws it: whatever the column marks (Highlight Atoms, or a structure search's match) marked
+  on it, and laid out on the column's core if it is aligned.
 - Precision, Logarithmic and colors are saved in the document and can be undone.
 - **Hover over a column's header** for a summary of the column: how many cells are filled and
   blank, and for numbers the range, mean ± standard deviation and median, or for text the
@@ -1513,8 +1516,9 @@ scores a molecule in about a millisecond.
   asked for (CYP3A4 first, then 2D6, 2C9, 1A2, else the first isoform of the run) are marked on
   that structure column's drawings: the ranked Sites column if you asked for it, otherwise the
   Top Site column. That is how you see which atom `C7` means, since the table does not number
-  atoms. Right-click the structure column's header for **Highlight Atoms ▸** to mark another
-  isoform's column instead, or Data ▸ Search ▸ Clear Highlighting to stop.
+  atoms; hover over the cell for a larger drawing with the same atoms marked. Right-click the
+  structure column's header for **Highlight Atoms ▸** to mark another isoform's column
+  instead, or Data ▸ Search ▸ Clear Highlighting to stop.
 - **Cancelling** keeps the rows already found.
 
 ### Standardize

@@ -73,6 +73,7 @@ from ..shell.jobs_ui import JobsIndicator
 from ..shell.log_window import JOBS, MESSAGES, LogWindow
 from ..shell.settings_hub import PAGES, settings_hub
 from ..table.advanced_search import AdvancedSearchPanel
+from ..table.cells import StructureImages
 from ..table.column_actions import ColumnActions
 from ..table.filters.cards import FilterCard
 from ..table.filters.panel import FilterPanel
@@ -84,7 +85,7 @@ from ..table.structure_clipboard import copy_structure
 from ..table.structure_copy import FORMATS as COPY_FORMATS
 from ..table.structure_copy import REACTION_FORMATS, copy_reactions, copy_structures
 from ..table.structure_search import StructureSearchDialog, StructureSearcher
-from ..table.table_view import StructureImages, TableView
+from ..table.table_view import TableView
 from ..widgets.panel import ToolPanel
 from . import dock_layout, file_actions, menu_corner, session
 from .dock_layout import LAYOUT_KEY

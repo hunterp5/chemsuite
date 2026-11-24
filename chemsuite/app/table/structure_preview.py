@@ -20,12 +20,18 @@ from __future__ import annotations
 
 import base64
 from collections import OrderedDict
+from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QGuiApplication, QPalette
-from PySide6.QtWidgets import QApplication, QToolTip
+from PySide6.QtWidgets import QApplication
 from rdkit import Chem
 
-from chemsuite.core.depict import fitted_size, render_png
+from chemsuite.core.depict import aligned_mol, fitted_size, render_png
+
+from .highlights import AtomHighlight, Highlight, marked
+
+if TYPE_CHECKING:  # the cells draw with it; importing it here would close a circle
+    from .cells import Alignment
 
 #: largest logical size of the drawing in the tooltip; smaller molecules get a smaller box
 PREVIEW_WIDTH = 360
@@ -37,14 +43,21 @@ _MIN_HEIGHT = 90
 _ZOOM = 1.3
 _KEEP = 32
 
-_cache: OrderedDict[tuple[str, bool, float], str] = OrderedDict()
+_cache: OrderedDict[tuple[str, bool, float, str | None, str | None], str] = OrderedDict()
 
 
 def _dark() -> bool:
-    """Whether tooltips have a dark background (the drawing goes on it)."""
-    if not isinstance(QApplication.instance(), QApplication):
+    """Whether tooltips have a dark background (the drawing goes on it).
+
+    From the application's palette, not ``QToolTip.palette()``: Qt freezes the tooltip class
+    palette the first time anything reads it — which this did, on the first structure hovered —
+    and does not revisit it, so after a theme change in Preferences the tooltip the user sees
+    is dark while its class palette still reads light.
+    """
+    app = QApplication.instance()
+    if not isinstance(app, QApplication):
         return False
-    return QToolTip.palette().color(QPalette.ColorRole.ToolTipBase).lightness() < 128
+    return app.palette().color(QPalette.ColorRole.ToolTipBase).lightness() < 128
 
 
 def preview_size(mol: Chem.Mol) -> tuple[int, int]:
@@ -59,17 +72,49 @@ def preview_size(mol: Chem.Mol) -> tuple[int, int]:
     return round(width * _ZOOM), round(height * _ZOOM)
 
 
-def preview_html(mol: Chem.Mol, key: str) -> str:
+def preview_html(
+    mol: Chem.Mol,
+    key: str,
+    highlight: Highlight | AtomHighlight | None = None,
+    alignment: Alignment | None = None,
+) -> str:
     """Tooltip HTML: *mol* alone, centered in a box fitted to it (at most 360 x 270 points).
-    *key* (its SMILES) identifies the drawing in the cache."""
+    *key* (its SMILES) identifies the drawing in the cache.
+
+    *highlight* and *alignment* are the cell's own (see :mod:`.highlights` and
+    :class:`.cells.Alignment`), so resting the pointer on a cell enlarges the drawing it
+    already shows: the same atoms marked, laid out on the same core.
+    """
     screen = QGuiApplication.primaryScreen() if QGuiApplication.instance() else None
     dpr = float(screen.devicePixelRatio()) if screen is not None else 1.0
     dark = _dark()
     width, height = preview_size(mol)
-    cache_key = (key, dark, dpr)
+    cache_key = (
+        key,
+        dark,
+        dpr,
+        highlight.key if highlight else None,
+        alignment.text if alignment else None,
+    )
     image = _cache.get(cache_key)
     if image is None:
-        png = render_png(mol, round(width * dpr), round(height * dpr), scale=dpr * _ZOOM, dark=dark)
+        atoms: list[int] = []
+        bonds: list[int] = []
+        colors: dict[int, tuple[float, float, float]] = {}
+        if alignment is not None:
+            mol = aligned_mol(mol, alignment.core)
+        if highlight is not None:
+            mol, atoms, bonds, colors = marked(mol, highlight, dark)
+        png = render_png(
+            mol,
+            round(width * dpr),
+            round(height * dpr),
+            scale=dpr * _ZOOM,
+            dark=dark,
+            highlight_atoms=atoms,
+            highlight_bonds=bonds,
+            highlight_colors=colors,
+        )
         image = base64.b64encode(png).decode("ascii")
         _cache[cache_key] = image
         while len(_cache) > _KEEP:

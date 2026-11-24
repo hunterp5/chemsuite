@@ -138,7 +138,7 @@ def window(qtbot):
     """A main window on a small table (ID, pIC50), closed without a save prompt."""
     from chemsuite.app.document.main_window import MainWindow, Workspace
     from chemsuite.app.shell.jobs import JobRunner
-    from chemsuite.app.table.table_view import StructureImages
+    from chemsuite.app.table.cells import StructureImages
 
     runner = JobRunner()
     from chemsuite.core.table import Table

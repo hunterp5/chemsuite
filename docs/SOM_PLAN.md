@@ -351,6 +351,31 @@ openly-licensed set, at a measured cost in accuracy. Record the decision here ei
   - Tests: `tests/core/test_atom_names.py`, two in `tests/core/test_depict.py`,
     `tests/app/table/test_atom_highlight_ui.py` and one in `tests/tools/metabolism`. The full
     suite was run (shared rendering).
+- **M5's by-hand check, done 2026-11-23 (Windows).** A script drove the real window offscreen
+  over a 2D SMILES column and a 3D column read from an SDF: the same atoms are marked in both,
+  light and dark, and the faded marks stay legible on the dark base.
+  - **The index shift is real and is handled.** The SDF reader keeps a 3D record's explicit
+    hydrogens (`io/sdf.py`, `removeHs=False`), so testosterone is 49 atoms in the table and its
+    top site reads `C15` where the 2D cell's reads `C7`; the drawing leaves the hydrogens out
+    and `depiction_mol`'s `_depictSourceAtom` tags carry each site to the atom it means. The
+    scores are identical between the two columns, so the model is indifferent to the numbering.
+    A molblock pasted into a cell loses its hydrogens on the way in (`core/mols.py`, RDKit's
+    default), so that column has none to shift. The earlier test used `AddHs`, which appends
+    hydrogens and so never moved an index; it now renumbers them between the heavy atoms, and
+    without the tags it marks a carbon instead of the nitrogen.
+  - A Sites column written for one structure column marks almost nothing in another, since both
+    the element and the index are checked. That is the guard working, but the two can coincide,
+    so a stray mark is possible on a column pointed at the wrong structures.
+- **The hover preview marks the atoms too (2026-11-23).** The large drawing a structure cell
+  shows on hover came from the model's `ToolTipRole` and so knew nothing of highlights.
+  `CellDelegate.helpEvent` now answers for a marked structure cell and `preview_html` takes the
+  highlight and the column's alignment, so a structure search's match and an aligned layout are
+  enlarged as well. `_dark()` read
+  `QToolTip.palette()`, which Qt freezes the first time anything reads it — the preview itself,
+  on the first structure hovered — so after a switch to the dark theme the preview drew a
+  white-backed structure on the dark tooltip; it reads the application's palette now. The
+  drawing half of `table_view.py` moved to `app/table/cells.py` to stay inside the line budget,
+  which came down from 1,139 to 976.
 - **M6:** `docs/USER_GUIDE.md` in the same commit as the tool, and the results above.
 
 ## Phase C — CYP inhibition

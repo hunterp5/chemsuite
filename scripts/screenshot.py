@@ -84,7 +84,7 @@ def main(argv: list[str]) -> int:  # noqa: C901 - a linear script
 
     from chemsuite.app.document.main_window import MainWindow, Workspace
     from chemsuite.app.shell.jobs import JobRunner
-    from chemsuite.app.table.table_view import StructureImages
+    from chemsuite.app.table.cells import StructureImages
     from chemsuite.core import logbook
     from chemsuite.io.load import load_table, parse_pending_structures
 

@@ -41,7 +41,7 @@ from chemsuite.app.shell import quitting
 from chemsuite.app.shell.jobs import QUEUE, JobRunner
 from chemsuite.app.shell.main import run_app
 from chemsuite.app.shell.windows import ToolWindow
-from chemsuite.app.table.table_view import StructureImages
+from chemsuite.app.table.cells import StructureImages
 from chemsuite.core.jobs import check, children
 
 PARENT = (

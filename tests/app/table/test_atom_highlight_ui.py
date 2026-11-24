@@ -143,3 +143,96 @@ def test_the_highlight_is_saved_with_the_window_layout(chem) -> None:
 
     dock_layout.restore(chem, {"atom_highlights": {"SMILES": "Gone"}})  # a column since deleted
     assert sources(chem.view) == {"SMILES": "Sites (3A4)"}
+
+
+def tooltip(chem, row: int = 0) -> str:
+    """The large drawing shown when the pointer rests on a structure cell."""
+    from chemsuite.app.table.structure_preview import preview_html
+    from chemsuite.app.table.table_model import STRUCTURE_ROLE
+
+    table = chem.workspace.table
+    delegate = chem.view.itemDelegate()
+    index = chem.view.model().index(row, 1)
+    assert index.data(STRUCTURE_ROLE) is not None  # the cell is a drawn structure
+    return preview_html(
+        table.column("SMILES").obj(row),
+        SMILES[row],
+        delegate.highlight_for(index, row),
+        delegate.alignment_for(index),
+    )
+
+
+def test_the_hover_preview_marks_the_same_atoms_as_the_cell(chem) -> None:
+    plain = tooltip(chem)
+    set_source(chem.view, "SMILES", "Sites (3A4)")
+    marked = tooltip(chem)
+    assert marked != plain  # the enlarged drawing carries the marks too
+    set_source(chem.view, "SMILES", "Top Site (3A4)")
+    assert tooltip(chem) not in (plain, marked)  # one atom, not three
+    set_source(chem.view, "SMILES", None)
+    assert tooltip(chem) == plain
+
+    # a structure search's match is a highlight too, and the preview shows it the same way
+    from rdkit import Chem
+
+    from chemsuite.app.table.highlights import Highlight
+
+    chem.view.set_highlight("SMILES", Highlight("c1ccccc1", Chem.MolFromSmarts("c1ccccc1")))
+    assert tooltip(chem) not in (plain, marked)
+
+
+def test_the_hover_preview_is_laid_out_on_the_column_s_core(chem) -> None:
+    """Align Drawings changes the layout of the cell's drawing, so the enlarged one too."""
+    plain = tooltip(chem)
+    assert chem.view.set_alignment("SMILES", "c1ccc(O)cc1")
+    aligned = tooltip(chem)
+    assert aligned != plain
+
+    set_source(chem.view, "SMILES", "Sites (3A4)")  # marks and a core together
+    assert tooltip(chem) not in (plain, aligned)
+
+    chem.view.set_alignment("SMILES", None)
+    set_source(chem.view, "SMILES", None)
+    assert tooltip(chem) == plain
+
+
+#: The app's own start-up, then the switch a user makes in Preferences. Run in a process of
+#: its own: Qt freezes the tooltip class palette the first time anything reads it, so a suite
+#: that has already read or changed it cannot show the state a running app is in.
+_THEME_SWITCH = """
+from PySide6.QtWidgets import QApplication, QToolTip
+from PySide6.QtGui import QPalette
+from chemsuite.app.shell import theme
+from chemsuite.app.table.structure_preview import _dark
+from chemsuite.core.settings import Appearance
+
+base = QPalette.ColorRole.ToolTipBase
+app = QApplication([])
+theme.apply_appearance(app, Appearance(theme="light"))
+QToolTip.palette()  # reading it freezes it: Qt registers the class palette on first use
+theme.apply_appearance(app, Appearance(theme="dark"))
+print(QToolTip.palette().color(base).lightness(), app.palette().color(base).lightness(), _dark())
+"""
+
+
+def test_the_hover_preview_follows_a_theme_change() -> None:
+    """The preview reads the application's palette, not ``QToolTip.palette()``.
+
+    Qt freezes QToolTip's class palette the first time anything reads it — which the preview
+    itself used to do, on the first structure hovered — and does not revisit it when the
+    application's palette changes. After a switch to the dark theme in Preferences it still
+    reads light while the tooltip the user sees is dark, so reading it drew a white-backed
+    structure on a dark tooltip.
+    """
+    import os
+    import subprocess
+    import sys
+
+    environment = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+    done = subprocess.run(
+        [sys.executable, "-c", _THEME_SWITCH], capture_output=True, text=True, env=environment
+    )
+    assert done.returncode == 0, done.stderr
+    stale, application, dark = done.stdout.split()
+    assert int(stale) >= 128 and int(application) < 128  # the class palette did not follow
+    assert dark == "True"

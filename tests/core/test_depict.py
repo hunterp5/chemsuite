@@ -116,3 +116,17 @@ def test_highlighted_atoms_follow_the_hydrogens_a_drawing_leaves_out() -> None:
     atoms, colors = drawn_highlight(shown, ((3, 0.81), (9, 0.05), (hydrogen, 0.01)))
     assert [shown.GetAtomWithIdx(a).GetSymbol() for a in atoms] == ["N", "C"]
     assert set(colors) == set(atoms)  # a hydrogen is not a site and is left out
+
+    # AddHs puts the hydrogens last, so nothing above renumbers. A 3D structure read from a
+    # file can carry them between the heavy atoms, and then every later index moves.
+    heavy = list(range(flat.GetNumAtoms()))
+    hydrogens = list(range(flat.GetNumAtoms(), three_d.GetNumAtoms()))
+    order = [i for pair in zip(hydrogens, heavy, strict=False) for i in pair]
+    order += heavy[len(hydrogens) :] + hydrogens[len(heavy) :]
+    mixed = Chem.RenumberAtoms(three_d, order)
+    nitrogen = next(a.GetIdx() for a in mixed.GetAtoms() if a.GetSymbol() == "N")
+    assert nitrogen != 3  # the site's index in the molecule is not its index in the drawing
+    shown = depiction_mol(mixed)
+    atoms, colors = drawn_highlight(shown, ((nitrogen, 0.81),))
+    assert [shown.GetAtomWithIdx(a).GetSymbol() for a in atoms] == ["N"]
+    assert set(colors) == set(atoms)

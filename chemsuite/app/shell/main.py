@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     from PySide6.QtWidgets import QApplication
 
     from ..document.main_window import MainWindow
-    from ..table.table_view import StructureImages
+    from ..table.cells import StructureImages
     from . import graphics, warmup
     from .error_report import install_crash_handler
     from .jobs import JobRunner

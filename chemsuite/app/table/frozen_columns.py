@@ -204,7 +204,8 @@ class _Overlay(QTableView):
         """Structures go to the table's sketcher handling; other cells edit in place here."""
         if trigger is None:
             return super().edit(index)
-        from .table_view import DRAWN, KIND_ROLE
+        from .cells import DRAWN
+        from .table_model import KIND_ROLE
 
         if index.isValid() and index.data(KIND_ROLE) in DRAWN:
             return self.main.edit(index, trigger, event)

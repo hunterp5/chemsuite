@@ -68,7 +68,7 @@ def test_reaction_cells_report_kind_and_status(reactions) -> None:
 
 
 def test_reaction_cells_draw_as_pictures(reactions) -> None:
-    from chemsuite.app.table.table_view import StructureImages
+    from chemsuite.app.table.cells import StructureImages
 
     images = StructureImages()
     column = reactions.workspace.table.column("Rxn")
