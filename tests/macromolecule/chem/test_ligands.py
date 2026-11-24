@@ -174,3 +174,25 @@ def test_a_hydrogen_short_is_an_error_not_a_radical(kinase) -> None:
     gone[one_h] = True
     with pytest.raises(ligands.FormError, match="missing a hydrogen"):
         ligands.prepared_form(edit.delete(s, gone), residue)
+
+
+def test_an_aromatic_sulfur_is_not_a_radical() -> None:
+    """RDKit gives a thiophene's S a radical when its hydrogen count is fixed (4G0C's
+    acetazolamide, a thiadiazole, failed to build)."""
+    from rdkit.Chem import AllChem
+
+    from chemsuite.macromolecule.structure import io
+
+    mol = Chem.AddHs(Chem.MolFromSmiles("Cc1cccs1"))
+    AllChem.EmbedMolecule(mol, randomSeed=1)
+    for atom in mol.GetAtoms():
+        info = Chem.AtomPDBResidueInfo()
+        info.SetName(f" {atom.GetSymbol()}{atom.GetIdx() + 1:<2}"[:4])
+        info.SetResidueName("MTH")
+        info.SetResidueNumber(1)
+        info.SetChainId("A")
+        info.SetIsHeteroAtom(True)
+        atom.SetMonomerInfo(info)
+    s = io.parse(Chem.MolToPDBBlock(mol), "pdb")
+    form = ligands.prepared_form(s, only_ligand(s)).mol
+    assert Chem.MolToSmiles(Chem.RemoveHs(form)) == canonical("Cc1cccs1")

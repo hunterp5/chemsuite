@@ -182,8 +182,11 @@ def prepared_form(
         raise FormError(
             f"{label}: its hydrogens and charges are not a molecule ({error})"
         ) from None
-    Chem.AssignRadicals(out)
-    for atom in out.GetAtoms():
+    # on a Kekulé copy: RDKit gives an aromatic S with a fixed hydrogen count a radical
+    kekule = Chem.RWMol(out)
+    Chem.Kekulize(kekule, clearAromaticFlags=True)
+    Chem.AssignRadicals(kekule)
+    for atom in kekule.GetAtoms():
         if atom.GetNumRadicalElectrons():
             raise FormError(f"{label}: an atom is missing a hydrogen ({atom.GetSymbol()})")
     return Ligand(out, residue, found.source)
