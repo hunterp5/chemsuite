@@ -380,22 +380,185 @@ openly-licensed set, at a measured cost in accuracy. Record the decision here ei
 
 ## Phase C — CYP inhibition
 
-After M, reusing `metabolism/features.py`, `graphnet.py` and `predict.py` with a
-molecule-level head instead of a per-atom one. No open-weights model is worth shipping, but the
-open data now is: OpenADMET's CYP challenge set (`openadmet/cyp-challenge-train-test`, Apache-2.0;
-measured pIC50 for 1A2, 2C9, 2D6 and 3A4, about 6.4k compounds, plus `tdi` and 62.9k
-single-concentration rows) **pinned to a dated snapshot**, since the organizers amended it
-mid-challenge; and the Veith panel (Veith et al., Nat. Biotechnol. 2009) pulled straight from
-PubChem BioAssay rather than through TDC, so redistribution terms never arise — this is what adds
-2C19, and gives about 12.1–12.6k compounds per isoform.
+Molecule-level inhibition beside the per-atom sites: how strongly a compound inhibits each of the
+common P450 isoforms. **C1, the data and an honest baseline, was done on 2026-11-24** and is
+recorded below. Where the model finally lives is the decision at the end of it.
 
-The winning open entry in that challenge (thinkMolecularTech) is a multitask Chemprop D-MPNN plus
-LightGBM ensemble on ECFP4, 200 RDKit 2D descriptors **and predicted pKa** — all three of which
-chemsuite already computes (`analysis/fingerprints.py` with its per-table `FingerprintCache`,
-`descriptors/catalog.py`, and our own pKa model). So: measure a scikit-learn baseline on those
-features first (sklearn is already a base dependency, so it needs no port at all), and only train
-the D-MPNN if it beats the baseline by enough to be worth a second weights release. ATTNSOM's code
-already offers a `chemprop` encoder, so the numpy runtime from M2 serves both.
+**Decided with the user, 2026-11-24:** data and benchmark first with the runtime deferred;
+**pIC50 regression per isoform**; **OpenADMET only**, the four isoforms it measures by
+dose-response (1A2, 2C9, 2D6, 3A4). The Veith panel, 2C19, time-dependent inhibition and the
+single-concentration data are all out of scope for now.
+
+### What this section used to say, and why it changed
+
+The paragraph written on 2026-11-17 is superseded in four ways, each checked rather than assumed:
+
+- It said Phase C reuses `metabolism/features.py`, **`graphnet.py`** and `predict.py`.
+  `graphnet.py` has never existed in any commit — the GBM pivot dropped it before it was written.
+  And `features.py` is **not** reusable: all 34 of its columns are per atom, and the isoform
+  one-hot is a condition flag broadcast onto atom rows, so a molecule-level head has no feature
+  path there at all. What does carry over is `trees.py`, `predict.py`'s chunked shape, and the
+  `@cache` + `importlib.resources` loader in `sites.py`.
+- It said to train a D-MPNN if the baseline was not good enough. `CLAUDE.md` (2026-11-23) now
+  keeps chemprop and torch out of the app, returning only as an optional external engine. That
+  option is closed before it is reached.
+- **An Auto QSAR engine now exists** (`chemsuite/qsar/`, `docs/QSAR_PLAN.md`, 2026-11-23). Its
+  step 4 moves `metabolism/trees.py` into it and builds the general `export.py` / `apply.py` /
+  `model.py` layer — the same 1e-9 export check and a `.csqm` read with `allow_pickle=False`.
+  That is exactly what a shipped CYP model needs, so Phase C must not write a third runtime of
+  its own beside pKa's and the SoM trees'.
+- **The compound counts were wrong.** The direct-inhibition train split is **4,905** compounds,
+  not "about 6.4k" (6,145 is the TDI split, a different endpoint), and the single-concentration
+  set is 45,428 measurements over 11,358 compounds, not "62.9k rows".
+
+### The data, pinned and curated (2026-11-24)
+
+`scripts/cyp/fetch.py` downloads the two direct-inhibition files from
+`openadmet/cyp-challenge-train-test` at commit **`5ab9dd9`** (2026-11-05), each pinned by
+SHA-256 and refused on a mismatch. The pin matters: the organizers refreshed the data with the
+finalised assay results on **2026-08-06** and unblinded the test set on **2026-11-04**, so "the
+current version" names different numbers depending on the day. Everything lands in `samples/cyp/`,
+which is not committed; no measurement ever ships, exactly as the Zaretzki labels never do.
+
+**The license is not settled.** The dataset declares `apache-2.0` in its Hugging Face metadata
+and nowhere else: no license text, no copyright holder, and no statement about the measurements
+themselves. Training on it locally is fine. **Shipping anything fitted from it is gated on
+answering this**, the standard this document already sets for pKa sources.
+
+`scripts/cyp/curate.py` standardizes with chemsuite's own standardizer (cleanup, salts,
+neutralize — no tautomer step and no protonation, so a feature means the number the table's own
+descriptor columns would give), deduplicates by InChIKey and reports what it changed. The set
+turned out to be clean: **5,655 rows gave 5,655 distinct compounds** — no duplicates, no salts
+stripped, nothing unreadable, and **no compound in both the train and the test file**.
+
+Two checks that had to come before any fitting:
+
+- **No censoring.** The pIC50s are continuous, with exactly one row at the minimum per isoform.
+  There is no "inactive" pile at an assay bound, so this is a real regression target. Had there
+  been one, the target would have needed masking before anything could be scored honestly.
+- **Each isoform is far smaller than the headline.** 4,905 is the union; most rows are blank for
+  any one isoform, because not every compound was measured against every enzyme.
+
+| isoform | train | test | min | max | mean |
+|---|---|---|---|---|---|
+| 1A2 | 1,412 | 748 | 1.91 | 8.21 | 4.75 |
+| 2C9 | 1,285 | 750 | 1.99 | 7.85 | 4.68 |
+| 2D6 | 1,493 | 748 | 1.92 | 7.53 | 4.28 |
+| 3A4 | 2,335 | 748 | 1.91 | 8.00 | 4.28 |
+
+### The baseline, measured (2026-11-24)
+
+`scripts/cyp/benchmark.py`, on ECFP4 counts plus the 104 cheap 2D descriptors
+(`qsar/recipe.py:default_descriptors()`), a `HistGradientBoostingRegressor`, **Bemis-Murcko
+scaffold-grouped folds** over several seeds. Predicted pKa is left out: it costs seconds per
+molecule against microseconds for the rest, which is why the engine's own default pool excludes
+it. **Whether it earns that cost has not been measured yet**; it wants a subsample run, and it is
+the first loose end of C1.
+
+Scaffold folds, never random, for the reason this document already proved once: a random split on
+congeneric series flatters every model, and on the sites-of-metabolism work that was worth
+0.18 MCC. A **shuffled-label null runs in the same pipeline**, and it came back at noise
+(R² −0.121 to −0.156, Spearman −0.004 to 0.042), so the numbers below are not leaking.
+
+**Scaffold-split, out of fold, 5 folds over 3 seeds** (the numbers to quote):
+
+| isoform | n | R² | RMSE | MAE | Spearman |
+|---|---|---|---|---|---|
+| 1A2 | 1,412 | 0.226 ± 0.010 | 0.91 | 0.67 | 0.485 |
+| 2C9 | 1,285 | 0.338 ± 0.008 | 0.64 | 0.48 | 0.574 |
+| 2D6 | 1,493 | 0.096 ± 0.021 | 0.87 | 0.64 | 0.331 |
+| 3A4 | 2,335 | **0.570 ± 0.001** | 0.72 | 0.55 | **0.753** |
+
+The shuffled-label null, in the same pipeline: R² −0.121 to −0.156, Spearman −0.004 to 0.042.
+Noise, as it must be.
+
+**Accuracy tracks training-set size, not isoform chemistry.** Ordered by `n` — 2,335, 1,493,
+1,412, 1,285 — the R² order is 3A4, 1A2, 2C9, 2D6, and 2C9 is the only one out of place (it has
+the narrowest value spread, sd 0.78 against 1.03–1.09, so there is less variance to explain and
+its RMSE is the best of the four). The seed spread is 0.001 to 0.021, so none of this is noise
+between runs. What it says is that the limit here is data, not method: a better model on 1,285
+compounds will not rescue 2C9, and nothing will rescue 2D6 at 1,493.
+
+**What that means for a chemist.** Spearman is the number that matters for screening, because
+the use is ranking compounds rather than quoting a potency. 3A4 at 0.75 ranks well and is worth
+shipping. 2C9 at 0.57 and 1A2 at 0.49 are weak but real. **2D6 at 0.33 and R² 0.096 is not worth
+putting in front of anyone** — it explains a tenth of the variance, and it is also the isoform
+whose assay was still being developed when the set was built (see below). An RMSE near 0.9 log
+units means a prediction is routinely a factor of eight out in IC50, which no one should treat
+as a measurement.
+
+**Fitted on all the training rows, scored on the unblinded 750-compound file.** Public since
+2026-11-04, so this is a sanity check and not a blind test:
+
+| isoform | R² | RMSE | MAE | Spearman |
+|---|---|---|---|---|
+| 1A2 | 0.212 | 1.27 | 1.01 | 0.667 |
+| 2C9 | 0.519 | 0.80 | 0.62 | 0.732 |
+| 2D6 | **-0.670** | 1.91 | 1.63 | 0.292 |
+| 3A4 | 0.516 | 0.87 | 0.67 | 0.751 |
+
+Three of the four come out at or above their cross-validated R², which is the usual sign that
+the folds were not flattering the model. 2D6 does not, and the reason is worth its own section.
+
+### The 2D6 external check fails, and the dataset explains why
+
+Scored against the unblinded 750-compound file, **2D6 reaches R² −0.670** — worse than predicting
+the mean — while its out-of-fold R² is +0.096. That is not a pipeline fault. The test
+distribution is shifted a full 1.5 log units:
+
+| isoform | train mean | test mean | shift |
+|---|---|---|---|
+| 2D6 | 4.78 | **3.27** | **−1.51** |
+| 1A2 | 4.96 | 4.37 | −0.59 |
+| 2C9 | 4.58 | 4.85 | +0.27 |
+| 3A4 | 4.10 | 4.85 | +0.75 |
+
+The challenge built those 750 compounds by hit expansion over **1A2, 2C9 and 3A4 hits only**,
+because the 2D6 assay was still in development at the time. They were therefore chosen to be
+active at the other three and are largely inactive at 2D6. Two consequences: the external check
+is **not usable for 2D6 at all**, and the 2D6 training values may not be on the same assay
+footing as the test ones, which is a reason to treat 2D6 as the weakest of the four whatever the
+cross-validation says.
+
+Note also that the test file is **public since 2026-11-04**, so it is a sanity check and not a
+blind one. It is labelled that way wherever it is quoted.
+
+### The decision at the end of C1
+
+**What the numbers recommend, for the user to accept or overrule: ship 3A4, and only 3A4.**
+
+3A4 at Spearman 0.753 and R² 0.570 ranks compounds well enough to be useful, has the most data
+by half again, and is the isoform a medicinal chemist asks about first — it is the one that
+matters for most drug-drug interactions. 2C9 (0.574) and 1A2 (0.485) are real but weak, and
+would need to be labelled as rankings rather than predictions. **2D6 should not ship**: R² 0.096
+is a tenth of the variance, its external check is unusable, and its training values may not sit
+on the same assay footing as later measurements.
+
+That is one shipped model rather than the panel of four this section originally imagined, which
+is a smaller result than hoped and the honest one. Shipping 2D6 at R² 0.096 beside 3A4 at 0.570
+would imply the two mean the same thing.
+
+Three things still gate even that:
+
+1. **The license.** Apache-2.0 is Hugging Face metadata only (above). Unanswered, nothing ships.
+2. **QSAR step 4**, for `apply.py` and the `.csqm` archive — Phase C must not grow a third
+   runtime of its own.
+3. **A held-out check that is not the challenge test set.** Everything above is cross-validation
+   plus a public file; before shipping, a scaffold-held-out slice should be kept aside from the
+   start and scored once.
+
+The options as they were framed:
+
+- **Ship it** as one vendored `.csqm` per isoform applied through `qsar/apply.py`, once the QSAR
+  engine's step 4 lands. Needs the license question answered first, and needs `trees.py` and the
+  exporter extended from binary classification to regression — `raw_scores` already *is* the
+  prediction for a squared-loss `HistGradientBoostingRegressor`, so the work is the exporter's
+  `n_trees_per_iteration_ != 1` guard and checking `predict` instead of `predict_proba`.
+- **Ship the recipe, not the weights**: a documented CYP recipe the user fits through Auto QSAR,
+  if the accuracy is real but the license will not support redistribution.
+- **Drop it**, if a scaffold-split baseline on 1.3k–2.3k compounds is not useful enough to put in
+  front of a chemist. This document already refused to quote inflated numbers once; "not good
+  enough to ship" is a legitimate outcome, not a failure.
 
 ## The data, checked (2026-11-17)
 
