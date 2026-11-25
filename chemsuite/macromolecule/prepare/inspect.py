@@ -18,8 +18,8 @@
 
 - alternate locations (the one shown is kept);
 - chain breaks: neighbouring residues of a chain with no peptide bond, and residues missing
-  from the deposited sequence, inside a chain or at its ends (no loops are built: those ends
-  take neutral ACE and NME caps, :func:`ends`);
+  from the deposited sequence, inside a chain or at its ends (a gap Prepare does not build,
+  :mod:`.loops`, leaves ends that take neutral ACE and NME caps, :func:`ends`);
 - missing heavy atoms of polymer residues, against their templates;
 - residues with no template (not built, hydrogens from RDKit);
 - covalent links between a ligand or glycan and the polymer, disulfides, metal sites.
@@ -42,12 +42,14 @@ BREAK = "break"
 GAP = "gap"
 TRUNCATED = "truncated"
 CAP = "cap"
-FILLED = "filled"  # a residue missing alone, built (:func:`.repair.fill_single_gaps`)
+FILLED = "filled"  # a gap built: a lone residue (.repair.fill_single_gaps) or a loop (.loops)
 REMOVED = "removed"  # too incomplete to build on or cap (:func:`.repair.remove_stubs`)
 MISSING = "missing"
 UNKNOWN = "unknown"
 LINK = "link"
 DISULFIDE = "disulfide"
+#: between the two residues of a line that names both (a gap, a break, a disulfide)
+SPAN = " – "
 METAL = "metal"
 POLYMER = (AMINO, NUCLEIC)
 #: residues that end a chain as caps, not as termini
@@ -95,7 +97,7 @@ def _breaks(s: Structure) -> list[Finding]:
             nxt = r + 1
             if s.res_kind[r] not in POLYMER or s.res_kind[nxt] != s.res_kind[r]:
                 continue
-            label = f"{s.residue_label(r)} – {s.residue_label(nxt)}"
+            label = f"{s.residue_label(r)}{SPAN}{s.residue_label(nxt)}"
             missing = _missing_between(s, r, nxt)
             if missing > 0:
                 found.append(Finding(GAP, label, f"{missing} residues not modelled", warn=True,
@@ -260,7 +262,7 @@ def _links(s: Structure) -> list[Finding]:
             kind = KIND_NAMES.get(int(s.res_kind[other]), "residue").lower()
             pairs.add((LINK, r, other, f"Covalent link to a {kind}"))
     for kind, ra, rb, text in sorted(pairs):
-        found.append(Finding(kind, f"{s.residue_label(ra)} – {s.residue_label(rb)}", text,
+        found.append(Finding(kind, f"{s.residue_label(ra)}{SPAN}{s.residue_label(rb)}", text,
                              residue=ra))  # fmt: skip
     return found
 

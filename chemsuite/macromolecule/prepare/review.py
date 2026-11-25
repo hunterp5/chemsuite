@@ -78,11 +78,14 @@ class Issue:
     warn: bool
     residue: int
     atoms: tuple[str, ...] = ()
+    #: a gap the preparation builds, or would have built had the chemist not left it capped
+    buildable: bool = False
 
     @property
     def fixable(self) -> bool:
-        """Whether ticking this line changes anything (a chain break cannot be built)."""
-        return self.kind in FIXABLE and self.residue >= 0
+        """Whether ticking this line changes anything (a chain break cannot be built, nor a gap
+        too long or that no loop closes)."""
+        return (self.kind in FIXABLE and self.residue >= 0) or self.buildable
 
 
 @dataclass(frozen=True)
@@ -167,8 +170,19 @@ def survey(
     prepared = pipeline.prepare(
         s, options, ccd, cancel, chosen, detail=True, ligand_model=ligand_model
     )
+    # a gap keeps its box while it is left capped, so that it can be ticked again
+    buildable = prepared.gaps_built | chosen.capped
     issues = tuple(
-        Issue(_issue_id(f), f.kind, f.label, f.text, f.warn, f.residue, f.atoms)
+        Issue(
+            _issue_id(f),
+            f.kind,
+            f.label,
+            f.text,
+            f.warn,
+            f.residue,
+            f.atoms,
+            buildable=f.kind == inspection.GAP and f.label in buildable,
+        )  # fmt: skip
         for f in prepared.report
         if f.kind != pipeline.SITE and f.kind != pipeline.NOTE
     )
@@ -280,9 +294,9 @@ def decisions_from(
     *found* must be the survey run **without** decisions (the proposals): the answers are read
     against it, and nothing it was itself run with is carried over, so a re-survey that held a
     choice never turns that choice into a silent default. *skip_issues* marks issue ids to
-    leave alone (untick a repair); *overrides* holds choice ids against the state label each
-    must take (a site's state, a residue's alternate location, a water kept or dropped). What
-    is not named is left to the preparation.
+    leave alone (untick a repair, or leave a gap capped); *overrides* holds choice ids against
+    the state label each must take (a site's state, a residue's alternate location, a water
+    kept or dropped). What is not named is left to the preparation.
     """
     skipped = {id for id, skip in (skip_issues or {}).items() if skip}
     repair: set[str] | None = None
@@ -292,6 +306,7 @@ def decisions_from(
             for i in found.issues
             if i.kind == inspection.MISSING and i.residue >= 0 and i.id not in skipped
         }
+    capped = {i.label for i in found.issues if i.kind == inspection.GAP and i.id in skipped}
     states: dict[str, str] = {}
     altlocs: dict[str, str] = {}
     keep: set[str] = set()
@@ -308,6 +323,7 @@ def decisions_from(
             states[choice.id] = label
     return Decisions(
         repair=frozenset(repair) if repair is not None else None,
+        capped=frozenset(capped),
         keep_waters=frozenset(keep),
         drop_waters=frozenset(drop),
         altlocs=altlocs,

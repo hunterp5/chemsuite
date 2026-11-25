@@ -44,12 +44,22 @@ open) is closed by cyclic coordinate descent (Canutescu & Dunbrack, Protein Sci.
 The random draws are seeded from the gap's residue labels, so preparing again gives the same
 loop. A gap whose ends are too far apart for its residues, or that no candidate closes, is left
 to the caps. Each model of a multi-model file is closed on its own anchors.
+
+Each gap's chosen backbone is remembered (:func:`_remembered`), keyed by the structure it was
+built on and the gap: Inspect prepares the same structure again on every change, and ticking one
+gap should not close the others again. Since the draws are seeded, a remembered backbone is the
+one that would be chosen; it is put into the structure as it is now, so nothing else about that
+structure (a charge set by hand, a ligand's bond orders) comes from the memo.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
 import zlib
+from collections import OrderedDict
+from collections.abc import Collection
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -62,7 +72,7 @@ from chemsuite.core.jobs import CancelToken, check
 from ..structure import edit
 from ..structure.model import AMINO, Structure
 from .hydrogens import HYDROGEN
-from .inspect import ends
+from .inspect import SPAN, ends
 from .repair import _free_icode, build_missing
 from .templates import Library, place
 
@@ -97,6 +107,8 @@ CLASH = 3.0  # Å: heavy atoms closer than this overlap
 OVERLAP_WEIGHT = 10.0  # per Å² of overlap, against the summed log-probability
 OUTLIER = 100.0  # per Ramachandran outlier, measured on the closed loop
 DATA = Path(__file__).parent / "data" / "ramachandran.json"
+REMEMBERED = 32  # gaps whose results are kept (:func:`_remembered`)
+SEPARATOR = chr(31)  # between the names a fingerprint hashes (no name holds it)
 GENERAL, GLY, PRO, PREPRO = "general", "gly", "pro", "prepro"
 
 
@@ -167,6 +179,40 @@ def _heavy(s: Structure, r: int) -> dict[str, int]:
     return {str(s.name[i]): i for i in range(span.start, span.stop) if s.element[i] != HYDROGEN}
 
 
+@dataclass(frozen=True)
+class Closed:
+    """A gap built: its label (``A/LEU 10 – A/GLY 14``, its two ends, as Inspect names it) and
+    the labels of the residues put in it."""
+
+    gap: str
+    residues: tuple[str, ...]
+
+
+def close_gaps(
+    s: Structure,
+    library: Library,
+    longest: int = LONGEST,
+    cancel: CancelToken | None = None,
+    skip: Collection[str] = (),
+) -> tuple[Structure, list[Closed]]:
+    """*s* with each gap of 2 to *longest* residues built (side chains too), where one closes,
+    but those whose label is in *skip* (left to the caps). Returns what was built, gap by gap."""
+    labels = [(s.residue_label(g.before), s.residue_label(g.after)) for g in gaps(s, longest)]
+    closed: list[Closed] = []
+    for before, after in labels:
+        label = f"{before}{SPAN}{after}"
+        if label in skip:
+            continue
+        check(cancel)
+        where = {s.residue_label(r): r for r in range(s.n_residues)}
+        gap = next(g for g in gaps(s, longest) if g.before == where[before])
+        done = _remembered(s, gap, library, f"{before}|{after}", cancel)
+        if done is not None:
+            s, new = done
+            closed.append(Closed(label, tuple(new)))
+    return s, closed
+
+
 def fill_gaps(
     s: Structure,
     library: Library,
@@ -175,22 +221,66 @@ def fill_gaps(
 ) -> tuple[Structure, list[str]]:
     """*s* with each gap of 2 to *longest* residues built (side chains too), where one closes.
     Returns the labels of the residues built."""
-    labels = [(s.residue_label(g.before), s.residue_label(g.after)) for g in gaps(s, longest)]
-    built: list[str] = []
-    for before, after in labels:
-        check(cancel)
-        where = {s.residue_label(r): r for r in range(s.n_residues)}
-        gap = next(g for g in gaps(s, longest) if g.before == where[before])
-        done = _fill(s, gap, library, f"{before}|{after}", cancel)
-        if done is not None:
-            s, new = done
-            built += new
-    return s, built
+    s, closed = close_gaps(s, library, longest, cancel)
+    return s, [label for one in closed for label in one.residues]
+
+
+# -- remembering -------------------------------------------------------------------------------
+#: (fingerprint, seed) → the backbone chosen for that gap, None where none closed
+_memo: OrderedDict[tuple[bytes, str], np.ndarray | None] = OrderedDict()
+_memo_lock = threading.Lock()
+
+
+def _remembered(
+    s: Structure, gap: Gap, library: Library, seed: str, cancel: CancelToken | None
+) -> tuple[Structure, list[str]] | None:
+    """:func:`_fill`, its chosen backbone remembered for the last :data:`REMEMBERED` gaps. The
+    key is everything the choice depends on: the atoms built around (:func:`fingerprint`) and
+    the gap, which also seeds the draws. On a hit the backbone is put into *s* as it is now
+    (:func:`_insert`, with its side chains), so only the closing is skipped. A cancelled build
+    raises before it is remembered."""
+    key = (fingerprint(s), seed)
+    with _memo_lock:
+        hit = key in _memo
+        if hit:
+            _memo.move_to_end(key)
+            xyz = _memo[key]
+    if hit:
+        if xyz is None:
+            return None
+        out, new = _insert(s, gap, xyz, library, cancel)
+        return out, [out.residue_label(r) for r in new]
+    done = _fill(s, gap, library, seed, cancel)
+    with _memo_lock:
+        _memo[key] = None if done is None else done[2]
+        while len(_memo) > REMEMBERED:
+            _memo.popitem(last=False)
+    return None if done is None else (done[0], done[1])
+
+
+def forget() -> None:
+    """Forget every remembered gap (for tests that time or compare a build)."""
+    with _memo_lock:
+        _memo.clear()
+
+
+def fingerprint(s: Structure) -> bytes:
+    """A digest of what the backbone chosen for a gap in *s* depends on: every atom's place,
+    name, element and uid, and every residue's label and place in the sequence. (What it does
+    not depend on, a charge or a bond order, is taken from *s* itself on a hit.)"""
+    h = hashlib.blake2b(digest_size=20)
+    for array in (s.coords, s.uid, s.element, s.residue_of, s.seqres, s.entity):
+        h.update(np.ascontiguousarray(array).tobytes())
+    h.update(SEPARATOR.join(str(n) for n in s.name).encode())
+    h.update(SEPARATOR.join(s.residue_label(r) for r in range(s.n_residues)).encode())
+    return h.digest()
 
 
 def _fill(
     s: Structure, gap: Gap, library: Library, seed: str, cancel: CancelToken | None
-) -> tuple[Structure, list[str]] | None:
+) -> tuple[Structure, list[str], np.ndarray] | None:
+    """*s* with the gap built, the labels of its new residues and the backbone chosen
+    (models, m + 1, 4, 3); None where no candidate closes."""
     per_model = []
     for k in range(s.n_models):
         check(cancel)
@@ -206,11 +296,11 @@ def _fill(
         trial, new = _insert(s, gap, xyz, library, cancel)
         total = score + OVERLAP_WEIGHT * _side_chain_overlap(trial, new)
         if best is None or total < best[0]:
-            best = (total, trial, new)
+            best = (total, trial, new, xyz)
     if best is None:
         return None
-    _total, out, new = best
-    return out, [out.residue_label(r) for r in new]
+    _total, out, new, xyz = best
+    return out, [out.residue_label(r) for r in new], xyz
 
 
 # -- closing one gap ---------------------------------------------------------------------------

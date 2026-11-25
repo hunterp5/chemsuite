@@ -24,10 +24,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from PySide6.QtWidgets import QCheckBox, QDoubleSpinBox
+from PySide6.QtWidgets import QCheckBox, QDoubleSpinBox, QSpinBox
 
 from chemsuite.app.widgets.dialogs import Section, Segmented
-from chemsuite.macromolecule.prepare import pipeline, sites
+from chemsuite.macromolecule.prepare import loops, pipeline, sites
 
 WATERS = ((pipeline.ALL, "All"), (pipeline.NEAR_LIGANDS, "Near Ligands"), (pipeline.NONE, "None"))
 TITRATE = ((sites.OFF, "Off"), (sites.POCKET, "Pocket"), (sites.ALL, "All"))
@@ -42,6 +42,7 @@ NAMES = {
     "titrate": "Titrate",
     "side_chains": "Side Chains",
     "fill_gaps": "Lone Residues",
+    "loop_max": "Longest Loop",
     "caps": "Cap Ends",
     "altloc": "Alternate Locations",
     "water_reach": "Water Distance",
@@ -54,6 +55,8 @@ NAMES = {
 }
 CHOICES = {"waters": WATERS, "titrate": TITRATE, "altloc": ALTLOCS, "his": HIS}
 B_OFF = 0.0  # the B-factor limit's spin box at this value means no limit
+LOOP_OFF = 1  # the longest loop's spin box at this value builds none (a lone residue is no loop)
+LOOP_MOST = loops.LONGEST  # the longest loop that can be asked for
 
 
 def _check(on: bool = True) -> QCheckBox:
@@ -86,8 +89,8 @@ class OptionsFields:
         self.repair = method.row("Repair", _check(d.repair),
                                  help="Put the structure in order before hydrogens go on: one "
                                  "location per atom, missing side chains, a residue missing "
-                                 "on its own, caps on cut ends (each under More Options). "
-                                 "Longer loops are not built.")  # fmt: skip
+                                 "on its own, missing loops, caps on cut ends (each under "
+                                 "More Options).")  # fmt: skip
         self.optimise = method.row("Optimise", _check(d.optimise),
                                    help="Choose each Asn/Gln/His flip, each His tautomer and "
                                    "each hydroxyl and amine rotor by the hydrogen bonds they "
@@ -104,6 +107,17 @@ class OptionsFields:
                                   help="Build a residue the file is missing on its own, from "
                                   "its neighbours. Off: the ends either side are "
                                   "capped.")  # fmt: skip
+        self.loop_max = QSpinBox()
+        self.loop_max.setRange(LOOP_OFF, LOOP_MOST)
+        self.loop_max.setValue(d.loop_max)
+        self.loop_max.setSpecialValueText("Off")
+        self.loop_max.setSuffix(" residues")
+        more.row("Longest Loop", self.loop_max,
+                 help="Build each gap in the sequence up to this many residues long, closed "
+                 "onto both ends with allowed backbone angles and clear of the rest. Longer "
+                 "gaps are capped. Loops of more than 8 residues close cleanly but are rarely "
+                 "where the deposit has them. Tools ▸ Minimise… relaxes what is "
+                 "built.")  # fmt: skip
         self.caps = more.row("Cap Ends", _check(d.caps),
                              help="Cap the ends the file cuts short of the sequence with ACE "
                              "and NME, as a force field needs. Off: they are left as the file "
@@ -143,7 +157,7 @@ class OptionsFields:
     def follow(self) -> None:
         """Settings that only mean something under another follow it."""
         repair, optimise = self.repair.isChecked(), self.optimise.isChecked()
-        for field in (self.side_chains, self.fill_gaps, self.caps, self.altloc):
+        for field in (self.side_chains, self.fill_gaps, self.loop_max, self.caps, self.altloc):
             field.setEnabled(repair)
         for field in (self.titrate, self.orient_waters, self.ligand_states, self.his,
                       self.flips, self.ambiguous):  # fmt: skip
@@ -162,6 +176,7 @@ class OptionsFields:
             orient_waters=self.orient_waters.isChecked(),
             side_chains=self.side_chains.isChecked(),
             fill_gaps=self.fill_gaps.isChecked(),
+            loop_max=int(self.loop_max.value()),
             caps=self.caps.isChecked(),
             altloc=self.altloc.value(),
             water_reach=float(self.water_reach.value()),
@@ -181,6 +196,7 @@ class OptionsFields:
         self.orient_waters.setChecked(options.orient_waters)
         self.side_chains.setChecked(options.side_chains)
         self.fill_gaps.setChecked(options.fill_gaps)
+        self.loop_max.setValue(options.loop_max)
         self.caps.setChecked(options.caps)
         self.altloc.set_value(options.altloc)
         self.water_reach.setValue(options.water_reach)
@@ -204,6 +220,7 @@ def settings_of(options: pipeline.Options) -> dict[str, object]:
         "orient_waters": options.orient_waters,
         "side_chains": options.side_chains,
         "fill_gaps": options.fill_gaps,
+        "loop_max": options.loop_max,
         "caps": options.caps,
         "altloc": options.altloc,
         "water_reach": options.water_reach,
@@ -243,6 +260,7 @@ def options_from(settings: Mapping) -> pipeline.Options:
         orient_waters=flag("orient_waters", d.orient_waters),
         side_chains=flag("side_chains", d.side_chains),
         fill_gaps=flag("fill_gaps", d.fill_gaps),
+        loop_max=int(number("loop_max", d.loop_max, LOOP_OFF, LOOP_MOST)),
         caps=flag("caps", d.caps),
         altloc=choice("altloc", d.altloc),
         water_reach=number("water_reach", d.water_reach, 2.0, 12.0),
@@ -263,6 +281,8 @@ def describe(options: pipeline.Options) -> str:
             shown = "on" if value else "off"
         elif name in CHOICES:
             shown = dict(CHOICES[name]).get(str(value), str(value))
+        elif name == "loop_max":
+            shown = "off" if value == LOOP_OFF else f"{value} residues"
         elif name == "water_b_max":
             shown = "off" if value is None else f"{value:g} Å²"
         elif name == "water_reach":

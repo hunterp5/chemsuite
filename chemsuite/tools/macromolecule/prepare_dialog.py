@@ -34,6 +34,7 @@ from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import ToolDialog
 from chemsuite.core.wording import plural
 from chemsuite.macromolecule.prepare import pipeline
+from chemsuite.macromolecule.prepare.inspect import SPAN
 from chemsuite.macromolecule.structure import store
 from chemsuite.macromolecule.structure.model import Structure
 from chemsuite.macromolecule.workspace.prepared import PreparedRecord, carried_built
@@ -47,8 +48,6 @@ from .prepare_options import OptionsFields, describe, settings_of
 from .tool import KIND, TOOL_ID, ccd, dialog_parent, macromolecule_workspace
 
 HYDROGEN = 1
-#: between the two residues a report line names (a gap, a break, a disulfide)
-SPAN = " – "
 #: the report line naming the settings changed from the defaults
 SETTINGS = "Settings"
 _minimise_on = False  # Minimise, remembered for the session (off until M5's benchmark passes)

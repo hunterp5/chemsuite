@@ -97,7 +97,7 @@ def test_every_setting_goes_through_the_dialog_and_the_document(opened) -> None:
     changed = pipeline.Options(
         ph=6.5, waters=pipeline.NEAR_LIGANDS, repair=False, optimise=False,
         titrate=sites.POCKET, ligand_states=False,
-        orient_waters=False, side_chains=False, fill_gaps=False, caps=False,
+        orient_waters=False, side_chains=False, fill_gaps=False, loop_max=4, caps=False,
         altloc=pipeline.FIRST, water_reach=7.5, water_b_max=40.0, his="HIE", flips=False,
         ambiguous=2.0,
     )  # fmt: skip
@@ -268,3 +268,20 @@ def test_preparing_again_fills_the_open_panel(opened, qtbot) -> None:
     again = prepared(opened, qtbot, pipeline.Options(waters=pipeline.NONE))
     assert again is panel  # one report panel, not two
     assert len([e for e in opened.panel_states() if e["tool"] == tool.PREPARE_ID]) == 1
+
+
+def test_the_longest_loop_is_off_at_one_follows_repair_and_is_kept_in_range(opened) -> None:
+    fields = prepare_dialog.PrepareDialog(ToolContext(opened)).fields
+    assert fields.loop_max.value() == pipeline.Options().loop_max == 8
+    fields.loop_max.setValue(prepare_options.LOOP_OFF)
+    assert fields.loop_max.text() == "Off" and fields.options().loop_max == 1
+    fields.repair.setChecked(False)
+    assert not fields.loop_max.isEnabled()
+    fields.repair.setChecked(True)
+    assert fields.loop_max.isEnabled()
+    read = prepare_options.options_from
+    assert read({"loop_max": 99}).loop_max == prepare_options.LOOP_MOST == 12
+    assert read({"loop_max": 0}).loop_max == 1
+    assert read({"loop_max": True}).loop_max == 8  # not understood: the default
+    assert prepare_options.describe(pipeline.Options(loop_max=1)) == "Longest Loop off"
+    assert prepare_options.describe(pipeline.Options(loop_max=4)) == "Longest Loop 4 residues"

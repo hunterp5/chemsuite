@@ -45,9 +45,9 @@ from chemsuite.core.jobs import CancelToken, check
 
 from ..structure.components import CcdCache
 from ..structure.model import LIGAND, WATER, Structure
-from . import energy, hydrogens, ligand_sites, populations, repair, sites, solve, waters
+from . import energy, hydrogens, ligand_sites, loops, populations, repair, sites, solve, waters
 from .energy import Weights
-from .inspect import CAP, FILLED, MISSING, REMOVED, Finding, inspect
+from .inspect import CAP, FILLED, MISSING, REMOVED, SPAN, Finding, inspect
 from .ligand_pka import NO_MODEL, LigandPka
 from .templates import Library
 
@@ -95,6 +95,9 @@ class Decisions:
 
     #: residues whose missing atoms are built; None for every one that can be
     repair: frozenset[str] | None = None
+    #: gaps left capped though they could be built, by their labels (``A/LEU 10 – A/GLY 14``,
+    #: as :func:`.inspect.inspect` names them)
+    capped: frozenset[str] = frozenset()
     #: waters kept whatever :attr:`Options.waters` says, and waters dropped whatever it says
     keep_waters: frozenset[str] = frozenset()
     drop_waters: frozenset[str] = frozenset()
@@ -144,6 +147,7 @@ class Options:
     # under repair: what is built, and which alternate location is kept
     side_chains: bool = True  # missing side-chain atoms (a built residue gets its own always)
     fill_gaps: bool = True  # a residue missing on its own is built (else its ends are capped)
+    loop_max: int = 8  # the longest gap built by .loops (1: none); docs/loops/l0-review.md
     caps: bool = True  # ACE/NME on the ends the file cuts (else charged termini)
     altloc: str = HIGHEST  # HIGHEST or FIRST
     water_reach: float = WATER_REACH  # Å from a ligand, for waters=NEAR_LIGANDS
@@ -175,6 +179,8 @@ class Prepared:
     #: uids of the heavy atoms Prepare built (missing side chains and residues, caps, OXT): no
     #: deposited position holds them, so a minimisation lets them move and measures the rest
     built: frozenset[int] = frozenset()
+    #: the gaps built (lone residues and loops), by their labels, as :attr:`Decisions.capped`
+    gaps_built: frozenset[str] = frozenset()
 
     @property
     def net_charge(self) -> int:
@@ -199,21 +205,11 @@ def prepare(
     library = Library(ccd)
     found = inspect(s, library, cancel)
     original = s
-    caps: list[repair.Cap] = []
-    filled: list[str] = []
-    stubs: list[str] = []
+    repaired = _Repaired(s)
     if options.repair:
-        located = repair.one_location(s, _altlocs(s, chosen.altlocs, options.altloc))
-        located, stubs = repair.remove_stubs(located)
-        if options.fill_gaps:
-            located, filled = repair.fill_single_gaps(located)
-        named = None if chosen.repair is None else {*chosen.repair, *filled}
-        if not options.side_chains:
-            named = set(filled)  # a built residue still needs its side chain
-        only = None if named is None else frozenset(residues_named(located, frozenset(named)))
-        s = repair.build_missing(located, library, cancel, only=only)
-        if options.caps:
-            s, caps = repair.cap_ends(s)
+        repaired = _repair(s, options, chosen, library, cancel)
+    s, caps, filled, closed, stubs = (repaired.structure, repaired.caps, repaired.filled,
+                                      repaired.closed, repaired.stubs)  # fmt: skip
     check(cancel)
     s = keep_waters(s, options.waters, chosen, options.water_reach, options.water_b_max)
     protonated = hydrogens.add_hydrogens(s, library, ccd, cancel)
@@ -228,6 +224,13 @@ def prepare(
                for label in stubs]  # fmt: skip
     report += [Finding(FILLED, label, "The missing residue built", warn=True, residue=where[label])
                for label in filled]  # fmt: skip
+    # a loop's line is named, and selects, as its gap's: from the residue before it
+    report += [Finding(FILLED, one.gap, f"Loop of {len(one.residues)} residues built", warn=True,
+                       residue=where[one.gap.split(SPAN, 1)[0]]) for one in closed]  # fmt: skip
+    gaps_built = {one.gap for one in closed}
+    for label in filled:  # a lone residue's gap is named by the two either side of it
+        r = where[label]
+        gaps_built.add(f"{s.residue_label(r - 1)}{SPAN}{s.residue_label(r + 1)}")
     report += [Finding(CAP, cap.residue, f"Capped with {cap.name}", residue=where[cap.residue])
                for cap in caps]  # fmt: skip
     report += [Finding(NOTE, s.residue_label(n.residue), n.text, warn=True, residue=n.residue)
@@ -276,7 +279,46 @@ def prepare(
     heavy = structure.uid[structure.element != 1]
     built = frozenset(int(u) for u in np.setdiff1d(heavy, original.uid))
     return Prepared(structure, dict(protonated.states), tuple(report), tuple(choices),
-                    pka, share, energies, keys, built)  # fmt: skip
+                    pka, share, energies, keys, built, frozenset(gaps_built))  # fmt: skip
+
+
+@dataclass(frozen=True)
+class _Repaired:
+    structure: Structure
+    caps: list[repair.Cap] = field(default_factory=list)
+    filled: list[str] = field(default_factory=list)  # lone residues built
+    closed: list[loops.Closed] = field(default_factory=list)  # loops built
+    stubs: list[str] = field(default_factory=list)  # residues removed
+
+
+def _repair(
+    s: Structure,
+    options: Options,
+    chosen: Decisions,
+    library: Library,
+    cancel: CancelToken | None,
+) -> _Repaired:
+    """The repair stage: one location per atom, stubs removed, gaps built (lone residues, then
+    loops), missing atoms built and the ends left open capped."""
+    located = repair.one_location(s, _altlocs(s, chosen.altlocs, options.altloc))
+    located, stubs = repair.remove_stubs(located)
+    filled: list[str] = []
+    closed: list[loops.Closed] = []
+    if options.fill_gaps:
+        located, filled = repair.fill_single_gaps(located, skip=chosen.capped)
+    if options.loop_max >= 2:
+        located, closed = loops.close_gaps(located, library, options.loop_max, cancel,
+                                           skip=chosen.capped)  # fmt: skip
+    looped = [label for one in closed for label in one.residues]
+    named = None if chosen.repair is None else {*chosen.repair, *filled, *looped}
+    if not options.side_chains:
+        named = {*filled, *looped}  # a built residue still needs its side chain
+    only = None if named is None else frozenset(residues_named(located, frozenset(named)))
+    s = repair.build_missing(located, library, cancel, only=only)
+    caps: list[repair.Cap] = []
+    if options.caps:
+        s, caps = repair.cap_ends(s)
+    return _Repaired(s, caps, filled, closed, stubs)
 
 
 def _has_ligand(s: Structure) -> bool:

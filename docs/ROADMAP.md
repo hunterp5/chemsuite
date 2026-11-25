@@ -639,7 +639,9 @@ pip extra.
      backbones, with side chains from the templates and relaxed by Minimize (plan approved
      2026-11-19 in [LOOPS_PLAN.md](LOOPS_PLAN.md): L0 a benchmark of cut loops against
      PDBFixer, L1 the Qt-free closure, L2 Prepare, Inspect and the dialog, L3 measured before
-     it is on by default; N set by L3, about 8–12). Longer gaps and missing terminal tails stay
+     it is on by default; N set by L3, about 8–12). **L0–L2 done 2026-11-25**: on by default up
+     to 8 residues ([loops/l0-review.md](loops/l0-review.md)); L3's run by hand in the app is
+     left. Longer gaps and missing terminal tails stay
      capped and marked ⚠.
    - **Hydrogens and states, protein and ligand together:** one coupled site graph covers His
      tautomers, Asn/Gln/His flips, titratable residues, OH/SH/NH₃ rotors, pocket waters, metal

@@ -255,7 +255,10 @@ class InspectorPanel(ToolPanel):
             item.setFlags(flags)
             fixed = issue.id not in self.skipped
             item.setCheckState(2, Qt.CheckState.Checked if fixed else Qt.CheckState.Unchecked)
-            item.setToolTip(2, "Ticked: fixed when applied. Unticked: left as the file has it")
+            if issue.kind == inspection.GAP:
+                item.setToolTip(2, "Ticked: built when applied. Unticked: its ends are capped")
+            else:
+                item.setToolTip(2, "Ticked: fixed when applied. Unticked: left as the file has it")
         group.addChild(item)
 
     def _choice(self, group: QTreeWidgetItem, choice: Choice) -> None:

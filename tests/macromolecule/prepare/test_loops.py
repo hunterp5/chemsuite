@@ -175,3 +175,44 @@ def test_each_model_closes_on_its_own_anchors(nmr, library) -> None:
         n = _atom(out, "A/LYS 11", "N", model)
         assert abs(np.linalg.norm(c - n) - loops.C_N) < 0.15
     assert not np.allclose(_atom(out, built[0], "CA", 0), _atom(out, built[0], "CA", 1))
+
+
+def test_close_gaps_names_each_gap_and_leaves_skipped_ones(lysozyme, library) -> None:
+    s = _cut(lysozyme, "A", 55, 58)
+    out, closed = loops.close_gaps(s, library, 8)
+    (one,) = closed
+    assert one.gap == "A/CYS 54 – A/THR 59"
+    assert len(one.residues) == 4 and out.n_residues == s.n_residues + 4
+    left, none = loops.close_gaps(s, library, 8, skip={one.gap})
+    assert none == [] and left is s
+    _same, too_short = loops.close_gaps(s, library, 3)  # 4 missing: longer than asked
+    assert too_short == []
+
+
+def test_a_remembered_loop_is_the_loop_that_would_be_built(lysozyme, library) -> None:
+    s = _cut(lysozyme, "A", 55, 58)
+    loops.forget()
+    built, closed = loops.close_gaps(s, library, 8)
+    assert len(loops._memo) == 1
+    remembered, again_closed = loops.close_gaps(s, library, 8)  # from the memo
+    assert again_closed == closed
+    for a, b in ((remembered.coords, built.coords), (remembered.uid, built.uid),
+                 (remembered.name, built.name), (remembered.charge, built.charge)):  # fmt: skip
+        assert np.array_equal(a, b)
+    moved = replace(s, coords=s.coords + np.float32(0.01))  # another structure: another key
+    assert loops.fingerprint(moved) != loops.fingerprint(s)
+
+
+def test_a_remembered_loop_takes_the_rest_from_the_structure_as_it_is_now(lysozyme, library):
+    """A charge set by hand moves no atom, so the memo is hit, but the result keeps the new
+    charge: only the backbone comes from the memo."""
+    s = _cut(lysozyme, "A", 55, 58)
+    loops.forget()
+    loops.close_gaps(s, library, 8)
+    charge = s.charge.copy()
+    charge[0] = 3
+    edited = replace(s, charge=charge)
+    assert loops.fingerprint(edited) == loops.fingerprint(s)  # the same key
+    out, _ = loops.close_gaps(edited, library, 8)
+    first = out.uid == s.uid[0]
+    assert out.charge[first].tolist() == [3]

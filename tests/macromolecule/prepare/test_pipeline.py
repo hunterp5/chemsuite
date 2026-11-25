@@ -84,8 +84,8 @@ def test_a_residue_missing_alone_is_built_from_its_neighbours(egfr) -> None:
             assert np.linalg.norm(x[i] - x[j]) == pytest.approx(length, abs=0.15), label
         assert _angle(x[at["N"]], x[at["CA"]], x[at["C"]]) == pytest.approx(111, abs=4)
     # in the preparation: the gaps it closed take no caps, and every report line still
-    # selects its own residue although residues were put in
-    done = pipeline.prepare(egfr, pipeline.Options(waters=pipeline.NONE))
+    # selects its own residue although residues were put in (lone residues alone: no loops)
+    done = pipeline.prepare(egfr, pipeline.Options(waters=pipeline.NONE, loop_max=1))
     s = done.structure
     for label in built:
         r = _residue(s, label)
@@ -134,8 +134,9 @@ def test_gaps_and_cut_ends_take_neutral_caps(egfr) -> None:
         others[capped.atoms_of(r)] = False
         others[[n, atom(r + 1, "CA")]] = False
         assert np.linalg.norm(x[others] - x[c], axis=1).min() > 2.0  # placed clear of the rest
-    # with hydrogens: the capped ends are amides, not charged termini
-    done = pipeline.prepare(egfr, pipeline.Options(waters=pipeline.NONE))
+    # with hydrogens: the capped ends are amides, not charged termini (no loops: every gap
+    # capped, as above)
+    done = pipeline.prepare(egfr, pipeline.Options(waters=pipeline.NONE, loop_max=1))
     s = done.structure
     for r in np.flatnonzero(s.res_name == "ACE").tolist():
         span = s.atoms_of(r + 1)
@@ -313,3 +314,59 @@ def test_only_rotors_with_something_to_decide_are_reported(lysozyme) -> None:
     free = sum(1 for c in rotors if c.energy > pipeline.BONDED)
     (line,) = [f for f in done.report if f.label == "Rotors"]
     assert line.text.endswith(f": {free}") and not line.warn  # free to spin: nothing to check
+
+
+# -- loops (docs/LOOPS_PLAN.md L2) -------------------------------------------------------------
+def _looped(lysozyme) -> Structure:
+    """Lysozyme with A/55–58 cut out: one gap of four residues, between CYS 54 and THR 59."""
+    from tests.macromolecule.prepare.test_loops import _cut
+
+    return _cut(lysozyme, "A", 55, 58)
+
+
+GAP_LABEL = "A/CYS 54 – A/THR 59"
+LOOPED = pipeline.Options(waters=pipeline.NONE, optimise=False)
+
+
+def test_a_missing_loop_is_built_and_reported_as_its_gap(lysozyme) -> None:
+    s = _looped(lysozyme)
+    done = pipeline.prepare(s, LOOPED)
+    out = done.structure
+    assert done.gaps_built == {GAP_LABEL}
+    (line,) = [f for f in done.report if f.kind == inspect.FILLED]
+    assert (line.label, line.text, line.warn) == (GAP_LABEL, "Loop of 4 residues built", True)
+    assert line.label.startswith(out.residue_label(line.residue))  # selects as its gap does
+    first = _residue(out, "A/CYS 54")
+    assert [str(out.res_name[r]) for r in range(first + 1, first + 5)] == list(
+        out.sequence_of(int(out.entity[first]))[int(out.seqres[first]) + 1 :][:4]
+    )
+    assert not np.isin(out.res_name, ["ACE", "NME"])[first : first + 6].any()  # no caps there
+    loop = np.isin(out.residue_of, np.arange(first + 1, first + 5)) & (out.element != 1)
+    assert set(out.uid[loop].tolist()) <= done.built  # Minimize lets the loop move
+
+
+def test_a_loop_is_left_capped_when_asked(lysozyme) -> None:
+    s = _looped(lysozyme)
+    for capped in (
+        pipeline.prepare(s, replace(LOOPED, loop_max=1)),
+        pipeline.prepare(s, LOOPED, decisions=pipeline.Decisions(capped=frozenset({GAP_LABEL}))),
+    ):
+        assert capped.gaps_built == frozenset()
+        assert not [f for f in capped.report if f.kind == inspect.FILLED]
+        caps = {f.label for f in capped.report if f.kind == inspect.CAP}
+        assert {"A/CYS 54", "A/THR 59"} <= caps
+
+
+def test_a_lone_residue_gap_is_named_by_its_neighbours_and_can_be_left_capped(egfr) -> None:
+    lone = pipeline.Options(waters=pipeline.NONE, optimise=False, loop_max=1)
+    done = pipeline.prepare(egfr, lone)
+    s = done.structure
+    r = _residue(s, "A/ILE 706")
+    gap = f"{s.residue_label(r - 1)}{inspect.SPAN}{s.residue_label(r + 1)}"
+    assert gap in done.gaps_built and len(done.gaps_built) == 5
+    gaps = {f.label for f in inspect.inspect(egfr, templates.Library()) if f.kind == inspect.GAP}
+    assert done.gaps_built <= gaps  # named as Inspect names them
+    left = pipeline.prepare(egfr, lone, decisions=pipeline.Decisions(capped=frozenset({gap})))
+    assert left.gaps_built == done.gaps_built - {gap}
+    t = left.structure
+    assert "A/ILE 706" not in {t.residue_label(r) for r in range(t.n_residues)}

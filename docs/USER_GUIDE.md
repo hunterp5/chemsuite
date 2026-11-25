@@ -2088,7 +2088,14 @@ X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked ou
   holds at a gap inside a chain and at a chain end the sequence goes on beyond (an OXT is built
   only on a chain's true last residue). A residue missing on its own is **built** instead (its
   backbone from its neighbours, its side chain from its template), since two caps would meet
-  where it is. Longer loops are not built. A residue deposited without its CA or C (or, where
+  where it is. A **missing loop** of 2 to 8 residues (More Options ▸ Longest Loop) is built
+  too: its backbone is closed onto both ends with allowed angles and kept clear of the rest of
+  the protein, and its side chains come from their templates. The report has one ⚠ line per
+  loop ("Loop of 4 residues built"). A loop that cannot be closed, or is longer than Longest
+  Loop, is capped as before. Built loops are a model, not the deposit: on the benchmark, the
+  typical loop of up to 4 residues lands within 0.5 Å of where the deposit has it, one of 6 to
+  8 residues within 1.6 to 2.4 Å, and longer ones about 5 Å off. **Tools ▸ Minimise…** lets
+  the built residues move, so run it after a loop is built. A residue deposited without its CA or C (or, where
   a stretch stops, its backbone O) has nothing to build a side chain on or to cap from, so it
   is **removed** (⚠ in the report, under Residues removed) and the residue before or after it
   takes the cap instead: 4AGC ends in a GLN 1169 that is only its N. A file without a deposited sequence (no SEQRES or
@@ -2117,6 +2124,7 @@ without it, and each has its explanation in its tooltip:
 |---|---|---|
 | **Side Chains** | on | Builds missing side-chain atoms. Off: they stay as the file has them (a residue Prepare builds from nothing still gets its side chain). |
 | **Lone Residues** | on | Builds a residue missing on its own. Off: the ends either side are capped instead. |
+| **Longest Loop** | 8 residues | Builds each gap in the sequence up to this long (up to 12). Off: every gap longer than one residue is capped. |
 | **Cap Ends** | on | Puts ACE/NME caps on the cut ends. Off: the ends are left as the file has them. |
 | **Alternate Locations** | Most Occupied | Which location an atom modelled more than once keeps: the most occupied, or the first letter. |
 | **Water Distance** | 5 Å | How near a ligand a water must be, with Waters ▸ Near Ligands. |
@@ -2163,8 +2171,9 @@ in the **Inspect** panel beside the structure, for you to go through first.
   locations, missing atoms, chain breaks, gaps in the sequence, chain ends not modelled,
   residues built, caps, residues with no template, covalent links, disulfides and metal
   sites. A missing side chain has a box: untick it and it
-  is left as the file has it, a gap rather than a modelled guess. The others are there to be
-  seen.
+  is left as the file has it, a gap rather than a modelled guess. A gap that Prepare builds (a
+  lone residue or a loop) has one too: untick it and the gap is capped instead. It keeps its
+  box, so you can tick it again. The others are there to be seen.
 - **Choices** are every decision, grouped by kind: alternate locations, amide flips, His
   states, protonation states, rotors, ligand forms, crystal waters and water orientations.
   Each line gives the state chosen and how much worse the next best would be. Double-click the

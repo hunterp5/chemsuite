@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -59,8 +61,8 @@ def test_the_survey_lists_issues_and_every_state_of_every_choice(lysozyme) -> No
     found = review.survey("LYZ", lysozyme, NO_WATERS)
     kinds = {issue.kind for issue in found.issues}
     assert {inspect.ALTLOCS, inspect.TRUNCATED, inspect.CAP} <= kinds
-    assert all(issue.fixable == (issue.kind in review.FIXABLE) for issue in found.issues
-               if issue.residue >= 0)  # fmt: skip
+    assert all(issue.fixable == (issue.kind in review.FIXABLE or issue.buildable)
+               for issue in found.issues if issue.residue >= 0)  # fmt: skip
     assert len({issue.id for issue in found.issues}) == len(found.issues)  # ids are unique
     assert found.choices and len({c.id for c in found.choices}) == len(found.choices)
     for choice in found.choices:
@@ -248,3 +250,27 @@ def test_two_residues_at_one_place_are_one_choice() -> None:
     kept = again.prepared.structure
     assert kept.res_name[kept.res_seq == 22].tolist() == ["SER"]
     assert kept.res_name[kept.res_seq == 25].tolist() == ["LEU"]
+
+
+def test_a_gap_built_has_a_box_that_leaves_it_capped(lysozyme) -> None:
+    from tests.macromolecule.prepare.test_pipeline import GAP_LABEL, LOOPED, _looped
+
+    s = _looped(lysozyme)
+    found = review.survey("LYZ", s, LOOPED)
+    (gap,) = [i for i in found.issues if i.kind == inspect.GAP]
+    assert gap.label == GAP_LABEL and gap.fixable
+    decided = review.decisions_from(found, skip_issues={gap.id: True})
+    assert decided.capped == {GAP_LABEL} and decided.repair is None
+    again = review.survey("LYZ", s, LOOPED, decisions=decided)
+    (still,) = [i for i in again.issues if i.kind == inspect.GAP]
+    assert still.fixable  # unticked, it keeps its box, so it can be ticked again
+    assert again.prepared.gaps_built == frozenset()
+    assert review.decisions_from(found).capped == frozenset()
+
+
+def test_a_gap_that_is_not_built_has_no_box(lysozyme) -> None:
+    from tests.macromolecule.prepare.test_pipeline import LOOPED, _looped
+
+    found = review.survey("LYZ", _looped(lysozyme), replace(LOOPED, loop_max=1))
+    (gap,) = [i for i in found.issues if i.kind == inspect.GAP]
+    assert not gap.fixable

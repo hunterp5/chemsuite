@@ -70,3 +70,18 @@ def test_the_new_lines_stay_out_of_warnings_only(panel) -> None:
         choice = line.data(0, 0x0100)  # LINE role
         if isinstance(choice, review.Choice) and not choice.scored:
             assert line.isHidden()
+
+
+def test_a_gap_box_says_it_is_capped_when_unticked(lysozyme, qtbot) -> None:
+    from PySide6.QtCore import Qt
+
+    from chemsuite.macromolecule.prepare import inspect as inspection
+    from tests.macromolecule.prepare.test_pipeline import LOOPED, _looped
+
+    found = review.survey("LYZ", _looped(lysozyme), LOOPED)
+    made = InspectorPanel(found)
+    qtbot.addWidget(made)
+    (gap,) = [i for i in found.issues if i.kind == inspection.GAP]
+    item = made.line(gap.id)
+    assert item.checkState(2) == Qt.CheckState.Checked
+    assert item.toolTip(2) == "Ticked: built when applied. Unticked: its ends are capped"

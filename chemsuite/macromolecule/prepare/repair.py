@@ -22,7 +22,8 @@
   last residue, are built from the residue's template, one at a time, each from three atoms
   already there by the template's internal coordinates (bond length, angle and dihedral of
   the CCD's ideal geometry). The side chain takes the ideal conformation, which is not
-  checked for clashes. No loops are built.
+  checked for clashes. A residue missing on its own is built here (:func:`fill_single_gaps`);
+  longer gaps are closed by :mod:`.loops`.
 - **Stubs**: an amino acid missing CA or C (or, at the C-side end of a stretch, its O) has
   nothing to build on or cap from, so it is removed (:func:`remove_stubs`). Its neighbours
   then end at a gap, which is filled or capped like any other (4AGC's last residue, GLN 1169,
@@ -34,6 +35,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -45,6 +47,7 @@ from ..structure import edit
 from ..structure.model import AMINO, ION, Structure
 from .hydrogens import HYDROGEN
 from .inspect import BACKBONE, CAPS, POLYMER, ends, last_in_chain, missing_atoms
+from .inspect import SPAN as BETWEEN  # this module's SPAN is a distance
 from .templates import Library, Template, place
 
 ACE, NME = "ACE", "NME"
@@ -243,10 +246,12 @@ def _rotate(p: np.ndarray, origin: np.ndarray, axis: np.ndarray, angle: float) -
     return origin + v * cos + np.cross(axis, v) * sin + axis * dot * (1 - cos)
 
 
-def fill_single_gaps(s: Structure) -> tuple[Structure, list[str]]:
+def fill_single_gaps(s: Structure, skip: Collection[str] = ()) -> tuple[Structure, list[str]]:
     """*s* with the backbone (N, CA, C, O) of each residue that is alone in its gap in the
     deposited sequence, so its two neighbours need no caps (which would meet where it is);
-    :func:`build_missing` then builds its side chain. Returns the labels of the residues built.
+    :func:`build_missing` then builds its side chain. A gap whose label (``A/LEU 10 –
+    A/GLY 12``, its two ends) is in *skip* is left to the caps. Returns the labels of the
+    residues built.
 
     The new N lies in the peptide plane of the residue before (trans), the new C in that of the
     residue after, turned about the latter's N–CA to the φ (every 5°) that puts the two
@@ -259,6 +264,8 @@ def fill_single_gaps(s: Structure) -> tuple[Structure, list[str]]:
     labels = [(s.residue_label(a), s.residue_label(b)) for a, b in pairs]
     built: list[str] = []
     for before, after in labels:
+        if f"{before}{BETWEEN}{after}" in skip:
+            continue
         where = {s.residue_label(r): r for r in range(s.n_residues)}
         filled = _fill(s, where[before], where[after])
         if filled is not None:

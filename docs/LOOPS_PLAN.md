@@ -1,6 +1,15 @@
 # Loop modeler for Prepare: closing gaps longer than one residue
 
-Plan approved 2026-11-19. ROADMAP §7a.3 (Repair). Nothing is built yet: L0 is next.
+Plan approved 2026-11-19. ROADMAP §7a.3 (Repair). L0, L1 and L2 done 2026-11-25
+([loops/l0-review.md](loops/l0-review.md)); L3's run by hand in the app is next.
+
+**As built, L2 differs from the plan below in three places.**
+- A gap left capped in Inspect goes into a new `Decisions.capped` (gap labels), not into
+  `Decisions.repair`, whose `None` means "every residue".
+- A loop's report line is named, and selects, as its gap's line does: from the residue
+  before it.
+- Built loops are remembered per gap (`loops._remembered`), so Inspect's re-surveys and the
+  tests do not build the same loop twice.
 
 ## Context
 

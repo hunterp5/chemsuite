@@ -50,8 +50,8 @@ def test_cut_ends_can_be_left_uncapped(lysozyme) -> None:
 
 
 def test_a_lone_missing_residue_can_be_left_out(egfr) -> None:
-    built = pipeline.prepare(egfr, DRY)
-    left = pipeline.prepare(egfr, _replace(fill_gaps=False))
+    built = pipeline.prepare(egfr, _replace(loop_max=1))  # lone residues alone: no loops
+    left = pipeline.prepare(egfr, _replace(fill_gaps=False, loop_max=1))
     assert [f for f in built.report if f.kind == inspect.FILLED]
     assert not [f for f in left.report if f.kind == inspect.FILLED]
     caps = [sum(f.kind == inspect.CAP for f in d.report) for d in (built, left)]

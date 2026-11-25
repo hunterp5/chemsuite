@@ -310,10 +310,24 @@ other machine can pick it up. Update it at the end of a session that leaves work
     Every tool loses on His. The bench tools are `prepare_states.py coverage`, `score --skip`
     and `margin --jobs N`; score with `--fast`, since the full run takes 3.5 h.
     MCCE4 + NextGenPB (step 4) is not worth starting unless the user wants PB checked anyway.
-  - **Loop modeler planned 2026-11-19** ([`docs/LOOPS_PLAN.md`](docs/LOOPS_PLAN.md); ROADMAP
-    §7a.3): gaps of 2 to N residues closed by CCD in a new Qt-free `prepare/loops.py`, relaxed
-    by Minimize. L0, the benchmark of cut loops against PDBFixer (benchmark-only, in the
-    OpenMM env), starts when the user says so; nothing is built yet.
+  - **Loop modeler** ([`docs/LOOPS_PLAN.md`](docs/LOOPS_PLAN.md); ROADMAP §7a.3): gaps of 2 to
+    N residues closed by CCD in the Qt-free `prepare/loops.py`, relaxed by Minimize. **L0 and
+    L1 done 2026-11-25:** `loops.py`, `prepare/data/ramachandran.json`
+    (`scripts/build_ramachandran.py`, train half only), `tests/macromolecule/prepare/test_loops.py`
+    (8), `scripts/review/loop_bench.py` (+ `loop_bench_fixer.py`, PDBFixer in the OpenMM env).
+    Results in [`docs/loops/l0-review.md`](docs/loops/l0-review.md): on the 285 test cuts, ours
+    + Minimize has median RMSD 0.22–2.4 Å at lengths 2–8 against PDBFixer's 1.7–4.8 Å, and it
+    passes every L3 gate up to 8 (length 10 fails on one clash), so `loop_max` defaults to 8.
+    **L2 done 2026-11-25, merged to `main`:**
+    - `pipeline.Options.loop_max` (More Options ▸ Longest Loop, 1 = Off) and
+      `Decisions.capped`;
+    - `Prepared.gaps_built`, and a ⚠ "Loop of n residues built" line per loop;
+    - a tick box per built gap in Inspect (`review.Issue.buildable`);
+    - a per-gap memo in `loops.py`.
+
+    Next: L3's run by hand in the app (Prepare + Minimize on an 8-residue gap). Open:
+    length-1 gaps (not benchmarked); a Minimize failure on 1I1J's partial N-terminal Met; the
+    menu item still reads "Minimise…" (British).
   - **Relax after preparation** (optional minimisation) is on the roadmap (§7a 3) and gets its
     own plan after P1.
 
