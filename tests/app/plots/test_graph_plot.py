@@ -109,6 +109,23 @@ def test_hiding_singletons_and_colouring_edges(network, qtbot) -> None:
     assert panel.title() == "Network: pIC50"
 
 
+def test_edges_coloured_by_sali(network, qtbot) -> None:
+    from chemsuite.app.plots.graph import edge_sali
+    from chemsuite.plotting.data import numbers
+
+    window, panel = network
+    panel.set_spec(singletons=False, color="pIC50", edge_color="sali")
+    qtbot.waitUntil(lambda: panel.renderer.data is not None, timeout=60_000)
+    data = panel.renderer.data
+    graph = data.graph
+    activity = numbers(window.workspace.table, "pIC50", data.oids)
+    values = edge_sali(activity, graph)
+    i = int(np.flatnonzero(np.isfinite(values))[0])
+    delta = abs(activity[graph.a[i]] - activity[graph.b[i]])
+    assert values[i] == pytest.approx(delta / (1 - graph.similarity[i]))
+    assert len(panel.renderer._edges) > 1  # colored, not one plain gray set
+
+
 def test_matched_pair_edges(network, qtbot) -> None:
     window, panel = network
     panel.set_spec(edges="mmp")

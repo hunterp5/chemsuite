@@ -382,8 +382,9 @@ class PlotControls(QObject):
         for key, title in EDGE_COLORS.items():
             self.edge_color.addItem(title, key)
         self.edge_color.setToolTip(
-            "Colour edges by the pair's similarity, or by the difference in their Color values "
-            "(a large difference between alike compounds is an activity cliff)"
+            "Color edges by the pair's similarity, by the difference in their Color values, or "
+            "by SALI = |difference| / (1 − similarity): a large value between alike compounds "
+            "is an activity cliff"
         )
         self.singletons = QCheckBox("Singletons")
         self.singletons.setChecked(True)

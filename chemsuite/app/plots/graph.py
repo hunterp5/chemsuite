@@ -37,6 +37,7 @@ from chemsuite.core.table import Table
 from chemsuite.core.table.columns import NUMBER, flat_inputs
 from chemsuite.plotting.data import numbers
 from chemsuite.plotting.style import scale_bins, scale_colors
+from chemsuite.sar.sali import EPSILON
 
 from .finder import Finder, Outcome
 from .renderers import ScatterRenderer
@@ -54,6 +55,7 @@ EDGE_COLORS = {
     "plain": "Plain",
     "similarity": "Similarity",
     "difference": "Activity Difference",
+    "sali": "SALI",
 }
 EDGE = (150, 150, 150, 150)
 EDGE_STEPS = 8
@@ -152,6 +154,13 @@ class GraphFinder(Finder):
         return job
 
 
+def edge_sali(activity: np.ndarray, graph: Network) -> np.ndarray:
+    """SALI = |Δactivity| / (1 − similarity) per edge (NaN without both activities or a
+    similarity), as in :func:`chemsuite.sar.sali.sali_pairs`."""
+    delta = np.abs(activity[graph.a] - activity[graph.b])
+    return delta / np.maximum(1.0 - graph.similarity, EPSILON)
+
+
 def _cancel(handle):
     return handle.cancel_token if handle is not None else None
 
@@ -211,6 +220,13 @@ class GraphRenderer(ScatterRenderer):
         elif how == "difference" and spec.color and table.kind(spec.color) == NUMBER:
             activity = numbers(table, spec.color, data.oids)
             values = np.abs(activity[graph.a] - activity[graph.b])
+        elif (
+            how == "sali"
+            and spec.color
+            and table.kind(spec.color) == NUMBER
+            and np.isfinite(graph.similarity).any()
+        ):
+            values = edge_sali(numbers(table, spec.color, data.oids), graph)
         else:
             self._add_edges(coords, graph.a, graph.b, EDGE)
             return

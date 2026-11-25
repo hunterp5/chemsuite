@@ -97,7 +97,9 @@ Each document has its own window. From top to bottom:
 
     **Dock Floating Panes** brings undocked panels back into the arrangement. **Reset Layout**
     docks every panel as tabs right of the table, at half the window. The menu's icons show
-    each layout, and the last choice is saved with the document.
+    each layout, and the last choice is saved with the document. **Larger Structures**,
+    **Smaller Structures** and **Reset Structure Size**, at the bottom, size the table's
+    drawings (see [Structure size](#structure-size)).
   - **The Filters panel stays put.** It always sits at the right edge of the window at a fixed
     width, whatever you do with the other panels: new panels, arrangements and moves all go
     to its left. It has no Arrange or Undock button and cannot be dragged elsewhere.
@@ -221,7 +223,7 @@ one step that Undo takes back. The table's own columns, filters and panels stay 
   - the workspace layout: where each panel is docked (beside, stacked, tabbed, left, right or
     below the table, floating), the size of each pane (where you dragged the dividers
     between the table and the panes, and between panes), which panes are open (Filters,
-    Advanced Search, the panels), column widths, and the search bar with its text and
+    Advanced Search, the panels), column widths, the structure row height, and the search bar with its text and
     options.
 - A document reopens exactly as you left it: a pane that was closed stays closed, even when
   its filters or search are hiding rows (the status bar still says how many rows are shown).
@@ -427,8 +429,26 @@ From Data ▸ Table ▸ Operations:
   programs.
 - A structure that cannot be read is shown as **invalid**. Its original text is kept, so you
   can fix it.
-- Rows are taller when the table has a structure column. Change the height under Settings ▸
-  Theme.
+- Rows are taller when the table has a structure column; see [Structure size](#structure-size).
+
+### Structure size
+
+A drawing fills its cell, so it grows with both the row height and the column width. Every
+row has the same height.
+
+- **Drag a row divider** on the row numbers (the pointer becomes a double arrow) to make every
+  row taller or shorter; the divider stays under the pointer. Double-click a divider to go back
+  to the Settings height. This works on frozen rows too.
+- **Ctrl+scroll wheel** (⌘+scroll on macOS) over the table zooms the drawings: the rows and the
+  structure and reaction columns grow or shrink together, and zooming back returns them to
+  exactly where they were. Text and number columns keep their width.
+- **Layout ▸ Larger Structures** (Ctrl+= or Ctrl++), **Smaller Structures** (Ctrl+-) and
+  **Reset Structure Size** (Ctrl+0) do the same from the keyboard. Reset puts the rows back to
+  the Settings height and leaves the column widths alone.
+- Rows go from 40 to 800 pixels. The height you choose is saved with the document's layout.
+  New documents start at the height under Settings ▸ Theme (110 pixels to begin with), and
+  changing it there resizes every open table.
+- Drag a column's edge to make that column wider or narrower.
 
 ### Reactions in the table
 
@@ -1309,9 +1329,10 @@ are alike (Maggiora and Bajorath, *J. Comput.-Aided Mol. Des.* 2014, 28, 795; Zw
 - **Layout.** Each connected cluster is laid out by force, so tightly joined compounds sit
   together, and the clusters are placed in rows, largest first. Compounds with no edge
   (singletons) come after them, in rows; untick **Singletons** to leave them out.
-- **Color and Size** work as on a scatter plot. **Edge color** colours each edge by its
-  similarity, or by the difference in the two compounds' Color values: a large difference
-  between alike compounds is an activity cliff.
+- **Color and Size** work as on a scatter plot. **Edge color** colors each edge by its
+  similarity, by the difference in the two compounds' Color values, or by their **SALI**,
+  |difference| / (1 − similarity) (see [Activity Cliffs](#activity-cliffs-sali)): a large
+  difference between alike compounds is an activity cliff.
 - More than 50,000 pairs at the threshold make a network too dense to read, so the plot stops
   and says so: raise the threshold.
 
@@ -1320,7 +1341,7 @@ are alike (Maggiora and Bajorath, *J. Comput.-Aided Mol. Des.* 2014, 28, 795; Zw
 | Structure | The structure column. |
 | Edges | Similarity or Matched Pairs. |
 | Threshold | The similarity a pair needs (0.65 to start). Similarity edges only. |
-| Edge color | Plain, Similarity or Activity Difference (of the Color column). |
+| Edge color | Plain, Similarity, Activity Difference or SALI (of the Color column; SALI needs Similarity edges). |
 | Singletons | Draws compounds with no edge. |
 
 ### TMAP
@@ -2837,6 +2858,13 @@ Data ▸ SAR ▸ Activity Cliffs… lists similar compounds with very different 
 - Only pairs at least **Min. similarity** alike are considered.
 - **Identical: Skip identical fingerprints** ignores salts and stereoisomers, which would otherwise divide
   by zero.
+- Each compound's highest SALI goes in a **Max SALI** column, and the partner it reaches it
+  with in **Cliff Partner**.
+- **Show Network** opens a [Chemical Space Network](#chemical-space-network) of the rows the
+  table shows, as an activity-cliff map (as in DataWarrior): compounds joined at the **Min. similarity**,
+  edges colored by SALI, points colored by activity and sized by Max SALI, singletons left
+  out. The network compares ECFP4 (Morgan, radius 2) Tanimoto similarity, so with another
+  fingerprint or metric its edges can differ from the pairs in the list.
 
 ---
 
@@ -3114,3 +3142,4 @@ You can change any of these in Settings ▸ Hotkeys.
 | Filters | Ctrl+Shift+F |
 | Browser | Ctrl+Shift+B |
 | Settings ▸ Theme | Ctrl+, |
+| Larger / Smaller Structures / Reset Structure Size | Ctrl+= / Ctrl+- / Ctrl+0 |

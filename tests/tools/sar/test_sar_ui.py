@@ -246,6 +246,19 @@ def test_sali(series, qtbot) -> None:
     panel.table.selectRow(0)
     oids = panel.select_pairs()
     assert len(oids) == 2 and sorted(oids) == sorted(table.oids[list(top)].tolist())
+    assert panel.state()["sali_column"] == "Max SALI"
+
+
+def test_sali_network(series, qtbot) -> None:
+    dialog = series.open_tool("sali")
+    dialog.min_similarity.setValue(0.3)
+    _run(qtbot, dialog)
+    plot = dialog.panel.show_network()
+    qtbot.waitUntil(lambda: plot.renderer.data is not None, timeout=60_000)
+    spec = plot.renderer.spec
+    assert (spec.kind, spec.edge_color, spec.size) == ("network", "sali", "Max SALI")
+    assert spec.color == dialog.panel.name and spec.threshold == pytest.approx(0.3)
+    assert not spec.singletons and len(plot.renderer._edges) >= 1
 
 
 def test_sar_panels_restore(series, qtbot) -> None:

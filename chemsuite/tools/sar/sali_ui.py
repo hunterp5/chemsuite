@@ -124,6 +124,8 @@ class SaliDialog(ToolDialog):
             },
             label="Activity cliffs",
         )
+        if recipe is not None:
+            recipe["sali_column"] = written[SALI_COLUMN]
         self.panel = SaliPanel(ctx, oids, activity, name, cliffs, names, recipe)
         ctx.add_panel(self.panel, self.panel.title())
         ctx.show_message(
@@ -166,10 +168,17 @@ class SaliPanel(ToolPanel):
         note.setWordWrap(True)
         select = QPushButton("Select Compounds")
         select.clicked.connect(lambda: self.select_pairs())
+        network = QPushButton("Show Network")
+        network.setToolTip(
+            "A Chemical Space Network of these compounds: edges colored by SALI, points "
+            "colored by activity and sized by their highest SALI"
+        )
+        network.clicked.connect(lambda: self.show_network())
         copy = QPushButton("Copy")
         copy.clicked.connect(lambda: self.table.copy_text())
         buttons = QHBoxLayout()
         buttons.addWidget(select)
+        buttons.addWidget(network)
         buttons.addStretch(1)
         buttons.addWidget(copy)
         layout = QVBoxLayout(self)
@@ -187,6 +196,22 @@ class SaliPanel(ToolPanel):
         if oids:
             self.ctx.selection.set(oids, "sali")
         return oids
+
+    def show_network(self):
+        """Open a Chemical Space Network laid out as DataWarrior's activity-cliff view."""
+        recipe = self.recipe
+        size = recipe.get("sali_column", SALI_COLUMN)
+        plot = self.ctx.open_tool("network")
+        plot.set_spec(
+            structure=recipe.get("structure"),
+            edges="similarity",
+            threshold=float(recipe.get("min_similarity", 0.6)),
+            color=self.name,
+            size=size if size in self.ctx.table else None,
+            edge_color="sali",
+            singletons=False,
+        )
+        return plot
 
     def state(self) -> dict:
         return dict(self.recipe)
