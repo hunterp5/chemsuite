@@ -47,7 +47,7 @@ MAX_GROUP = 2000  # compounds sharing one constant part; larger groups are trivi
 CHUNK_ROWS = 200
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)  # hundreds of thousands of them: no __dict__ each
 class Pair:
     a: int  # input row index (the "from" compound)
     b: int
@@ -183,13 +183,15 @@ def find_pairs(
     """Every matched pair (each unordered pair once, the smallest change kept)."""
     activity = np.asarray(activity, dtype=np.float64)
     groups: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    # each record from a worker carries its own copy of each SMILES: keep one of each
+    changes: dict[str, str] = {}
     done = 0
     for records in ordered_map(
         fragment_chunk, _chunks(cells, max_variable, CHUNK_ROWS), executor, cancel=cancel
     ):
         check(cancel)
         for row, constant, change in records:
-            groups[constant].append((row, change))
+            groups[constant].append((row, changes.setdefault(change, change)))
         done = min(len(cells), done + CHUNK_ROWS)
         if progress is not None:
             progress(done, len(cells))

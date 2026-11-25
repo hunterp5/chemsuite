@@ -42,8 +42,9 @@ _predictors: dict[Path, Predictor] = {}
 
 
 def predictor(path: Path = PATH) -> Predictor:
-    """One :class:`Predictor` per weights file and process (about 190 MB), so free energies
-    are cached across molecules and runs."""
+    """One :class:`Predictor` per weights file and process, so free energies are cached
+    across molecules and runs. Its parameters (about 180 MB) are mapped from a cache file that
+    every process shares."""
     with _lock:
         if path not in _predictors:
             _predictors[path] = Predictor(path, n_3d=N_3D)

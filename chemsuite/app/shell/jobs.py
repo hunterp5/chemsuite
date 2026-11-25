@@ -41,7 +41,7 @@ from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any
 
-from PySide6.QtCore import QObject, QRunnable, QThread, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, QThread, QThreadPool, QTimer, Signal, Slot
 
 from chemsuite.core.jobs import Cancelled, CancelToken, children
 from chemsuite.core.jobs.awake import KeepAwake
@@ -59,6 +59,14 @@ QUEUED, RUNNING, FINISHED, FAILED, CANCELLED = (
 )
 ENDED = (FINISHED, FAILED, CANCELLED)
 HISTORY_LIMIT = 200  # ended jobs kept for the Log window's Jobs tab
+#: seconds with no job running or queued before the shared worker processes end, giving
+#: their memory back (the next job starts them again in a second or two)
+POOL_IDLE_S = 60.0
+#: the same for the one many-threaded worker (wide_process), longer: what numba compiled
+#: in it is lost with it
+WIDE_IDLE_S = 300.0
+#: how often an idle runner looks at its worker processes (ms)
+_IDLE_CHECK_MS = 10_000
 
 _ids = itertools.count(1)
 
@@ -267,6 +275,11 @@ class JobRunner(QObject):
         self._waiting: list[tuple[Job, Callable[[Job], Any]]] = []
         self._current: Job | None = None
         self._awake = KeepAwake() if keep_awake else None
+        #: when the last job ended with nothing left to run (None: work is running or queued)
+        self._idle_since: float | None = time.monotonic()
+        self._idle_check = QTimer(self)
+        self._idle_check.setInterval(_IDLE_CHECK_MS)
+        self._idle_check.timeout.connect(self.end_idle_workers)
 
     def process_pool(self) -> ProcessPoolExecutor:
         """The shared worker processes, started on first use (usually from a job's thread).
@@ -314,6 +327,7 @@ class JobRunner(QObject):
     ) -> Job:
         if self._pool is None and self._pool_workers is None:
             self._pool_workers = self._configured_workers()  # on the GUI thread, see process_pool
+        self._idle_since = None
         job = Job(title, self, lane=lane, owner=owner, document=document)
         self._jobs.append(job)
         job.changed.connect(self.changed)
@@ -340,7 +354,40 @@ class JobRunner(QObject):
             self._current = None
             self._pump()
         self._update_awake()
+        if self._busy():
+            self._idle_since = None
+        else:
+            self._idle_since = time.monotonic()
+            self._idle_check.start()
         self.changed.emit()
+
+    def _busy(self) -> bool:
+        return bool(self._waiting) or any(job.running for job in self._jobs)
+
+    # -- giving idle workers' memory back ------------------------------------------------------
+    def end_idle_workers(self, now: float | None = None) -> list[str]:
+        """End the worker processes that have had nothing to do for long enough
+        (:data:`POOL_IDLE_S`, :data:`WIDE_IDLE_S`): they hold their imports and loaded models
+        for as long as they live. Never while a job runs or waits, since a tool hands its job
+        the pool when the job is submitted. Returns which ended ("pool", "wide")."""
+        if self._busy() or self._idle_since is None:
+            return []
+        idle = (time.monotonic() if now is None else now) - self._idle_since
+        ended: list[tuple[str, ProcessPoolExecutor]] = []
+        with self._pool_lock:
+            if self._pool is not None and idle >= POOL_IDLE_S:
+                ended.append(("pool", self._pool))
+                self._pool = None
+                self._pool_workers = None  # read Settings again when they are next started
+            if self._wide is not None and idle >= WIDE_IDLE_S:
+                ended.append(("wide", self._wide))
+                self._wide = None
+            if self._pool is None and self._wide is None:
+                self._idle_check.stop()
+        for name, pool in ended:
+            pool.shutdown(wait=False, cancel_futures=True)  # idle workers leave on their own
+            log.info("ended idle worker processes (%s) after %.0f s", name, idle)
+        return [name for name, _pool in ended]
 
     def _drop_queued(self, job: Job) -> None:
         """Cancel a job that has not started: it ends now, without running."""

@@ -29,7 +29,7 @@ from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import Executor, Future, ProcessPoolExecutor, wait
 from typing import TypeVar
 
-from . import CancelToken, check
+from . import CancelToken, check, machine
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -37,9 +37,27 @@ R = TypeVar("R")
 CANCEL_POLL_S = 0.05
 
 
+#: a worker process's own memory at its busiest (MB): pKa's measured 70–120 MB with its
+#: network shared (ionisation/unipka/mapped.py), with room for larger molecules
+WORKER_MB = 250
+#: the most of the machine's memory the workers may take together, and of what is free when
+#: they start
+MEMORY_SHARE, FREE_SHARE = 0.25, 0.5
+
+
 def default_workers() -> int:
-    """Leave one core for the GUI; at least one worker."""
-    return max(1, (os.cpu_count() or 2) - 1)
+    """Worker processes that leave the machine usable: one per physical core but one (the
+    window and other programs keep a core, and every core's second hardware thread), and no
+    more than :data:`MEMORY_SHARE` of the memory, or :data:`FREE_SHARE` of what is free now,
+    holds at :data:`WORKER_MB` each. At least one."""
+    count = machine.physical_cores() - 1
+    found = machine.memory()
+    if found is not None:
+        budget = found.total_mb * MEMORY_SHARE
+        if found.available_mb is not None:
+            budget = min(budget, found.available_mb * FREE_SHARE)
+        count = min(count, int(budget // WORKER_MB))
+    return max(1, count)
 
 
 #: environment variables that size the thread pools of OpenMP, BLAS, numexpr and numba

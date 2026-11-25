@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 from rdkit import Chem
 
-from . import conformers, microstates, model, thermo
+from . import conformers, mapped, microstates, model, thermo
 from .microstates import Microstate
 
 
@@ -65,13 +65,19 @@ class Ensemble:
 class Predictor:
     """The folds of one weights archive, with free energies cached by microstate."""
 
-    def __init__(self, path: Path, n_3d: int = conformers.N_3D) -> None:
+    def __init__(self, path: Path, n_3d: int = conformers.N_3D, *, shared: bool = True) -> None:
+        """*shared*: map the parameters from a cache file every process shares
+        (:mod:`.mapped`), rather than each process holding its own copy."""
         with np.load(path) as archive:
             self.mean = float(archive["mean"])
             folds = sorted({k.split("/", 1)[0] for k in archive.files if "/" in k})
             self.fold_means = (archive["fold_means"] if "fold_means" in archive.files
                                else np.full(len(folds), self.mean))  # fmt: skip
-        self.nets = [model.Network.load(path, int(f[1:])) for f in folds]
+        params = mapped.load(path) if shared else None
+        if params is not None and set(params) == set(folds):
+            self.nets = [model.Network.of(params[f]) for f in folds]
+        else:
+            self.nets = [model.Network.load(path, int(f[1:])) for f in folds]
         self.n_3d = n_3d
         self._cache: dict[str, float] = {}
 

@@ -52,8 +52,10 @@ _RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
 _MEASURED_ROWS = 100
 #: the role that hands a cell's :class:`Drawing` to the delegate
 DRAWING_ROLE = Qt.ItemDataRole.UserRole + 1
-#: drawings kept, at the sizes they were last drawn
+#: drawings kept, at the sizes they were last drawn: at most this many, and this many bytes
+#: (a compound drawn on a high-resolution screen is about 350 KB)
 _CACHED_IMAGES = 400
+_CACHED_BYTES = 32 << 20
 
 
 @dataclass(frozen=True, eq=False)
@@ -164,6 +166,7 @@ class DrawingDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self.width = width
         self.images: OrderedDict[tuple, QImage] = OrderedDict()
+        self.cached_bytes = 0
         self.drawn = 0  # pictures made (not taken from the cache)
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex):
@@ -223,8 +226,11 @@ class DrawingDelegate(QStyledItemDelegate):
             return None
         image.setDevicePixelRatio(scale)
         self.images[key] = image
-        while len(self.images) > _CACHED_IMAGES:
-            self.images.popitem(last=False)
+        self.cached_bytes += image.sizeInBytes()
+        while len(self.images) > 1 and (
+            len(self.images) > _CACHED_IMAGES or self.cached_bytes > _CACHED_BYTES
+        ):
+            self.cached_bytes -= self.images.popitem(last=False)[1].sizeInBytes()
         return image
 
 

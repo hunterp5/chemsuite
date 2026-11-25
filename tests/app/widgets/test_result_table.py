@@ -84,3 +84,28 @@ def test_drawing_cells_sort_and_copy_by_text_and_draw_once_per_size(qtbot) -> No
     assert drawn == 3  # each visible structure once
     table.grab()
     assert table.drawings.drawn == drawn  # repainting reuses the pictures
+
+
+def test_the_picture_cache_is_capped_by_size(qtbot, monkeypatch) -> None:
+    """Large pictures (a high-resolution screen) are kept by their bytes, not only their
+    number: the oldest go first, and the newest is always kept."""
+    from PySide6.QtCore import QBuffer
+    from PySide6.QtGui import QImage
+
+    from chemsuite.app.widgets import result_table
+    from chemsuite.app.widgets.result_table import Drawing, DrawingDelegate
+
+    image = QImage(200, 200, QImage.Format.Format_ARGB32)  # 160 KB once decoded
+    image.fill(0)
+    buffer = QBuffer()
+    buffer.open(QBuffer.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    png = bytes(buffer.data())
+    monkeypatch.setattr(result_table, "_CACHED_BYTES", 500_000)
+    delegate = DrawingDelegate(200)
+    drawings = [Drawing(str(i), lambda *_: png) for i in range(5)]
+    for drawing in drawings:
+        assert delegate.image(drawing, 200, 200, 1.0, False) is not None
+    kept = [key[0] for key in delegate.images]
+    assert kept == drawings[-3:]  # 3 × 160 KB fit in 500 KB
+    assert delegate.cached_bytes == sum(i.sizeInBytes() for i in delegate.images.values())

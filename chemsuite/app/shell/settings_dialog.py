@@ -635,7 +635,9 @@ class GeneralPage(QWidget):
         self.workers.setSpecialValueText(f"Automatic ({default_workers()})")
         self.workers.setToolTip(
             "Processor cores used by heavy work (descriptors, fingerprints, conformers…). "
-            "Takes effect after restarting chemsuite."
+            "Automatic is one per physical core but one, fewer when memory is short. "
+            "A change applies the next time the workers start: they close a minute after "
+            "the last job ends."
         )
         self.graphics = QComboBox()
         for mode, text in GRAPHICS_TEXT.items():

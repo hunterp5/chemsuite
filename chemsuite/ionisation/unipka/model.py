@@ -72,6 +72,11 @@ class Network:
             prefix = folds[0] if fold is None else f"f{fold}"
             p = {k.split("/", 1)[1]: archive[k].astype(np.float32)
                  for k in archive.files if k.startswith(prefix + "/")}  # fmt: skip
+        return cls.of(p)
+
+    @classmethod
+    def of(cls, p: dict[str, np.ndarray]) -> Network:
+        """The network with float32 parameters *p* (arrays or read-only mapped views)."""
         layers = 1 + max(int(k.split(".")[2]) for k in p if k.startswith("encoder.layers."))
         heads = p["gbf_proj.linear2.weight"].shape[0]
         (head,) = {k.split(".")[1] for k in p if k.startswith("classification_heads.")}

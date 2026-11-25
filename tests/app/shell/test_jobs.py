@@ -200,3 +200,45 @@ def test_shutdown_does_not_wait_for_a_job_that_ignores_cancel(qtbot) -> None:
         assert time.monotonic() - start < 3
     finally:
         release.set()
+
+
+def test_idle_worker_processes_end_and_come_back(qtbot, runner: JobRunner) -> None:
+    """Workers hold their imports and models while they live: they end once nothing has run
+    for a while, and the next job starts new ones."""
+    from chemsuite.app.shell import jobs
+
+    runner._pool_workers = 1
+    job = runner.submit("t", lambda job: runner.process_pool())
+    with qtbot.waitSignal(job.done, timeout=5000):
+        pass
+    first = runner.process_pool()
+    wide = runner.wide_process()
+    start = runner._idle_since
+    assert start is not None
+    assert runner.end_idle_workers(start + jobs.POOL_IDLE_S - 1) == []
+    assert runner.end_idle_workers(start + jobs.POOL_IDLE_S) == ["pool"]
+    assert runner.end_idle_workers(start + jobs.WIDE_IDLE_S) == ["wide"]
+    assert first._shutdown_thread and wide._shutdown_thread
+    assert not runner._idle_check.isActive()
+    job = runner.submit("t", lambda job: runner.process_pool())
+    with qtbot.waitSignal(job.done, timeout=5000):
+        pass
+    assert job.state == jobs.FINISHED and runner.process_pool() is not first
+
+
+def test_workers_never_end_while_a_job_runs_or_waits(qtbot, runner: JobRunner) -> None:
+    from chemsuite.app.shell import jobs
+
+    runner._pool_workers = 1
+    pool = runner.process_pool()
+    release = threading.Event()
+    job = runner.submit("t", lambda job: release.wait(5), lane=jobs.QUEUE)
+    waiting = runner.submit("u", lambda job: None, lane=jobs.QUEUE)
+    later = time.monotonic() + jobs.WIDE_IDLE_S * 2
+    assert runner.end_idle_workers(later) == []
+    release.set()
+    with qtbot.waitSignal(waiting.done, timeout=5000):
+        pass
+    assert job.state == waiting.state == jobs.FINISHED
+    assert runner.process_pool() is pool
+    assert runner.end_idle_workers(later) == ["pool"]
