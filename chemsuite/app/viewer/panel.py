@@ -196,13 +196,11 @@ class StructureViewer(ToolPanel):
         self.caption_button.setMenu(self.caption_menu)
         self.style_box = self._combo(STYLES, BALL_AND_STICK, "How atoms and bonds are drawn")
         self.hydrogens = self._combo(HYDROGENS, ALL_H, "Which hydrogens to show")
-        self.colour = self._combo(
-            COLOURS,
-            ELEMENT,
-            "Element colours, or each conformer's (or row's) carbons in a colour of its own",
-        )
+        carbons = "Element colours, or each conformer's (or row's) carbons in a colour of its own"
+        self.colour = self._combo(COLOURS, ELEMENT, carbons)
         self.browse_selected = QCheckBox("Browse Selected")
         self.browse_selected.setToolTip("Step through the selected rows only")
+        self.browse_selected.setChecked(len(self.selection) > 1)  # opened on a picked set
         self.browse_visible = QCheckBox("Browse Visible")
         self.browse_visible.setChecked(True)
         self.browse_visible.setToolTip(

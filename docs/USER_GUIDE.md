@@ -1836,7 +1836,8 @@ they are, and a 3D view you turned is still turned when you come back to it.
   in the table's order; type a number in the row box to jump to it. The table's current row
   moves along (the selection is left alone), and clicking a row in the table shows it in the
   viewer. Which rows are browsed is set in the options menu (gear):
-  - **Browse Selected:** only the selected rows.
+  - **Browse Selected:** only the selected rows. It starts on when the Browser is opened
+    with more than one row selected, so a set picked in the table is what you step through.
   - **Browse Visible** (on by default): only the rows the filters and search show.
   - Both on: the selected rows that are shown. Both off: every row in the table.
   - Deselecting the row shown while browsing the selection moves on to the next one.

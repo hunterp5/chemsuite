@@ -159,6 +159,18 @@ def test_browse_selected_and_visible(chem, qtbot) -> None:
     assert panel.oid == 2 and _rows_text(panel) == "2 of 3"
 
 
+def test_opens_on_the_selection(chem, qtbot) -> None:
+    chem.workspace.selection.set([1, 3], "test")
+    panel = _open(chem, qtbot, 1)
+    assert panel.browse_selected.isChecked() and panel.browsed.tolist() == [1, 3]
+
+
+def test_one_selected_row_browses_every_row(chem, qtbot) -> None:
+    chem.workspace.selection.set([1], "test")  # a click selects one row: not a picked set
+    panel = _open(chem, qtbot, 1)
+    assert not panel.browse_selected.isChecked() and panel.browsed.tolist() == [1, 2, 3]
+
+
 def test_deselecting_the_row_shown_moves_on(chem, qtbot) -> None:
     from PySide6.QtCore import Qt
 
