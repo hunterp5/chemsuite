@@ -1603,7 +1603,8 @@ scores a molecule in about a millisecond.
 Chemistry ▸ Calculate ▸ Permeability… predicts how well each structure crosses a membrane. The
 models are chemsuite's own, fitted by the same Auto QSAR engine as Data ▸ QSAR and applied the
 same way: in numpy, from a model file that is read without ever running code. They come with
-chemsuite and need no network.
+chemsuite and need no network, and they score several thousand structures a minute — the
+predictions come from cheap 2D descriptors, with no conformers to generate.
 
 Two endpoints, each a separate model on its own public assay data, each writing its own
 columns.
@@ -1633,10 +1634,25 @@ a number you had to distrust.
   Each run writes new columns and never changes an earlier run's. When a name is already taken,
   all the columns of the run get the same suffix, (2), (3)…
 
-- **Read the interval, not just the number.** The Caco-2 assay itself scatters by 0.3 to 0.5 log
-  units between laboratories, so a prediction quoted to two decimals is a false precision. The
-  interval is calibrated against predictions the model never fitted on, and it is the honest part
-  of the answer.
+- **How accurate they are.** Measured out of fold on scaffold splits, so every figure describes a
+  compound the model had not seen, and on a split that keeps a scaffold out of training rather
+  than letting a near-copy leak in:
+
+  | Endpoint | Compounds | Mean absolute error | R² |
+  |---|---|---|---|
+  | MDR1-MDCK efflux ratio | 2,638 | 0.36 log | 0.51 |
+  | Caco-2 permeability | 893 | 0.35 log | 0.66 |
+
+  Both models are right to within about a third of a log unit typically. For context, the Caco-2
+  assay itself disagrees by 0.3 to 0.5 log units between laboratories, so these predictions are
+  close to as good as the measurement they are trained on — and a prediction quoted to two
+  decimals is false precision either way.
+
+- **Read the interval, not just the number.** The interval is calibrated against predictions the
+  model never fitted on, so it means what it says, and it is the honest part of the answer. It
+  widens where the model has little nearby to go on: propranolol, a compound surrounded by
+  training data, comes back −4.66 with a range of ±0.6, while a compound in a sparse corner gets
+  a range two or three times wider.
 - **A prediction outside the domain is one the interval was never calibrated for.** ADMET models
   are reliable only within the chemistry they were fitted on, and published comparisons find
   permeability predictors losing almost all of their correlation on compound classes they have

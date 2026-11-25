@@ -572,10 +572,10 @@ structures — metabolite structure generation stays out of scope.
 
 ### 7.0d Permeability, in the base install (added 2026-11-25)
 
-Chemistry ▸ Calculate ▸ Permeability… predicts three endpoints — Caco-2 log Papp, the
-MDR1-MDCK efflux ratio and PAMPA (a classification, because the public NCATS set carries a
-binary label) — each with a conformal interval and an applicability-domain flag. Full design,
-data licences and the open questions: [PERMEABILITY_PLAN.md](PERMEABILITY_PLAN.md).
+Chemistry ▸ Calculate ▸ Permeability… predicts two endpoints — Caco-2 log Papp and the
+MDR1-MDCK efflux ratio — each with a conformal interval and an applicability-domain flag. Full
+design, data licences, measured accuracy and the open questions:
+[PERMEABILITY_PLAN.md](PERMEABILITY_PLAN.md).
 
 **This closes the chemprop question.** The endpoint's state of the art is boosted trees over
 descriptors — the TDC Caco-2 leader is AutoML over descriptors, and the Feb-2026 leaderboard
@@ -584,10 +584,16 @@ add at these set sizes, and torch stays out of the app. The models are `.csqm` a
 by `chemsuite/qsar`, chemsuite's own engine, and applied in numpy with no scikit-learn at run
 time. This also settles the open question about the "(est.)" descriptors.
 
-**Where it stands (2026-11-25):** the curation scripts, the Qt-free `chemsuite/permeability`
-package, the tool and the tests are in; the models themselves are **not trained yet**, and the
-tests that need them skip until they are. The remaining commands are in the plan. The 3D
-Uni-Mol arm is deferred behind a stated gate and is not open work.
+**What the bake-off settled (2026-11-25).** Measured out of fold on scaffold splits, with the
+numbers in the plan: fingerprints are **out** (103 descriptors beat descriptors plus 2,048
+Morgan counts on MDCK, 0.370 against 0.380 MAE, and tie on Caco-2); the **3D arm is closed**
+(+0.016 log on MDCK, 0.000 on Caco-2 — far under the assay's own 0.3–0.5 scatter, so no
+Uni-Mol head and no second 84 MB of weights); **PAMPA is held back** (ROC-AUC 0.740 but
+balanced accuracy 0.570 on data that is 85% permeable, so it ranks a series without reliably
+calling a compound); and **Caco-2 is data-limited** — three pools and three estimators give
+identical scores, so the Esaki 2024 ChEMBL curation (+1,661 entries) is the next lever, not
+more tuning. The `pka` arm was abandoned on measured cost, about 60 CPU-seconds per molecule,
+which the plan records along with how to settle its accuracy later.
 
 ### 7a. Proteins: from viewer to medicinal-chemistry workspace (revised 2026-11-11)
 

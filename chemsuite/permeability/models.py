@@ -56,8 +56,8 @@ class Pin:
 #: endpoint id -> the pin for its archive. Filled by ``train.py --ship``, which prints these
 #: lines; a model refitted without updating them fails the test rather than shipping silently.
 PINS: dict[str, Pin] = {
-    "mdck_er": Pin(0, ""),
-    "caco2": Pin(0, ""),
+    "mdck_er": Pin(3714371, "57fc718bdcece446b2d5de16c109dec3740482c888984efa96cf96090aa77ff3"),
+    "caco2": Pin(8750375, "726b733a92ec370c468958c4e70ab3f18f5380a2c9aa65049a914bc5b2091e7c"),
 }
 
 _lock = threading.Lock()

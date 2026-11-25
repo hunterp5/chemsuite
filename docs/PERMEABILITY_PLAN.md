@@ -1,7 +1,9 @@
-# Permeability: three shipped models on chemsuite's own QSAR engine
+# Permeability: two shipped models on chemsuite's own QSAR engine
 
-Decided 2026-11-25. Status: **the engine, the tool and the tests are in; the models are not
-trained yet** (see [What is left](#what-is-left)).
+Decided and measured 2026-11-25. **Two endpoints ship** — the MDR1-MDCK efflux ratio and Caco-2
+log Papp — each as a `.csqm` archive fitted by `chemsuite/qsar` and applied in numpy, from
+descriptors alone. PAMPA was fitted and held back, and the 3D arm was measured and closed; see
+[What the numbers decided](#what-the-numbers-decided).
 
 ## Why this is not a new modelling package
 
@@ -34,13 +36,15 @@ torch, nothing downloaded at run time, and no pickle ever loaded.
 chemprop and ADMET-AI in an external interpreter are **dropped**, consistent with the standing
 decision that chemprop and torch stay out of the app.
 
-## The three endpoints
+## The endpoints, and the data behind them
 
-| Endpoint | Task | Unit | Source | Curated rows | Licence |
-|---|---|---|---|---|---|
-| `mdck_er` | regression | log10 (B-A/A-B) | Fang et al. 2023, Biogen public ADME set, commit `b00df00` | **2,638** | **MIT**, shipped beside the model |
-| `caco2` | regression | log10 cm/s | Wang et al. 2016, via TDC `caco2_wang` | **893** | paper supporting information redistributed by TDC; cited in the NOTICE |
-| `pampa` | **classification** | permeable / not | NCATS PAMPA pH 5, via TDC `pampa_ncats` | **2,034** (85% permeable) | US government work, not under copyright |
+Two ship; the third was curated, fitted and held back.
+
+| Endpoint | Ships | Task | Unit | Source | Curated rows | Licence |
+|---|---|---|---|---|---|---|
+| `mdck_er` | **yes** | regression | log10 (B-A/A-B) | Fang et al. 2023, Biogen public ADME set, commit `b00df00` | **2,638** | **MIT**, shipped beside the model |
+| `caco2` | **yes** | regression | log10 cm/s | Wang et al. 2016, via TDC `caco2_wang` | **893** | paper supporting information redistributed by TDC; cited in the NOTICE |
+| `pampa` | no | classification | permeable / not | NCATS PAMPA pH 5, via TDC `pampa_ncats` | **2,034** (85% permeable) | US government work, not under copyright |
 
 **PAMPA is a classification, and that was not the original intent.** The plan assumed the
 ~6,500-compound continuous NCATS set. What TDC actually serves (`pampa_ncats`) is 2,035
@@ -121,6 +125,24 @@ endpoints.
 accuracy 0.570, MCC 0.252, 200 / 2,151 features, 7.4 min. The other two arms were not run: the
 endpoint was held back on this number, so measuring its pool further would have bought nothing.
 
+### The models that ship
+
+Refitted at the `standard` budget — the full zoo rather than its four cheapest entries — on the
+`descriptors` pool the comparison chose. These are the numbers the user guide quotes:
+
+| Endpoint | Candidate | MAE | RMSE | R² | Spearman | Features | Archive | Fit |
+|---|---|---|---|---|---|---|---|---|
+| `mdck_er` | SVR | **0.360** | 0.481 | 0.512 | 0.732 | 92 / 103 | 3.7 MB | 27.9 min |
+| `caco2` | random forest | **0.354** | 0.454 | 0.655 | — | 88 / 103 | 8.8 MB | 20.0 min |
+
+The bigger budget was worth it: MDCK improved 0.370 → 0.360 and Caco-2 0.372 → 0.354, and in
+both cases a different estimator won than at `quick`. MDCK's shipped model also beats the
+`shape` arm's best (0.364), so closing the 3D arm cost nothing at all.
+
+Measured end to end through the tool's own path, one process and no worker pool:
+**13 ms per row**, so a two-thousand-row table is about half a minute. That is the figure to
+compare against the `pka` arm's ~60 CPU-seconds per molecule below.
+
 ### What the numbers decided
 
 **Fingerprints are out.** On MDCK the 103 descriptors alone beat descriptors plus 2,048 Morgan
@@ -143,49 +165,88 @@ majority class. A per-compound call would need more caveat than it is worth. `cu
 `tests/permeability/test_predict.py`, so it is one line in `ENDPOINTS` to restore — the right
 trigger being a continuous PAMPA set rather than a better model on this one.
 
-**Caco-2 is data-limited, not model-limited.** Three pools, three estimators, identical scores:
-nothing about the features moves it. That also sizes the gap to the published TDC leader on this
-same Wang data (MAE 0.256 against our 0.371) — it is not a pool or a budget away. The lever is
-more data, so folding in the Esaki 2024 ChEMBL curation (+1,661 entries, with its exclusions
-applied) is the recommended next step for this endpoint, ahead of any further tuning. Part of
-the remaining gap is also split and curation: ours deduplicates to 893 compounds and uses its
-own scaffold split, and the February 2026 audit found leakage inflating several leaderboard
-entries.
+**The `pka` arm was abandoned on measured cost, with its accuracy never obtained.** This is the
+one place the bake-off did not run to a number, so it is stated plainly rather than tidied up.
+The arm was started twice — on MDCK (2,638 molecules) and then on Caco-2 (893) — and neither
+finished building its feature pool: MDCK consumed about 67,000 CPU-seconds in two hours and
+Caco-2 about 50,000 in one, both still short of a complete pool on twelve cores. That puts the
+pKa descriptors at **upwards of 60 CPU-seconds per molecule**, measured consistently on two
+independent sets.
 
-## What is left
+That number, not an MAE, decides the gate. The question this arm was set up to answer assumed
+the cost was "seconds rather than milliseconds" per molecule; it is nearer a minute of CPU per
+molecule, and **the same pass runs at predict time**, so a two-thousand-row table would cost
+hours on a twelve-core machine for a column whose neighbors in Chemistry ▸ Calculate take
+milliseconds. No MAE gain available on a 893-row set could make that shippable as the default,
+so the comparison stopped being load-bearing and the compute was better spent on the models
+that ship.
 
-The code, the tool and the tests are in and green. Training has not run, because the machine
-was at 100% CPU for an unrelated long-running benchmark and the fit was being starved about
-100 to 1. Nothing about the result is known yet, and nothing is guessed here.
-
-To finish, on an idle machine:
+**The honest caveat:** this reverses the "let the bake-off decide" rule on cost grounds rather
+than accuracy grounds, and it is a judgment rather than a measurement of what was asked. The
+accuracy question is still open and still cheap to settle on an idle machine overnight:
 
 ```sh
-.venv/Scripts/python.exe scripts/permeability/fetch.py        # already verified
-.venv/Scripts/python.exe scripts/permeability/curate.py       # already verified
-.venv/Scripts/python.exe scripts/permeability/train.py --arm plain --arm descriptors --arm shape
-.venv/Scripts/python.exe scripts/permeability/train.py --arm pka     # slow: hours
-.venv/Scripts/python.exe scripts/permeability/train.py --ship plain  # or whichever arm won
+.venv/Scripts/python.exe scripts/permeability/train.py --arm pka --endpoint caco2
 ```
 
-Then: paste the printed pins into `PINS` in `chemsuite/permeability/models.py`, fill in the
-results table above, and record the golden values in `tests/permeability/test_golden.py` (the
-one test file still to write, and the only one that can be written after the models exist).
-`tests/permeability/test_models.py` and `tests/tools/permeability/` skip while the archives are
-absent and run as soon as they are there, so the gap is visible rather than silent.
+If `pka` turns out to clear +0.05 log MAE, the right outcome is not to change the default but
+to offer it as a second, slower model — which is new scope, not a tweak. Before rerunning it,
+`train.py` should pass a `progress` callback into `features.build` so the pool's rate is
+visible; its absence is why two runs had to be abandoned blind.
 
-## The deferred 3D arm, and its gate
+**Caco-2 is data-limited, not model-limited.** Three pools and three different winning
+estimators give identical scores at the `quick` budget: nothing about the features moves it. A
+bigger search does help a little (0.372 → 0.354 at `standard`), which bounds what tuning is
+worth — the remaining distance to the published TDC leader on this same Wang data (0.256) is
+not another pool or another budget away. The lever is more data, so folding in the Esaki 2024
+ChEMBL curation (+1,661 entries, with its exclusions applied) is the recommended next step for
+this endpoint. Part of the gap is also split and curation rather than model: ours deduplicates
+to 893 compounds and uses its own scaffold split, and the February 2026 audit found leakage
+inflating several leaderboard entries.
+
+## Reproducing it
+
+Every step below has been run on this machine, in this order:
+
+```sh
+.venv/Scripts/python.exe scripts/permeability/fetch.py
+.venv/Scripts/python.exe scripts/permeability/curate.py
+# the comparison, quick budget, same split and seed for every arm
+.venv/Scripts/python.exe scripts/permeability/train.py --arm plain --arm descriptors --arm shape
+# the models that ship, standard budget, descriptors only
+.venv/Scripts/python.exe scripts/permeability/train.py --ship descriptors \
+    --endpoint mdck_er --endpoint caco2
+# the pinned predictions the golden test checks
+.venv/Scripts/python.exe scripts/permeability/golden.py
+```
+
+`--ship` prints the `Pin(size, sha256)` line for each archive; those go into `PINS` in
+`chemsuite/permeability/models.py` by hand, so a refit is never a silent reship.
+`tests/permeability/test_models.py` then checks the shipped copies against them, and
+`tests/permeability/test_golden.py` pins what they predict to 1e-7. Both skip in a checkout
+without the archives, so a missing model is visible rather than silent.
+
+The `pampa` endpoint is still curated and trainable; it is simply not in `ENDPOINTS`.
+
+## The 3D arm: measured, and closed
 
 `chemsuite/ionisation/unipka/model.py` is already a complete numpy forward pass of the Uni-Mol
-encoder, shipped for pKa, so a permeability head is cheap in *code* — but not in *bytes*:
-fine-tuning moves the backbone, so a second endpoint means a second ~84 MB file unless the
-encoder is frozen and only a head trains. The evidence is genuinely mixed (3D descriptors cut
-MAE 15.7% in CaliciBoost; the 2026 PROTAC preprint saw no gain from them), and 2,638 labels is
-thin for a transformer.
+encoder, shipped for pKa, so a permeability head would have been cheap in *code* — but not in
+*bytes*: fine-tuning moves the backbone, so a second endpoint means a second ~84 MB file unless
+the encoder is frozen and only a head trains. The published evidence was mixed (3D descriptors
+cut MAE 15.7% in CaliciBoost; the 2026 PROTAC preprint saw no gain), so the plan made it
+conditional rather than guessing.
 
-**Open it only if** the best out-of-fold MAE misses the ~0.3 log assay noise floor *and* the
-`shape` arm showed a real gain. Then it is its own plan-mode feature, frozen backbone first.
-Otherwise this stays closed.
+**The gate did not open.** The `shape` arm — the same pool plus 11 shape descriptors over an
+ETKDG conformer, which is the cheap proxy for what a 3D model would contribute — gained
+**+0.016 log MAE on MDCK and 0.000 on Caco-2**. Against an assay that scatters 0.3–0.5 log
+between laboratories that is indistinguishable from nothing, and it is nowhere near the 15.7%
+that would have justified a transformer. On Caco-2 the three pools are identical to three
+decimals, which says the limit there is 893 training rows, not the representation.
+
+So: **no Uni-Mol head, no second 84 MB of weights, no WSL training run.** Reopening it would
+need a new reason — most plausibly a much larger Caco-2 set after the Esaki merge, where a
+representation could start to matter. Until then this is closed, not deferred.
 
 ## Sources
 

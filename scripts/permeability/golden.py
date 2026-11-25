@@ -41,8 +41,7 @@ MOLECULES = {
     # the classic Caco-2 pair: lipophilic and permeable, polar and not
     "propranolol": "CC(C)NCC(O)COc1cccc2ccccc12",
     "atenolol": "CC(C)NCC(O)COc1ccc(CC(N)=O)cc1",
-    # P-glycoprotein substrates
-    "digoxin": "CC1OC(OC2C(O)C(OC3OC(C)C(O)C(O)C3O)OC(C)C2O)C(O)C(O)C1O",
+    # a P-glycoprotein substrate, which should show a high efflux ratio
     "verapamil": "COc1ccc(CCN(C)CCCC(C#N)(C(C)C)c2ccc(OC)c(OC)c2)cc1OC",
     # everyday small drugs
     "caffeine": "Cn1cnc2c1c(=O)n(C)c(=O)n2C",
@@ -56,6 +55,11 @@ MOLECULES = {
     "benzene": "c1ccccc1",
     "glycine": "NCC(=O)O",
     "benzamidine": "NC(=N)c1ccccc1",
+    # a bare trisaccharide: nothing like the training chemistry, and a probe that the
+    # applicability domain notices. It is deliberately not labelled as a drug — an earlier
+    # version of this file called it digoxin, which it is not: digoxin is C41H64O14 with a
+    # steroid core, and this is only the sugar chain, C18H32O13.
+    "sugar_trimer": "CC1OC(OC2C(O)C(OC3OC(C)C(O)C(O)C3O)OC(C)C2O)C(O)C(O)C1O",
 }
 
 #: decimals kept, which is far tighter than the assay and the point: this pins the arithmetic

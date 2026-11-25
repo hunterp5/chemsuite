@@ -26,12 +26,12 @@ from tests.gui import gui
 
 pytestmark = gui
 
-#: propranolol (highly permeable), atenolol (poorly permeable), digoxin (a P-gp substrate),
+#: propranolol (highly permeable), atenolol (poorly permeable), verapamil (a P-gp substrate),
 #: and a blank row
 SMILES = [
     "CC(C)NCC(O)COc1cccc2ccccc12",
     "CC(C)NCC(O)COc1ccc(CC(N)=O)cc1",
-    "CC1OC(OC2C(O)C(OC3OC(C)C(O)C(O)C3O)OC(C)C2O)C(O)C(O)C1O",
+    "COc1ccc(CCN(C)CCCC(C#N)(C(C)C)c2ccc(OC)c(OC)c2)cc1OC",
     "",
 ]
 
@@ -106,7 +106,7 @@ def test_it_writes_a_prediction_and_an_interval_per_endpoint(chem, qtbot) -> Non
     ]
     assert "MDCK ER Predicted" in table.column_names
 
-    propranolol, atenolol, _digoxin, blank = (int(oid) for oid in table.oids)
+    propranolol, atenolol, _verapamil, blank = (int(oid) for oid in table.oids)
     # the interval brackets the prediction, and a blank row gets nothing
     for oid in (propranolol, atenolol):
         low = float(table.cell("Caco-2 Papp Low", oid))

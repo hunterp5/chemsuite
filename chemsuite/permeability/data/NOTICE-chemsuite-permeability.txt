@@ -1,0 +1,61 @@
+chemsuite permeability models
+=============================
+
+The model files in this folder (`*.csqm`) are part of chemsuite and are licensed
+GPL-3.0-or-later, the same as the rest of chemsuite. See the COPYING file at the root of
+the distribution for the full text.
+
+Each file is a fitted model: an uncompressed NumPy `.npz` archive holding a JSON manifest
+and plain numeric arrays, read with `allow_pickle=False`. Opening one never executes code.
+A `.csqm` also carries the identifiers (InChIKeys) and measured values of the compounds it
+was fitted on, so that the model can honestly be refined later with more data. Those
+compounds and values come from the public sources below.
+
+How they were made is recorded in docs/PERMEABILITY_PLAN.md, and the scripts that made
+them are scripts/permeability/ — `fetch.py` (which pins every source file by SHA-256),
+`curate.py` and `train.py`.
+
+
+Training data
+-------------
+
+1. mdck_er.csqm — MDR1-MDCK efflux ratio
+
+   Fang, C.; Wang, Y.; Grater, R.; Kapadnis, S.; Black, C.; Trapa, P.; Sciabola, S.
+   "Prospective Validation of Machine Learning Algorithms for Absorption, Distribution,
+   Metabolism, and Excretion Prediction: An Industrial Perspective."
+   J. Chem. Inf. Model. 2023, 63 (11), 3263-3274. doi:10.1021/acs.jcim.3c00160
+
+   Data: https://github.com/molecularinformatics/Computational-ADME
+   The `LOG MDR1-MDCK ER (B-A/A-B)` column of `ADME_public_set_3521.csv`.
+
+   That dataset is distributed under the MIT License, a copy of which is in this folder as
+   LICENSE-biogen-adme.txt. Its copyright notice is retained there as the licence requires.
+
+2. caco2.csqm — Caco-2 apparent permeability
+
+   Wang, N.-N.; Dong, J.; Deng, Y.-H.; Zhu, M.-F.; Wen, M.; Yao, Z.-J.; Lu, A.-P.;
+   Wang, J.-B.; Cao, D.-S. "ADME Properties Evaluation in Drug Discovery: Prediction of
+   Caco-2 Cell Permeability Using a Combination of NSGA-II and Boosting."
+   J. Chem. Inf. Model. 2016, 56 (4), 763-773. doi:10.1021/acs.jcim.5b00642
+
+   Obtained through Therapeutics Data Commons as the `caco2_wang` dataset:
+   Huang, K.; Fu, T.; Gao, W.; et al. "Therapeutics Data Commons: Machine Learning
+   Datasets and Tasks for Drug Discovery and Development." NeurIPS 2021 Datasets and
+   Benchmarks. https://tdcommons.ai
+
+   The measurements are experimental values reported in the paper's supporting
+   information and redistributed by TDC. They are facts rather than creative expression,
+   and the citations above are given so that the provenance travels with the model.
+
+
+Not used
+--------
+
+A PAMPA model was fitted on the NCATS PAMPA pH 5 data (via Therapeutics Data Commons,
+`pampa_ncats`; work of US government employees and so not subject to copyright) and is
+deliberately not shipped: it could rank a series but not reliably classify an individual
+compound. docs/PERMEABILITY_PLAN.md records the measured scores.
+
+No data from iBonD, DataWarrior, GOSTAR or any other restricted compilation was used, and
+no proprietary or licensed dataset contributed to any model in this folder.
