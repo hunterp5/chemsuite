@@ -36,6 +36,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Executor
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -44,6 +45,9 @@ from chemsuite.core.jobs import CancelToken, check
 from chemsuite.descriptors.compute import Cell, compute_descriptors
 
 from .recipe import Recipe
+
+if TYPE_CHECKING:  # rdkit is imported where it is used, so the pool costs nothing to import
+    from rdkit import Chem
 
 #: Called with (rows done, rows expected) over the whole pool.
 Progress = Callable[[int, int], None]
@@ -236,6 +240,30 @@ def build(
     return Pool(np.ascontiguousarray(x, dtype=np.float64), names, kinds, usable)
 
 
+def mols_for(cells: Sequence[Cell]) -> list[Chem.Mol | None]:
+    """A molecule per cell, or None where RDKit cannot read the structure.
+
+    A structure column holds a binary blob or text, never a molecule, so anything that works
+    on molecules (the scaffolds a split groups by, the keys a refit matches on) has to read
+    them first. RDKit's parse warnings are blocked, so an unreadable row becomes None rather
+    than a line of console noise per row.
+    """
+    from rdkit import rdBase
+
+    from chemsuite.core.mols import mol_from_blob, mol_from_text
+
+    out: list[Chem.Mol | None] = []
+    with rdBase.BlockLogs():
+        for cell in cells:
+            if isinstance(cell, bytes):
+                out.append(mol_from_blob(cell) if cell else None)
+            elif isinstance(cell, str):
+                out.append(mol_from_text(cell))
+            else:
+                out.append(None)
+    return out
+
+
 def keys_for(cells: Sequence[Cell]) -> list[str]:
     """An InChIKey per cell, or "" where RDKit cannot read the structure.
 
@@ -246,16 +274,5 @@ def keys_for(cells: Sequence[Cell]) -> list[str]:
     """
     from rdkit import Chem, rdBase
 
-    from chemsuite.core.mols import mol_from_blob, mol_from_text
-
-    out: list[str] = []
     with rdBase.BlockLogs():
-        for cell in cells:
-            if isinstance(cell, bytes):
-                mol = mol_from_blob(cell) if cell else None
-            elif isinstance(cell, str):
-                mol = mol_from_text(cell)
-            else:
-                mol = None
-            out.append("" if mol is None else (Chem.MolToInchiKey(mol) or ""))
-    return out
+        return ["" if mol is None else (Chem.MolToInchiKey(mol) or "") for mol in mols_for(cells)]

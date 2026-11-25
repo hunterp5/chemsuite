@@ -58,14 +58,16 @@ def a_dataset(rows: int = 120, features: int = 8, classes: int = 0, seed: int = 
     return x, y, np.array([f"class{i}" for i in range(classes)])
 
 
-def fit(candidate: zoo.Candidate, x, y, classes, recipe: Recipe) -> search.Pipeline:
+def fit(
+    candidate: zoo.Candidate, x, y, classes, recipe: Recipe, params: dict | None = None
+) -> search.Pipeline:
     rows = np.arange(len(y))
     basis = search.basis_for(x, y, rows, recipe)
     rng = np.random.default_rng(1)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return search.fit_pipeline(
-            x, y, rows, candidate, candidate.draw(rng), recipe, basis, classes
+            x, y, rows, candidate, params or candidate.draw(rng), recipe, basis, classes
         )
 
 
@@ -212,3 +214,57 @@ def test_the_search_never_offers_a_model_it_cannot_write_out():
     assert "svc" in two
     assert "svc" not in three
     assert three == two - {"svc"}
+
+
+def test_a_forest_keeps_scikit_learns_missing_value_rule() -> None:
+    """The export carries the estimator's own missing-value routing, not zeros.
+
+    ``Prepare.design`` fills every hole before the estimator sees it, so no prediction made
+    through the pipeline reaches this branch today, and writing zeros was harmless. It is
+    still the estimator's rule and not ours to invent: scikit-learn sets ``missing_go_to_left``
+    on its nodes whatever the training data held, and an archive that says something different
+    from the forest it was exported from is a trap for whoever next feeds a design through
+    ``apply`` directly.
+    """
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=(120, 12))
+    y = 2 * x[:, 0] - x[:, 1] + rng.normal(scale=0.2, size=120)
+    x[rng.random(x.shape) < 0.08] = np.nan
+
+    model = fit(zoo.candidate("regression", "rf"), x, y, None, a_recipe("regression"))
+    weights, difference = export.exported(model, design_of(model, x))
+
+    assert difference == 0.0, "the exported forest is not scikit-learn's forest"
+    kept = weights.arrays["node_missing_left"]
+    theirs = np.concatenate([t.tree_.missing_go_to_left for t in model.estimator.estimators_])
+    assert np.array_equal(kept, theirs.astype(np.int8)), "the routing is not the estimator's"
+
+
+def test_a_forest_walks_the_way_scikit_learn_walks_it() -> None:
+    """A scikit-learn tree casts its input to float32 before walking it, so the numpy walk
+    has to compare the same way.
+
+    The probe puts a row exactly on each threshold the forest uses, at the float64 value just
+    below it: wherever that threshold is not float32-representable, the two precisions take
+    different branches. Comparing in float64 sent 309 of these rows the other way, by up to
+    0.045 — rare and small, which is why ordinary random data never caught it.
+    """
+    rng = np.random.default_rng(3)
+    x = rng.normal(size=(200, 6))
+    y = 2 * x[:, 0] - x[:, 1] + rng.normal(scale=0.1, size=200)
+
+    params = {"max_depth": 8, "max_features": "sqrt", "min_samples_leaf": 2}
+    model = fit(zoo.candidate("regression", "rf"), x, y, None, a_recipe("regression"), params)
+    design = design_of(model, x)
+    weights = export.export(model)
+
+    inner = np.flatnonzero(weights.arrays["node_leaf"] == 0)
+    feature = weights.arrays["node_feature"]
+    threshold = weights.arrays["node_threshold"]
+    probe = np.repeat(design[:1], len(inner), axis=0)
+    for i, node in enumerate(inner):
+        probe[i, feature[node]] = np.nextafter(threshold[node], -np.inf)
+
+    difference = np.abs(apply.values(weights, probe) - model.estimator.predict(probe)).max()
+
+    assert difference == 0.0, "the exported forest walks a row the estimator would not"

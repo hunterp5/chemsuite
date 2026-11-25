@@ -444,3 +444,77 @@ def _ctx(window):
     from chemsuite.app.document.tools import ToolContext
 
     return ToolContext(window)
+
+
+# -- the splits that group rows --------------------------------------------------------------
+
+
+def _cells_and_recipe(chem, split: str):
+    """The structure cells the tool reads, and a recipe that splits by *split*."""
+    from chemsuite.tools.qsar.work import read_inputs
+
+    dialog = chem.open_tool("auto_qsar")
+    dialog.target.setCurrentText("LogP")
+    dialog.split.set_value(split)
+    recipe = dialog.recipe()
+    ctx = _ctx(chem)
+    return read_inputs(ctx, recipe, ctx.table.oids).cells, recipe
+
+
+def test_a_scaffold_split_groups_the_rows_it_reads_from_the_table(chem) -> None:
+    """The cells a structure column holds are blobs, not molecules.
+
+    Passing them to the scaffold grouper unread raised Boost.Python.ArgumentError from
+    MurckoDecompose, and "Scaffolds" is the dialog's default, so the tool's default fit
+    failed outright.
+    """
+    from chemsuite.tools.qsar.work import groups_for
+
+    cells, recipe = _cells_and_recipe(chem, "scaffold")
+    assert not isinstance(cells[0], type(None))
+    groups = groups_for(recipe, None, cells)
+
+    assert groups is not None and len(groups) == len(cells)
+    assert len(set(groups.tolist())) > 1, "every row landed in one group"
+
+
+def test_a_cluster_split_groups_the_rows_by_their_fingerprints(chem) -> None:
+    """cluster_groups takes Butina labels, so the cells have to be clustered first."""
+    from chemsuite.tools.qsar.work import groups_for
+
+    cells, recipe = _cells_and_recipe(chem, "cluster")
+    groups = groups_for(recipe, None, cells)
+
+    assert groups is not None and len(groups) == len(cells)
+
+
+def test_a_random_split_groups_nothing(chem) -> None:
+    from chemsuite.tools.qsar.work import groups_for
+
+    cells, recipe = _cells_and_recipe(chem, "random")
+    assert groups_for(recipe, None, cells) is None
+
+
+def test_mols_for_reads_blobs_and_text_and_survives_nonsense() -> None:
+    from rdkit import Chem
+
+    from chemsuite.core.mols import mol_to_blob
+    from chemsuite.qsar.features import mols_for
+
+    blob = mol_to_blob(Chem.MolFromSmiles("c1ccccc1O"))
+    mols = mols_for([blob, "CCO", "not a molecule", b"", None])
+
+    assert mols[0] is not None and mols[0].GetNumAtoms() == 7
+    assert mols[1] is not None and mols[1].GetNumAtoms() == 3
+    assert mols[2] is None and mols[3] is None and mols[4] is None
+
+
+def test_a_searched_setting_is_rounded_for_the_leaderboard() -> None:
+    """A sampled hyperparameter arrives at full precision and is unreadable raw."""
+    from chemsuite.tools.qsar.panel import _setting
+
+    assert _setting(0.02771473968728253) == "0.0277"
+    assert _setting(449.44718330456953) == "449"
+    assert _setting("sqrt") == "sqrt"
+    assert _setting(31) == "31"
+    assert _setting(float("nan")) == "—"

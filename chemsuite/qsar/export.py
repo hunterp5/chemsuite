@@ -109,8 +109,10 @@ def _svm(model: Pipeline) -> Weights:
 def _tree_nodes(tree: Any, offset: int) -> dict[str, np.ndarray]:
     """One scikit-learn decision tree's nodes, its child indices shifted into flat arrays.
 
-    The holes in the pool are filled before any estimator sees them, so no tree in the zoo
-    carries a missing-value rule and ``missing_left`` is written as zeros.
+    A tree fitted on a pool with holes in it learns which way a missing value goes, node by
+    node (``missing_go_to_left``), and that rule is part of the model: dropping it sent every
+    NaN right and the exported forest disagreed with scikit-learn by whole log units, not by
+    rounding. Where nothing was missing the rule is zeros and costs nothing to carry.
     """
     leaf = (tree.children_left == -1).astype(np.int8)
     value = np.asarray(tree.value, dtype=np.float64)
@@ -127,7 +129,7 @@ def _tree_nodes(tree: Any, offset: int) -> dict[str, np.ndarray]:
         "node_right": right.astype(np.int32),
         "node_leaf": leaf,
         "node_value": value,
-        "node_missing_left": np.zeros(len(leaf), dtype=np.int8),
+        "node_missing_left": np.asarray(tree.missing_go_to_left, dtype=np.int8),
     }
 
 

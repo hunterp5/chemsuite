@@ -116,7 +116,16 @@ def _svm(w: Weights, x: np.ndarray) -> np.ndarray:
 def _trees(w: Weights, x: np.ndarray) -> np.ndarray:
     from .trees import MEAN, SUM, raw
 
-    return raw(x, Forest.from_arrays(w.arrays, MEAN if w.family == FOREST else SUM))
+    if w.family == FOREST:
+        # A scikit-learn decision tree casts its input to float32 before it walks it
+        # (``sklearn.tree._tree.DTYPE``), so a value that sits a hair from a threshold takes
+        # the branch its float32 form takes. Comparing the float64 value instead sent a few
+        # rows the other way: 5 rows in 187 on a real pool, and the forest no longer matched
+        # the estimator it was exported from. Histogram boosting reads float64 and is left
+        # alone.
+        x = x.astype(np.float32).astype(np.float64)
+        return raw(x, Forest.from_arrays(w.arrays, MEAN))
+    return raw(x, Forest.from_arrays(w.arrays, SUM))
 
 
 def _knn_weights(gaps: np.ndarray, kind: str) -> np.ndarray:

@@ -84,6 +84,16 @@ def _number(value: float) -> str:
     return "—" if value != value else f"{value:.3g}"
 
 
+def _setting(value: object) -> str:
+    """A searched hyperparameter as a person reads it.
+
+    The search samples from continuous ranges, so a setting arrives as a full-precision float
+    (``learning_rate=0.02771473968728253``), which tells a reader nothing the third digit has
+    not already told them.
+    """
+    return _number(value) if isinstance(value, float) else str(value)
+
+
 class ModelsPanel(ToolPanel):
     """The models this document holds."""
 
@@ -210,7 +220,9 @@ class ModelsPanel(ToolPanel):
                 [
                     str(entry.get("title", entry.get("candidate", ""))),
                     _number(float(entry.get("scores", {}).get(model.objective, float("nan")))),
-                    ", ".join(f"{k}={v}" for k, v in dict(entry.get("params", {})).items()),
+                    ", ".join(
+                        f"{k}={_setting(v)}" for k, v in dict(entry.get("params", {})).items()
+                    ),
                 ]
                 for entry in model.leaderboard
             ],

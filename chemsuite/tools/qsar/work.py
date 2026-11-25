@@ -44,6 +44,10 @@ from chemsuite.qsar.refine import Merged, merge, refine
 #: below this many rows the pool is built in this process, not farmed out
 PARALLEL_FROM = 200
 
+#: what the "cluster" split clusters on; the pool's own fingerprints are a different thing
+#: (they follow the recipe, and may be absent from it altogether)
+CLUSTER_FINGERPRINT = "morgan2"
+
 
 @dataclass(frozen=True)
 class Inputs:
@@ -118,9 +122,13 @@ def groups_for(recipe: Recipe, pool: features.Pool, cells: Sequence) -> np.ndarr
     predict nothing.
     """
     if recipe.split == "scaffold":
-        return as_groups(scaffold_groups(cells))
+        return as_groups(scaffold_groups(features.mols_for(cells)))
     if recipe.split == "cluster":
-        return cluster_groups(cells, similarity=recipe.cluster_similarity)
+        from chemsuite.analysis.clustering import butina
+        from chemsuite.analysis.fingerprints import compute_fingerprints
+
+        fps = compute_fingerprints(cells, CLUSTER_FINGERPRINT)
+        return cluster_groups(butina(fps, cutoff=recipe.cluster_similarity).labels)
     return None
 
 
