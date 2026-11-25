@@ -819,6 +819,24 @@ def test_interactions_of_the_ligands_or_the_selection(panel) -> None:
     assert len(session.scene.lines) == 0
 
 
+def test_view_interaction_types_hides_a_kind(panel) -> None:
+    from chemsuite.macromolecule.chem import interactions as it
+
+    session = panel.session
+    session.show_interactions()
+    kinds = action_in(menu_of(panel, "View"), "Interaction Types").menu()
+    assert all(a.isChecked() for a in kinds.actions())
+    assert it.WATER_BRIDGE in session.scene.interactions[0].kind.tolist()
+    action_in(kinds, "Water Bridge").trigger()
+    assert not session.interaction_kind_shown(it.WATER_BRIDGE)
+    assert it.WATER_BRIDGE not in session.scene.interactions[0].kind.tolist()
+    assert len(session.scene.lines) > 0  # the others still drawn
+    kinds = action_in(menu_of(panel, "View"), "Interaction Types").menu()
+    assert not action_in(kinds, "Water Bridge").isChecked()
+    action_in(kinds, "Water Bridge").trigger()
+    assert it.WATER_BRIDGE in session.scene.interactions[0].kind.tolist()
+
+
 def test_hovering_an_atom_names_its_interactions(panel) -> None:
     panel.session.show_interactions()
     panel._hovered("1ATP", _atp_atom("N6"))

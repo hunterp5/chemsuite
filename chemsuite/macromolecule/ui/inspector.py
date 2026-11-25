@@ -74,6 +74,7 @@ ISSUE_GROUPS = {
     inspection.GAP: "Gaps in the sequence",
     inspection.TRUNCATED: "Chain ends not modelled",
     inspection.FILLED: "Residues built",
+    inspection.REMOVED: "Residues removed",
     inspection.CAP: "Caps",
     inspection.UNKNOWN: "No template",
     inspection.LINK: "Covalent links",

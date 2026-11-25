@@ -22,7 +22,11 @@
   last residue, are built from the residue's template, one at a time, each from three atoms
   already there by the template's internal coordinates (bond length, angle and dihedral of
   the CCD's ideal geometry). The side chain takes the ideal conformation, which is not
-  checked for clashes. Residues missing N, CA or C are left as they are; no loops are built.
+  checked for clashes. No loops are built.
+- **Stubs**: an amino acid missing CA or C (or, at the C-side end of a stretch, its O) has
+  nothing to build on or cap from, so it is removed (:func:`remove_stubs`). Its neighbours
+  then end at a gap, which is filled or capped like any other (4AGC's last residue, GLN 1169,
+  is deposited as its N alone).
 - **Caps**: a chain end that the deposit cut short (at a gap, or before or after a stretch of
   the sequence that was not modelled) takes a neutral ACE or NME cap (:func:`cap_ends`), as
   a force field needs; true termini stay charged.
@@ -38,9 +42,9 @@ from scipy.spatial import cKDTree
 from chemsuite.core.jobs import CancelToken, check
 
 from ..structure import edit
-from ..structure.model import ION, Structure
+from ..structure.model import AMINO, ION, Structure
 from .hydrogens import HYDROGEN
-from .inspect import BACKBONE, POLYMER, ends, last_in_chain, missing_atoms
+from .inspect import BACKBONE, CAPS, POLYMER, ends, last_in_chain, missing_atoms
 from .templates import Library, Template, place
 
 ACE, NME = "ACE", "NME"
@@ -62,6 +66,37 @@ def one_location(s: Structure, altlocs: dict[int, str] | None = None) -> Structu
     kept = s.subset(s.active(altlocs))
     return replace(kept, altloc=np.full(kept.n_atoms, "", dtype=kept.altloc.dtype),
                    occupancy=np.ones(kept.n_atoms, dtype=kept.occupancy.dtype))  # fmt: skip
+
+
+def remove_stubs(s: Structure) -> tuple[Structure, list[str]]:
+    """*s* without the amino acids too incomplete to build on or cap: those missing CA or C,
+    and, at the C-side end of a stretch (which takes an OXT or an NME, placed from it), O.
+    Inside a chain only a residue of the deposited sequence is removed, since its gap is then
+    marked by the sequence and filled or capped; without one, only chain ends are. Repeats
+    until the new ends are whole. Returns the labels of the residues removed."""
+    removed: list[str] = []
+    while True:
+        found = ends(s)
+        tails = found.c_termini | found.open_c
+        stretch_ends = tails | found.n_termini | found.open_n
+        gone = np.zeros(s.n_atoms, dtype=bool)
+        now: list[str] = []
+        for r in range(s.n_residues):
+            if s.res_kind[r] != AMINO or str(s.res_name[r]) in CAPS:
+                continue
+            if r not in stretch_ends and s.seqres[r] < 0:
+                continue
+            span = s.atoms_of(r)
+            names = {str(s.name[i]) for i in range(span.start, span.stop)
+                     if s.element[i] != HYDROGEN}  # fmt: skip
+            needed = ("CA", "C", "O") if r in tails else ("CA", "C")
+            if any(name not in names for name in needed):
+                gone[span] = True
+                now.append(s.residue_label(r))
+        if not now or gone.all():
+            return s, removed
+        removed += now
+        s = edit.delete(s, gone)
 
 
 def build_missing(

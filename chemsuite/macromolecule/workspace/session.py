@@ -582,6 +582,16 @@ class WorkbenchSession:
         self.touched()
         self._changed(rebuilt=True)
 
+    def interaction_kind_shown(self, kind: int) -> bool:
+        return not any(kind in d.hidden_kinds for d in self.displays)
+
+    def show_interaction_kind(self, kind: int, on: bool) -> None:
+        """Draw this kind of interaction (:mod:`..chem.interactions`), or leave it out."""
+        for shown in self.displays:
+            shown.hidden_kinds = shown.hidden_kinds - {kind} if on else shown.hidden_kinds | {kind}
+        self.touched()
+        self._changed(rebuilt=True)
+
     def interactions_of(self, protein: str, atom: int) -> list[str]:
         """The shown interactions this atom takes part in, in words."""
         from chemsuite.macromolecule.chem.interactions import describe as say
@@ -664,6 +674,7 @@ class WorkbenchSession:
             deferred=self.deferred,
             surface_options=shown.surface_options,
             pocket_transparency=shown.pocket_transparency,
+            hidden_kinds=shown.hidden_kinds,
         )
         display.show(~mine, scenes.HIDDEN)
         display.show(mine, scenes.STICK)

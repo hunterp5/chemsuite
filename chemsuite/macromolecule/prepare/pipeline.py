@@ -47,7 +47,7 @@ from ..structure.components import CcdCache
 from ..structure.model import LIGAND, WATER, Structure
 from . import energy, hydrogens, ligand_sites, populations, repair, sites, solve, waters
 from .energy import Weights
-from .inspect import CAP, FILLED, Finding, inspect
+from .inspect import CAP, FILLED, MISSING, REMOVED, Finding, inspect
 from .ligand_pka import NO_MODEL, LigandPka
 from .templates import Library
 
@@ -201,8 +201,10 @@ def prepare(
     original = s
     caps: list[repair.Cap] = []
     filled: list[str] = []
+    stubs: list[str] = []
     if options.repair:
         located = repair.one_location(s, _altlocs(s, chosen.altlocs, options.altloc))
+        located, stubs = repair.remove_stubs(located)
         if options.fill_gaps:
             located, filled = repair.fill_single_gaps(located)
         named = None if chosen.repair is None else {*chosen.repair, *filled}
@@ -220,7 +222,10 @@ def prepare(
     # (caps put in, waters left out)
     where = {s.residue_label(r): r for r in range(s.n_residues)}
     report = [replace(f, residue=where.get(original.residue_label(f.residue), -1))
-              if f.residue >= 0 else f for f in found]  # fmt: skip
+              if f.residue >= 0 else f for f in found
+              if not (f.kind == MISSING and f.label in stubs)]  # fmt: skip
+    report += [Finding(REMOVED, label, "Removed: too incomplete to build on or cap", warn=True)
+               for label in stubs]  # fmt: skip
     report += [Finding(FILLED, label, "The missing residue built", warn=True, residue=where[label])
                for label in filled]  # fmt: skip
     report += [Finding(CAP, cap.residue, f"Capped with {cap.name}", residue=where[cap.residue])

@@ -43,6 +43,7 @@ GAP = "gap"
 TRUNCATED = "truncated"
 CAP = "cap"
 FILLED = "filled"  # a residue missing alone, built (:func:`.repair.fill_single_gaps`)
+REMOVED = "removed"  # too incomplete to build on or cap (:func:`.repair.remove_stubs`)
 MISSING = "missing"
 UNKNOWN = "unknown"
 LINK = "link"

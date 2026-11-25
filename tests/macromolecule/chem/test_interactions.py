@@ -22,7 +22,7 @@ import pytest
 
 from chemsuite.macromolecule.chem import interactions as it
 from chemsuite.macromolecule.structure import io
-from chemsuite.macromolecule.structure.model import Structure
+from chemsuite.macromolecule.structure.model import WATER, Structure
 
 
 def _ligand(s: Structure, name: str) -> int:
@@ -71,6 +71,29 @@ def test_atp_in_protein_kinase_a(kinase) -> None:
     waters = kinase.res_name[kinase.residue_of[found.b[bridges]]] == "HOH"
     ends = kinase.res_name[kinase.residue_of[found.b[bridges][~waters]]]
     assert waters.any() and "HOH" not in ends.tolist()
+
+
+def test_a_water_bridge_makes_an_angle_a_water_can(kinase) -> None:
+    """Each bridging water has a query atom and a partner whose hydrogen bonds to it point at
+    it and meet there at PLIP's 71–140°: a water in reach of both but in line with them, or
+    off a lone pair, bridges nothing."""
+    query = it.ligand_query(kinase, _ligand(kinase, "ATP"))
+    found = it.find(kinase, query)
+    xyz = kinase.xyz(0).astype(np.float64)
+    neighbours = it._heavy_neighbours(kinase)
+    bridges = np.flatnonzero(found.kind == it.WATER_BRIDGE)
+    assert len(bridges)
+    water = kinase.res_kind[kinase.residue_of] == WATER
+    legs: dict[int, tuple[set[int], set[int]]] = {}
+    for k in bridges.tolist():
+        a, b = int(found.a[k]), int(found.b[k])
+        w, other = (b, a) if water[b] else (a, b)
+        assert it._points_at(xyz, neighbours, other, w)  # 1ATP has no hydrogens
+        legs.setdefault(w, (set(), set()))[0 if query[other] else 1].add(other)
+    for w, (mine, theirs) in legs.items():
+        assert mine and theirs
+        assert any(it.WATER_OMEGA_MIN < it._angle(xyz[i], xyz[w], xyz[j]) < it.WATER_OMEGA_MAX
+                   for i in mine for j in theirs)  # fmt: skip
 
 
 def test_a_covalent_inhibitor_in_egfr(egfr) -> None:
@@ -166,6 +189,29 @@ def test_a_display_shows_and_saves_its_interactions(kinase) -> None:
     assert np.array_equal(again.query, shown.query)
     shown.show_interactions(None)
     assert len(compose([shown]).lines) == 0
+
+
+def test_kinds_of_interaction_can_be_hidden_and_stay_hidden(kinase) -> None:
+    from chemsuite.macromolecule.look.display import Display, compose
+
+    shown = Display("1ATP", "1ATP", kinase)
+    shown.show_interactions(it.ligand_query(kinase, _ligand(kinase, "ATP")))
+    every = compose([shown]).interactions[0]
+    assert {it.HBOND, it.WATER_BRIDGE} <= set(every.kind.tolist())
+    shown.hidden_kinds = frozenset({it.WATER_BRIDGE, it.HYDROPHOBIC})
+    scene = compose([shown])
+    left = scene.interactions[0]
+    assert not np.isin(left.kind, [it.WATER_BRIDGE, it.HYDROPHOBIC]).any()
+    assert len(left) == int((~np.isin(every.kind, [it.WATER_BRIDGE, it.HYDROPHOBIC])).sum())
+    assert set(np.unique(scene.lines.owner)) == set(left.a.tolist())
+    again = Display("1ATP", "1ATP", kinase)
+    again.set_state(shown.state())  # saved with the session
+    assert again.hidden_kinds == shown.hidden_kinds
+    edited = Display("1ATP", "1ATP", kinase)
+    edited.carry(shown)  # an edit (Prepare) keeps them hidden
+    assert edited.hidden_kinds == shown.hidden_kinds
+    again.set_state({**shown.state(), "hidden_interactions": [99, "x"]})  # nonsense: ignored
+    assert again.hidden_kinds == frozenset()
 
 
 def test_a_hydrogen_bond_uses_the_hydrogen_where_the_structure_has_one(nmr) -> None:

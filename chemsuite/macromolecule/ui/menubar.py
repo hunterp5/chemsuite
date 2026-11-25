@@ -42,6 +42,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QActionGroup, QColor, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar
 
+from chemsuite.macromolecule.chem import interactions as contacts
 from chemsuite.macromolecule.structure import io as protein_io
 from chemsuite.macromolecule.structure.sequence import KIND_ROWS
 
@@ -244,6 +245,14 @@ def _view(menu: QMenu, panel: MacromoleculePanel, commands: Commands) -> None:
     shown.setToolTip(
         "Show the interactions of the selection, or of every ligand when nothing is selected"
     )
+    kinds = menu.addMenu("Interaction Types")
+    for kind, title in contacts.NAMES.items():
+        action = kinds.addAction(
+            title,
+            lambda k=kind: session.show_interaction_kind(k, not session.interaction_kind_shown(k)),
+        )
+        action.setCheckable(True)
+        action.setChecked(session.interaction_kind_shown(kind))
     menu.addSeparator()
     background = menu.addMenu("Background")
     group = QActionGroup(background)

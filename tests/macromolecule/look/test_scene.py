@@ -53,13 +53,60 @@ def test_geometry_draws_shown_atoms_and_bonds_between_them(kinase: Structure) ->
     ends = kinase.bonds[geometry.bonds]
     assert np.array_equal(ends, geometry.ends)
     assert (styles[ends] != scene.HIDDEN).all()
-    assert np.allclose(geometry.cylinders[:, :3], kinase.coords[0][ends[:, 0]])
-    assert np.allclose(geometry.cylinders[:, 4:7], kinase.coords[0][ends[:, 1]])
+    # every bond drawn; a double bond's two sticks sit either side of it
+    shown = np.flatnonzero((styles[kinase.bonds] != scene.HIDDEN).all(axis=1))
+    assert np.array_equal(np.unique(geometry.bonds), shown)
+    for bond in np.unique(geometry.bonds).tolist():
+        rows = np.flatnonzero(geometry.bonds == bond)
+        a, b = kinase.coords[0][kinase.bonds[bond]]
+        assert np.allclose(geometry.cylinders[rows, :3].mean(axis=0), a, atol=1e-4)
+        assert np.allclose(geometry.cylinders[rows, 4:7].mean(axis=0), b, atol=1e-4)
     # the ligand as sticks: joints as wide as its bonds; ions are visible balls
     ligand = np.isin(geometry.atoms, np.flatnonzero(kinase.atom_kind == LIGAND))
     assert np.allclose(geometry.spheres[ligand, 3], 0.15)
     ion = np.isin(geometry.atoms, np.flatnonzero(kinase.atom_kind == ION))
     assert ion.sum() == 2 and (geometry.spheres[ion, 3] > 0.5).all()
+
+
+def _doubles(s: Structure, orders: np.ndarray, residue: int) -> list[set[str]]:
+    inside = np.zeros(s.n_atoms, bool)
+    inside[s.atoms_of(residue)] = True
+    rows = np.flatnonzero(inside[s.bonds].all(axis=1) & (orders == 2))
+    return [{str(s.name[a]), str(s.name[b])} for a, b in s.bonds[rows].tolist()]
+
+
+def test_aromatic_rings_are_drawn_in_a_kekule_form(kinase: Structure) -> None:
+    """Rings alternate single and double bonds; a pyrrole-type N (Trp's NE1) takes none, and
+    where an unprotonated His has a ring atom left over it is a nitrogen, not a carbon."""
+    s = kinase
+    orders = scene.drawn_orders(s)
+    assert set(np.unique(orders).tolist()) <= {1, 2, 3}
+    assert (orders[s.order == 2] == 2).all()
+    for name, ring_doubles in (("PHE", 3), ("TYR", 3), ("TRP", 4), ("HIS", 2)):
+        residue = int(np.flatnonzero(s.res_name == name)[0])
+        ring = [d for d in _doubles(s, orders, residue) if d != {"C", "O"}]
+        assert len(ring) == ring_doubles, (name, ring)
+        touched = set().union(*ring)
+        if name == "TRP":
+            assert "NE1" not in touched
+        if name == "HIS":
+            assert {"CG", "CD2", "CE1"} <= touched  # the carbons all double-bonded
+
+
+def test_double_bonds_are_two_sticks_and_wires_stay_one_line(kinase: Structure) -> None:
+    orders = scene.drawn_orders(kinase)
+    wires = scene.geometry(kinase, np.full(kinase.n_atoms, scene.WIRE, np.uint8))
+    assert len(wires.cylinders) == len(kinase.bonds)
+    sticks = scene.geometry(kinase, np.full(kinase.n_atoms, scene.STICK, np.uint8))
+    assert len(sticks.cylinders) == len(kinase.bonds) + int((orders == 2).sum()) + 2 * int(
+        (orders == 3).sum()
+    )
+    double = int(np.flatnonzero(orders == 2)[0])
+    rows = np.flatnonzero(sticks.bonds == double)
+    assert len(rows) == 2
+    assert (sticks.cylinders[rows, 3] < 0.15).all()  # thinner than a single stick
+    apart = np.linalg.norm(sticks.cylinders[rows[0], :3] - sticks.cylinders[rows[1], :3])
+    assert apart == pytest.approx(2 * 0.9 * 0.15, abs=1e-4)
 
 
 def test_spacefill_atoms_have_no_bonds_and_hidden_atoms_nothing(crambin) -> None:

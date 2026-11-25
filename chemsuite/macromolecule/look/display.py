@@ -119,6 +119,8 @@ class Display:
     carve_distance: float = CARVE_DISTANCE
     surface_style: str = SOLID
     pocket_style: str = SOLID
+    #: interaction kinds (:mod:`..chem.interactions`) left out of the drawing
+    hidden_kinds: frozenset[int] = frozenset()
     styles: np.ndarray = field(init=False)
     cartoon: np.ndarray = field(init=False)  # bool per residue
     surface: np.ndarray = field(init=False)  # bool per atom
@@ -437,9 +439,16 @@ class Display:
         return residues[shown], atoms[shown]
 
     def interactions(self) -> contacts.Interactions:
+        """The query's interactions, but for the kinds hidden."""
         if not self.query.any():
             return contacts.Interactions.empty()
-        return self._part("interactions")
+        found = self._part("interactions")
+        if not self.hidden_kinds or not len(found):
+            return found
+        keep = ~np.isin(found.kind, list(self.hidden_kinds))
+        return contacts.Interactions(found.kind[keep], found.a[keep], found.b[keep],
+                                     found.start[keep], found.end[keep],
+                                     found.distance[keep])  # fmt: skip
 
     def flags(self) -> np.ndarray:
         return scenes.flags(self.structure.n_atoms, selected=self.selected, ghost=self.ghost)
@@ -469,6 +478,7 @@ class Display:
         self.pocket_transparency = old.pocket_transparency
         self.carve_points, self.carve_distance = old.carve_points, old.carve_distance
         self.surface_style, self.pocket_style = old.surface_style, old.pocket_style
+        self.hidden_kinds = old.hidden_kinds
         self.model = old.model if old.model < self.n_models else 0
         source = o.indices(s.uid)  # each atom's index in the old structure, or -1
         kept = source >= 0
@@ -513,6 +523,7 @@ class Display:
             "cartoon": runs(self.cartoon.astype(np.uint8)),
             "surface": runs(self.surface.astype(np.uint8)),
             "interactions": runs(self.query.astype(np.uint8)),
+            "hidden_interactions": sorted(self.hidden_kinds),
             "custom_colours": runs(self._custom_colours()),
         }
 
@@ -560,6 +571,10 @@ class Display:
             self.surface = surface.astype(bool)
         query = unruns(state.get("interactions"), n)
         self.query = np.zeros(n, bool) if query is None else query.astype(bool)
+        hidden = state.get("hidden_interactions")
+        self.hidden_kinds = frozenset(
+            k for k in (hidden if isinstance(hidden, list) else []) if k in contacts.NAMES
+        )
         scheme = str(state.get("scheme", self.scheme))
         self.scheme = scheme if scheme in schemes.SCHEMES else schemes.ELEMENT
         self.colours = schemes.colour(self.structure, self.scheme)

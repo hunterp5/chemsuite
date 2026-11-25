@@ -1825,7 +1825,8 @@ the right-click menus:
 - **Tools:** **Prepare…**, **Inspect…**, **Minimise…**, **Dock…** and **Rescore Poses…**
   (below), **Measure ▸**, **Ligands to Table** and **Interactions to Table** (below).
 - **View:** **Frame Selection** (F), **Reset View**, **Ligand ▸** (**Focus ▸** a ligand in
-  its pocket, **Pocket Surface ▸**, **Clear Focus**), **Interactions**, **Background ▸** (the
+  its pocket, **Pocket Surface ▸**, **Clear Focus**), **Interactions**, **Interaction Types ▸**,
+  **Background ▸** (the
   theme's, white, grey or black), **Orthographic** (parallel projection: no perspective, so
   sizes compare across depth), **Depth Cue** (fade what lies further back; off draws everything
   fully), whether the **Structures List** shows, **Show Table** (brings the document's table
@@ -1912,6 +1913,10 @@ or not, with the rows you chose.
 - **Show, Hide, Color** act on the selection: wire, sticks, ball and stick, spacefill,
   cartoon, surface; color by element, chain, secondary structure, B-factor, hydrophobicity or
   a color you choose.
+- **Bond orders** show in sticks and ball and stick: a double bond is two thinner sticks side
+  by side, a triple bond three, and aromatic rings are drawn with alternating single and double
+  bonds (a Kekulé form; a pyrrole-type NH, O or S takes no double bond). Wire stays one line
+  per bond.
 - **Label ▸ Residues / Atoms** labels what is selected (a residue on its Cα, a ligand in its
   middle); **Clear Labels** removes them. Labels stay legible: nearer ones win where they would
   overlap, faded and sliced-away atoms lose theirs, and at most 300 show at once.
@@ -1952,6 +1957,16 @@ or not, with the rows you chose.
   hydrogen bonds (blue), salt bridges (magenta), π-stacking (green), cation–π (orange),
   hydrophobic contacts (grey), halogen bonds (cyan), metal contacts (light gold) and water bridges
   (light blue). Point at an atom to read its interactions in the status line.
+  **Interaction Types ▸** ticks which of these kinds are drawn (all, at first), on every
+  structure; the choice is saved with the session and kept through Prepare and other edits.
+  Ligands to Table, Interactions to Table and the interaction fingerprint still count every kind.
+- **Water bridges** need a water with a hydrogen bond to both the query and a partner that is not
+  a water or an additive (2.5–3.5 Å each). Each bond must point the right way, judged as for hydrogen bonds below: a
+  donor's hydrogen at a D–H···O angle of at least 100° where it has one, otherwise the donor's
+  or acceptor's heavy atoms. The angle at the water between its two partners (the donor's
+  hydrogen where there is one) must be 71–140°, PLIP's limits (Salentin et al. 2015, after
+  Jiang et al. 2005). A water in reach of both but in line with them, or off an acceptor's
+  lone pair, bridges nothing.
 - **Hydrogen bonds use the hydrogen where the structure has one** — a protein you have
   prepared, an NMR model, a ligand drawn with hydrogens: the H···A distance (up to 2.5 Å, after
   Baker & Hubbard 1984) and the D–H···A angle (at least 100°, as PLIP) decide, and the dashed
@@ -2032,7 +2047,10 @@ X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked ou
   holds at a gap inside a chain and at a chain end the sequence goes on beyond (an OXT is built
   only on a chain's true last residue). A residue missing on its own is **built** instead (its
   backbone from its neighbours, its side chain from its template), since two caps would meet
-  where it is. Longer loops are not built. A file without a deposited sequence (no SEQRES or
+  where it is. Longer loops are not built. A residue deposited without its CA or C (or, where
+  a stretch stops, its backbone O) has nothing to build a side chain on or to cap from, so it
+  is **removed** (⚠ in the report, under Residues removed) and the residue before or after it
+  takes the cap instead: 4AGC ends in a GLN 1169 that is only its N. A file without a deposited sequence (no SEQRES or
   entity sequence) keeps its chain ends as charged termini.
 - Ions take their formal charge from the file, else from the component (``FE`` is Fe³⁺, ``FE2``
   Fe²⁺, ``CU1`` Cu⁺) or the element (Na⁺, Mg²⁺, Zn²⁺, Cl⁻). An ion with neither is marked ⚠:

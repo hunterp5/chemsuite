@@ -148,6 +148,31 @@ def test_gaps_and_cut_ends_take_neutral_caps(egfr) -> None:
     assert sum(f.kind == inspect.CAP for f in done.report) == len(caps)
 
 
+def test_a_chain_end_too_incomplete_to_cap_is_removed_and_the_one_before_capped(egfr) -> None:
+    """4AGC's last residue is deposited as its N alone: no C to cap, so Minimize refused it
+    ("The chain ends without an OXT or a cap"). It is removed and the residue before capped."""
+    from chemsuite.simulate import build
+
+    egfr = repair.one_location(egfr)
+    tail = max(inspect.ends(egfr).open_c)
+    label, before = egfr.residue_label(tail), egfr.residue_label(tail - 1)
+    stub = _without(egfr, label, {"CA", "C", "O", "CB", "SG", "CG", "CD", "OG", "OG1", "CG1",
+                                  "CG2", "CD1", "CD2", "CE", "CE1", "CE2", "CZ", "NZ", "OD1",
+                                  "OD2", "OE1", "OE2", "ND1", "ND2", "NE", "NE1", "NE2", "NH1",
+                                  "NH2", "OH", "SD", "CE3", "CZ2", "CZ3", "CH2"})  # fmt: skip
+    assert stub.name[stub.atoms_of(_residue(stub, label))].tolist() == ["N"]
+    done = pipeline.prepare(stub, pipeline.Options(waters=pipeline.NONE, optimise=False))
+    s = done.structure
+    assert label not in {s.residue_label(r) for r in range(s.n_residues)}
+    removed = [f for f in done.report if f.kind == inspect.REMOVED]
+    assert [f.label for f in removed] == [label] and removed[0].warn
+    assert not any(f.kind == inspect.MISSING and f.label == label for f in done.report)
+    assert any(f.kind == inspect.CAP and f.label == before for f in done.report)
+    assert s.res_name[_residue(s, before) + 1] == "NME"
+    blocking = build.problems(s, done.states)
+    assert not any(p.label in (label, before) for p in blocking)
+
+
 def test_one_location_is_kept(lysozyme) -> None:
     one = repair.one_location(lysozyme)
     assert (one.altloc == "").all() and one.n_atoms == int(lysozyme.active().sum())

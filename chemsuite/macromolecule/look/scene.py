@@ -16,8 +16,10 @@
 """What a protein view draws, as GPU-ready rows, in two parts that change at different rates.
 
 - :class:`Geometry`: one sphere per shown atom (``x y z radius``) and one cylinder per bond
-  between shown atoms (``x0 y0 z0 radius x1 y1 z1 0``). Rebuilt when atoms move or the styles
-  change.
+  between shown atoms (``x0 y0 z0 radius x1 y1 z1 0``); in sticks and ball and stick, a double
+  or triple bond is two or three thinner ones side by side in the plane of a neighbouring atom,
+  and aromatic rings are drawn in a Kekulé form (:func:`drawn_orders`), as the table's 3D view
+  draws them (:mod:`chemsuite.molview.geometry`). Rebuilt when atoms move or the styles change.
 - The *look*: per sphere ``r g b a flags`` and per cylinder each end's colour and flags
   (:func:`sphere_look`, :func:`cylinder_look`). Rebuilt on a colour or selection change, which
   then uploads only these rows; hovering rewrites one atom's flags.
@@ -36,7 +38,7 @@ import numpy as np
 from chemsuite.molview.elements import vdw_radii
 from chemsuite.molview.geometry import ALL_H, NO_H, POLAR_H
 
-from ..structure.model import ADDITIVE, AMINO, GLYCAN, ION, LIGAND, NUCLEIC, Structure
+from ..structure.model import ADDITIVE, AMINO, AROMATIC, GLYCAN, ION, LIGAND, NUCLEIC, Structure
 
 HIDDEN = 0
 WIRE = 1
@@ -59,6 +61,14 @@ CYLINDER_LOOK_FLOATS = 10
 _BOND = np.array([0.0, 0.06, 0.15, 0.1, 0.0], np.float32)
 _ATOM_FIXED = np.array([0.0, 0.06, 0.15, 0.0, 0.0], np.float32)
 _ATOM_SCALE = np.array([0.0, 0.0, 0.0, 0.25, 1.0], np.float32)
+#: a double or triple bond's cylinders: their radius as a share of the bond's, and their offsets
+#: across it in bond radii (as :mod:`chemsuite.molview.geometry` draws them)
+_DOUBLE = (0.6, (-0.9, 0.9))
+_TRIPLE = (0.45, (-1.25, 0.0, 1.25))
+#: styles whose bonds show their order (a wire stays one line)
+_ORDERED = (STICK, BALL_AND_STICK)
+#: an aromatic system larger than this keeps its bonds single (no Kekulé form is searched)
+_KEKULE_MAX = 40
 #: an ion shown as a stick or wire would vanish: it gets a ball
 _ION_SCALE = 0.4
 #: pick radius at least this, so thin wires can be clicked
@@ -191,12 +201,158 @@ def geometry(structure: Structure, styles: np.ndarray, model: int = 0) -> Geomet
     i, j = structure.bonds[:, 0], structure.bonds[:, 1]
     bond_radius = np.minimum(_BOND[styles[i]], _BOND[styles[j]])
     shown = np.flatnonzero((styles[i] != HIDDEN) & (styles[j] != HIDDEN) & (bond_radius > 0))
-    cylinders = np.zeros((len(shown), CYLINDER_FLOATS), np.float32)
-    cylinders[:, :3] = xyz[i[shown]]
-    cylinders[:, 3] = bond_radius[shown]
-    cylinders[:, 4:7] = xyz[j[shown]]
-    ends = np.stack([i[shown], j[shown]], axis=1).astype(np.int64)
-    return Geometry(atoms, spheres, shown.astype(np.int64), ends, cylinders)
+    order = np.ones(len(shown), np.int8)
+    ordered = np.isin(styles[i[shown]], _ORDERED) & np.isin(styles[j[shown]], _ORDERED)
+    if ordered.any():
+        order[ordered] = drawn_orders(structure)[shown[ordered]]
+    drawn, step, scale = [shown], [np.zeros(len(shown))], [np.ones(len(shown))]
+    for n, (share, offsets) in ((2, _DOUBLE), (3, _TRIPLE)):
+        these = shown[order == n]
+        drawn[0] = drawn[0][np.isin(drawn[0], these, invert=True)]
+        step[0], scale[0] = np.zeros(len(drawn[0])), np.ones(len(drawn[0]))
+        for offset in offsets:
+            drawn.append(these)
+            step.append(np.full(len(these), offset))
+            scale.append(np.full(len(these), share))
+    bonds = np.concatenate(drawn).astype(np.int64)
+    steps, radius = np.concatenate(step), bond_radius[bonds] * np.concatenate(scale)
+    keep = np.argsort(bonds, kind="stable")  # each bond's cylinders together
+    bonds, steps, radius = bonds[keep], steps[keep], radius[keep]
+    shift = np.zeros((len(bonds), 3))
+    multi = steps != 0
+    if multi.any():
+        across = _sides(structure, xyz, bonds[multi])
+        shift[multi] = across * (steps[multi] * bond_radius[bonds[multi]])[:, None]
+    cylinders = np.zeros((len(bonds), CYLINDER_FLOATS), np.float32)
+    cylinders[:, :3] = xyz[i[bonds]] + shift
+    cylinders[:, 3] = radius
+    cylinders[:, 4:7] = xyz[j[bonds]] + shift
+    ends = np.stack([i[bonds], j[bonds]], axis=1).astype(np.int64)
+    return Geometry(atoms, spheres, bonds, ends, cylinders)
+
+
+def _sides(structure: Structure, xyz: np.ndarray, bonds: np.ndarray) -> np.ndarray:
+    """A unit vector across each of *bonds* (structure bond indices), in the plane of a
+    neighbouring heavy atom when there is one, else any perpendicular."""
+    s = structure
+    heavy = s.element != 1
+    neighbours: dict[int, list[int]] = {int(a): [] for a in np.unique(s.bonds[bonds])}
+    for a, b in s.bonds.tolist():
+        if a in neighbours and heavy[b]:
+            neighbours[a].append(b)
+        if b in neighbours and heavy[a]:
+            neighbours[b].append(a)
+    out = np.zeros((len(bonds), 3))
+    for row, (a, b) in enumerate(s.bonds[bonds].tolist()):
+        axis = xyz[b] - xyz[a]
+        axis = axis / max(float(np.linalg.norm(axis)), 1e-6)
+        out[row] = _across(xyz, axis, neighbours, a, b)
+    return out
+
+
+def _across(xyz, axis, neighbours, a: int, b: int) -> np.ndarray:
+    for here, other in ((a, b), (b, a)):
+        for k in neighbours[here]:
+            if k != other:
+                v = xyz[k] - xyz[here]
+                v = v - axis * float(v @ axis)
+                norm = float(np.linalg.norm(v))
+                if norm > 1e-3:
+                    return v / norm
+    guess = np.array([1.0, 0.0, 0.0]) if abs(axis[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    v = np.cross(axis, guess)
+    return v / np.linalg.norm(v)
+
+
+def drawn_orders(structure: Structure) -> np.ndarray:
+    """Each bond's order as drawn (int8: 1, 2 or 3), aromatic bonds in a Kekulé form. The
+    double bonds go on the ring atoms that can take one: not an O, S or Se, an atom already
+    double-bonded outside the ring (a pyridone's C=O), or an N with a hydrogen or a third
+    neighbour (as in pyrrole), unless it is charged. Where an odd system leaves an atom
+    without one, it is an N if it can be. A system over :data:`_KEKULE_MAX` atoms stays single."""
+    s = structure
+    order = np.where(np.isin(s.order, (2, 3)), s.order, 1).astype(np.int8)
+    aromatic = np.flatnonzero(s.order == AROMATIC)
+    if not len(aromatic):
+        return order
+    ring: dict[int, list[tuple[int, int]]] = {}  # atom: (neighbour, aromatic bond)
+    for k, (a, b) in zip(aromatic.tolist(), s.bonds[aromatic].tolist(), strict=True):
+        ring.setdefault(a, []).append((b, k))
+        ring.setdefault(b, []).append((a, k))
+    a, b = s.bonds[:, 0], s.bonds[:, 1]
+    degree = np.bincount(s.bonds.ravel(), minlength=s.n_atoms)
+    hydrogen = s.element == 1
+    hydrogens = np.bincount(a[hydrogen[b]], minlength=s.n_atoms) + np.bincount(
+        b[hydrogen[a]], minlength=s.n_atoms
+    )
+    doubled = np.zeros(s.n_atoms, bool)
+    multiple = np.isin(s.order, (2, 3))
+    doubled[a[multiple]] = doubled[b[multiple]] = True
+
+    def takes(atom: int) -> bool:
+        element = int(s.element[atom])
+        if element in (8, 16, 34) or doubled[atom]:
+            return False
+        if element == 7 and s.charge[atom] <= 0:
+            return bool(hydrogens[atom] == 0 and degree[atom] < 3)
+        return True
+
+    seen: set[int] = set()
+    for start in ring:
+        if start in seen:
+            continue
+        component, todo = [], [start]
+        seen.add(start)
+        while todo:
+            atom = todo.pop()
+            component.append(atom)
+            for other, _k in ring[atom]:
+                if other not in seen:
+                    seen.add(other)
+                    todo.append(other)
+        if len(component) <= _KEKULE_MAX:
+            order[_kekule([x for x in component if takes(x)], ring, s.element)] = 2
+    return order
+
+
+def _kekule(atoms: list[int], ring, element: np.ndarray) -> list[int]:
+    """The aromatic bonds between *atoms* (those of one ring system that take a double bond)
+    that are double in its best Kekulé form: the most double bonds, then the most of the atoms
+    left without one nitrogens. An exhaustive search, pruned; ring systems are small."""
+    allowed = set(atoms)
+    atoms = sorted(atoms, key=lambda x: int(element[x]) == 7)  # carbons matched first
+    best: tuple[int, int, list[int]] = (-1, -1, [])
+    used: set[int] = set()
+    chosen: list[int] = []
+    skipped: list[int] = []
+
+    def search(at: int) -> None:
+        nonlocal best
+        while at < len(atoms) and atoms[at] in used:
+            at += 1
+        if at == len(atoms):
+            left = sum(1 for x in skipped if int(element[x]) == 7)
+            if (len(chosen), left) > best[:2]:
+                best = (len(chosen), left, list(chosen))
+            return
+        if len(chosen) + (len(atoms) - at) // 2 < best[0]:
+            return  # cannot match as many as the best found
+        atom = atoms[at]
+        used.add(atom)
+        for other, k in ring[atom]:
+            if other in allowed and other not in used:
+                used.add(other)
+                chosen.append(k)
+                search(at + 1)
+                chosen.pop()
+                used.discard(other)
+        skipped.append(atom)  # this atom left without a double bond
+        search(at + 1)
+        skipped.pop()
+        used.discard(atom)
+
+    search(0)
+    return best[2]
 
 
 def sphere_look(geometry: Geometry, colours: np.ndarray, flags: np.ndarray) -> np.ndarray:

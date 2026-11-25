@@ -33,8 +33,11 @@ placed, not seen, so when none points at the acceptor the heavy atoms decide as 
 residue that carries hydrogens and still has none on a polar atom is not a donor there, so a
 prepared His donates from the nitrogen its tautomer protonated and not the other.
 One bond to a water is shown as part of a water bridge, one between salt-bridge atoms as the
-salt bridge. Cut-offs follow PLIP (Salentin et al. 2015). Hydrophobic contacts and charged
-pairs keep only the closest pair per residue pair, so a pocket does not fill with lines.
+salt bridge. A water bridge needs each of its two hydrogen bonds to be one (the partner's
+hydrogen or lone pair pointing at the water, as above) and the angle at the water between its
+partners to be one a water can make (PLIP's 71–140°, :func:`_water_bridges`). Cut-offs follow
+PLIP (Salentin et al. 2015). Hydrophobic contacts and charged pairs keep only the closest pair
+per residue pair, so a pocket does not fill with lines.
 """
 
 from __future__ import annotations
@@ -96,6 +99,11 @@ HALOGEN_MAX = 4.0
 HALOGEN_ANGLE = 140.0  # C–X···A
 METAL_MAX = 2.8
 WATER_MAX = 3.5
+#: a water bridge's angles (PLIP's, Salentin et al. 2015, after Jiang et al. 2005): at the
+#: water, between its two partners (a donor's hydrogen where it has one), and D–H···O at a
+#: donor's hydrogen
+WATER_OMEGA_MIN, WATER_OMEGA_MAX = 71.0, 140.0
+WATER_THETA_MIN = 100.0
 NEAR = 7.0  # partners are looked for this far from the query
 
 # Amino-acid features by atom name ("*": every amino acid)
@@ -367,7 +375,7 @@ def find(
     _halogens(found, q.halogens, p.acceptors | p.waters, neighbours, query_is_donor=True)
     _halogens(found, p.halogens, q.acceptors | q.waters, neighbours, query_is_donor=False)
     _metals(found, q, p)
-    _water_bridges(found, q, p, query)
+    _water_bridges(found, q, p, query, neighbours, hydrogens)
     return found.result()
 
 
@@ -574,25 +582,80 @@ def _metals(found: _Found, q: Features, p: Features) -> None:
         found.add(METAL, i, j)
 
 
-def _water_bridges(found: _Found, q: Features, p: Features, query: np.ndarray) -> None:
-    """A water within hydrogen-bond reach of both the query and a non-water partner."""
+def _water_bridges(
+    found: _Found, q: Features, p: Features, query: np.ndarray, neighbours, hydrogens: _Hydrogens
+) -> None:
+    """A water hydrogen-bonded to both the query and a non-water partner. Each leg is a
+    hydrogen bond in reach (:data:`HBOND_MIN` to :data:`WATER_MAX`) whose polar end can point
+    at the water: a donor's hydrogen at D–H···O of at least :data:`WATER_THETA_MIN`, or with no
+    such hydrogen (none placed, or a hydroxyl's that turns) its heavy atoms as for a hydrogen
+    bond; an acceptor's lone pair. The angle at the water between the two legs' ends (the
+    donor's hydrogen where it gave one) lies between :data:`WATER_OMEGA_MIN` and
+    :data:`WATER_OMEGA_MAX` (PLIP's). Each leg is drawn once, however many bridges share it."""
     s = found.s
     xyz = found.xyz
-    polar = q.donors | q.acceptors
     partners = {i for i in p.donors | p.acceptors
                 if s.res_kind[s.residue_of[i]] not in (WATER, ADDITIVE)}  # fmt: skip
-    reach: dict[int, list[int]] = {}
-    for i, w, d in _pairs(xyz, polar, p.waters, WATER_MAX):
-        if d >= HBOND_MIN:
-            reach.setdefault(w, []).append(i)
-    if not reach:
+
+    def legs(polar: set[int], donors: set[int], acceptors: set[int]):
+        """water → [(atom, where its end is for the angle)]"""
+        out: dict[int, list[tuple[int, np.ndarray]]] = {}
+        for i, w, d in _pairs(xyz, polar, p.waters, WATER_MAX):
+            if d < HBOND_MIN or query[w]:
+                continue
+            end = _leg_end(found, neighbours, hydrogens, i, w, i in donors, i in acceptors)
+            if end is not None:
+                out.setdefault(w, []).append((i, end))
+        return out
+
+    mine = legs(q.donors | q.acceptors, q.donors, q.acceptors)
+    if not mine:
         return
-    for w, j, d in _pairs(xyz, set(reach), partners, WATER_MAX):
-        if d < HBOND_MIN or query[j]:
-            continue
-        for i in reach.pop(w, []):
-            found.add(WATER_BRIDGE, i, w)
-        found.add(WATER_BRIDGE, w, j)
+    theirs = legs({i for i in partners if not query[i]}, p.donors, p.acceptors)
+    drawn: set[tuple[int, int]] = set()
+    for w, near in mine.items():
+        for j, j_end in theirs.get(w, []):
+            for i, i_end in near:
+                omega = _angle(i_end, xyz[w], j_end)
+                if not WATER_OMEGA_MIN < omega < WATER_OMEGA_MAX:
+                    continue
+                for a, b in ((i, w), (w, j)):
+                    if (a, b) not in drawn:
+                        drawn.add((a, b))
+                        found.add(WATER_BRIDGE, a, b)
+
+
+def _leg_end(
+    found: _Found,
+    neighbours,
+    hydrogens: _Hydrogens,
+    atom: int,
+    water: int,
+    donor: bool,
+    acceptor: bool,
+) -> np.ndarray | None:
+    """Where a water bridge's leg from *atom* ends for the angle at the water: its hydrogen
+    when it donates through one, else the atom itself; None when it makes no hydrogen bond
+    with the water."""
+    xyz = found.xyz
+    if donor:
+        best, straightest = None, WATER_THETA_MIN
+        for h in hydrogens.on(atom):
+            angle = _angle(xyz[atom], xyz[h], xyz[water])
+            if angle >= straightest:
+                best, straightest = h, angle
+        if best is not None:
+            return xyz[best]
+        if hydrogens.on(atom):
+            # its hydrogens point elsewhere: no bond, unless they spin (a hydroxyl)
+            heavy = _free_rotor(found.s, neighbours, hydrogens, atom)
+        else:
+            heavy = not hydrogens.protonated(atom)  # no hydrogens placed on its residue
+        if heavy and _points_at(xyz, neighbours, atom, water):
+            return xyz[atom]
+    if acceptor and _points_at(xyz, neighbours, atom, water):
+        return xyz[atom]
+    return None
 
 
 def ligand_query(structure: Structure, residue: int) -> np.ndarray:
