@@ -44,7 +44,10 @@ class Pocket:
 
 @pytest.fixture(scope="session")
 def pocket() -> Pocket:
-    prepared = pipeline.prepare(load("5gnk_pocket.cif.gz")).structure
+    # the file is the pocket cut out of 5GNK: its gaps are where it was cut, not loops missing
+    # from the deposit, so none is built (a loop built across the cut can fill the pocket)
+    excerpt = pipeline.Options(loop_max=1)
+    prepared = pipeline.prepare(load("5gnk_pocket.cif.gz"), excerpt).structure
     residue = next(
         int(r) for r in ligands.ligand_residues(prepared) if str(prepared.res_name[r]) == "80U"
     )
