@@ -64,6 +64,7 @@ from .highlights import AtomSource, Highlight
 from .snap import follow_selection, rows_for
 from .structure_clipboard import rxn_text_from_mime, structure_text_from_mime
 from .table_model import KIND_ROLE, TableModel
+from .view_selection import full_columns, mirror_columns, replace_selection
 
 STRUCTURE_ROW_HEIGHT = 110
 STRUCTURE_COLUMN_WIDTH = 200
@@ -402,6 +403,8 @@ class TableView(QTableView):
             self.headerMenuRequested.emit(column, self.horizontalHeader().mapToGlobal(pos))
 
     def eventFilter(self, watched, event) -> bool:
+        if watched is self.horizontalHeader().viewport():
+            self.header_press(self.horizontalHeader(), event)  # before the mode changes
         if event.type() == QEvent.Type.MouseButtonPress:
             self._column_mode = watched is self.horizontalHeader().viewport()
             self._row_mode = watched is self.verticalHeader().viewport()
@@ -474,12 +477,8 @@ class TableView(QTableView):
     def selected_column_names(self) -> list[str]:
         """Names of the columns that are selected top to bottom."""
         model = self.table_model
-        selection = self.selectionModel()
-        return [
-            model.column_name(col)
-            for col in range(model.columnCount())
-            if selection.isColumnSelected(col, QModelIndex())
-        ]
+        columns = full_columns(self.selectionModel().selection(), model.rowCount())
+        return [model.column_name(col) for col in columns]
 
     # -- selection: view <-> store ------------------------------------------------------------
     def selected_rows(self) -> np.ndarray:
@@ -526,9 +525,7 @@ class TableView(QTableView):
         # whole rows touch every column: no need to walk thousands of ranges to find that out
         self._row_columns = list(range(model.columnCount())) if len(rows) else []
         try:
-            self.selectionModel().select(
-                selection, QItemSelectionModel.SelectionFlag.ClearAndSelect
-            )
+            replace_selection(self.selectionModel(), selection)
         finally:
             self._syncing = False
             self._row_columns = None
@@ -581,9 +578,7 @@ class TableView(QTableView):
                     selection.select(model.index(start, col), model.index(end, col))
         self._syncing = True
         try:
-            self.selectionModel().select(
-                selection, QItemSelectionModel.SelectionFlag.ClearAndSelect
-            )
+            replace_selection(self.selectionModel(), selection)
         finally:
             self._syncing = False
         return True
@@ -665,36 +660,30 @@ class TableView(QTableView):
         columns = self._row_columns
         if columns is None:
             columns = self.selected_columns()
-        whole = [] if self._row_columns is not None else self._whole_column_indexes()
         headers = [self.horizontalHeader()]
         headers += [o.horizontalHeader() for o in self._overlays()]
         for header in headers:
             if header.property(HIGHLIGHTED) != columns:
                 header.setProperty(HIGHLIGHTED, columns)
                 header.viewport().update()
-            self._mirror_columns(header, whole)
 
-    def _whole_column_indexes(self) -> list[int]:
-        rows = self.table_model.rowCount()
-        spans = {
-            (r.left(), r.right())
-            for r in self.selectionModel().selection()
-            if r.top() == 0 and r.bottom() == rows - 1
-        }
-        return sorted({c for left, right in spans for c in range(left, right + 1)})
+    def header_press(self, header: QHeaderView, event) -> None:
+        """Before a column header (here or on an overlay) takes a mouse press or release.
 
-    def _mirror_columns(self, header: QHeaderView, columns: list[int]) -> None:
-        """Give the column header's own selection model (see ``quiet_column_header``) the whole
-        selected columns, and nothing else: Qt asks it whether a Ctrl+click on a column header
-        adds that column or takes it away."""
-        model = self.table_model
-        last = model.rowCount() - 1
-        selection = QItemSelection()
-        for col in columns:
-            selection.select(model.index(0, col), model.index(last, col))
-        mirror = header.selectionModel()
-        if mirror.selection() != selection:  # (a model reset empties it)
-            mirror.select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        Qt reads the header's own selection model (``quiet_column_header``) only when a
+        Ctrl+press decides whether the column is added or taken away, so it holds the whole
+        selected columns for that press alone: kept filled, every repaint of the header would
+        ask it about every row of each selected column (seconds on a large table).
+        """
+        kind = event.type()
+        if kind == QEvent.Type.MouseButtonPress:
+            ctrl = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+            rows = self.table_model.rowCount()
+            whole = ctrl and self._column_mode
+            columns = full_columns(self.selectionModel().selection(), rows) if whole else []
+            mirror_columns(header, columns)
+        elif kind == QEvent.Type.MouseButtonRelease:
+            mirror_columns(header, [])
 
     def _overlays(self) -> list:
         return [o for o in (self._frozen, self._frozen_rows, self._frozen_corner) if o is not None]

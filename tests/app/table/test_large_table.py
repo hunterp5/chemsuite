@@ -84,3 +84,50 @@ def test_a_reset_does_not_measure_every_row_number(big) -> None:
     big.search.apply_now()
     QApplication.processEvents()  # the layout after a reset is deferred
     assert CALLS["row labels"] < 500  # those painted; measuring alone reads over 800 more
+
+
+@pytest.mark.parametrize("how", ["select all", "column"])
+def test_header_paint_after_select_all_or_a_column_does_not_ask_every_row(qtbot, big, how):
+    """Select All (one range over everything) or a column picked on its header: Qt asks the
+    header's own selection model whether each shown column is selected, row by row, so it must
+    not hold those columns while nothing is being Ctrl+clicked."""
+    from tests.app.table.test_table_interactions import click_header
+
+    view = big.view
+    if how == "select all":
+        view.selectAll()
+    else:
+        click_header(qtbot, view, 1)
+    QApplication.processEvents()
+    CALLS["flags"] = 0
+    view.horizontalHeader().viewport().repaint()
+    assert CALLS["flags"] < 100
+    assert len(view.horizontalHeader().selectionModel().selection()) == 0
+
+
+def test_selected_column_names_do_not_ask_every_row(big) -> None:
+    view = big.view
+    view.selectAll()
+    CALLS["flags"] = 0
+    assert view.selected_column_names() == ["ID", "pIC50"]
+    assert CALLS["flags"] < 100
+
+
+def test_a_scattered_selection_is_replaced_without_comparing_ranges(big, monkeypatch) -> None:
+    """Swapping one selection of scattered rows for another with ClearAndSelect makes Qt
+    compare the old ranges with the new pairwise (26 s at 50,000 rows): clear, then select."""
+    from PySide6.QtCore import QItemSelectionModel
+
+    view, table, selection = big.view, big.workspace.table, big.workspace.selection
+    model = view.selectionModel()
+    flags_used = []
+    select = model.select
+    monkeypatch.setattr(
+        model, "select", lambda what, flags: (flags_used.append(flags), select(what, flags))[1]
+    )
+    selection.set(table.oids[::2].tolist(), "test")
+    selection.set(table.oids[1::2].tolist(), "test")
+    clear_and_select = QItemSelectionModel.SelectionFlag.ClearAndSelect
+    assert flags_used and all(f != clear_and_select for f in flags_used)
+    assert len(view.selected_oids()) == ROWS // 2
+    assert view.selected_oids().tolist() == table.oids[1::2].tolist()

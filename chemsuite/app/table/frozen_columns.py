@@ -56,8 +56,9 @@ def quiet_column_header(view: QTableView) -> None:
     Whenever the header paints with rows selected, Qt checks each shown column (and its
     neighbours) with ``isColumnSelected``, which asks the model about every row: seconds per
     paint on a large table, even for a hover. The header gets a selection model of its own
-    instead, holding only the whole selected columns (a few ranges, so quick to ask), and the
-    columns the selection touches are highlighted by ``TableView._highlight_header``.
+    instead, which holds the whole selected columns only while a Ctrl+press on the header
+    needs them (``TableView.header_press``); the columns the selection touches are
+    highlighted by ``TableView._highlight_header``.
     """
     header = view.horizontalHeader()
     header.setHighlightSections(False)
@@ -175,6 +176,8 @@ class _Overlay(QTableView):
 
     # -- passing events to the table ----------------------------------------------------------
     def eventFilter(self, watched, event) -> bool:
+        if watched is self.horizontalHeader().viewport():
+            self.main.header_press(self.horizontalHeader(), event)  # before the mode changes
         if event.type() == QEvent.Type.MouseButtonPress:
             if watched is self.horizontalHeader().viewport():
                 self.main.start_column_selection()  # a header click selects whole columns
