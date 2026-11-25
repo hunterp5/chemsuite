@@ -154,4 +154,12 @@ TOOLS = [
         "laid out by force: for hundreds to a few thousand compounds (Maggiora and Bajorath, "
         "2014).",
     ),
+    Tool(
+        id="gtm",
+        title="GTM Landscape",
+        menu=(),  # the Generative Topographic Map tool opens it; any plot restores it
+        open=lambda ctx: _open(ctx, "gtm"),
+        tip="A trained Generative Topographic Map: a column's landscape over the map, with "
+        "each compound at its place on it.",
+    ),
 ]

@@ -47,7 +47,7 @@ Each document has its own window. From top to bottom:
   | Data | Table ▸ and Lists ▸; Scoring ▸, Cluster and Bin Values; Plot ▸, Dimensionality Reduction ▸, MedChem ▸, Constellation Plot, TMAP and Chemical Space Network; SAR ▸; Search ▸ and Filters; Browser |
   | Data ▸ Table | Operations ▸ (Add Compound, Add Rows, Add Column, Split Column, Join Columns), Statistics |
   | Data ▸ Search | Search Rows, Find and Replace, Advanced Search, Structure and Reaction Search, Clear Highlighting, Show All Rows |
-  | Data ▸ Dimensionality Reduction | PCA, UMAP, t-SNE, PaCMAP; Self-Organizing Map |
+  | Data ▸ Dimensionality Reduction | PCA, UMAP, t-SNE, PaCMAP; Self-Organizing Map, Generative Topographic Map |
   | Data ▸ Plot | Scatter, Line, Bar Chart, Histogram, Box Plot, Density, Radar, 3D Scatter, 3D Landscape |
   | Data ▸ MedChem | BOILED-Egg, Golden Triangle, Lipophilic Efficiency (LipE) |
   | Macromolecule | A button, not a menu: opens the Macromolecule Viewer, the workspace for proteins, with its own menus (on macOS, a menu holding Macromolecule Viewer) |
@@ -1149,6 +1149,7 @@ the toolbar and hover cards follow the theme.
 | **Constellation Plot** | The cores that analog series share, placed in chemical space: each circle is a core, sized by its compounds and coloured by their activity (see below). |
 | **Chemical Space Network** | Compounds joined to those they resemble, or form a matched pair with; each cluster laid out by force (see below). For hundreds to a few thousand compounds. |
 | **TMAP** | A tree of nearest neighbours: each compound sits on a branch beside its closest relatives (see below). For sets of up to hundreds of thousands. |
+| **GTM Landscape** | A trained Generative Topographic Map: a column's landscape over the map, with each compound at its place (see [Generative Topographic Map](#generative-topographic-map)). |
 | **3D Landscape** | An activity landscape: a smooth surface of one column (the height, e.g. pIC50) over two others, usually a chemical-space map, with the compounds standing on it (see below). |
 
 **Switching plots.** The cog's **Plot** list holds every kind, 2D and 3D. Changing it redraws
@@ -3083,6 +3084,44 @@ last ran with, and **Defaults** sets them back.
   panel draws the grid as squares or hexagons, colored by the count or by any number column,
   with **Higher is better** for activity. Click a cell to select its compounds; hover over it
   for its count and value.
+
+### Generative Topographic Map
+
+Data ▸ Dimensionality Reduction ▸ Generative Topographic Map… fits a smooth, square sheet of
+nodes to the compounds (Bishop, Svensén and Williams, *Neural Comput.* 1998, 10, 215; used for
+"chemography" by Gaspar et al., *J. Chem. Inf. Model.* 2015, 55, 84). Unlike the
+Self-Organizing Map, each compound is spread over the nodes it fits, not put in one cell. That
+gives smooth landscapes of a column over the map, and a measure of how well each compound fits
+the map. The dialog opens with the settings it last ran with.
+
+- **Input.** Compare by a fingerprint or by number columns, as for the maps above (reduced to
+  at most 50 principal components); **Rows**; **Fit on** trains the map on those rows only
+  and then places every row on it.
+- **Method.** **Nodes** per side: tick **Automatic** for 10 below 300 compounds, 16 below
+  3,000 and 25 above. **Basis functions** per side set how freely the sheet can bend (fewer is
+  smoother; Automatic uses a quarter of the nodes, at least 3). **Iterations** is the most
+  training passes (100); training stops sooner once the fit stops improving.
+- **More Options** (folded): the fingerprint settings, **Basis width** (1.0, in spacings
+  between basis functions; wider is smoother) and **Regularization** (0.1; higher keeps the
+  sheet from folding into the data).
+- **Output.** Three columns: "GTM X" and "GTM Y", each compound's place on the map (−1 to 1),
+  and "GTM Log-likelihood", how well the map explains the compound, per dimension. A low
+  value means the compound lies outside the space the map was trained on, which makes it a
+  check for compounds placed with **Fit on**. The map itself is kept in the document, saved
+  with it, and Undo removes it with the columns. A GTM Landscape plot opens on it.
+
+**The GTM Landscape plot** (a plot kind; choose it from **Plot:** in the plot's settings once
+a map exists) draws the map as a colored image, with each compound a point at its place.
+
+- **Map.** Which trained map to draw, when the document has more than one (the newest is chosen).
+- **Landscape.** **Density** shades where the compounds sit. A number column shows its
+  mean over the compounds each node holds, weighted by how much of each compound the node
+  holds (the training opens on an activity column when one is found). A text column shows the
+  value most of each node's compounds have; mixed nodes are paler. Nodes with few compounds
+  fade out, and empty ones are not drawn. **Colors** sets the color map; the landscape always
+  spans its own range.
+- **Color** and **Size** color and size the points as on a scatter plot. Click, box or lasso
+  points to select their rows; hover over one for its values and log-likelihood.
 
 ---
 

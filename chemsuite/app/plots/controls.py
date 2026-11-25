@@ -49,6 +49,7 @@ from chemsuite.sar.constellation import MAPS, SUMMARIES
 
 from ..widgets.flow_layout import compact
 from .graph import EDGE_COLORS, EDGES, FINGERPRINTS, GRAPH_KINDS, NETWORK, TMAP
+from .gtm import DENSITY, GTM, gtm_maps
 from .spec import PlotSpec, Range
 
 NONE = "(none)"
@@ -63,6 +64,7 @@ KINDS = {
     "constellation": "Constellation",
     "tmap": "TMAP",
     "network": "Chemical Space Network",
+    GTM: "GTM Landscape",
     "scatter3d": "3D Scatter",
     "landscape": "3D Landscape",
 }
@@ -72,13 +74,13 @@ KINDS_3D = ("scatter3d", "landscape")
 XY_KINDS = ("scatter", "line", "density", *KINDS_3D)
 CONSTELLATION = "constellation"
 #: kinds colouring their points by a column
-COLORED = ("scatter", "line", "scatter3d", *GRAPH_KINDS)
+COLORED = ("scatter", "line", "scatter3d", *GRAPH_KINDS, GTM)
 #: kinds sizing their points by a column
-SIZED = ("scatter", "scatter3d", *GRAPH_KINDS)
+SIZED = ("scatter", "scatter3d", *GRAPH_KINDS, GTM)
 #: kinds drawn from a structure column
 STRUCTURED = (CONSTELLATION, *GRAPH_KINDS)
 #: kinds always coloured along a colour map (counts, heights)
-MAPPED = ("density", "landscape")
+MAPPED = ("density", "landscape", GTM)
 POINT_SIZES = (4, 18)
 #: every setting saved with the document, besides the camera, title and cards
 STATE_KEYS = (
@@ -113,6 +115,8 @@ STATE_KEYS = (
     "threshold",
     "edge_color",
     "singletons",
+    "gtm_map",
+    "gtm_value",
 )
 
 
@@ -229,6 +233,7 @@ class PlotControls(QObject):
         self._make_scale_controls()
         self._make_constellation_controls()
         self._make_graph_controls()
+        self._make_gtm_controls()
         compact(
             self.x,
             self.y,
@@ -263,6 +268,8 @@ class PlotControls(QObject):
             ("Edges", self.edges),
             ("Threshold", self.threshold),
             ("Edge color", self.edge_color),
+            ("Map", self.gtm_map),
+            ("Landscape", self.gtm_value),
             ("Colors", self.colors),
             ("Color range", self.color_range),
             ("Size range", self.size_range),
@@ -288,6 +295,8 @@ class PlotControls(QObject):
         for spin in (self.neighbours, self.threshold):
             spin.valueChanged.connect(self.changed)
         self.singletons.toggled.connect(self.changed)
+        for combo in (self.gtm_map, self.gtm_value):
+            combo.currentIndexChanged.connect(self.changed)
         for combo in (self.color, self.size):
             combo.currentIndexChanged.connect(self._column_changed)
         for spin in (self.bins, self.small, self.large, self.min_compounds, self.core_percent):
@@ -348,6 +357,28 @@ class PlotControls(QObject):
         self.series_labels.setChecked(True)
         self.series_labels.setToolTip("Number each analog series beside its largest core")
         compact(self.structure, self.core_summary, self.layout, chars=16)
+
+    def _make_gtm_controls(self) -> None:
+        self.gtm_map = QComboBox()
+        self.gtm_map.setToolTip("The trained map to draw (Generative Topographic Map)")
+        self.gtm_value = QComboBox()
+        self.gtm_value.setToolTip(
+            "What colors the map: where compounds sit (Density), the responsibility-weighted "
+            "mean of a number column, or the dominant value of a text column"
+        )
+        compact(self.gtm_map, self.gtm_value, chars=16)
+
+    def _fill_maps(self) -> None:
+        """The document's maps, the newest chosen when the current one is gone."""
+        combo = self.gtm_map
+        current = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        for asset_id, title in gtm_maps(self.table):
+            combo.addItem(title, asset_id)
+        at = combo.findData(current)
+        combo.setCurrentIndex(at if at >= 0 else combo.count() - 1)
+        combo.blockSignals(False)
 
     def _make_graph_controls(self) -> None:
         self.neighbours = QSpinBox()
@@ -426,6 +457,8 @@ class PlotControls(QObject):
             self.threshold,
             self.edge_color,
             self.singletons,
+            self.gtm_map,
+            self.gtm_value,
         )
 
     # -- the spec -------------------------------------------------------------------------------
@@ -469,11 +502,18 @@ class PlotControls(QObject):
             threshold=round(self.threshold.value(), 2),
             edge_color=self.edge_color.currentData(),
             singletons=self.singletons.isChecked(),
+            gtm_map=self.gtm_map.currentData(),
+            gtm_value=None if name(self.gtm_value) in (None, DENSITY) else name(self.gtm_value),
         )
 
     def _set_threshold(self, value: object) -> None:
         number = isinstance(value, int | float) and not isinstance(value, bool)
         self.threshold.setValue(float(value) if number else 0.65)
+
+    def _set_gtm_value(self, value: object) -> None:
+        """A column's landscape, or (None, or a column that is gone) the density."""
+        found = isinstance(value, str) and self.gtm_value.findText(value) >= 0
+        self.gtm_value.setCurrentText(value if found else DENSITY)
 
     def _point_sizes(self) -> tuple[float, float]:
         small, large = self.small.value(), self.large.value()
@@ -514,6 +554,8 @@ class PlotControls(QObject):
             "threshold": spec.threshold,
             "edge_color": spec.edge_color,
             "singletons": spec.singletons,
+            "gtm_map": spec.gtm_map,
+            "gtm_value": spec.gtm_value,
         }
 
     def set_values(self, values: Mapping[str, object]) -> None:
@@ -529,7 +571,7 @@ class PlotControls(QObject):
             pick = {"curve": self.curve, "guide": self.guide, "aggregate": self.aggregate}
             pick["summary"], pick["layout"] = self.core_summary, self.layout
             pick["edges"], pick["edge_color"] = self.edges, self.edge_color
-            pick["fingerprint"] = self.fingerprint
+            pick["fingerprint"], pick["gtm_map"] = self.fingerprint, self.gtm_map
             checks = {"fit": self.fit, "errors": self.errors, "drop": self.drop}
             checks["reverse"], checks["labels"] = self.reverse, self.series_labels
             checks["singletons"] = self.singletons
@@ -545,6 +587,7 @@ class PlotControls(QObject):
                 "size_range": self.size_range.set_value,
                 "point_sizes": self._set_point_sizes,
                 "threshold": self._set_threshold,
+                "gtm_value": self._set_gtm_value,
             }
             for key, value in values.items():
                 if key in combos:
@@ -591,6 +634,7 @@ class PlotControls(QObject):
             CONSTELLATION: [],
             TMAP: [],
             NETWORK: [],
+            GTM: [],
         }[kind]
         lists = {
             self.x: x_choices,
@@ -599,6 +643,7 @@ class PlotControls(QObject):
             self.color: [NONE, *(numbers if kind == CONSTELLATION else colorable_columns(table))],
             self.structure: [n for n in table.column_names if table.kind(n) == STRUCTURE],
             self.size: [NONE, *numbers],
+            self.gtm_value: [DENSITY, *colorable_columns(table)],
         }
         for combo, names in lists.items():
             current = combo.currentText()
@@ -617,6 +662,7 @@ class PlotControls(QObject):
             elif combo is self.y and kind == "bar" and current not in names:
                 combo.setCurrentIndex(min(1, len(names) - 1))  # a number column, not a count
             combo.blockSignals(False)
+        self._fill_maps()
         self.axes = [a for a in self.axes if a in numbers]
         if initial or (kind == "radar" and len(self.axes) < 3):
             self.axes = self.axes if len(self.axes) >= 3 else numbers[:6]
@@ -649,6 +695,7 @@ class PlotControls(QObject):
             NETWORK: (self.structure, self.edges, self.edge_color, self.singletons)
             + ((self.threshold,) if self.edges.currentData() == "similarity" else ())
             + (self.color, self.size),
+            GTM: (self.gtm_map, self.gtm_value, self.color, self.size),
         }[kind]
         numbered = self._is_number(self.color) and kind in (*COLORED, CONSTELLATION)
         sized = self._is_number(self.size) and kind in SIZED

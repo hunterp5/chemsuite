@@ -71,6 +71,7 @@ from .constellation import ConstellationRenderer, CoreFinder, core_image
 from .controls import CONSTELLATION, KINDS, KINDS_3D, STATE_KEYS, PlotControls
 from .finder import Finder, Runner
 from .graph import GRAPH_KINDS, NETWORK, TMAP, GraphFinder, GraphRenderer
+from .gtm import GTM, GtmRenderer
 from .renderers import RENDERERS
 from .spec import Hover, PlotSpec
 from .view_box import BOX, LASSO, ZOOM, SelectViewBox
@@ -96,6 +97,7 @@ PLOT_INK = QColor(40, 40, 40)
 #: what draws each 2D kind
 DRAWN_BY = {**RENDERERS, CONSTELLATION: ConstellationRenderer, TMAP: GraphRenderer}
 DRAWN_BY[NETWORK] = GraphRenderer
+DRAWN_BY[GTM] = GtmRenderer
 #: what finds the data of the kinds that are computed before they draw
 FOUND_BY: dict[str, type[Finder]] = {CONSTELLATION: CoreFinder, TMAP: GraphFinder}
 FOUND_BY[NETWORK] = GraphFinder
@@ -302,6 +304,8 @@ class PlotPanel(ToolPanel):
         axes = (spec.kind, spec.x, spec.y, spec.bins, spec.aggregate, spec.columns)
         if isinstance(self.renderer, ConstellationRenderer | GraphRenderer):
             axes += (id(self.renderer.data),)  # a new map fits the view to it
+        if isinstance(self.renderer, GtmRenderer):
+            axes += (id(self.renderer.map),)
         if axes != self._last_axes:
             # a new 2D layout fits the view to it; turning a 3D plot's columns keeps the camera
             moved_in_3d = three and self._last_axes is not None and self._last_axes[0] in KINDS_3D
@@ -434,6 +438,8 @@ class PlotPanel(ToolPanel):
         if spec.kind in GRAPH_KINDS and spec.structure:
             what = "TMAP" if spec.kind == TMAP else "Network"
             return f"{what}: {spec.color}" if spec.color else f"{what}: {spec.structure}"
+        if spec.kind == GTM:
+            return f"GTM: {spec.gtm_value}" if spec.gtm_value else "GTM: Density"
         if spec.kind == CONSTELLATION and spec.structure:
             if spec.color:
                 return f"Constellation: {SUMMARIES[spec.summary]} {spec.color}"

@@ -94,7 +94,10 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
     assert visible(submenu(menus["Tools"], "Random")) == ["Random Numbers…", "Random Rows…"]
     assert visible(submenu(menus["Data"], "Table")) == ["Operations", "Statistics…"]
     maps = visible(submenu(menus["Data"], "Dimensionality Reduction"))
-    assert maps == ["PCA…", "UMAP…", "t-SNE…", "PaCMAP…", "", "Self-Organizing Map…"]
+    assert maps == [
+        "PCA…", "UMAP…", "t-SNE…", "PaCMAP…", "",
+        "Self-Organizing Map…", "Generative Topographic Map…",
+    ]  # fmt: skip
     operations = [t for t in visible(submenu(submenu(menus["Data"], "Table"), "Operations")) if t]
     assert operations == ["Add Compound…", "Add Rows…", "Add Column…", "Split Column…",
                           "Join Columns…"]  # fmt: skip

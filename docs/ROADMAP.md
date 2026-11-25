@@ -411,6 +411,22 @@ each starts in plan mode.
    maps follow the `.csqm` rule: arrays plus a JSON manifest, never a pickle. The plan should
    settle the grid size, the RBF count and width, the regularization, and how far it scales
    (EM costs rows × nodes per step; 100k rows on a 25 × 25 grid is the first target).
+
+   **Map and landscapes built 2026-11-25** (`analysis/gtm.py`, `tools/space/gtm_ui.py`, the
+   GTM Landscape plot kind in `app/plots/gtm.py`). Defaults: 10 / 16 / 25 nodes per side below
+   300 / 3,000 / above, basis functions max(3, nodes/4) per side, width 1.0 × their spacing
+   (Netlab), regularization 0.1 (ugtm), at most 100 EM iterations, stopping when the penalized
+   log-likelihood per row and dimension gains < 1e-4. The map is a document asset (`gtm_map`,
+   an `.npz` + JSON manifest, format 1) holding each row's largest responsibilities (99.9% of
+   the mass, at most 64 nodes). Measured on the Windows PC (25 × 25, 50 dims): 10k rows 4 s,
+   100k rows 61 s (17 iterations at 3.1 s, then 7.5 s placing), ~300 MB numpy peak; 10k
+   BindingDB compounds on ECFP4, 26–73 s with the fingerprints and PCA. On those 10k (ECFP4,
+   regularization 0.1) each compound keeps 9.6 nodes on average and 28% sit almost wholly
+   (≥ 0.99) on one; 177 of the 625 nodes are some compound's best node. (Synthetic tight
+   clusters put nearly every row on one node.)
+   **Next:** projecting new compounds onto a saved map (format 2 must add the PCA mean and
+   axes, the column scaling and the fingerprint weight), and the log-likelihood as Auto
+   QSAR's applicability domain.
 2. **Scaffold tree view** (the "scaffold tree" of §6's Scaffolds row). Schuffenhauer, A. et al.
    (2007). "The Scaffold Tree − visualization of the scaffold universe by hierarchical scaffold
    classification." *J. Chem. Inf. Model.* 47, 47–58, as Scaffold Hunter draws it. Each

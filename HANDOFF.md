@@ -5,6 +5,17 @@ other machine can pick it up. Update it at the end of a session that leaves work
 
 ## In progress
 
+- **GTM, map + landscapes** (2026-11-25, Windows, committed on `dev`, not merged; ROADMAP §7.0h item 1, plan
+  approved in-session). New: `analysis/gtm.py`, `tools/space/gtm_ui.py` (Data ▸
+  Dimensionality Reduction ▸ Generative Topographic Map…), `app/plots/gtm.py` (the GTM
+  Landscape plot kind), tests `tests/analysis/test_gtm.py`, `tests/tools/space/test_gtm_ui.py`;
+  edits to `app/plots/{spec,controls,panel}.py`, `tools/{space,plot}/tool.py`, the guide and
+  ROADMAP. Targeted tests pass; **the full suite is owed before merging** (every plot's saved
+  state gained `gtm_map`/`gtm_value`, and documents gained the `gtm_map` asset kind). Found,
+  not fixed:
+  `np.linalg.eigh` of 2048 × 2048 takes ~30 s on this PC, which is most of a fingerprint
+  SOM/PCA/GTM's time (PCA in `embedding.pca_axes`).
+
 - **Memory and CPU deep dive** (2026-11-24, Windows, 6 physical cores / 12 threads / 32 GB;
   uncommitted). Symptom on the work PC (16 threads, 16 GB): pKa and MMP slow the whole
   machine, and Python's memory (Task Manager's default column, the private working set) stays

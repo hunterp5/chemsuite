@@ -340,6 +340,8 @@ def test_plots_are_saved_and_reopened_with_the_document(data, qtbot, tmp_path) -
         "threshold": 0.65,
         "edge_color": "plain",
         "singletons": True,
+        "gtm_map": None,
+        "gtm_value": None,
         "camera": None,
         "title": None,
         "cards": cards.state(),

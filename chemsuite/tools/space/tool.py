@@ -61,6 +61,14 @@ def _som(ctx: ToolContext):
     return dialog
 
 
+def _gtm(ctx: ToolContext):
+    from .gtm_ui import GtmDialog
+
+    dialog = GtmDialog(ctx)
+    ctx.show_dialog(dialog)
+    return dialog
+
+
 def _som_panel(ctx: ToolContext, state: dict | None = None):
     from .som_ui import SomPanel
 
@@ -99,5 +107,13 @@ TOOLS = (
         open=_som,
         restore=_som_panel,
         tip="Bin compounds onto a grid where similar compounds share or neighbor a cell.",
+    ),
+    Tool(
+        id="gtm_map",
+        title="Generative Topographic Map…",
+        menu=MAP_MENU,
+        open=_gtm,
+        tip="A smooth map where each compound is spread over the nodes it fits: landscapes "
+        "of activity or class, and how well each compound fits the map (Bishop et al., 1998).",
     ),
 )

@@ -57,6 +57,8 @@ class PlotSpec:
     threshold: float = 0.65  # network: the Tanimoto similarity an edge needs
     edge_color: str = "plain"  # network: a key of graph.EDGE_COLORS
     singletons: bool = True  # network: draw compounds with no edge
+    gtm_map: str | None = None  # GTM: the map's asset id (None: the newest)
+    gtm_value: str | None = None  # GTM: the landscape's column (None: density)
 
 
 @dataclass(frozen=True)
