@@ -1563,6 +1563,59 @@ scores a molecule in about a millisecond.
   instead, or Data ▸ Search ▸ Clear Highlighting to stop.
 - **Cancelling** keeps the rows already found.
 
+### Permeability
+
+Chemistry ▸ Calculate ▸ Permeability… predicts how well each structure crosses a membrane. The
+models are chemsuite's own, fitted by the same Auto QSAR engine as Data ▸ QSAR and applied the
+same way: in numpy, from a model file that is read without ever running code. They come with
+chemsuite and need no network.
+
+Two endpoints, each a separate model on its own public assay data, each writing its own
+columns.
+
+| Endpoint | What the assay measures | How to read it |
+|---|---|---|
+| MDR1-MDCK efflux ratio | How much more compound is carried basolateral-to-apical than the other way, across MDCK cells overexpressing MDR1 | log10 of the ratio. Above about 0.5 (a ratio of 3) is usually read as a P-glycoprotein substrate. |
+| Caco-2 permeability | Apparent permeability across a Caco-2 monolayer | log10 cm/s. Above about −5.0 is usually read as good absorption. |
+
+There is deliberately no PAMPA endpoint. One was fitted on the public NCATS data and held back:
+that data is a yes-or-no label and 85% permeable, and the model could rank a series but could
+not reliably tell an impermeable compound from a permeable one, so shipping it would have meant
+a number you had to distrust.
+
+- **Input.** A structure column and the rows. Salts are not reduced for you — run Standardize
+  first if your structures have counter-ions, because the models were fitted on single,
+  neutralized fragments.
+- **Columns.** The prediction is always written. *Interval* and *Applicability* are optional:
+
+  | Column | Meaning |
+  |---|---|
+  | *Endpoint* Predicted | The predicted value. |
+  | *Endpoint* Low, *Endpoint* High | The range the measured value should fall in, at the model's confidence. Wide where the model has little nearby to go on, narrow where it has company. |
+  | *Endpoint* Distance | How far the compound sits from the model's training set. |
+  | *Endpoint* In Domain | Whether that distance is within the range the training compounds themselves span. |
+
+  Each run writes new columns and never changes an earlier run's. When a name is already taken,
+  all the columns of the run get the same suffix, (2), (3)…
+
+- **Read the interval, not just the number.** The Caco-2 assay itself scatters by 0.3 to 0.5 log
+  units between laboratories, so a prediction quoted to two decimals is a false precision. The
+  interval is calibrated against predictions the model never fitted on, and it is the honest part
+  of the answer.
+- **A prediction outside the domain is one the interval was never calibrated for.** ADMET models
+  are reliable only within the chemistry they were fitted on, and published comparisons find
+  permeability predictors losing almost all of their correlation on compound classes they have
+  not seen, such as natural products. When In Domain says No, treat the number as a guess.
+- **Limits.**
+  - These are screening aids for ranking a series, not measurements.
+  - Efflux and passive permeability are different questions: a compound can be intrinsically
+    permeable and still show poor Caco-2 flux because it is pumped out. That is why the efflux
+    ratio is a separate endpoint rather than a correction to the Caco-2 number.
+  - Beyond-Rule-of-5 space — macrocycles, peptides, PROTACs — is thin in all three training sets.
+  - Nothing here predicts human oral bioavailability, which depends on solubility, metabolism and
+    dose as much as on permeability.
+- **Cancelling** keeps the rows already predicted.
+
 ### Standardize
 
 Chemistry ▸ Standardize prepares structures for docking, or for any work that needs

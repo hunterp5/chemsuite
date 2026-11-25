@@ -233,7 +233,7 @@ modified.
 
 | Feature | Notes |
 |---|---|
-| Permeability models | Predictions that belong in Chemistry ▸ Calculate beside Predict pKa. chemprop and torch would make the install about 2 GB larger, so as they stand they are an optional add-on; ported to numpy, as chemsuite pKa was, they could join the base install. Settles the open question about the "(est.)" descriptors. pKa itself is done: chemsuite pKa is in the base install (Chemistry ▸ Calculate ▸ pKa, Standardize, the descriptors and Prepare; [UNIPKA_PLAN.md](UNIPKA_PLAN.md) U5, 2026-11-18). |
+| ~~Permeability models~~ | **Moved to the base install, 2026-11-25** — see §7.0d below and [PERMEABILITY_PLAN.md](PERMEABILITY_PLAN.md). It needs neither chemprop nor torch: the endpoint's state of the art is boosted trees over descriptors, which is what `chemsuite/qsar` already fits, so the models are `.csqm` archives shipped in-tree and applied in numpy. pKa was already done (Chemistry ▸ Calculate ▸ pKa, Standardize, the descriptors and Prepare; [UNIPKA_PLAN.md](UNIPKA_PLAN.md) U5, 2026-11-18). |
 | Protein viewer and editor, sequence alignment, docking, preparation, MD simulation | Planned in phases: see **§7a Proteins** below. Still missing from MolManager's macromolecule tools (added 2026-11-17): sequence alignment and MSA (§7a 1), PLIF across poses, pocket surfaces and protein pharmacophores (§7a 2), MD (§7a 5) and free energy, MolManager's FEP (§7a 6). |
 
 ---
@@ -569,6 +569,25 @@ OpenADMET's open pIC50 data and the Veith panel from PubChem.
 rule-based enumerator of metabolite *structures* run as an external Java tool. This is an ML model
 that scores atoms on a graph: no external tool, no new runtime dependency, and no generated
 structures — metabolite structure generation stays out of scope.
+
+### 7.0d Permeability, in the base install (added 2026-11-25)
+
+Chemistry ▸ Calculate ▸ Permeability… predicts three endpoints — Caco-2 log Papp, the
+MDR1-MDCK efflux ratio and PAMPA (a classification, because the public NCATS set carries a
+binary label) — each with a conformal interval and an applicability-domain flag. Full design,
+data licences and the open questions: [PERMEABILITY_PLAN.md](PERMEABILITY_PLAN.md).
+
+**This closes the chemprop question.** The endpoint's state of the art is boosted trees over
+descriptors — the TDC Caco-2 leader is AutoML over descriptors, and the Feb-2026 leaderboard
+audit found leakage in several entries that beat them — so there is nothing for a D-MPNN to
+add at these set sizes, and torch stays out of the app. The models are `.csqm` archives fitted
+by `chemsuite/qsar`, chemsuite's own engine, and applied in numpy with no scikit-learn at run
+time. This also settles the open question about the "(est.)" descriptors.
+
+**Where it stands (2026-11-25):** the curation scripts, the Qt-free `chemsuite/permeability`
+package, the tool and the tests are in; the models themselves are **not trained yet**, and the
+tests that need them skip until they are. The remaining commands are in the plan. The 3D
+Uni-Mol arm is deferred behind a stated gate and is not open work.
 
 ### 7a. Proteins: from viewer to medicinal-chemistry workspace (revised 2026-11-11)
 
