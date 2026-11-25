@@ -374,8 +374,11 @@ def test_saving_the_box_alone_needs_no_prepared_protein(
     monkeypatch.setattr(
         dock_dialog.QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path)
     )
+    said: list[str] = []
+    monkeypatch.setattr(ToolContext, "show_message", lambda self, text, *a, **k: said.append(text))
     dialog._save()
-    qtbot.waitUntil(lambda: (tmp_path / export.CONFIG).exists(), timeout=30_000)
+    qtbot.waitUntil(lambda: bool(said), timeout=30_000)  # the job is done: the file is whole
+    assert said == [f"Saved to {tmp_path}"]
     assert [p.name for p in tmp_path.iterdir()] == [export.CONFIG]
     text = (tmp_path / export.CONFIG).read_text(encoding="utf-8")
     assert "receptor" not in text and "center_x" in text
@@ -393,8 +396,13 @@ def test_saving_everything_writes_the_ligands_and_the_manifest(
     monkeypatch.setattr(
         dock_dialog.QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path)
     )
+    said: list[str] = []
+    monkeypatch.setattr(ToolContext, "show_message", lambda self, text, *a, **k: said.append(text))
     dialog._save()
-    qtbot.waitUntil(lambda: (tmp_path / export.MANIFEST).exists(), timeout=60_000)
+    # the job's done() says what was saved once every file is written (the run scripts are
+    # written after the manifest, so waiting on the manifest alone could read them too soon)
+    qtbot.waitUntil(lambda: bool(said), timeout=60_000)
+    assert said[0].startswith("1 ligand file from 1 row saved to")
     assert (tmp_path / export.RECEPTOR).exists()
     rows = export.read_manifest(tmp_path / export.MANIFEST)
     assert [r["name"] for r in rows] == ["ethanol"]
