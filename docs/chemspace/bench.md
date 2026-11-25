@@ -24,6 +24,9 @@ included (100,000 measured before the change below, 49,189 and 250,000 after).
 | 250,000 | ECFP4 | | 36 s | 15 s | 52 s | 1,175 MB |
 | 250,000 | MHFP6 | 152 s | 63–66 s | 15 s | 82 s | 1,516 MB |
 
+These times are from before the layout change of 2026-11-24, which takes the layout column
+to about twice as long (27 s at 250,000 on ECFP4; see "The layout, 2026-11-24" below).
+
 The forest's candidate table (rows × 16 trees × 20 places) was int64; it is int32 now, which
 took the 250k peaks down from 1,496 and 1,836 MB with the same trees (same weights) and times.
 There is no hard limit: 250,000 compounds take under a minute on ECFP4 with about 1.2 GB, and
@@ -59,16 +62,58 @@ give 10 others (asked for 10 it had 9, which first made it look worse than it is
 | tree weight (Σ 1 − agreement; lower: closer neighbours joined) | 21,568 | 21,867 | 21,752 |
 | separate trees | 1 | 1 | 1 |
 | neighbours | 12.6 s | 26.1 s | 18.6 s |
-| whole TMAP | 15.5 s | 53.5 s | 36.4 s |
+| whole TMAP | 15.5 s (18.6 s after the 2026-11-24 layout change) | 53.5 s | 36.4 s |
 
 chemsuite finds more of the true neighbours (it looks ten places either side in every band,
 then among neighbours' neighbours), builds a tree that joins closer compounds, and is about
 2–3× faster.
 
-**The layout is where tmap-silicon is better.** Its pictures
-(`samples/chemspace/compare_tmap_silicon_l64_49189.png` against `compare_chemsuite_49189.png`)
-spread the tree over the page with every branch apart. chemsuite's multilevel force layout packs
-branches into dense clumps joined by long links, crosses branches over each other, and leaves
-part of the page empty; at 250,000 the clumps are larger and the small separate trees are packed
-into one strip. The trees are nearly the same; the drawing is not. Improving the layout (closer
-to FM³'s multilevel placement, or a tree-aware layout that keeps branches from crossing) is open.
+**The layout was where tmap-silicon was better** (fixed 2026-11-24, below). Its pictures
+(`samples/chemspace/compare_tmap_silicon_l64_49189.png` against
+`compare_chemsuite_49189_before.png`) spread the tree over the page with every branch apart.
+chemsuite's multilevel force layout packed branches into dense clumps joined by long links,
+crossed branches over each other, and left part of the page empty. The trees are nearly the
+same; the drawing was not.
+
+## The layout, 2026-11-24
+
+**Cause.** Repulsion reached only 3 edge lengths, at every level. Coarsening was healthy (each
+level halves the tree, down to 32 nodes on the 49k tree), so the coarse layouts had few nodes
+but could not push branches apart beyond that reach.
+
+**Fix** (`chemsuite/analysis/graphs/layout.py`):
+- repulsion reaches 16 edge lengths on the coarse levels, where the branches are arranged and
+  the nodes are few, and 8 on the finest;
+- each finer level starts every node on its group's place moved halfway toward the groups its
+  edges lead to, instead of on the group's place with noise.
+
+**Measured** on the same trees, old and new back to back with nothing else running. Crossings
+are counted on 8,000 sampled edges (each crossing pair once). Coverage is the share of a
+100 × 100 grid over the picture's square that holds a compound.
+
+| tree | layout, old → new | crossings per edge, old → new | coverage, old → new |
+|---|---|---|---|
+| 49,189 MHFP6 | 3.1 → 6.5 s | 0.059 → 0.026 | 0.14 → 0.31 |
+| 49,189 ECFP4 | 3.0 → 5.6 s | 0.060 → 0.030 | 0.11 → 0.23 |
+| 249,997 ECFP4 | 15.9 → 26.9 s | 0.049 → 0.024 | 0.13 → 0.27 |
+
+tmap-silicon (64 trees) on the 49,189 MHFP6 values: 0.020 crossings per edge, coverage 0.31.
+Peak memory is unchanged (1,177 MB at 250,000 on ECFP4, 1,517 MB on MHFP6).
+
+Chemical Space Networks share the layout. At 0.65 (5,000 compounds, largest part 84) the
+pictures are unchanged. At 0.45 (largest part 1,230) the clusters branch off the spine instead
+of overlapping it; the layout takes 2.0 s instead of 1.2 s.
+
+**Tried and dropped:**
+- unlimited repulsion (the far field on an FFT grid, the near field exact): everything was
+  driven to a hollow ring with stretched edges, crossings rose to 0.088 per edge, and it was
+  seven times slower;
+- the long reach on the finest level as well (16): no better than 8 there, about 30 % slower;
+- 32 on the coarse levels: coverage fell and edges stretched;
+- more steps per level: within the noise between seeds, for up to twice the time.
+
+Pictures: `compare_chemsuite_49189.png` (now) beside `compare_tmap_silicon_l64_49189.png`;
+`tmap_ecfp4_249997.png` and `tmap_mhfp6_249997.png` with their `_before` copies.
+
+**Still open:** at 250,000 the 50 or so small separate trees are packed in a thin strip beside
+the giant one (`pack` lines them up after it), so they are hard to see.

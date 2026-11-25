@@ -5,6 +5,39 @@ other machine can pick it up. Update it at the end of a session that leaves work
 
 ## In progress
 
+- **Memory and CPU deep dive** (2026-11-24, Windows, 6 physical cores / 12 threads / 32 GB;
+  uncommitted). Symptom on the work PC (16 threads, 16 GB): pKa and MMP slow the whole
+  machine, and Python's memory (Task Manager's default column, the private working set) stays
+  high while idle. Harness in `scripts/review/` (`memlib.py`, `pka_pool_mem.py`,
+  `mmp_mem.py`; `.venv` python, args `SDF N [workers]`). Done:
+  - **pKa model shared** (`ionisation/unipka/mapped.py`, `core/folders.py`): the weights are
+    written once as float32 to `<cache>/derived/` and memory-mapped read-only by every
+    worker. 11 pKa workers: ~3 GB private → 0.57 GB (52 MB each) plus one shared 182 MB;
+    predictions bit-identical, same speed.
+  - **Idle workers end** (`JobRunner.end_idle_workers`): the shared pool after 60 s with no
+    job running or queued, the wide worker after 300 s; the next job starts new ones.
+  - **Worker count scales with the machine** (`core/jobs/machine.py`, `default_workers`):
+    physical cores − 1, and no more than 25% of RAM (or 50% of free RAM) at 250 MB per
+    worker. Cost measured here: 5 workers instead of 11, MMP 50k rows 66 s → 118 s.
+  - Picture cache per result table capped at 32 MB as well as 400 pictures; `Pair` uses
+    slots and MMP keeps one copy of each fragment SMILES (50k rows peak 371 → 317 MB).
+  - Not done: the app process's BLAS threads (they reserve ~30 MB commit each, not in the
+    Memory column; now follow `default_workers`, so fewer).
+- **Table responsiveness at 100k rows** (2026-11-24, uncommitted; bench
+  `scripts/review/table_ops_bench.py samples/bindingdb_100k.csd [--profile STEP]`, a real
+  offscreen window, each step timed until idle). Fixed in `app/table/view_selection.py`:
+  - Replacing a scattered selection used `ClearAndSelect`, which compares old and new ranges
+    pairwise: every other row 11.7 s, inverting it 22 s → 0.4 / 0.7 s (clear, then Select).
+  - Select All mirrored every column into the header's selection model, so each header
+    repaint (any hover) asked about every row: 2.7 s per repaint → instant. The mirror is now
+    filled only during a Ctrl+press on a column header (`TableView.header_press`).
+  - `selected_column_names` (header menu) read from the ranges, not `isColumnSelected`.
+  - Left: with ~50k scattered rows selected, a page of scrolling ~110 ms and a Ctrl/Shift+click
+    ~0.5 s (Qt scans every range per painted cell / merge). Removing it means drawing row
+    selections from the store instead of Qt's selection model: a bigger change to plan.
+  - Found, not fixed: Edit ▸ Select All from the menu after a column-header click stays in
+    column mode, so the store gets no rows (Delete Selection then deletes nothing).
+
 - **Macromolecule Viewer** (2026-11-16, plan approved; Claude's plan file on the Windows PC,
   `whimsical-growing-ripple.md`). The Protein Viewer is renamed in the code and on screen:
   `chemsuite/protein` → `chemsuite/macromolecule`, `tools/protein` → `tools/macromolecule`
@@ -398,8 +431,12 @@ other machine can pick it up. Update it at the end of a session that leaves work
   - **On the Mac:** run `tests/core/test_children.py`, `tests/core/test_parallel.py` and
     `tests/app/shell/test_exit.py` (§7.0's process-group path has never run), and check the
     focused-pocket cut on Metal (Focus a ligand, turn the view: no ribbon in front of it).
-  - **Open, for a decision:** TMAP's layout is visibly worse than tmap-silicon's FM³ (clumps,
-    crossings); see the bench notes.
+  - **TMAP's layout fixed 2026-11-24** (ROADMAP §7.0d, bench notes): repulsion reaches 16 edge
+    lengths on coarse levels and 8 on the finest; crossings halved, coverage matches
+    tmap-silicon; layout about 2× slower (27 s at 250k). Open: the small separate trees at
+    250k sit in a thin strip beside the giant one (`pack`).
+  - **Next chemical-space views** are on the roadmap (§7.0h): GTM, a scaffold tree view, PCoA;
+    TriMap, PHATE and Isomap considered and not planned.
   - **Found, not fixed:** British spellings the user sees: Prepare's "Optimise" option, TMAP's
     "Neighbours" row, Settings "New Colours", the custom theme's "Colours"/"Choose Colour",
     plot tooltips with "colour/coloured", MPO's "Near a centre", Standardize's "stereocentre".

@@ -29,6 +29,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 
 from chemsuite.app.document.tools import ToolContext
+from chemsuite.macromolecule.dock import export
 from chemsuite.macromolecule.dock import run as dock_run
 from chemsuite.macromolecule.dock.vina import Pose
 from chemsuite.macromolecule.prepare import pipeline
@@ -358,3 +359,67 @@ def test_a_later_run_into_another_protein_copies_with_that_protein(opened, qtbot
     copied = [oid for oid in table.oids.tolist()
               if str(table.cell(dock.AFFINITY_COLUMN, oid) or "") == "-8.00"]  # fmt: skip
     assert [str(table.cell(PROTEIN_COLUMN, oid)) for oid in copied] == ["2XYZ"]
+
+
+def test_saving_the_box_alone_needs_no_prepared_protein(
+    window, tmp_path, qtbot, monkeypatch
+) -> None:
+    """Config only wants a box, so the search box can be written before Prepare has run."""
+    dialog = dock_dialog.DockDialog(ToolContext(window))
+    dialog.write.set_value(dock_dialog.CONFIG)
+    dialog.source.set_value(dock_dialog.TYPED)
+    dialog._update()
+    assert dialog.save_problem() == "" and dialog.save_button.isEnabled()
+    assert dialog.problem()  # docking itself still cannot run: no protein
+    monkeypatch.setattr(
+        dock_dialog.QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path)
+    )
+    dialog._save()
+    qtbot.waitUntil(lambda: (tmp_path / export.CONFIG).exists(), timeout=30_000)
+    assert [p.name for p in tmp_path.iterdir()] == [export.CONFIG]
+    text = (tmp_path / export.CONFIG).read_text(encoding="utf-8")
+    assert "receptor" not in text and "center_x" in text
+    dialog.close()
+
+
+def test_saving_everything_writes_the_ligands_and_the_manifest(
+    opened, tmp_path, qtbot, monkeypatch
+) -> None:
+    dialog = dock_dialog.DockDialog(ToolContext(opened))
+    dialog.source.set_value(dock_dialog.WHOLE)
+    dialog._update()
+    assert dialog.write.value() == dock_dialog.EVERYTHING
+    assert dialog.save_problem() == ""
+    monkeypatch.setattr(
+        dock_dialog.QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path)
+    )
+    dialog._save()
+    qtbot.waitUntil(lambda: (tmp_path / export.MANIFEST).exists(), timeout=60_000)
+    assert (tmp_path / export.RECEPTOR).exists()
+    rows = export.read_manifest(tmp_path / export.MANIFEST)
+    assert [r["name"] for r in rows] == ["ethanol"]
+    assert (tmp_path / export.LIGANDS / rows[0]["file"]).exists()
+    for name in (export.RUN_SH, export.RUN_BAT):
+        assert export.command_line() in (tmp_path / name).read_text(encoding="utf-8")
+    dialog.close()
+
+
+def test_a_row_keeps_its_own_conformers_and_a_bare_one_gets_them_made() -> None:
+    """Row's own conformers are written one file each; a row with none gets what the dialog
+    asks for; a blank cell is skipped."""
+    many = Chem.AddHs(Chem.MolFromSmiles("C1CCCCC1"))
+    AllChem.EmbedMultipleConfs(many, numConfs=3, randomSeed=11)
+    inputs, skipped = dock.ligand_inputs(
+        [many, Chem.MolFromSmiles("CCO"), None], ["ring", "flat", "blank"],
+        np.array([7, 8, 9]), conformers=2,
+    )  # fmt: skip
+    assert skipped == 1
+    ring = [i for i in inputs if i.name == "ring"]
+    assert [i.conformer for i in ring] == [1, 2, 3] and {i.of for i in ring} == {3}
+    assert all(i.row == 7 for i in ring)
+    # what RDKit keeps after pruning, and `of` always says how many its row sent
+    flat = [i for i in inputs if i.name == "flat"]
+    assert 1 <= len(flat) <= 2 and {i.of for i in flat} == {len(flat)}
+    assert all(i.row == 8 for i in flat)
+    for one in inputs:  # every file written is a single 3D conformer
+        assert one.mol.GetNumConformers() == 1 and one.mol.GetConformer().Is3D()

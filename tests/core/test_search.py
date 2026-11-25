@@ -151,6 +151,67 @@ def test_terms_mask(table: Table) -> None:
     assert _ids(table, SearchFilter(flt.query, column="ID", terms=flt.terms)) == []
 
 
+def test_parse_operators_wildcards_and_either() -> None:
+    from chemsuite.core.table.search import Either, Term, parse_terms
+
+    columns = ["ID", "pIC50", "Series"]
+    # "!" excludes like "-", but "!=" is a comparison
+    assert parse_terms("!kinase !Series:B", columns) == (
+        Term("kinase", negate=True),
+        Term("B", "Series", negate=True),
+    )
+    assert parse_terms("!=7 >7 <=5 =A !=A", columns) == (
+        Term("7", None, "!=", 7.0),
+        Term("7", None, ">", 7.0),
+        Term("5", None, "<=", 5.0),
+        Term("A", None, "equals"),
+        Term("A", None, "equals", negate=True),
+    )
+    assert parse_terms("! -", columns) == (Term("!"), Term("-"))
+    # "*": a whole-cell pattern, unless quoted
+    assert parse_terms('ID:CPD* *ase Series=A* "a*b" -ID:*', columns) == (
+        Term("CPD*", "ID", "like"),
+        Term("*ase", op="like"),
+        Term("A*", "Series", "like"),
+        Term("a*b"),
+        Term("*", "ID", "like", negate=True),
+    )
+    # "|": either, with or without spaces; bare values keep the column and operator
+    assert parse_terms("kinase | gpcr", columns) == (Either((Term("kinase"), Term("gpcr"))),)
+    assert parse_terms("kinase |gpcr| x", columns) == (
+        Either((Term("kinase"), Term("gpcr"), Term("x"))),
+    )
+    assert parse_terms("Series=A|B", columns) == (
+        Either((Term("A", "Series", "equals"), Term("B", "Series", "equals"))),
+    )
+    assert parse_terms("Series!=A|B -ID:x|y", columns) == (
+        Either((Term("A", "Series", "equals"), Term("B", "Series", "equals")), negate=True),
+        Either((Term("x", "ID"), Term("y", "ID")), negate=True),
+    )
+    assert parse_terms("pIC50<5|>8 Series=A|ID:x", columns) == (
+        Either((Term("5", "pIC50", "<", 5.0), Term("8", "pIC50", ">", 8.0))),
+        Either((Term("A", "Series", "equals"), Term("x", "ID"))),
+    )
+    assert parse_terms('"a|b" kinase |', columns) == (Term("a|b"), Term("kinase"))
+
+
+def test_terms_mask_operators_wildcards_and_either(table: Table) -> None:
+    assert _ids(table, _terms(table, "!kinase")) == ["CPD-12", "X-9"]
+    assert _ids(table, _terms(table, "ID:CPD*")) == ["CPD-1", "cpd-2", "CPD-12"]
+    assert _ids(table, _terms(table, "ID:*2")) == ["cpd-2", "CPD-12"]
+    assert _ids(table, _terms(table, "Assay:*")) == ["CPD-1", "cpd-2", "X-9"]  # has a value
+    assert _ids(table, _terms(table, "-Assay:*")) == ["CPD-12"]  # blank
+    assert _ids(table, _terms(table, "*B")) == ["cpd-2"]  # whole cell: "Kinase B"
+    assert _ids(table, _terms(table, "gpcr | ID=cpd-2")) == ["cpd-2", "X-9"]
+    assert _ids(table, _terms(table, "pIC50<6.5|>7.9")) == ["cpd-2", "CPD-12"]
+    assert _ids(table, _terms(table, "ID!=cpd-1|x-9")) == ["cpd-2", "CPD-12"]
+    # a bare comparison: every column on All Columns, or the bar's column
+    assert _ids(table, _terms(table, ">7.9")) == ["CPD-12"]
+    flt = _terms(table, "<7")
+    assert _ids(table, SearchFilter(flt.query, column="pIC50", terms=flt.terms)) == ["cpd-2"]
+    assert _ids(table, SearchFilter(flt.query, column="ID", terms=flt.terms)) == []
+
+
 def test_a_term_follows_a_renamed_column(table: Table) -> None:
     flt = _terms(table, "pIC50>7")
     table.set_filter("search", flt)
@@ -158,6 +219,10 @@ def test_a_term_follows_a_renamed_column(table: Table) -> None:
     renamed = table.filters["search"]
     assert renamed.terms[0].column == "Potency"
     assert _ids(table, renamed) == ["CPD-1", "CPD-12", "X-9"]
+    table.set_filter("search", _terms(table, "Potency<6.5|>7.9"))
+    table.rename_column("Potency", "pIC50")
+    assert table.filters["search"].terms[0].terms[1].column == "pIC50"
+    assert _ids(table, table.filters["search"]) == ["cpd-2", "CPD-12"]
 
 
 # -- find and replace: scope and groups -------------------------------------------------------

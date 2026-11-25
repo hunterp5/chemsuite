@@ -207,7 +207,7 @@ modified.
 | Calculator / formula columns | A safe expression language over columns, with math functions and chemistry functions such as `MW(Structure)`. Columns recompute when their inputs change. |
 | Potency standardisation | IC50, Ki or EC50 in any units to pIC50 / pKi, with unit detection. |
 | Structure preparation | RDKit MolStandardize: salt strip, largest fragment, neutralise, canonical tautomer, add or remove Hs. "Fast Prepare" uses sensible defaults. |
-| Scaffolds | Bemis–Murcko and generic scaffolds as columns, plus a scaffold tree or count view. |
+| Scaffolds | Bemis–Murcko and generic scaffolds as columns, plus a scaffold tree or count view (the tree: §7.0h). |
 | Decomposition and enumeration | **Done 2026-11-14:** Chemistry ▸ Decompose (R-Group Decomposition, Fragments by BRICS or RECAP, Central Ring) and Chemistry ▸ Enumerate (Reaction Products with 28 named templates, R-Groups on a Core, Recombine Fragments). **2026-11-15:** Prepare Reagents turns reagents into substituents (13 kinds, the leaving group replaced by an attachment point), and R-Groups on a Core takes a position's substituents From a File…, so a prepared set is reused across cores. |
 | Documents | Duplicate document, send selected rows to a new document, and Notes (a notepad saved in the `.csd`). |
 | Macros | Record and replay sequences of commands with their settings. The new command registry is the base for this. |
@@ -355,14 +355,19 @@ conformer quality; this item is about scale.
 - **MHFP6 as a fingerprint choice** for TMAP (ECFP4 stays the default; the network stays on
   ECFP4): RDKit's encoder, 256 MinHash values put straight into the forest
   (`analysis/graphs/mhfp.py`). Encoding is its cost: about a minute for 50,000 compounds.
-- **Above 49k**, on ChEMBL 37: 250,000 compounds in 52 s and 1.2 GB on ECFP4, 82 s (plus 152 s
-  of encoding) and 1.5 GB on MHFP6; the forest's candidates went to int32 to get there.
+- **Above 49k**, on ChEMBL 37: 250,000 compounds in 52 s (before the layout change below;
+  about 63 s since) and 1.2 GB on ECFP4, 82 s (plus 152 s of encoding) and 1.5 GB on MHFP6;
+  the forest's candidates went to int32 to get there.
 - **Beside `tmap-silicon`** on the same MHFP6 values: chemsuite finds more of the true ten
   nearest (0.93 against 0.62–0.72), joins closer compounds and is 2–3× faster.
 
-Still open, found by that comparison: **the layout.** tmap-silicon's (OGDF FM³) spreads the
-tree with each branch apart; chemsuite's packs branches into clumps, crosses them, and leaves
-space unused, worse at 250,000. The trees are nearly the same; the drawing is not.
+**Done 2026-11-24: the layout** ([chemspace/bench.md](chemspace/bench.md)). tmap-silicon's
+(OGDF FM³) spread the tree with each branch apart; chemsuite's packed branches into clumps and
+crossed them. Repulsion now reaches 16 edge lengths on the coarse levels and 8 on the finest
+(it was 3), and each level starts its nodes toward their neighbors. On the 49k MHFP6 tree the
+picture covers as much of the page as tmap-silicon's (0.31), crossings halved (0.059 to 0.026
+per edge; tmap-silicon 0.020); layout takes about twice as long (27 s at 250,000).
+Still open: at 250,000 the small separate trees are packed in a thin strip beside the giant one.
 
 Two more chemical-space plots, next to the Constellation Plot. Both are big new features, so
 each starts in plan mode. Their graph layout and drawing code may be shared, so plan them
@@ -380,6 +385,58 @@ together.
   activity difference (cliffs). It is meant for hundreds to a few thousand compounds.
 - Both are plot kinds in the Plot panel. They select rows like any plot, use the shared colour
   maps and ranges, and compute in the background like the Constellation Plot.
+
+### 7.0h More chemical-space views: GTM, a scaffold tree, PCoA (added 2026-11-24)
+
+Already built: PCA, UMAP, t-SNE, PaCMAP and LocalMAP (Data ▸ Dimensionality Reduction), SOM,
+TMAP, Chemical Space Networks, the Constellation Plot, SALI and the 3D Landscape. Each item
+below shows something none of those does. GTM and the scaffold tree are big new features, so
+each starts in plan mode.
+
+1. **Generative Topographic Mapping (GTM).** Bishop, C. M., Svensén, M. and Williams, C. K. I.
+   (1998). "GTM: The generative topographic mapping." *Neural Comput.* 10, 215–234; used as
+   "chemography" on ChEMBL-scale sets by Varnek's group (Gaspar et al., *J. Chem. Inf. Model.*
+   2015, 55, 84). A probabilistic cousin of the
+   SOM: a grid of nodes bent into the descriptor space by EM, where each compound gets a
+   responsibility over the nodes rather than one cell. That gives what no current view gives:
+   - smooth property and activity landscapes (the responsibility-weighted mean per node), and
+     class landscapes for a category column;
+   - a per-compound log-likelihood as an applicability-domain measure, which Auto QSAR could
+     reuse;
+   - new compounds (another library, a design set) projected onto a saved map without
+     refitting, so two sets can be compared on the same map.
+
+   chemsuite's own code in numpy (EM with an RBF basis, as in the paper); no `ugtm` or other
+   dependency. Input like the SOM's: fingerprints reduced by PCA, or number columns. Saved
+   maps follow the `.csqm` rule: arrays plus a JSON manifest, never a pickle. The plan should
+   settle the grid size, the RBF count and width, the regularization, and how far it scales
+   (EM costs rows × nodes per step; 100k rows on a 25 × 25 grid is the first target).
+2. **Scaffold tree view** (the "scaffold tree" of §6's Scaffolds row). Schuffenhauer, A. et al.
+   (2007). "The Scaffold Tree − visualization of the scaffold universe by hierarchical scaffold
+   classification." *J. Chem. Inf. Model.* 47, 47–58, as Scaffold Hunter draws it. Each
+   Bemis–Murcko scaffold is pruned one ring at a time by the paper's rules down to a single
+   ring, and the scaffolds form a tree: which ring systems a set holds and how they nest. It is
+   a hierarchy of substructures rather than of similarity, so TMAP and the maps cannot show it.
+   - Each node shows its scaffold, its compound count and a summary of a chosen column (mean
+     pIC50, say); clicking a node selects its compounds in the table, like any plot.
+   - The pruning rules are reimplemented from the paper with tests (RDKit has no scaffold-tree
+     builder; Scaffold Hunter's Java code is a reference only).
+   - Builds on the scaffold columns that already exist (`descriptors/scaffold.py`).
+3. **Principal coordinates (PCoA, classical MDS) on Tanimoto distance**, low priority. Gower,
+   J. C. (1966). *Biometrika* 53, 325–338. A linear map whose axes come from the true
+   Tanimoto distances, not from PCA on the bits, with the variance each axis explains. It
+   needs the full distance matrix (n²), so it is for sets up to a few thousand compounds; a
+   fourth method in Data ▸ Dimensionality Reduction beside PCA rather than a tool of its own.
+
+**Considered and not planned:**
+- **TriMap** (Amid and Warmuth, 2019): PaCMAP was designed from an analysis of TriMap and UMAP
+  and matches or beats it on global and local structure in its own benchmarks (Wang et al.,
+  *J. Mach. Learn. Res.* 2021, 22, 1–73), and it is already built. TriMap would add the
+  `trimap` package (annoy, numba) for a map that mostly repeats PaCMAP's, with weaker local
+  detail.
+- **PHATE**: made for continuous trajectories in single-cell data, rarely useful on compound
+  sets.
+- **Isomap and LLE**: superseded by UMAP and PaCMAP.
 
 ### 7.0c High priority: the Protein Viewer as the other half of chemsuite (added 2026-11-11)
 

@@ -23,7 +23,7 @@ by their hydrogens), which :meth:`DockDialog.problem` says when it is not.
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QSpinBox
+from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QFileDialog, QPushButton, QSpinBox
 
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.widgets.dialogs import RowsChoice, Segmented, ToolDialog, inline
@@ -48,6 +48,11 @@ SOURCES = (
     (TYPED, "Typed"),
 )
 SCORING = ((vina.VINA, "Vina"), (vina.VINARDO, "Vinardo"))
+#: how much Save Input Files… writes
+EVERYTHING, RECEPTOR, CONFIG = "everything", "receptor", "config"
+WRITE = ((EVERYTHING, "Everything"), (RECEPTOR, "Receptor"), (CONFIG, "Config"))
+#: the folder the last save chose, offered again
+_last_folder = ""
 #: where Rescore Poses… takes its poses from
 KEPT, TABLE = "kept", "table"
 POSE_SOURCE = ((KEPT, "Docked"), (TABLE, "Table Column"))
@@ -58,6 +63,14 @@ class DockDialog(ToolDialog):
     def __init__(self, ctx: ToolContext) -> None:
         super().__init__(dialog_parent(ctx), "Dock Ligands", guide="dock")
         self.ctx = ctx
+        # before any field: refresh() keeps it up to date, and the fields set that going
+        self.save_button = QPushButton("Save Input Files…")
+        self.save_button.setToolTip(
+            "Write this run as files to dock with AutoDock Vina at the command line"
+        )
+        self.save_button.setAutoDefault(False)
+        self.save_button.clicked.connect(self._save)
+        self._bottom.insertWidget(1, self.save_button)
 
         inputs = self.section("Input")
         self.protein = QComboBox()
@@ -135,6 +148,27 @@ class DockDialog(ToolDialog):
         self.seed.setValue(_last.seed)
         more.row("Seed", self.seed, help="The same seed docks the same way every time.")
 
+        saving = self.section("Command Line", collapsed=True)
+        self.write = Segmented(WRITE, EVERYTHING)
+        saving.row(
+            "Write",
+            self.write,
+            help="Everything needed to dock (the config, the receptor, a file per ligand, the "
+            "manifest and a run script), the receptor and the config, or the config alone, "
+            "which holds the search box and the conditions.",
+        )
+        self.conformers = QSpinBox()
+        self.conformers.setRange(1, 100)
+        self.conformers.setValue(1)
+        saving.row(
+            "Conformers",
+            self.conformers,
+            help="How many to make for a row that carries none; a row with its own keeps "
+            "them. Vina searches the rotatable bonds itself, so more than one is worth "
+            "sending only for the geometry it holds fixed, such as a saturated ring's pucker.",
+        )
+
+        self.write.changed.connect(lambda *_: self.refresh())
         self.protein.currentIndexChanged.connect(lambda *_: self._update())
         self.source.changed.connect(lambda *_: self._update())
         self.padding.valueChanged.connect(lambda *_: self._update())
@@ -218,6 +252,72 @@ class DockDialog(ToolDialog):
 
     def verb(self) -> str:
         return f"Dock {len(self.rows.oids()):,} Rows"
+
+    # -- saving for the command line -----------------------------------------------------------
+    def save_problem(self) -> str:
+        """Why this run cannot be written out, or ``""``. Less is needed than to dock: the
+        config alone wants only a box, so the search box can be saved before the protein is
+        prepared."""
+        scope = self.write.value()
+        if self.box() is None:
+            source = dict(SOURCES)[self.source.value()]
+            return f"There is nothing to put a box around ({source.lower()})"
+        if scope == CONFIG:
+            return ""
+        if self.protein.count() == 0:
+            return "There are no proteins in this document"
+        trouble = dock.docking_problem(structure_of(self.ctx, self.protein.currentData()))
+        if trouble:
+            return trouble
+        if scope == EVERYTHING:
+            if not self.structure.currentText():
+                return "There is no structure column"
+            if not len(self.rows.oids()):
+                return "There are no rows to save"
+        return ""
+
+    def refresh(self) -> None:
+        super().refresh()
+        problem = self.save_problem()
+        self.save_button.setEnabled(not problem)
+        self.save_button.setToolTip(
+            problem or "Write this run as files to dock with AutoDock Vina at the command line"
+        )
+
+    def _save(self) -> None:
+        global _last_folder
+        problem = self.save_problem()
+        if problem:
+            self.report(problem)
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Save Docking Files To", _last_folder)
+        if not folder:
+            return
+        _last_folder = folder
+        protein = self.protein.currentData()
+        box = self.box()
+        if box is None:
+            return
+        if not isinstance(protein, str):
+            protein = ""
+        scope = self.write.value()
+        s = structure_of(self.ctx, protein) if protein else None
+        if scope != CONFIG and s is None:
+            self.report("There is no such protein in this document")
+            return
+        dock.save_input(
+            self.ctx,
+            protein,
+            s,
+            self.structure.currentText(),
+            self.rows.oids(),
+            box,
+            self.options(),
+            folder,
+            receptor=scope != CONFIG,
+            ligands=scope == EVERYTHING,
+            conformers=int(self.conformers.value()),
+        )
 
     def run(self):
         global _last

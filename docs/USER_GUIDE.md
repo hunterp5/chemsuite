@@ -892,10 +892,17 @@ rows that match, and the count of matching rows appears beside the box.
   | `ID:CPD-12` | the ID column contains CPD-12 (`ID:"two words"` for spaces) |
   | `pIC50>7` | pIC50 is above 7; also `>=`, `<`, `<=`, `=` and `!=` |
   | `Series=A` | Series is exactly A (any case); `Series!=A` for anything else |
-  | `-Series:B` | Series does not contain B; a `-` excludes any term |
+  | `-Series:B` | Series does not contain B; a `-` or `!` excludes any term (`!kinase`) |
+  | `>7` | with no column named, the column chosen in the column menu is above 7 (also `<=5`, `=A`, `!=A`) |
+  | `ID:CPD*` | the whole ID starts with CPD; `*` stands for any text (`*ase`, `Series=A*`) |
+  | `ID:*` | ID has a value; `-ID:*` finds blank IDs |
+  | `kinase \| gpcr` | either term is met |
+  | `Series=A\|B` | Series is A or B; a value after `\|` keeps the column and operator before it (`pIC50<5\|>8`, `Series!=A\|B` for neither) |
   | `"Mol Wt"<400` | quote a column name that has spaces |
 
-  Column names ignore case. A word before a colon that is not a column name is searched for
+  Column names ignore case. A `*` inside quotes is plain text (`"a*b"`), and so is a `|`. On
+  All Columns, `>7` matches a number in any column, so a column such as molecular weight meets
+  it in nearly every row: choose a column first. A word before a colon that is not a column name is searched for
   as text, so `10:30` or `http://` still work. Whole Cell and Regular Expression take the text
   exactly as typed. Hover over the box for a reminder.
 - **Recent searches.** The clock button left of the box lists the last ten searches; pick one to run it again. A
@@ -1328,7 +1335,7 @@ branches; distances between far branches mean little.
   similarity tools do. Up to 10,000 compounds the neighbours are exact. Larger sets find them
   with MinHash and a forest of sorted prefixes, as TMAP does, then check them with the exact
   similarity: about nine in ten of the true ten nearest are found. 50,000 compounds take about
-  10 seconds, 250,000 under a minute (and about 1.2 GB of memory).
+  12 seconds, 250,000 about a minute (and about 1.2 GB of memory).
 - **MHFP6** is the fingerprint TMAP was designed with (Probst and Reymond, *J. Cheminf.* 2018,
   10, 66): each compound's substructures up to three bonds from an atom, written as SMILES,
   reduced to 256 MinHash values. Two compounds' similarity is the share of values they agree
@@ -1429,8 +1436,9 @@ trained on pKaHub's aqueous pKa data. It gives a free energy for every protonati
 polyamines, are handled together. On held-out test sets (SAMPL6–8 and Novartis acids and
 bases) its error is RMSE 0.81 pKa units.
 
-- **The model** (88 MB) comes with chemsuite and needs no network. Each worker process loads
-  it the first time it predicts, which takes about 190 MB of memory per process.
+- **The model** (88 MB) comes with chemsuite and needs no network. The first prediction
+  unpacks it once into chemsuite's cache folder (about 190 MB on disk), and every worker
+  process then shares that one copy rather than loading its own.
 - **Speed.** About 1 s for a small molecule and 4–20 s for a drug-sized one, which has more
   protonation states. Rows run in parallel across the worker processes, and progress counts
   rows as they finish.
@@ -2243,6 +2251,17 @@ is turned away with a line pointing at **Tools ▸ Prepare…**.
 The run is a background job with progress, and cancelling keeps the ligands that already
 finished.
 
+**Save Input Files…** writes the run to a folder instead, to dock with Vina at the command
+line. **Command Line ▸ Write** sets how much: **Everything** (`vina.conf` with the search box
+and the conditions, `receptor.pdbqt`, one file per ligand in `ligands`, `ligands.csv` saying
+which row and conformer each file came from, and `run.sh` / `run.bat`, which run
+`vina --config vina.conf --batch ligands --dir out`), **Receptor** (the config and the
+receptor) or **Config** (the config alone). Config needs only a box, so it can be saved before
+the protein is prepared, or with no protein at all when the box is typed. A row that already
+carries 3D conformers keeps them, one file each; a row with none gets **Conformers** of them
+made (1 by default). Vina searches rotatable bonds itself, so more than one mainly helps with
+the geometry it holds fixed, such as a saturated ring's pucker.
+
 Every run is kept, numbered in the order it was made and labelled with how it was scored
 ("Run 2 · Rescored (vinardo)"), so a new run never overwrites an earlier one. The **Poses**
 panel shows one protein's runs, one at a time: the list at its top chooses which, newest
@@ -3052,7 +3071,7 @@ to be the Help menu: **User Guide**, **Log Folder** and **About**.
 | Theme | Theme: System (follows your computer's light or dark mode), Light and Dark (fixed, whatever the computer uses), Groovy (a random colorful palette) or a custom theme. Switching repaints every open window and panel in the new colors. Also the application and table fonts, text alignment and structure row height. |
 | Hotkeys | Change any command's shortcut. |
 | External | Paths to the optional programs chemsuite runs: AiZynthFinder (its Python and config), [OpenMM](#setting-up-openmm) (its Python, or on Windows a Python inside WSL) and, on Windows, the WSL that runs it, each with a **Test** button. Tools that need a missing program are grayed out, and their tooltip says why. |
-| General | Whether to show the status bar, processor cores to use (0 = automatic: all but one, so the window stays responsive), 3D graphics (Automatic, Software on Windows and Linux, or Off; takes effect after a restart), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each, and close when chemsuite closes, even after a crash. |
+| General | Whether to show the status bar, processor cores to use (0 = automatic: one per physical core but one, and fewer when the computer is short of memory, so the window and other programs stay responsive; a change applies the next time the workers start), 3D graphics (Automatic, Software on Windows and Linux, or Off; takes effect after a restart), recent files to keep, and whether a long job that finishes in the background posts a desktop notification. Background workers run at below-normal priority with one thread each. They close a minute after the last job ends, giving their memory back (the next job starts them again), and when chemsuite closes, even after a crash. |
 
 Your IT department can fix some settings for everyone. Those are shown grayed out with a
 padlock.

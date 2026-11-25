@@ -23,6 +23,7 @@ match in surprising ways (substructure search is the tool for those).
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -109,17 +110,20 @@ def regex_template(replacement: str) -> str:
 
 
 # -- field syntax (the quick search bar) --------------------------------------------------------
-Op = Literal["contains", "equals", "<", "<=", ">", ">=", "!="]
+Op = Literal["contains", "equals", "like", "<", "<=", ">", ">=", "=", "!="]
 
 #: ``field`` then an operator then the value; the field may be quoted to hold spaces
-_FIELD = re.compile(r'^(?P<field>"[^"]*"|[^"<>=!:\s]+)(?P<op>:|<=|>=|!=|<|>|=)(?P<value>.*)$')
+_FIELD = re.compile(r'^(?P<field>"[^"]*"|[^"<>=!:|\s]+)(?P<op>:|<=|>=|!=|<|>|=)(?P<value>.*)$')
+#: an operator with no field: the bar's own column
+_BARE = re.compile(r"^(?P<op><=|>=|!=|<|>|=)(?P<value>.*)$")
 
 
 @dataclass(frozen=True)
 class Term:
     """One condition of a quick search: text in a cell, or a number compared.
 
-    *column* None means the bar's own choice (all columns, or the one it is set to).
+    *column* None means the bar's own choice (all columns, or the one it is set to). ``like``
+    matches the whole cell, ``*`` standing for any text.
     """
 
     text: str
@@ -127,6 +131,23 @@ class Term:
     op: Op = "contains"
     number: float | None = None
     negate: bool = False
+
+    def renamed(self, old: str, new: str) -> Term:
+        return dataclasses.replace(self, column=new) if self.column == old else self
+
+
+@dataclass(frozen=True)
+class Either:
+    """Alternatives (``a | b``): met when any of *terms* is."""
+
+    terms: tuple[Term | Either, ...]
+    negate: bool = False
+
+    def renamed(self, old: str, new: str) -> Either:
+        return Either(tuple(term.renamed(old, new) for term in self.terms), self.negate)
+
+
+Condition = Term | Either
 
 
 def tokens(text: str) -> list[str]:
@@ -149,96 +170,225 @@ def tokens(text: str) -> list[str]:
     return out
 
 
+def _split_bars(token: str) -> list[str]:
+    """*token* split on ``|`` outside double quotes; an empty end marks a ``|`` at that end."""
+    parts: list[str] = []
+    current: list[str] = []
+    quoted = False
+    for char in token:
+        if char == '"':
+            quoted = not quoted
+        if char == "|" and not quoted:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    return parts
+
+
 def _unquote(text: str) -> str:
     if len(text) >= 2 and text[0] == text[-1] == '"':
         return text[1:-1]
     return text[1:] if text.startswith('"') else text  # a quote still being typed
 
 
-def parse_terms(text: str, columns: Sequence[str]) -> tuple[Term, ...]:
-    """The quick-search *text* as terms, all of which a row must meet.
+def _is_wildcard(raw: str) -> bool:
+    """Unquoted text with a ``*``: a whole-cell pattern (quoted text is literal)."""
+    return "*" in raw and not raw.startswith('"')
+
+
+def parse_terms(text: str, columns: Sequence[str]) -> tuple[Condition, ...]:
+    """The quick-search *text* as conditions, all of which a row must meet.
 
     - ``word`` – a cell contains it; several words must all be found (anywhere in the row);
     - ``"exact phrase"`` – a cell contains the phrase, spaces included;
     - ``ID:CPD-12`` – that column contains the text (``ID:"two words"`` for spaces);
     - ``pIC50>7``, ``>=``, ``<``, ``<=``, ``=``, ``!=`` – that column's number compared;
       ``Series=A`` with a non-number is the whole cell, ignoring case;
-    - a leading ``-`` excludes rows that meet the term (``-Series:B``).
+    - ``>7`` or ``=A`` with no column – the bar's column (any column when it searches all);
+    - ``*`` in unquoted text – the whole cell, ``*`` standing for any text (``ID:CPD*``,
+      ``*ase``); ``ID:*`` is any value, ``-ID:*`` a blank;
+    - ``a | b`` – either; in ``Series=A|B`` a bare value after ``|`` keeps the column and
+      operator before it (``Series!=A|B`` is neither);
+    - a leading ``-`` or ``!`` excludes rows that meet the term (``-Series:B``, ``!kinase``).
 
     Field names match a column ignoring case; quote names with spaces (``"Mol Wt"<400``). A
     field that names no column is searched for as plain text, so ``http://`` or ``10:30`` still
     work. Terms with nothing after the operator are skipped while they are being typed.
     """
     by_name = {name.casefold(): name for name in columns}
-    terms: list[Term] = []
+    out: list[Condition] = []
+    join = False  # a "|" waits for the next condition
     for token in tokens(text):
-        negate = token.startswith("-") and len(token) > 1
-        body = token[1:] if negate else token
-        found = _FIELD.match(body)
-        column = by_name.get(_unquote(found["field"]).casefold()) if found else None
-        if found is None or column is None:
-            plain = _unquote(body)
-            if plain:
-                terms.append(Term(plain, negate=negate))
-            continue
-        op, value = found["op"], _unquote(found["value"])
-        if not value:
-            continue
-        number = _number(value)
-        if op == ":":
-            terms.append(Term(value, column, "contains", negate=negate))
-        elif op in ("<", "<=", ">", ">=") and number is not None:
-            terms.append(Term(value, column, op, number, negate))
-        elif op in ("=", "!=") and number is not None:
-            terms.append(Term(value, column, op if op == "!=" else "=", number, negate))
-        elif op == "=":
-            terms.append(Term(value, column, "equals", negate=negate))
-        elif op == "!=":
-            terms.append(Term(value, column, "equals", negate=not negate))
-        else:  # a comparison with no number: look for the text as typed
-            terms.append(Term(_unquote(body), negate=negate))
-    return tuple(terms)
+        negate = len(token) > 1 and (
+            token.startswith("-") or (token.startswith("!") and not token.startswith("!="))
+        )
+        parts = _split_bars(token[1:] if negate else token)
+        join = join or parts[0] == ""
+        condition = _token_condition([p for p in parts if p], by_name, negate)
+        if condition is not None:
+            if join and out:
+                out[-1] = _either(out[-1], condition)
+            else:
+                out.append(condition)
+            join = False
+        join = join or (len(parts) > 1 and parts[-1] == "")
+    return tuple(out)
+
+
+def _either(first: Condition, second: Condition) -> Either:
+    def flat(condition: Condition) -> tuple[Condition, ...]:
+        if isinstance(condition, Either) and not condition.negate:
+            return condition.terms
+        return (condition,)
+
+    return Either(flat(first) + flat(second))
+
+
+def _operator(part: str, by_name: Mapping[str, str]) -> re.Match[str] | None:
+    """*part*'s operator (with the column it names, if any), or None for plain text."""
+    bare = _BARE.match(part)
+    if bare is not None:
+        return bare
+    found = _FIELD.match(part)
+    if found is None or by_name.get(_unquote(found["field"]).casefold()) is None:
+        return None
+    return found
+
+
+def _token_condition(
+    parts: list[str], by_name: Mapping[str, str], negate: bool
+) -> Condition | None:
+    """One token's parts (split on ``|``) as a condition, or None while it is being typed.
+
+    Later parts with no operator of their own reuse the first's column and operator.
+    """
+    if not parts:
+        return None
+    head = _operator(parts[0], by_name)
+    prefix = "" if head is None else head[0][: len(head[0]) - len(head["value"])]
+    if len(parts) > 1 and prefix.endswith("!=") and head is not None:  # Series!=A|B: neither
+        prefix = prefix[:-2] + "="
+        parts = [prefix + head["value"], *parts[1:]]
+        negate = not negate
+    field = head["field"] if head is not None and "field" in head.re.groupindex else ""
+    terms: list[Term] = []
+    for index, part in enumerate(parts):
+        own = _operator(part, by_name) if index else None
+        if index and own is None:
+            part = prefix + part
+        elif field and own is not None and "field" not in own.re.groupindex:
+            part = field + part  # pIC50<5|>8: the column again
+        term = _part_term(part, by_name)
+        if term is not None:
+            terms.append(term)
+    if not terms:
+        return None
+    if len(terms) == 1:
+        return dataclasses.replace(terms[0], negate=terms[0].negate != negate)
+    return Either(tuple(terms), negate)
+
+
+def _part_term(body: str, by_name: Mapping[str, str]) -> Term | None:
+    """One condition with no ``|`` or exclusion prefix, or None while it is being typed."""
+    match = _operator(body, by_name)
+    if match is None:
+        if _is_wildcard(body):
+            return Term(body, op="like")
+        plain = _unquote(body)
+        return Term(plain) if plain else None
+    column = (
+        by_name[_unquote(match["field"]).casefold()] if "field" in match.re.groupindex else None
+    )
+    op, raw = match["op"], match["value"]
+    value = _unquote(raw)
+    if not value:
+        return None
+    number = _number(value)
+    if op == ":":
+        return Term(value, column, "like" if _is_wildcard(raw) else "contains")
+    if op != ":" and number is not None:
+        return Term(value, column, op, number)
+    if op in ("=", "!="):
+        return Term(value, column, "like" if _is_wildcard(raw) else "equals", negate=op == "!=")
+    return Term(_unquote(body))  # a comparison with no number: look for the text as typed
+
+
+def like_pattern(text: str) -> str:
+    """A regular expression for the whole cell, ``*`` standing for any text; ``*`` alone is
+    any value (not a blank)."""
+    if not text.strip("*"):
+        return r"(?s)."
+    return r"(?s)\A" + ".*".join(re.escape(piece) for piece in text.split("*")) + r"\Z"
 
 
 def terms_mask(
     table: Table,
-    terms: Sequence[Term],
+    terms: Sequence[Condition],
     *,
     column: str | None = None,
     case_sensitive: bool = False,
 ) -> np.ndarray:
-    """``bool`` per row (storage order): rows that meet every term.
+    """``bool`` per row (storage order): rows that meet every condition.
 
     *column* is where terms without a field look (None: every searchable column).
     """
-    from .columns import NumberColumn, to_number
-
     keep = np.ones(len(table), dtype=np.bool_)
     for term in terms:
-        target = term.column or column
-        if target is not None and target not in table:
-            hit = np.zeros(len(table), dtype=np.bool_)
-        elif term.number is not None:
-            values = table.column(target)
-            if not isinstance(values, NumberColumn):
-                values = to_number(values, force=True)[0]
-            numbers = values.values()
-            with np.errstate(invalid="ignore"):
-                hit = {
-                    "<": numbers < term.number,
-                    "<=": numbers <= term.number,
-                    ">": numbers > term.number,
-                    ">=": numbers >= term.number,
-                    "=": np.isclose(numbers, term.number),
-                    "!=": ~np.isclose(numbers, term.number) & ~np.isnan(numbers),
-                }[term.op]
-        else:
-            mode: SearchMode = "whole" if term.op == "equals" else "contains"
-            query = Query(term.text, mode, case_sensitive)
-            names = None if target is None else [target]
-            hit = match_mask(table, query, names).any(axis=1)
-        keep &= ~hit if term.negate else hit
+        keep &= _condition_mask(table, term, column, case_sensitive)
     return keep
+
+
+def _condition_mask(
+    table: Table, condition: Condition, column: str | None, case_sensitive: bool
+) -> np.ndarray:
+    if isinstance(condition, Either):
+        hit = np.zeros(len(table), dtype=np.bool_)
+        for term in condition.terms:
+            hit |= _condition_mask(table, term, column, case_sensitive)
+    else:
+        hit = _term_mask(table, condition, column, case_sensitive)
+    return ~hit if condition.negate else hit
+
+
+def _term_mask(table: Table, term: Term, column: str | None, case_sensitive: bool) -> np.ndarray:
+    target = term.column or column
+    if target is not None and target not in table:
+        return np.zeros(len(table), dtype=np.bool_)
+    names = searchable_columns(table, None if target is None else [target])
+    if term.number is not None:
+        hit = np.zeros(len(table), dtype=np.bool_)
+        for name in names:
+            hit |= _compare(table, name, term.op, term.number)
+        return hit
+    if term.op == "like":
+        query = Query(like_pattern(term.text), "regex", case_sensitive)
+    else:
+        query = Query(term.text, "whole" if term.op == "equals" else "contains", case_sensitive)
+    return match_mask(table, query, names).any(axis=1)
+
+
+def _compare(table: Table, name: str, op: Op, number: float) -> np.ndarray:
+    """``bool`` per row: the number in column *name* compared with *number*."""
+    from .columns import NumberColumn, to_number
+
+    values = table.column(name)
+    if not isinstance(values, NumberColumn):
+        values = to_number(values, force=True)[0]
+    numbers = values.values()
+    with np.errstate(invalid="ignore"):
+        if op == "<":
+            return numbers < number
+        if op == "<=":
+            return numbers <= number
+        if op == ">":
+            return numbers > number
+        if op == ">=":
+            return numbers >= number
+        if op == "=":
+            return np.isclose(numbers, number)
+        return ~np.isclose(numbers, number) & ~np.isnan(numbers)
 
 
 def _number(text: str) -> float | None:

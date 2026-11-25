@@ -25,10 +25,10 @@ search, and a second Escape (or the close button) hides the bar. Hiding the bar 
 search, so it never leaves rows hidden by a search you cannot see.
 
 In its normal mode the box understands field syntax
-(:func:`chemsuite.core.table.search.parse_terms`): ``ID:CPD-12``, ``pIC50>7``,
-``"exact phrase"``, ``-Series:B``; Whole Cell and Regular Expression take the text as typed. A
-count of matching rows sits beside the box, and the clock button lists the last searches (saved
-with the document).
+(:func:`chemsuite.core.table.search.parse_terms`): ``ID:CPD-12``, ``pIC50>7``, ``>7``,
+``"exact phrase"``, ``ID:CPD*``, ``Series=A|B``, ``-Series:B``, ``!kinase``; Whole Cell and
+Regular Expression take the text as typed. A count of matching rows sits beside the box, and the
+clock button lists the last searches (saved with the document).
 """
 
 from __future__ import annotations
@@ -65,8 +65,10 @@ HISTORY_LIMIT = 10
 #: a search kept this long (or confirmed with Return) goes into the history
 HISTORY_AFTER_MS = 1500
 SYNTAX_TIP = (
-    'Words must all be found. "exact phrase" · Column:text · pIC50>7 (also >=, <, <=, =, !=) · '
-    '-word or -Column:text excludes. Quote column names with spaces: "Mol Wt"<400.'
+    'Words must all be found. "exact phrase" · Column:text · pIC50>7 (also >=, <, <=, =, !=); '
+    ">7 alone uses the chosen column · * is any text: CPD*, ID:* (has a value) · "
+    "a | b, Series=A|B for either · -word or !word excludes. "
+    'Quote column names with spaces: "Mol Wt"<400.'
 )
 
 

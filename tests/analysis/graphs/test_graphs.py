@@ -155,6 +155,35 @@ def test_edges_end_near_their_length_and_nodes_apart() -> None:
     assert np.median(gaps.min(axis=1)) > 0.2
 
 
+def crossings(pos: np.ndarray, a: np.ndarray, b: np.ndarray) -> int:
+    """How many pairs of edges without a shared end cross."""
+    p, q = pos[a], pos[b]
+    i, j = np.triu_indices(len(a), 1)
+    apart = (a[i] != a[j]) & (a[i] != b[j]) & (b[i] != a[j]) & (b[i] != b[j])
+    i, j = i[apart], j[apart]
+
+    def side(o: np.ndarray, d: np.ndarray, x: np.ndarray) -> np.ndarray:
+        return np.sign(
+            (d[:, 0] - o[:, 0]) * (x[:, 1] - o[:, 1]) - (d[:, 1] - o[:, 1]) * (x[:, 0] - o[:, 0])
+        )
+
+    cross = (side(p[i], q[i], p[j]) != side(p[i], q[i], q[j])) & (
+        side(p[j], q[j], p[i]) != side(p[j], q[j], q[i])
+    )
+    return int(cross.sum())
+
+
+def test_a_large_tree_is_spread_out_rather_than_folded() -> None:
+    # repulsion that reaches only a few edge lengths let branches pile up and fold over each
+    # other: this tree had 0.085 crossings per edge then, 0.04 now (0.04-0.065 over seeds)
+    rng = np.random.default_rng(0)
+    n = 2000
+    parent = np.array([rng.integers(0, i) for i in range(1, n)])
+    a, b = parent, np.arange(1, n)
+    pos = multilevel(n, a, b)
+    assert crossings(pos, a, b) / len(a) < 0.075
+
+
 def test_layouts_are_the_same_for_the_same_seed() -> None:
     a, b = np.arange(0, 199), np.arange(1, 200)
     assert np.array_equal(multilevel(200, a, b, seed=3), multilevel(200, a, b, seed=3))

@@ -27,7 +27,17 @@ k-d tree), so a step costs about n log n rather than n².
 neighbours (and free leaves into their neighbour) until it is small, laid out there, and each
 level is then placed from the one above and refined with local forces. A node's weight (how
 many nodes it stands for) scales the push it gives. This lays out trees of hundreds of
-thousands of nodes, as TMAP's layouts (OGDF's FM³) do, without a compiled dependency.
+thousands of nodes, as TMAP's layouts (OGDF's FM³: Hachul, S. and Jünger, M. (2004),
+"Drawing large graphs with a potential-field-based multilevel algorithm," *Graph Drawing*,
+LNCS 3383, 285–295) do, without a compiled dependency.
+
+How far the push reaches decides the picture. A short reach leaves branches free to pile into
+clumps and fold over each other; an unlimited one drives everything to a hollow ring with
+stretched edges. Sixteen edge lengths on the coarse levels, where the branches are arranged
+and nodes are few, and eight on the finest spread a tree over the page as FM³ does, at a cost
+that grows with the square of the reach. Each finer level starts every node on its group's
+place moved toward the groups its edges lead to, so the nodes of a group start on their
+neighbors' sides rather than in a heap.
 
 **Packing.** Components are laid out alone and placed in rows, largest first.
 
@@ -49,11 +59,14 @@ Progress = Callable[[int, int], None]
 SEED = 42
 COARSEST = 64  # nodes at which coarsening stops
 MIN_SHRINK = 0.9  # stop coarsening once a level keeps more than this share of its nodes
-CUTOFF = 3.0  # repulsion reaches this many edge lengths
+CUTOFF = 8.0  # repulsion reaches this many edge lengths on the finest level
+COARSE_CUTOFF = 16.0  # and this many on the coarser ones
 FINE_STEPS = 30
 COARSE_STEPS = 60
 FIRST_STEPS = 300
 COOLING = 0.93
+TOWARD = 0.5  # how far a placed node moves toward its neighbors outside its group
+NOISE = 0.3  # and the jitter that parts the rest, in edge lengths
 GAP = 2.0  # edge lengths between packed components
 
 
@@ -194,7 +207,7 @@ def multilevel(
         eb,
         weight=weights[-1],
         k=k,
-        cutoff=math.inf if small else CUTOFF,
+        cutoff=math.inf if small else COARSE_CUTOFF,
         steps=FIRST_STEPS if small else COARSE_STEPS,
         cancel=cancel,
     )
@@ -203,13 +216,14 @@ def multilevel(
     for done, (group, fa, fb) in enumerate(reversed(levels)):
         nf = len(group)
         k = math.sqrt(n / nf)
-        pos = pos[group] + rng.normal(scale=0.3 * k, size=(nf, 2))
+        pos = _place(pos, group, fa, fb, k, rng)
         pos = force(
             pos,
             fa,
             fb,
             weight=weights[len(levels) - done - 1],
             k=k,
+            cutoff=CUTOFF if nf == n else COARSE_CUTOFF,
             steps=FINE_STEPS if nf == n else COARSE_STEPS,
             temperature=2 * k,
             cancel=cancel,
@@ -217,6 +231,33 @@ def multilevel(
         if progress is not None:
             progress(done + 2, steps)
     return pos
+
+
+def _place(
+    coarse: np.ndarray,
+    group: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    k: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """A finer level's positions from the coarser one: each node starts on its group's
+    position, moved part of the way toward the groups its edges lead out to, so the nodes of
+    a group start on the sides their neighbors are on rather than in a heap."""
+    n = len(group)
+    start = coarse[group]
+    out = group[a] != group[b]
+    oa, ob = a[out], b[out]
+    count = np.bincount(oa, minlength=n) + np.bincount(ob, minlength=n)
+    toward = np.zeros((n, 2))
+    for axis in (0, 1):
+        toward[:, axis] = np.bincount(oa, start[ob, axis], minlength=n) + np.bincount(
+            ob, start[oa, axis], minlength=n
+        )
+    has = count > 0
+    shift = np.zeros((n, 2))
+    shift[has] = toward[has] / count[has, None] - start[has]
+    return start + TOWARD * shift + rng.normal(scale=NOISE * k, size=(n, 2))
 
 
 # -- many components ----------------------------------------------------------------------------

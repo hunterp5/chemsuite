@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from .columns import Column, NumberColumn, TextColumn, to_number
-from .search import Query, Term, match_mask, terms_mask
+from .search import Condition, Query, match_mask, terms_mask
 
 if TYPE_CHECKING:
     from .table import Table
@@ -178,7 +178,7 @@ class SearchFilter(Filter):
     query: Query
     negate: bool = False
     column: str | None = None
-    terms: tuple[Term, ...] | None = None
+    terms: tuple[Condition, ...] | None = None
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -199,12 +199,11 @@ class SearchFilter(Filter):
 
     def renamed(self, old: str, new: str) -> Filter:
         out = super().renamed(old, new)
-        if self.terms is None or not any(term.column == old for term in self.terms):
+        if self.terms is None:
             return out
-        terms = tuple(
-            dataclasses.replace(term, column=new) if term.column == old else term
-            for term in self.terms
-        )
+        terms = tuple(term.renamed(old, new) for term in self.terms)
+        if terms == self.terms:
+            return out
         return dataclasses.replace(out, terms=terms)  # type: ignore[type-var]
 
 

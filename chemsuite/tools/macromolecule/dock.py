@@ -44,7 +44,7 @@ from chemsuite.core.jobs import Cancelled
 from chemsuite.core.mols import mol_from_blob, mol_from_text
 from chemsuite.core.wording import plural
 from chemsuite.macromolecule.chem import poses as pose_tools
-from chemsuite.macromolecule.dock import pdbqt, run, vina
+from chemsuite.macromolecule.dock import export, pdbqt, run, vina
 from chemsuite.macromolecule.dock.box import Box
 from chemsuite.macromolecule.structure.model import Structure
 from chemsuite.macromolecule.workspace.poses import DOCKED, RESCORED, DockedPoses, Pose
@@ -150,6 +150,109 @@ def poses_to_table(ctx: ToolContext, protein: str, poses: Sequence[Pose]) -> int
                  structures=(LIGAND_COLUMN,))  # fmt: skip
     ctx.show_message(f"{plural(len(poses), 'pose')} copied to the table")
     return len(poses)
+
+
+def single_conformers(mol: Chem.Mol) -> list[Chem.Mol]:
+    """*mol*'s 3D conformers, one molecule each (empty when it has none)."""
+    posed = pose_tools.pose_of(mol)
+    if posed is None:
+        return []
+    out = []
+    for conformer in posed.GetConformers():
+        if not conformer.Is3D():
+            continue
+        one = Chem.Mol(posed)
+        one.RemoveAllConformers()
+        one.AddConformer(Chem.Conformer(conformer), assignId=True)
+        out.append(one)
+    return out
+
+
+def ligand_inputs(
+    mols: Sequence[Chem.Mol | None], names: Sequence[str], oids: np.ndarray, conformers: int
+) -> tuple[list[export.LigandInput], int]:
+    """The ligand files a save should write, and how many rows had no structure.
+
+    A row keeps the conformers it already carries (the Conformers tool's, or a pose); a row
+    with none, or with a flat drawing, gets *conformers* made for it. Vina searches the
+    rotatable bonds itself, so more than one is worth sending only where the geometry it holds
+    fixed differs — the pucker of a saturated ring.
+    """
+    settings = ConformerSettings(count=max(1, int(conformers)))
+    out: list[export.LigandInput] = []
+    skipped = 0
+    for i, mol in enumerate(mols):
+        if mol is None:
+            skipped += 1
+            continue
+        name = names[i] if i < len(names) else ""
+        row = int(oids[i]) if i < len(oids) else -1
+        made = single_conformers(mol)
+        if not made:
+            made = single_conformers(generate(mol, settings).mol) if settings.count else []
+        if not made:
+            skipped += 1
+            continue
+        for k, one in enumerate(made, 1):
+            out.append(export.LigandInput(one, name, row, k, len(made)))
+    return out, skipped
+
+
+def save_input(
+    ctx: ToolContext,
+    protein: str,
+    structure: Structure | None,
+    column: str,
+    oids: np.ndarray,
+    box: Box,
+    options: vina.Options,
+    folder: str,
+    *,
+    receptor: bool = True,
+    ligands: bool = True,
+    conformers: int = 1,
+):
+    """Write this docking run into *folder* to run at the command line, as a job.
+
+    *receptor* and *ligands* say how much is written: the config alone (the search box and the
+    conditions), the receptor beside it, or the ligands too with the manifest and the run
+    scripts (:mod:`chemsuite.macromolecule.dock.export`).
+    """
+    cells = ctx.structure_inputs(column, oids) if ligands else []
+    names = row_names(ctx, oids) if ligands else []
+
+    def work(job):
+        receptor_pdbqt = None
+        dropped: tuple[str, ...] = ()
+        if receptor and structure is not None:
+            made = pdbqt.receptor(structure)
+            receptor_pdbqt, dropped = made.pdbqt, made.dropped
+        inputs, skipped = ([], 0)
+        if ligands:
+            inputs, skipped = ligand_inputs(ligand_mols(cells), names, oids, conformers)
+        saved = export.save(folder, box, options, receptor_pdbqt, inputs,
+                            cancel=job.cancel_token, progress=job.report)  # fmt: skip
+        return saved, skipped, dropped
+
+    def done(result) -> None:
+        if result is None:
+            return
+        saved, skipped, dropped = result
+        if saved.ligands:
+            message = (f"{plural(saved.ligands, 'ligand file')} from "
+                       f"{plural(saved.rows, 'row')} saved to {saved.folder}")  # fmt: skip
+        else:
+            message = f"Saved to {saved.folder}"
+        if saved.failed:
+            message += f"; {plural(len(saved.failed), 'ligand')} could not be written"
+        if skipped:
+            message += f"; {plural(skipped, 'row')} had no structure"
+        if dropped:
+            message += f". Left out of the receptor: {', '.join(dropped)}"
+        ctx.show_message(message)
+
+    title = f"Saving docking files for {protein}…" if protein else "Saving docking files…"
+    return ctx.run(title, work, done)
 
 
 def dock_rows(
