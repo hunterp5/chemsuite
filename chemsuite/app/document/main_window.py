@@ -758,7 +758,7 @@ class MainWindow(QMainWindow):
 
         self._building = "Window"
         log = A("view.log", "&Log", self.show_log)
-        menu_corner.install(self, menu_corner.layout_menu(self), log)
+        menu_corner.install(self, menu_corner.layout_menu(self, A), log)
 
     def open_user_guide(self) -> None:
         from ..widgets.dialogs.kit import GUIDE

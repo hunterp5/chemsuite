@@ -54,7 +54,7 @@ def test_ok_saves_and_survives_reload(window, tmp_path) -> None:
     saved = json.loads((tmp_path / "config" / "settings.json").read_text())
     assert saved["appearance"]["theme"] == "dark"
     assert saved["appearance"]["structure_row_height"] == 150
-    assert window.view._structure_row_height == 150
+    assert window.view.row_sizer.height == 150
     general = window.open_settings("general")  # the status bar is a General setting
     assert general.windowTitle() == "General" and general.page is general.general
     general.general.status_bar.setChecked(False)

@@ -124,6 +124,7 @@ class _Overlay(QTableView):
             vertical.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             vertical.customContextMenuRequested.connect(self._row_header_menu)
             vertical.viewport().installEventFilter(self)
+            main.row_sizer.watch(vertical)  # its row dividers drag the table's rows
         else:
             vertical.hide()
 

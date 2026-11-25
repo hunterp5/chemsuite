@@ -505,7 +505,8 @@ def name_panels(window: MainWindow, restorable: list[QDockWidget]) -> None:
 
 
 def capture(window: MainWindow) -> dict[str, Any]:
-    """The window's arrangement, column widths and search bar, as JSON-friendly data."""
+    """The window's arrangement, column widths, row height and search bar, as JSON-friendly
+    data."""
     state = bytes(window.saveState(LAYOUT_VERSION).data())
     out: dict[str, Any] = {"docks": base64.b64encode(state).decode("ascii")}
     if window.arrangement != Arrangement():
@@ -517,6 +518,9 @@ def capture(window: MainWindow) -> dict[str, Any]:
         out["frozen"] = window.view.frozen_count
     if window.view.frozen_row_count:
         out["frozen_rows"] = window.view.frozen_row_count
+    row_height = window.view.row_sizer.saved()
+    if row_height is not None:
+        out["row_height"] = row_height
     alignments = window.view.alignments()
     if alignments:
         out["alignments"] = alignments
@@ -547,6 +551,7 @@ def restore(window: MainWindow, saved: dict[str, Any]) -> None:
         window.view.set_column_widths(
             {str(k): int(v) for k, v in widths.items() if isinstance(v, int | float) and v > 0}
         )
+    window.view.row_sizer.restore(saved.get("row_height"))
     frozen = saved.get("frozen")
     if isinstance(frozen, int) and not isinstance(frozen, bool) and frozen > 0:
         window.view.set_frozen(frozen)

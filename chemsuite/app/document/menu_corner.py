@@ -21,10 +21,11 @@ for the whole app, so they go in a Window menu there instead.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QMenu, QMenuBar, QToolButton, QWidget
 
 from ..shell.jobs_ui import FAILED_COLOUR, JobsIndicator
@@ -41,10 +42,31 @@ BUTTON_STYLE = (
 )
 
 
-def layout_menu(window: MainWindow) -> QMenu:
+def layout_menu(window: MainWindow, action: Callable) -> QMenu:
+    """How the panes are arranged, and how large the table draws structures (*action* makes
+    a registered command, so the zoom shortcuts work with the menu closed)."""
     menu = QMenu("&Layout", window)
-    menu.aboutToShow.connect(lambda: dock_layout.fill_layout_menu(menu, window))
-    dock_layout.fill_layout_menu(menu, window)
+    sizes = [
+        action(command, title, slot, keys)
+        for command, title, slot, keys in (
+            ("view.larger_structures", "&Larger Structures",
+             lambda: window.view.row_sizer.zoom(1),
+             [QKeySequence.StandardKey.ZoomIn, "Ctrl+="]),
+            ("view.smaller_structures", "&Smaller Structures",
+             lambda: window.view.row_sizer.zoom(-1), [QKeySequence.StandardKey.ZoomOut]),
+            ("view.reset_structure_size", "&Reset Structure Size",
+             lambda: window.view.row_sizer.reset(), ["Ctrl+0"]),
+        )
+    ]  # fmt: skip
+    window.addActions(sizes)
+
+    def fill() -> None:
+        dock_layout.fill_layout_menu(menu, window)
+        menu.addSeparator()
+        menu.addActions(sizes)
+
+    menu.aboutToShow.connect(fill)
+    fill()
     return menu
 
 
@@ -64,7 +86,7 @@ def install(window: MainWindow, layout: QMenu, log: QAction) -> None:
     layout_button.setText("Layout")
     layout_button.setMenu(layout)
     layout_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-    layout_button.setToolTip("Arrange the panes around the table")
+    layout_button.setToolTip("Arrange the panes around the table and size the structures")
     log_button = LogButton(log, window.jobs_indicator)
     for button in (layout_button, log_button):
         button.setAutoRaise(True)

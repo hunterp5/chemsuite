@@ -61,12 +61,12 @@ from chemsuite.core.table.columns import REACTION, STRUCTURE, ReactionColumn
 from .cells import DRAWN, Alignment, CellDelegate, StructureImages
 from .frozen_columns import RowHeader, quiet_column_header
 from .highlights import AtomSource, Highlight
+from .row_size import RowSizer
 from .snap import follow_selection, rows_for
 from .structure_clipboard import rxn_text_from_mime, structure_text_from_mime
 from .table_model import KIND_ROLE, TableModel
 from .view_selection import full_columns, mirror_columns, replace_selection
 
-STRUCTURE_ROW_HEIGHT = 110
 STRUCTURE_COLUMN_WIDTH = 200
 REACTION_COLUMN_WIDTH = 440
 MAX_AUTO_COLUMN_WIDTH = 320
@@ -167,7 +167,6 @@ class TableView(QTableView):
         self._row_mode = False  # … on the row header
         self._widths: dict[str, int] = {}
         self._kinds: dict[str, str] = {}
-        self._structure_row_height = STRUCTURE_ROW_HEIGHT
         self._frozen = None  # the FrozenView over the left edge, made when first needed
         self._frozen_rows = None  # the FrozenRowsView over the top, made when first needed
         self._frozen_corner = None  # where the two meet
@@ -207,6 +206,7 @@ class TableView(QTableView):
         # to be a column selection when it reaches the compound store.
         horizontal.viewport().installEventFilter(self)
         self.verticalHeader().viewport().installEventFilter(self)
+        self.row_sizer = RowSizer(self)  # after the filter above, so a divider drag comes first
         horizontal.setSectionsMovable(True)
         horizontal.sectionMoved.connect(self._on_section_moved)
         horizontal.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -232,12 +232,10 @@ class TableView(QTableView):
         font = QFont(QApplication.font())
         if appearance.table_font_pt:
             font.setPointSize(appearance.table_font_pt)
-        changed = (
-            font != self.font() or appearance.structure_row_height != self._structure_row_height
-        )
+        changed = font != self.font()
         self.setFont(font)
         self._fit_row_header()
-        self._structure_row_height = appearance.structure_row_height
+        changed = self.row_sizer.set_default(appearance.structure_row_height) or changed
         self.table_model.set_alignment(appearance.table_align_h, appearance.table_align_v)
         if changed:
             self._capture_widths()
@@ -307,13 +305,17 @@ class TableView(QTableView):
         self._widths.update(widths)
         self._fit_layout()
 
+    def fit_rows(self) -> None:
+        """Rows at the structure height when the table draws structures, else a line of text."""
+        self.row_sizer.fit_header(self.fontMetrics().height() + 8)
+        self.updateGeometries()
+        for overlay in self._overlays():
+            overlay.refresh()
+
     def _fit_layout(self) -> None:
         model = self.table_model
         table = model.table
-        has_structures = any(table.kind(name) in DRAWN for name in table.column_names)
-        self.verticalHeader().setDefaultSectionSize(
-            self._structure_row_height if has_structures else self.fontMetrics().height() + 8
-        )
+        self.fit_rows()
         for col in range(model.columnCount()):
             name = model.column_name(col)
             kind = table.kind(name)
@@ -945,6 +947,10 @@ class TableView(QTableView):
                 {name: (oids, [""] * len(oids)) for name, oids in cells.items()},
                 label="Clear cells",
             )
+
+    def wheelEvent(self, event) -> None:
+        if not self.row_sizer.wheel(event):  # Ctrl+wheel zooms the drawings
+            super().wheelEvent(event)
 
     def keyPressEvent(self, event) -> None:
         if event.key() not in _KEEP_COLUMN_MODE:
