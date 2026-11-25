@@ -1099,6 +1099,7 @@ descriptors, conformers, clustering, maps and searches.
   | Partial results kept on cancel | Discarded on cancel |
   |---|---|
   | Calculate Descriptors | Clustering |
+  | Structural Alerts | |
   | Predict pKa | |
   | MedChem plots (descriptor step) | Dimensionality Reduction |
   | Generate Conformers | Self-Organizing Map |
@@ -1449,6 +1450,40 @@ calculating MW again adds "MW (2)".
   first byte), ready to export for modelling. A row with no valid structure is left blank.
 - **Cancelling** keeps the rows already calculated; a fingerprint is written only when every
   row has one.
+
+### Structural Alerts
+
+Chemistry ▸ Calculate ▸ Structural Alerts…
+
+Flags substructures that are known to interfere with assays, react indiscriminately or make
+a poor lead. Pick a structure column, the rows (All, Shown or Selected) and the filter sets to
+match; **Common Set**, **All** and **None** tick or untick several at once. Each set becomes a
+number column of how many of its alerts the row hits, and (unless **Name the alerts hit** is
+off) a text column naming them, separated by "; ".
+
+| Set | Columns | What it covers |
+|---|---|---|
+| PAINS | PAINS Alerts, PAINS Alert Names | 480 pan-assay interference substructures (Baell & Holloway 2010), families A, B and C together. |
+| Brenk | Brenk Alerts, … | 105 reactive, toxic or metabolically unstable groups unwanted in a screening library (Brenk et al. 2008). |
+| NIH | NIH Alerts, … | 180 reactive and assay-interfering groups from the NIH Chemical Genomics Center. |
+| ZINC | ZINC Alerts, … | 50 drug-likeness and reactivity filters used to build the ZINC database. |
+| Glaxo | Glaxo Alerts, … | 55 Glaxo Wellcome hard filters for unsuitable leads (Hann et al. 1999). |
+| Dundee | Dundee Alerts, … | 105 University of Dundee filters for neglected-disease screening libraries. |
+| BMS | BMS Alerts, … | 180 Bristol-Myers Squibb HTS deck filters (Pearce et al. 2006). |
+| MLSMR | MLSMR Alerts, … | 116 NIH Molecular Libraries Small Molecule Repository exclusion filters. |
+| Inpharmatica | Inpharmatica Alerts, … | 91 unwanted-fragment filters from Inpharmatica. |
+| SureChEMBL | SureChEMBL Alerts, … | 166 filters for fragments SureChEMBL does not count as MedChem-friendly. |
+| LINT | LINT Alerts, … | 57 Pfizer LINT filters. |
+
+- **The patterns** are RDKit's own filter catalogs; the sets overlap, and a compound often hits
+  the same group in several of them under different names (a catechol is "catechol A" in PAINS
+  and "catechol" in Brenk).
+- **An alert is a warning, not a verdict.** Many marketed drugs hit one. Use the columns to
+  sort, filter or color a plot, and look at what was matched before dropping a compound.
+- **Matching** is on the structure as drawn, without explicit hydrogens, so a structure read
+  from a file or made 3D gives what the same compound's flat cell gives. Blanks and structures
+  that cannot be read are left blank, not zero.
+- **Cancelling** keeps the rows already matched.
 
 ### Predict pKa
 

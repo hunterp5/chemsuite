@@ -121,7 +121,13 @@ def test_tools_fill_slots_among_menu_commands(window) -> None:
                    "Enumerate", "Decompose", "Routes"]  # fmt: skip
     assert "Generate Conformers…" not in visible(menus["Chemistry"])
     calculate = submenu(menus["Chemistry"], "Calculate")
-    assert visible(calculate) == ["Descriptors…", "pKa…", "Sites of Metabolism…"]
+    assert visible(calculate) == [
+        "Descriptors…",
+        "Structural Alerts…",
+        "pKa…",
+        "Sites of Metabolism…",
+        "Permeability…",
+    ]
     reaction = submenu(menus["Chemistry"], "Reaction")
     assert visible(reaction) == ["Split Reactions…", "Retrosynthesis…"]
     assert not {"Preferences…", "Status Bar"} & set(visible(menus["Edit"]))
