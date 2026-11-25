@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from PySide6.QtCore import (
+    QAbstractItemModel,
     QAbstractTableModel,
     QModelIndex,
     QPersistentModelIndex,
@@ -157,6 +158,68 @@ class ResultModel(QAbstractTableModel):
             )
             self.order = [i for _v, i in keyed] + [i for _v, i in blank]
         self.layoutChanged.emit()
+
+
+class TreeTableModel(QAbstractItemModel):
+    """A tree of nodes (ints) shown in columns, for a ``QTreeView``: *kids* maps each node
+    (−1: the top level) to its children in order, *parents* gives each node's parent (−1 at
+    the top). Subclasses give each cell with :meth:`cell` and the titles with :meth:`header`.
+    """
+
+    def __init__(self, kids: dict[int, list[int]], parents: Sequence[int], columns: int) -> None:
+        super().__init__()
+        self.kids = kids
+        self.parents = list(parents)
+        self.columns = columns
+        self.position = {i: row for children in kids.values() for row, i in enumerate(children)}
+
+    def cell(self, node: int, column: int, role: int) -> object:
+        return None
+
+    def header(self, column: int) -> str:
+        return ""
+
+    def refresh(self) -> None:
+        """The cells changed (and may sort differently): views keep their expanded nodes."""
+        self.layoutAboutToBeChanged.emit()
+        self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, self.columns - 1)
+        self.layoutChanged.emit()
+
+    def node(self, index: QModelIndex | QPersistentModelIndex) -> int:
+        return int(index.internalId()) if index.isValid() else -1
+
+    def node_index(self, node: int, column: int = 0) -> QModelIndex:
+        return self.createIndex(self.position[node], column, node)
+
+    def index(self, row, column, parent=QModelIndex()):  # noqa: B008 (Qt's signature)
+        kids = self.kids.get(self.node(parent), [])
+        if not 0 <= row < len(kids) or not 0 <= column < self.columns:
+            return QModelIndex()
+        return self.createIndex(row, column, kids[row])
+
+    def parent(self, index=QModelIndex()):  # noqa: B008 (Qt's signature)
+        if not index.isValid():
+            return QModelIndex()
+        up = self.parents[self.node(index)]
+        return QModelIndex() if up < 0 else self.node_index(up)
+
+    def rowCount(self, parent=QModelIndex()):  # noqa: B008 (Qt's signature)
+        if parent.isValid() and parent.column() != 0:
+            return 0
+        return len(self.kids.get(self.node(parent), []))
+
+    def columnCount(self, parent=QModelIndex()):  # noqa: B008 (Qt's signature)
+        return self.columns
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if orientation != Qt.Orientation.Horizontal or role != Qt.ItemDataRole.DisplayRole:
+            return None
+        return self.header(section)
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
+        return self.cell(self.node(index), index.column(), role)
 
 
 class DrawingDelegate(QStyledItemDelegate):

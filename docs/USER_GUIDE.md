@@ -216,7 +216,7 @@ one step that Undo takes back. The table's own columns, filters and panels stay 
   - filters and filter sets;
   - the advanced search and recent searches;
   - open plots and panels with their settings. Analysis panels (Free-Wilson, Hansch, Matched
-    Pairs, Activity Cliffs) rerun their analysis on the same rows when the document opens
+    Pairs, Activity Cliffs, Scaffold Tree) rerun their analysis on the same rows when the document opens
     (they show "Recalculating…" meanwhile); Hansch keeps its substituent constants, so the CSV
     file is not needed again;
   - the selected rows, the current cell and where the table was scrolled to;
@@ -1108,6 +1108,7 @@ descriptors, conformers, clustering, maps and searches.
   | R-Groups (numbered core) | Hansch |
   | Diverse Subset (the picks made so far) | Matched Pairs |
   | | Activity Cliffs |
+  | | Scaffold Tree |
 
   The tools in the right-hand column have no meaningful result until the whole run is complete.
 - **Safety.**
@@ -2875,6 +2876,47 @@ Data ▸ SAR ▸ Activity Cliffs… lists similar compounds with very different 
   edges colored by SALI, points colored by activity and sized by Max SALI, singletons left
   out. The network compares ECFP4 (Morgan, radius 2) Tanimoto similarity, so with another
   fingerprint or metric its edges can differ from the pairs in the list.
+
+### Scaffold Tree
+
+Data ▸ SAR ▸ Scaffold Tree… shows which ring systems a set holds and how they nest, as the
+scaffold tree of Schuffenhauer et al. (*J. Chem. Inf. Model.* 2007), the view Scaffold Hunter
+draws.
+
+- **How it is built.**
+  - Each compound's Bemis–Murcko scaffold (its rings and the linkers between them, with
+    their exocyclic and exolinker double bonds; stereo dropped) is pruned one ring at a time
+    down to a single ring. The scaffolds and the pruned ones they lead to form the tree.
+  - At each step the paper's prioritization rules choose which ring goes. Three-membered
+    heterocycles go first (an epoxide fused to a ring leaves its alkene), and macrocycles of
+    12 or more atoms stay as long as smaller rings can go. Next come fewer linker bonds, then
+    bridged and spiro systems kept, then rings of 3, 5 or 6 atoms removed first. An aromatic
+    system must not be left non-aromatic. Rings with the fewest heteroatoms go first (N kept
+    before O before S), then the smallest rings, then aromatic rings before non-aromatic
+    ones. The last tie-break is the parent whose SMILES sorts first. Hover a scaffold to
+    see which rule decided the ring it loses on the way to its parent.
+  - A fused ring that goes leaves its shared bond behind as it was: removing the benzene of
+    a tetrahydroisoquinoline gives a tetrahydropyridine with one double bond.
+  - A scaffold no ring can be removed from without breaking it apart stays at the top with
+    several rings (adamantane, for one). Compounds with no ring, and blank or unreadable
+    structures, are left out.
+  - The rules follow ScaffoldGraph's implementation of the paper (Scott et al.,
+    *Bioinformatics* 2020). On 2,612 scaffolds of approved drugs, 98.8% of the parent
+    choices are the same. The rest are rings chemsuite can remove and ScaffoldGraph cannot,
+    such as a ring fused at an aromatic bridgehead nitrogen. The aromatic-system rule is
+    chemsuite's own reading of the paper, since ScaffoldGraph leaves it out.
+  - Building takes about 25 seconds for 10,000 compounds.
+- **The panel.**
+  - Each row is a scaffold, drawn. **Compounds** counts every compound whose scaffold is this
+    one or built on it (the whole branch); **Rings** is its ring count. Children are listed
+    largest branch first; click a column header to sort.
+  - **Show** summarizes a number column over each branch (**Mean**, **Median**, **Maximum** or
+    **Minimum**), tinted from red (worst) to green (best); **Higher is better** sets which
+    way. An activity column is chosen when the table has one.
+  - **Min. compounds** hides branches with fewer compounds.
+  - Clicking a scaffold selects its branch's compounds in the table.
+  - The panel is saved with the document and rebuilt when it opens, with its settings and
+    the scaffolds that were expanded.
 
 ---
 

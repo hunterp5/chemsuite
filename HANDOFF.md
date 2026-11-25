@@ -5,12 +5,19 @@ other machine can pick it up. Update it at the end of a session that leaves work
 
 ## In progress
 
-- **GTM, map + landscapes** (2026-11-25, Windows, committed on `dev`, not merged; ROADMAP §7.0h item 1, plan
+- **Scaffold Tree** (2026-11-25, Windows, merged to `main`; ROADMAP §7.0h item 2, plan
+  approved in-session). New: `sar/scaffold_tree.py` (the engine; rules after ScaffoldGraph,
+  rule 7 chemsuite's own), `tools/sar/scaffold_tree_ui.py` (Data ▸ SAR ▸ Scaffold Tree…, a
+  `QTreeView` panel), `TreeTableModel` in `app/widgets/result_table.py` (a tree model base:
+  tools cannot call `index.column()` under the `.column(` ratchet), tests
+  `tests/sar/test_scaffold_tree.py`, `tests/tools/sar/test_scaffold_tree_ui.py`. Targeted
+  tests pass; the full suite passed before the merge (with GTM).
+- **GTM, map + landscapes** (2026-11-25, Windows, merged to `main`; ROADMAP §7.0h item 1, plan
   approved in-session). New: `analysis/gtm.py`, `tools/space/gtm_ui.py` (Data ▸
   Dimensionality Reduction ▸ Generative Topographic Map…), `app/plots/gtm.py` (the GTM
   Landscape plot kind), tests `tests/analysis/test_gtm.py`, `tests/tools/space/test_gtm_ui.py`;
   edits to `app/plots/{spec,controls,panel}.py`, `tools/{space,plot}/tool.py`, the guide and
-  ROADMAP. Targeted tests pass; **the full suite is owed before merging** (every plot's saved
+  ROADMAP. The full suite passed before the merge (every plot's saved
   state gained `gtm_map`/`gtm_value`, and documents gained the `gtm_map` asset kind). Found,
   not fixed:
   `np.linalg.eigh` of 2048 × 2048 takes ~30 s on this PC, which is most of a fingerprint

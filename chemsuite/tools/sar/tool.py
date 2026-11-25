@@ -111,4 +111,14 @@ TOOLS = (
         needs_structures=True,
         tip="Similar compounds with very different activity (structure-activity landscape index).",
     ),
+    Tool(
+        id="scaffold_tree",
+        title="Scaffold Tree…",
+        menu=MENU,
+        open=_dialog("scaffold_tree_ui", "ScaffoldTreeDialog"),
+        restore=_restore("scaffold_tree_ui"),
+        requires=("rdkit",),
+        needs_structures=True,
+        tip="Each compound's scaffold pruned ring by ring: which ring systems the set holds.",
+    ),
 )

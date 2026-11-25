@@ -207,7 +207,7 @@ modified.
 | Calculator / formula columns | A safe expression language over columns, with math functions and chemistry functions such as `MW(Structure)`. Columns recompute when their inputs change. |
 | Potency standardisation | IC50, Ki or EC50 in any units to pIC50 / pKi, with unit detection. |
 | Structure preparation | RDKit MolStandardize: salt strip, largest fragment, neutralise, canonical tautomer, add or remove Hs. "Fast Prepare" uses sensible defaults. |
-| Scaffolds | Bemis–Murcko and generic scaffolds as columns, plus a scaffold tree or count view (the tree: §7.0h). |
+| Scaffolds | Bemis–Murcko and generic scaffolds as columns, plus a scaffold tree or count view (the tree: §7.0h, built 2026-11-25). |
 | Decomposition and enumeration | **Done 2026-11-14:** Chemistry ▸ Decompose (R-Group Decomposition, Fragments by BRICS or RECAP, Central Ring) and Chemistry ▸ Enumerate (Reaction Products with 28 named templates, R-Groups on a Core, Recombine Fragments). **2026-11-15:** Prepare Reagents turns reagents into substituents (13 kinds, the leaving group replaced by an attachment point), and R-Groups on a Core takes a position's substituents From a File…, so a prepared set is reused across cores. |
 | Documents | Duplicate document, send selected rows to a new document, and Notes (a notepad saved in the `.csd`). |
 | Macros | Record and replay sequences of commands with their settings. The new command registry is the base for this. |
@@ -438,6 +438,16 @@ each starts in plan mode.
    - The pruning rules are reimplemented from the paper with tests (RDKit has no scaffold-tree
      builder; Scaffold Hunter's Java code is a reference only).
    - Builds on the scaffold columns that already exist (`descriptors/scaffold.py`).
+   **Built 2026-11-25** (Data ▸ SAR ▸ Scaffold Tree…; `sar/scaffold_tree.py`,
+   `tools/sar/scaffold_tree_ui.py`): an expandable tree list whose counts and summaries
+   cover each node's whole branch. The rules follow ScaffoldGraph's (MIT, reference only);
+   rule 7, which it leaves out, is chemsuite's own reading. Cross-checked against
+   ScaffoldGraph 1.1.2 (`use_scheme_4=True`) on the 2,612 multi-ring scaffolds of 3,024
+   approved drugs: 98.8% identical parent choices. All 32 differences are scaffolds where
+   ScaffoldGraph's fragmenter makes fewer candidate parents (it cannot remove a ring fused
+   at an aromatic bridgehead N, and some macrocycles). One convention was taken from it: a
+   removed ring atom double-bonded to the ring that stays is kept as `=CH2`. 10k BindingDB:
+   5,683 nodes and 321 roots, 43 s in-process and about 15–25 s on the worker pool.
 3. **Principal coordinates (PCoA, classical MDS) on Tanimoto distance**, low priority. Gower,
    J. C. (1966). *Biometrika* 53, 325–338. A linear map whose axes come from the true
    Tanimoto distances, not from PCA on the bits, with the variance each axis explains. It
