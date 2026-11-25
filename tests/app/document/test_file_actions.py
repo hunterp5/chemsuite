@@ -92,3 +92,39 @@ def test_export_visible_rows_writes_only_the_rows_shown(window, qtbot, tmp_path,
     qtbot.waitUntil(path.exists, timeout=10_000)
     qtbot.waitUntil(lambda: "B" in path.read_text(), timeout=10_000)
     assert path.read_text().splitlines()[1:] == ["B,6"]
+
+
+def test_export_smiles_asks_for_the_delimiter_and_header(window, qtbot, tmp_path, monkeypatch):
+    from chemsuite.app.document import file_actions
+    from chemsuite.app.document.main_window import Workspace
+    from chemsuite.core.table import Table
+
+    table = Table()
+    table.add_rows({"ID": ["A", "B"], "SMILES": ["CCO", "CCN"]}, undoable=False)
+    table.convert_column("SMILES", "structure")
+    window._install(Workspace(table))
+    path = tmp_path / "list.smi"
+    _pick(monkeypatch, "getSaveFileName", path)
+    file_actions.export(window)
+    dialog = window.findChildren(file_actions.TextExportDialog)[-1]
+    assert dialog.names.currentData() == "ID" and not dialog.header.isChecked()
+    dialog.delimiter.setCurrentIndex(dialog.delimiter.findData(","))
+    dialog.header.setChecked(True)
+    dialog.accept()
+    qtbot.waitUntil(path.exists, timeout=10_000)
+    assert path.read_text().splitlines() == ["SMILES,ID", "CCO,A", "CCN,B"]
+
+
+def test_export_text_can_leave_out_the_header(window, qtbot, tmp_path, monkeypatch):
+    from chemsuite.app.document import file_actions
+
+    path = tmp_path / "table.txt"
+    _pick(monkeypatch, "getSaveFileName", path)
+    file_actions.export(window)
+    dialog = window.findChildren(file_actions.TextExportDialog)[-1]
+    assert dialog.delimiter.findData(" ") == -1  # a space only for SMILES
+    dialog.delimiter.setCurrentIndex(dialog.delimiter.findData(";"))
+    dialog.header.setChecked(False)
+    dialog.accept()
+    qtbot.waitUntil(path.exists, timeout=10_000)
+    assert path.read_text().splitlines() == ["A;5", "B;6", "C;7"]

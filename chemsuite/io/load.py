@@ -246,12 +246,19 @@ def save_table(
     oids: Sequence[int] | np.ndarray | None = None,
     columns: Sequence[str] | None = None,
     structure: str | None = None,
+    delimiter: str | None = None,
+    header: bool | None = None,
+    name_column: str | None = None,
     executor: Executor | None = None,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> None:
     """Export to the format given by *path*'s suffix (written atomically). *executor* lays out
-    reactions for RD files in worker processes."""
+    reactions for RD files in worker processes.
+
+    Text and SMILES files take a *delimiter* (else comma for ``.csv``, tab otherwise) and
+    *header* (else a header line for tables, none for SMILES). A SMILES file's names come
+    from *name_column*: None picks ``Name``, ``Title`` or ``ID``; ``""`` writes no names."""
     fmt, gzipped = split_suffix(path)
     if gzipped:
         raise ValueError("saving compressed files is not supported")
@@ -270,16 +277,26 @@ def save_table(
         delimited.write_delimited(
             table,
             path,
-            delimiter="," if fmt == CSV else "\t",
+            delimiter=delimiter or ("," if fmt == CSV else "\t"),
             oids=oids,
             columns=columns,
+            header=True if header is None else header,
             progress=progress,
             cancel=cancel,
         )
     elif fmt == SMILES:
         structure = structure or sdf.first_structure_column(table)
-        name_column = next((c for c in ("Name", "Title", "ID") if c in table), None)
-        delimited.write_smiles(table, path, structure=structure, name_column=name_column, oids=oids)
+        if name_column is None:
+            name_column = next((c for c in ("Name", "Title", "ID") if c in table), None)
+        delimited.write_smiles(
+            table,
+            path,
+            structure=structure,
+            name_column=name_column,
+            oids=oids,
+            delimiter=delimiter or "\t",
+            header=bool(header),
+        )
     elif fmt == XLSX:
         xlsx.write_xlsx(table, path, oids=oids, columns=columns, cancel=cancel)
     elif fmt == RDF:

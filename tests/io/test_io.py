@@ -258,6 +258,53 @@ def test_smiles_file(tmp_path: Path) -> None:
     assert all_cells(load_table(out)) == all_cells(table)
 
 
+@pytest.mark.parametrize("delimiter", ["\t", ",", ";", "|", " "])
+@pytest.mark.parametrize("header", [False, True])
+def test_smiles_file_reads_back_with_any_delimiter(tmp_path: Path, delimiter, header) -> None:
+    table = Table()
+    table.add_rows(
+        {
+            "SMILES": StructureColumn.from_texts(["CCO", "c1ccccc1", "CCN"]),
+            "Title": ["ethanol, dry", "", "ethyl amine"],
+        }
+    )
+    out = tmp_path / "out.smi"
+    save_table(table, out, delimiter=delimiter, header=header)
+    lines = out.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 3 + header
+    assert lines[0].startswith(f"SMILES{delimiter}Title" if header else "CCO")
+    assert all_cells(load_table(out)) == {
+        "Structure": ["CCO", "c1ccccc1", "CCN"],
+        "Name": ["ethanol, dry", "", "ethyl amine"],
+    }
+
+
+def test_smiles_file_quotes_a_name_holding_the_delimiter(tmp_path: Path) -> None:
+    table = Table()
+    table.add_rows({"SMILES": StructureColumn.from_texts(["CCO"]), "ID": ["a,b"]})
+    out = tmp_path / "out.smi"
+    save_table(table, out, delimiter=",", name_column="")
+    assert out.read_text(encoding="utf-8") == "CCO\n"
+    save_table(table, out, delimiter=",", name_column="ID")
+    assert out.read_text(encoding="utf-8") == 'CCO,"a,b"\n'
+
+
+@pytest.mark.parametrize("delimiter", ["\t", ",", ";", "|"])
+def test_text_file_takes_a_delimiter_and_an_optional_header(tmp_path: Path, delimiter) -> None:
+    table = Table()
+    table.add_rows({"ID": ["A", "B"], "pIC50": ["5", "6"]})
+    out = tmp_path / "out.txt"
+    save_table(table, out, delimiter=delimiter)
+    assert out.read_text(encoding="utf-8").splitlines() == [
+        f"ID{delimiter}pIC50",
+        f"A{delimiter}5",
+        f"B{delimiter}6",
+    ]
+    assert all_cells(load_table(out)) == {"ID": ["A", "B"], "pIC50": ["5", "6"]}
+    save_table(table, out, delimiter=delimiter, header=False)
+    assert out.read_text(encoding="utf-8").splitlines() == [f"A{delimiter}5", f"B{delimiter}6"]
+
+
 def test_xlsx_round_trip(tmp_path: Path) -> None:
     table = Table()
     table.add_rows(

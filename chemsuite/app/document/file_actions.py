@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """File ▸ Append… and File ▸ Merge…, another file's rows brought into the open document as
-one undoable step (:mod:`chemsuite.core.table.combine`), and File ▸ Export."""
+one undoable step (:mod:`chemsuite.core.table.combine`), and File ▸ Export (with a dialog
+for the delimiter and header of text and SMILES files)."""
 
 from __future__ import annotations
 
@@ -31,6 +32,7 @@ from chemsuite.core.table import Table
 from chemsuite.core.table.columns import STRUCTURE
 from chemsuite.core.table.combine import append, keys_of, merge
 from chemsuite.core.wording import plural
+from chemsuite.io.delimited import EXPORT_DELIMITERS
 from chemsuite.io.load import load_table, save_table
 
 from ..shell.jobs import Job
@@ -41,6 +43,10 @@ if TYPE_CHECKING:
 
 #: words in a column name that make it the likely key to merge on
 KEY_WORDS = ("id", "name", "compound", "cmpd", "number", "code")
+#: export suffixes that open the delimiter and header dialog first
+TEXT_SUFFIXES = (".txt", ".smi")
+#: columns a SMILES file takes its names from when the table has one
+NAME_COLUMNS = ("Name", "Title", "ID")
 
 
 def add_actions(window: MainWindow, menu, action: Callable) -> None:
@@ -49,25 +55,54 @@ def add_actions(window: MainWindow, menu, action: Callable) -> None:
     menu.addAction(action("file.merge", "&Merge…", lambda: choose(window, merge=True)))
 
 
-def export(window: MainWindow, rows: str = "all") -> None:
-    """Export every row, the ``"visible"`` ones (in view order) or the ``"selected"``."""
-    from .main_window import EXPORT_FILTER, log
+def add_export_menu(window: MainWindow, menu, action: Callable):
+    """File ▸ Export ▸ Table…, Visible Rows… and Selected Rows…; returns the submenu."""
+    export_menu = menu.addMenu("&Export")
+    export_menu.setToolTipsVisible(True)
+    for rows, title in (("all", "&Table…"), ("visible", "&Visible Rows…"),
+                        ("selected", "&Selected Rows…")):  # fmt: skip
+        command = "file.export" if rows == "all" else f"file.export_{rows}"
+        export_menu.addAction(action(command, title, lambda r=rows: export(window, r)))
+    return export_menu
 
+
+def _rows(window: MainWindow, rows: str):
+    """The oids to export: every row (None), the ``"visible"`` ones or the ``"selected"``."""
     workspace = window.workspace
     picked = {"visible": workspace.table.visible_oids, "selected": workspace.selection.as_array}
-    oids = picked[rows]() if rows in picked else None
+    return picked[rows]() if rows in picked else None
+
+
+def export(window: MainWindow, rows: str = "all") -> None:
+    """Export every row, the ``"visible"`` ones (in view order) or the ``"selected"``. A text
+    or SMILES file first asks for its delimiter and header."""
+    from .main_window import EXPORT_FILTER
+
+    oids = _rows(window, rows)
     if oids is not None and not len(oids):
         QMessageBox.information(window, "Export", f"No rows are {rows}.")
         return
     path, _ = QFileDialog.getSaveFileName(window, "Export", window._start_folder(), EXPORT_FILTER)
     if not path:
         return
-    snapshot = workspace.table.snapshot()
+    if Path(path).suffix.lower() in TEXT_SUFFIXES:
+        dialog = TextExportDialog(window, Path(path), rows)
+        dialog.show()
+        return
+    write(window, path, rows)
+
+
+def write(window: MainWindow, path: str | Path, rows: str, **options) -> Job:
+    """Write the rows to *path* in the background (*options* go to ``save_table``)."""
+    from .main_window import log
+
+    oids = _rows(window, rows)
+    snapshot = window.workspace.table.snapshot()
     pool = window._runner.process_pool()
 
     def work(job: Job) -> None:
         save_table(snapshot, path, oids=oids, executor=pool, progress=job.report,
-                   cancel=job.cancel_token)  # fmt: skip
+                   cancel=job.cancel_token, **options)  # fmt: skip
 
     def done(_result: None) -> None:
         count = len(oids) if oids is not None else len(snapshot)
@@ -75,7 +110,76 @@ def export(window: MainWindow, rows: str = "all") -> None:
         log.info("exported %s (%d rows)", path, count)
         audit("export", path=path, rows=count, which=rows)
 
-    window.jobs.run(f"Exporting {Path(path).name}…", work, done)
+    return window.jobs.run(f"Exporting {Path(path).name}…", work, done)
+
+
+class TextExportDialog(ToolDialog):
+    """The delimiter and header of a ``.txt`` table or a ``.smi`` SMILES list, and for SMILES
+    the structure column and the column of names."""
+
+    def __init__(self, window: MainWindow, path: Path, rows: str) -> None:
+        from .tools import ToolContext
+
+        super().__init__(window, f"Export {path.name}", guide="saving")
+        self.window_, self.path, self.rows = window, path, rows
+        self.smiles = path.suffix.lower() == ".smi"
+        table = window.workspace.table
+        names = table.column_names
+
+        self.structure = QComboBox()
+        self.names = QComboBox()
+        if self.smiles:
+            inputs = self.section("Input")
+            self.structure.addItems([n for n in names if table.kind(n) == STRUCTURE])
+            inputs.row("Structure", self.structure, help="The column whose SMILES are written.")
+            self.names.addItem("None", "")
+            for name in names:
+                self.names.addItem(name, name)
+            guess = next((n for n in NAME_COLUMNS if n in names), "")
+            self.names.setCurrentIndex(max(0, self.names.findData(guess)))
+            inputs.row("Names", self.names, help="The column written after each SMILES.")
+
+        output = self.section("Output")
+        self.delimiter = QComboBox()
+        for label, character in EXPORT_DELIMITERS:
+            if self.smiles or character != " ":  # a space-delimited table does not read back
+                self.delimiter.addItem(label, character)
+        output.row(
+            "Delimiter",
+            self.delimiter,
+            help="The character between the fields of a line. Fields that contain it are "
+            "quoted (in a SMILES file after a tab or space, the rest of the line is the name).",
+        )
+        self.header = QCheckBox("Write a header line")
+        self.header.setChecked(not self.smiles)
+        output.row(
+            "Header",
+            self.header,
+            help="The column names as the first line (SMILES and the names column's name "
+            "in a SMILES file).",
+        )
+        key = "file.export_smiles" if self.smiles else "file.export_text"
+        self.remember(
+            ToolContext(window), key, {"delimiter": self.delimiter, "header": self.header}
+        )
+
+    def problem(self) -> str:
+        if self.smiles and not self.structure.count():
+            return "The table has no structure column."
+        return ""
+
+    def verb(self) -> str:
+        return "Export"
+
+    def run(self):
+        options: dict[str, object] = {
+            "delimiter": self.delimiter.currentData(),
+            "header": self.header.isChecked(),
+        }
+        if self.smiles:
+            options["structure"] = self.structure.currentText()
+            options["name_column"] = self.names.currentData()
+        return write(self.window_, self.path, self.rows, **options)
 
 
 def choose(window: MainWindow, *, merge: bool) -> None:

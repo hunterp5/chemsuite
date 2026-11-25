@@ -126,6 +126,42 @@ def test_select_all_after_a_column_click_is_not_a_column_selection(qtbot, window
     assert window.workspace.table.column_names == ["ID", "pIC50"]  # cells cleared, not columns
 
 
+def click_row_number(qtbot, view, row: int, modifier=Qt.KeyboardModifier.NoModifier) -> None:
+    header = view.verticalHeader()
+    y = header.sectionViewportPosition(row) + header.sectionSize(row) // 2
+    qtbot.mouseClick(
+        header.viewport(), Qt.MouseButton.LeftButton, modifier, QPoint(header.width() // 2, y)
+    )
+
+
+def test_delete_key_on_rows_picked_by_number_deletes_them(qtbot, window) -> None:
+    window.show()
+    qtbot.waitExposed(window)
+    view = window.view
+    table = window.workspace.table
+    click_row_number(qtbot, view, 0)
+    click_row_number(qtbot, view, 2, Qt.KeyboardModifier.ControlModifier)
+    view.setFocus()
+    qtbot.keyClick(view, Qt.Key.Key_Delete)
+    assert [table.cell("ID", int(o)) for o in table.oids] == ["B"]
+    assert table.history.undo_label == "Delete 2 rows"
+    table.undo()
+    assert len(table) == 3
+
+
+def test_delete_key_after_select_all_clears_cells_not_rows(qtbot, window) -> None:
+    window.show()
+    qtbot.waitExposed(window)
+    view = window.view
+    table = window.workspace.table
+    click_row_number(qtbot, view, 0)
+    view.setFocus()
+    qtbot.keyClick(view, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    qtbot.keyClick(view, Qt.Key.Key_Delete)
+    assert len(table) == 3
+    assert {table.cell("ID", int(o)) for o in table.oids} == {""}
+
+
 def test_sorting_from_the_menu_keeps_a_column_selection(qtbot, window) -> None:
     window.show()
     qtbot.waitExposed(window)

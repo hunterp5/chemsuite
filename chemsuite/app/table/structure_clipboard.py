@@ -24,6 +24,7 @@ from PySide6.QtGui import QGuiApplication
 from rdkit import Chem
 
 from chemsuite.core.mols import looks_like_molblock, smiles_of, without_hydrogens
+from chemsuite.core.reactions import looks_like_rxn_block
 from chemsuite.core.structure_input import molblock_of
 
 #: Clipboard formats that carry a molfile (ChemDraw, MarvinSketch, Biovia Draw and others).
@@ -60,6 +61,18 @@ def structure_text_from_mime(mime: QMimeData | None) -> str:
             if looks_like_molblock(text):
                 return text
     return mime.text() if mime.hasText() else ""
+
+
+def rxn_text_from_mime(mime) -> str:
+    """An RXN file on the clipboard (as ``chemical/x-mdl-rxnfile`` or as text), else ""."""
+    if mime is None:
+        return ""
+    if mime.hasFormat("chemical/x-mdl-rxnfile"):
+        text = bytes(mime.data("chemical/x-mdl-rxnfile").data()).decode("utf-8", "replace")
+        if looks_like_rxn_block(text):
+            return text
+    text = mime.text() if mime.hasText() else ""
+    return text if looks_like_rxn_block(text) else ""
 
 
 def clipboard_structure_text() -> str:

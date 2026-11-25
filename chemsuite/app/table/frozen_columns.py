@@ -179,7 +179,7 @@ class _Overlay(QTableView):
             if watched is self.horizontalHeader().viewport():
                 self.main.start_column_selection()  # a header click selects whole columns
             elif watched is self.verticalHeader().viewport():
-                self.main.start_cell_selection()
+                self.main.start_row_selection()  # a row-number click selects whole rows
         return super().eventFilter(watched, event)
 
     def _row_header_menu(self, pos) -> None:

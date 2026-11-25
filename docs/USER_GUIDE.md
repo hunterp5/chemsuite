@@ -227,8 +227,8 @@ one step that Undo takes back. The table's own columns, filters and panels stay 
   its filters or search are hiding rows (the status bar still says how many rows are shown).
 - Saving is safe. The new file is written next to the old one and swapped in only once it is
   complete, so a crash or a full disk never damages your previous version.
-- **File ▸ Export ▸ Table…** writes SDF, mol2, CSV/TSV, SMILES, Excel, Maestro, XYZ, an InChI
-  list, ChemDraw (CDXML), Marvin (MRV), an RD file or an RXN file.
+- **File ▸ Export ▸ Table…** writes SDF, mol2, CSV/TSV, text (.txt), SMILES, Excel, Maestro,
+  XYZ, an InChI list, ChemDraw (CDXML), Marvin (MRV), an RD file or an RXN file.
   **File ▸ Export ▸ Visible Rows…** writes only the rows the filters and searches leave
   shown, in the order the table shows them; **File ▸ Export ▸ Selected Rows…** writes only
   the selected rows.
@@ -236,6 +236,15 @@ one step that Undo takes back. The table's own columns, filters and panels stay 
     data. Reactions read from SMILES have no drawing, so they are laid out as the sketcher lays
     them out (using every processor core). Blank values are left out.
   - An **RXN file** holds one reaction: export a single selected row.
+  - A **text file (.txt)** or a **SMILES file (.smi)** first asks for its **Delimiter** (tab,
+    comma, semicolon or pipe; a SMILES file can also use a space) and whether to write a
+    **Header** line. A text file holds every column, with a header by default. A SMILES file
+    holds one **Structure** column and, after it, the **Names** column you pick (Name, Title
+    or ID when the table has one, or none), with no header by default; its header is
+    `SMILES` and the names column's name. A field that contains a comma, semicolon or pipe
+    delimiter is quoted; after a tab or space, the rest of a SMILES line is the name. The
+    choices are remembered for the next export. Opening a SMILES file reads any of these
+    delimiters back.
   - CSV, TSV and Excel write reactions as reaction SMILES.
   - **Excel** gets numbers as numbers and everything else as text: a cell that starts with
     `=` stays text and never becomes a formula.
@@ -383,6 +392,8 @@ From Data ▸ Table ▸ Operations:
 ### Rows
 
 - **Edit ▸ Delete Selection (Ctrl+Backspace)** deletes the selected rows. You can undo it.
+- **Delete** deletes rows picked on the row numbers, in one step you can undo. On cells
+  selected in the table (including Select All), Delete clears the cells instead.
 - **The row numbers** on the left are kept narrow: past 999 they are shortened (1.2k, 12k,
   1.2M); point at one for the full number. Click a row number to select the row; drag down the
   numbers for several.

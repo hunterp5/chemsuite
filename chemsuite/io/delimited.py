@@ -48,6 +48,17 @@ from .formats import (
 AUTO = "auto"
 CHUNK_ROWS = 20_000
 _DELIMITERS = (",", "\t", ";", "|")
+#: The delimiters an export can offer, ``(label, character)``.
+EXPORT_DELIMITERS = (
+    ("Tab", "\t"),
+    ("Comma", ","),
+    ("Semicolon", ";"),
+    ("Pipe", "|"),
+    ("Space", " "),
+)
+#: Characters that are never part of a SMILES, so in a ``.smi`` line's first word they can
+#: only separate fields (a CXSMILES ``|`` comes after a space).
+_SMILES_SEPARATORS = (",", ";", "|")
 
 
 def sniff_delimiter(header_line: str, default: str) -> str:
@@ -153,14 +164,21 @@ def read_smiles(
     cancel: CancelToken | None = None,
     chunk_rows: int = CHUNK_ROWS,
 ) -> Iterator[Batch]:
-    """A ``.smi`` file: one structure per line, optionally followed by whitespace and a name."""
+    """A ``.smi`` file: one structure per line, optionally followed by a name, separated by
+    whitespace or, when the first line's first word holds one, by a comma, ``;`` or ``|``.
+    A first line starting ``SMILES`` is a header."""
     total = file_size(path)
     with open_text(path) as (text, raw):
         structures: list[str] = []
         names: list[str] = []
         first = True
+        separator: str | None = None
         for line in text:
-            parts = line.strip().split(None, 1)
+            if first:
+                word = next(iter(line.split(None, 1)), "")
+                found = [(word.index(c), c) for c in _SMILES_SEPARATORS if c in word]
+                separator = min(found)[1] if found else None  # the one right after the SMILES
+            parts = _smiles_fields(line, separator)
             if not parts:
                 continue
             if first and parts[0].lower() in ("smiles", "smi"):
@@ -179,6 +197,16 @@ def read_smiles(
             yield {"Structure": StructureColumn.from_texts(structures), "Name": names}
 
 
+def _smiles_fields(line: str, separator: str | None) -> list[str]:
+    """``[structure, name]``, ``[structure]``, or ``[]`` for a blank line."""
+    if separator is None:
+        return line.strip().split(None, 1)
+    fields = next(csv.reader([line.strip()], delimiter=separator), [])
+    if not fields or not fields[0].strip():
+        return []
+    return [fields[0].strip(), separator.join(fields[1:]).strip()]
+
+
 def write_delimited(
     table: Table,
     path: str | Path,
@@ -186,15 +214,18 @@ def write_delimited(
     delimiter: str = ",",
     oids: Sequence[int] | np.ndarray | None = None,
     columns: Sequence[str] | None = None,
+    header: bool = True,
     progress: Progress | None = None,
     cancel: CancelToken | None = None,
 ) -> None:
-    """Write the cells exactly as displayed; structure columns are written as their SMILES."""
+    """Write the cells exactly as displayed; structure columns are written as their SMILES.
+    *header* writes the column names as the first line."""
     names = list(columns or table.column_names)
     slots = np.arange(len(table)) if oids is None else table.slots_of(oids)
     with atomic_write(path, "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, delimiter=delimiter, lineterminator="\n")
-        writer.writerow(names)
+        if header:
+            writer.writerow(names)
         for start in range(0, len(slots), 4096):
             check(cancel)
             chunk = slots[start : start + 4096]
@@ -211,14 +242,32 @@ def write_smiles(
     structure: str,
     name_column: str | None = None,
     oids: Sequence[int] | np.ndarray | None = None,
+    delimiter: str = "\t",
+    header: bool = False,
 ) -> None:
+    """One SMILES per line, then *name_column*'s value after *delimiter*. *header* writes
+    ``SMILES`` and the name column's name first. After a comma, ``;`` or ``|`` a name is
+    quoted where it needs to be; after a tab or space the rest of the line is the name."""
     column = table.column(structure)
     names = table.column(name_column) if name_column else None
     slots = np.arange(len(table)) if oids is None else table.slots_of(oids)
+    quoted = delimiter not in ("\t", " ")
     with atomic_write(path, "w", encoding="utf-8", newline="\n") as handle:
+        writer = csv.writer(handle, delimiter=delimiter, lineterminator="\n")
+
+        def write(smiles: str, name: str) -> None:
+            if not name:
+                handle.write(f"{smiles}\n")
+            elif quoted:
+                writer.writerow([smiles, name])
+            else:
+                handle.write(f"{smiles}{delimiter}{name}\n")
+
+        if header:
+            write("SMILES", name_column or "")
         for slot in slots.tolist():
             smiles = column.display(slot)
             if "\n" in smiles:  # an unparsed molfile cannot be written to a SMILES list
                 smiles = ""
             name = names.display(slot).replace("\n", " ") if names is not None else ""
-            handle.write(f"{smiles}\t{name}\n" if name else f"{smiles}\n")
+            write(smiles, name)

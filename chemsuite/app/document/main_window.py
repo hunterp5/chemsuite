@@ -99,7 +99,7 @@ log = logging.getLogger(__name__)
 
 OPEN_FILTER = read_filter(extra=[("chemsuite documents", "*.csd")])
 EXPORT_FILTER = (
-    "SD file (*.sdf);;Mol2 file (*.mol2);;CSV (*.csv);;TSV (*.tsv);;SMILES (*.smi);;"
+    "SD file (*.sdf);;Mol2 file (*.mol2);;CSV (*.csv);;TSV (*.tsv);;Text (*.txt);;SMILES (*.smi);;"
     "Excel (*.xlsx);;Maestro (*.mae);;XYZ, 3D (*.xyz);;InChI list (*.inchi);;"
     "ChemDraw, one molecule (*.cdxml);;Marvin, one molecule (*.mrv);;"
     "RD file, reactions (*.rdf);;RXN file, one reaction (*.rxn)"
@@ -303,6 +303,7 @@ class MainWindow(QMainWindow):
         self._view.cellMenuRequested.connect(self._show_cell_menu)
         self._view.rowHeaderMenuRequested.connect(self._show_row_menu)
         self._view.deleteColumnsRequested.connect(lambda names: self.columns.delete(names))
+        self._view.deleteRowsRequested.connect(self.delete_rows)
         self._unsubscribe = workspace.table.subscribe(self._on_table_event)
         workspace.selection.subscribe(lambda *_: self._update_status())
         self._update_title()
@@ -570,11 +571,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(
             A("file.save_as", "Save &As…", self.save_as, QKeySequence.StandardKey.SaveAs)
         )
-        export_menu = _menu(file_menu, "&Export")
-        for rows, title in (("all", "&Table…"), ("visible", "&Visible Rows…"), ("selected",
-                            "&Selected Rows…")):  # fmt: skip
-            command = "file.export" if rows == "all" else f"file.export_{rows}"
-            export_menu.addAction(A(command, title, lambda r=rows: file_actions.export(self, r)))
+        export_menu = file_actions.add_export_menu(self, file_menu, A)
         file_menu.addSeparator()
         file_menu.addAction(
             A("file.close", "&Close", self.close_document, QKeySequence.StandardKey.Close)

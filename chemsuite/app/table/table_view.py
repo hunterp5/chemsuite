@@ -53,7 +53,7 @@ from chemsuite.core.depict import (
     alignment_core,
 )
 from chemsuite.core.mols import looks_like_molblock
-from chemsuite.core.reactions import looks_like_rxn_block, parse_reaction
+from chemsuite.core.reactions import parse_reaction
 from chemsuite.core.selection import Selection
 from chemsuite.core.structure_input import read_structure
 from chemsuite.core.table.columns import REACTION, STRUCTURE, ReactionColumn
@@ -62,7 +62,7 @@ from .cells import DRAWN, Alignment, CellDelegate, StructureImages
 from .frozen_columns import RowHeader, quiet_column_header
 from .highlights import AtomSource, Highlight
 from .snap import follow_selection, rows_for
-from .structure_clipboard import structure_text_from_mime
+from .structure_clipboard import rxn_text_from_mime, structure_text_from_mime
 from .table_model import KIND_ROLE, TableModel
 
 STRUCTURE_ROW_HEIGHT = 110
@@ -119,7 +119,8 @@ class TableView(QTableView):
     Dragging a header moves the column in the table (one undoable step) rather than only in
     the view. Clicking a header selects the column (Shift and Ctrl/⌘ extend it); sorting is in
     the header's menu. Whole columns selected from the header are not a compound selection, so
-    they leave plots and other views alone, and Delete removes them.
+    they leave plots and other views alone, and Delete removes them; so does Delete on whole
+    rows picked on the row header.
     """
 
     #: (column index, global position) for a right-click on the horizontal header
@@ -134,6 +135,8 @@ class TableView(QTableView):
     structureDrawRequested = Signal(QModelIndex)
     #: column names to delete (Delete pressed with whole columns selected)
     deleteColumnsRequested = Signal(list)
+    #: Delete pressed with whole rows picked on the row header
+    deleteRowsRequested = Signal()
 
     def __init__(
         self,
@@ -160,6 +163,7 @@ class TableView(QTableView):
         self._drag_timer.setInterval(16)
         self._drag_timer.timeout.connect(self._drag_scroll)
         self._column_mode = False  # the selection was made on the column header
+        self._row_mode = False  # … on the row header
         self._widths: dict[str, int] = {}
         self._kinds: dict[str, str] = {}
         self._structure_row_height = STRUCTURE_ROW_HEIGHT
@@ -400,6 +404,7 @@ class TableView(QTableView):
     def eventFilter(self, watched, event) -> bool:
         if event.type() == QEvent.Type.MouseButtonPress:
             self._column_mode = watched is self.horizontalHeader().viewport()
+            self._row_mode = watched is self.verticalHeader().viewport()
         if watched is self.horizontalHeader().viewport():
             self._follow_header_drag(event)
         return super().eventFilter(watched, event)
@@ -639,15 +644,19 @@ class TableView(QTableView):
             bar.setValue(min(left, right - width))
 
     def mousePressEvent(self, event) -> None:
-        self._column_mode = False  # a cell click starts an ordinary selection
+        self._column_mode = self._row_mode = False  # a cell click: an ordinary selection
         super().mousePressEvent(event)
 
     def start_column_selection(self) -> None:
         """A header press (here or on the frozen columns' header): whole columns follow."""
-        self._column_mode = True
+        self._column_mode, self._row_mode = True, False
+
+    def start_row_selection(self) -> None:
+        """A press on the row header of the frozen rows or columns: whole rows follow."""
+        self._column_mode, self._row_mode = False, True
 
     def start_cell_selection(self) -> None:
-        self._column_mode = False
+        self._column_mode = self._row_mode = False
 
     # -- frozen columns and rows ----------------------------------------------------------------
     def _highlight_header(self, *_args) -> None:
@@ -839,7 +848,7 @@ class TableView(QTableView):
         if not model.rowCount() or not model.columnCount():
             return "Nothing to paste"
         mime = QGuiApplication.clipboard().mimeData()
-        rxn = _rxn_text_from_mime(mime)
+        rxn = rxn_text_from_mime(mime)
         if rxn:
             return self._paste_rxn(rxn)
         structure = structure_text_from_mime(mime)
@@ -950,7 +959,7 @@ class TableView(QTableView):
 
     def keyPressEvent(self, event) -> None:
         if event.key() not in _KEEP_COLUMN_MODE:
-            self._column_mode = False  # Ctrl+A, arrows …: an ordinary cell selection
+            self._column_mode = self._row_mode = False  # Ctrl+A, arrows …: cells
         if self.state() != QAbstractItemView.State.EditingState and event.key() in (
             Qt.Key.Key_Delete,
             Qt.Key.Key_Backspace,
@@ -958,19 +967,9 @@ class TableView(QTableView):
             columns = self.whole_columns()
             if columns:
                 self.deleteColumnsRequested.emit(columns)
+            elif self._row_mode and len(self.selected_whole_rows()):
+                self.deleteRowsRequested.emit()
             else:
                 self.clear_selected_cells()
             return
         super().keyPressEvent(event)
-
-
-def _rxn_text_from_mime(mime) -> str:
-    """An RXN file on the clipboard (as ``chemical/x-mdl-rxnfile`` or as text), else ""."""
-    if mime is None:
-        return ""
-    if mime.hasFormat("chemical/x-mdl-rxnfile"):
-        text = bytes(mime.data("chemical/x-mdl-rxnfile").data()).decode("utf-8", "replace")
-        if looks_like_rxn_block(text):
-            return text
-    text = mime.text() if mime.hasText() else ""
-    return text if looks_like_rxn_block(text) else ""
