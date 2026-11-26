@@ -48,6 +48,7 @@ import sys
 import tarfile
 import time
 import urllib.request
+import zlib
 from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
@@ -125,8 +126,13 @@ def score_one(test: dict[str, str], ref: dict[str, str]) -> tuple[float, float]:
     return (right / pairs if pairs else 1.0), (right_cols / core_cols if core_cols else 1.0)
 
 
-def ids(bench: str) -> list[str]:
-    return sorted(p.name for p in (BENCH / bench / "ref").iterdir())
+def ids(bench: str, half: str = "") -> list[str]:
+    """The set's families; ``half`` "train" or "test" keeps half, fixed by a hash of the ID
+    (the defaults are tuned on train and reported on test)."""
+    every = sorted(p.name for p in (BENCH / bench / "ref").iterdir())
+    if not half:
+        return every
+    return [f for f in every if (zlib.crc32(f.encode()) % 2 == 0) == (half == "train")]
 
 
 def category(bench: str, family: str) -> str:
@@ -151,44 +157,48 @@ def fetch() -> None:
     print(f"{BENCH}: {', '.join(sorted(p.name for p in BENCH.iterdir() if p.is_dir()))}")
 
 
-def run(bench: str, method: str, only: list[str]) -> None:
-    """One comparator over one set; run with the cs-align-bench interpreter (in WSL)."""
-    folder = OUT / bench / method
+def run(bench: str, method: str, only: list[str], half: str, label: str, options: dict) -> None:
+    """One method over one set; run with the cs-align-bench interpreter (in WSL). chemsuite's
+    own runs take ``options`` (``msa.align`` keywords) and a ``label`` naming them."""
+    name = label or method
+    folder = OUT / bench / name
     folder.mkdir(parents=True, exist_ok=True)
-    times_path = OUT / bench / f"{method}.json"
+    times_path = OUT / bench / f"{name}.json"
     times = json.loads(times_path.read_text()) if times_path.exists() else {}
     env_bin = str(Path(sys.executable).parent)
-    todo = [f for f in (only or ids(bench)) if f not in times]
+    todo = [f for f in (only or ids(bench, half)) if f not in times]
     for n, family in enumerate(todo, 1):
         inp = BENCH / bench / "in" / family
         out = folder / family
         if method == "chemsuite":
-            seconds = _run_chemsuite(inp, out)
+            seconds = _run_chemsuite(inp, out, options)
         else:
             command = COMMANDS[method].format(inp=inp, out=out)
             start = time.perf_counter()
-            subprocess.run(["bash", "-c", f'PATH="{env_bin}:$PATH" {command}'], check=True)
+            # MAFFT leaves its scratch folders in the working directory: keep them out of the repo
+            line = f'PATH="{env_bin}:$PATH" TMPDIR="{ROOT}" {command}'
+            subprocess.run(["bash", "-c", line], check=True, cwd=ROOT)
             seconds = time.perf_counter() - start
         times[family] = round(seconds, 4)
         if n % 25 == 0 or n == len(todo):
             times_path.write_text(json.dumps(times, indent=0, sort_keys=True))
-            print(f"{method} {bench}: {n}/{len(todo)}", flush=True)
+            print(f"{name} {bench}: {n}/{len(todo)}", flush=True)
 
 
-def _run_chemsuite(inp: Path, out: Path) -> float:
+def _run_chemsuite(inp: Path, out: Path, options: dict) -> float:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from chemsuite.macromolecule.align import msa  # built in A2
 
     seqs = read_fasta(inp)
     start = time.perf_counter()
-    aligned = msa.align_strings(list(seqs.values()))
+    aligned = msa.align_strings(list(seqs.values()), **options)
     seconds = time.perf_counter() - start
     out.write_text("".join(f">{n}\n{s}\n" for n, s in zip(seqs, aligned, strict=True)))
     return seconds
 
 
-def score(bench: str, methods: list[str]) -> None:
-    families = ids(bench)
+def score(bench: str, methods: list[str], half: str) -> None:
+    families = ids(bench, half)
     found = methods or sorted(p.name for p in (OUT / bench).iterdir() if p.is_dir())
     rows: dict[str, dict[str, list[tuple[float, float, float]]]] = {}
     for method in found:
@@ -204,7 +214,7 @@ def score(bench: str, methods: list[str]) -> None:
             per[category(bench, family)].append(entry)
             per["all"].append(entry)
         rows[method] = per
-    published = _published(bench)
+    published = _published(bench, set(families))
     cats = sorted({c for per in rows.values() for c in per} - {"all"}) + ["all"]
     print(f"## {bench}: mean Q / TC (n families), total seconds\n")
     print("| Method | " + " | ".join(cats) + " | seconds |")
@@ -233,7 +243,7 @@ def score(bench: str, methods: list[str]) -> None:
         print(f"| {method} (qscore file) | " + " | ".join(cells) + " | |")
 
 
-def _published(bench: str) -> dict[str, dict[str, list[tuple[float, float]]]]:
+def _published(bench: str, keep: set[str]) -> dict[str, dict[str, list[tuple[float, float]]]]:
     """The set's own qscore results: method to category to (Q, TC) per family."""
     folder = BENCH / bench / "qscore"
     out: dict[str, dict[str, list[tuple[float, float]]]] = {}
@@ -246,6 +256,8 @@ def _published(bench: str) -> dict[str, dict[str, list[tuple[float, float]]]]:
             if "Q" not in fields or "Ref" not in fields:
                 continue
             family = fields["Ref"].rsplit("/", 1)[-1]
+            if family not in keep:
+                continue
             entry = (float(fields["Q"]), float(fields.get("TC", "nan")))
             per[category(bench, family)].append(entry)
             per["all"].append(entry)
@@ -261,16 +273,21 @@ def main() -> None:
     p_run.add_argument("--set", required=True)
     p_run.add_argument("--method", required=True, choices=[*COMMANDS, "chemsuite"])
     p_run.add_argument("--only", default="")
+    p_run.add_argument("--half", choices=["train", "test"], default="")
+    p_run.add_argument("--label", default="")
+    p_run.add_argument("--options", default="{}", help="msa.align keywords as JSON")
     p_score = steps.add_parser("score")
     p_score.add_argument("--set", required=True)
     p_score.add_argument("--method", action="append", default=[])
+    p_score.add_argument("--half", choices=["train", "test"], default="")
     args = parser.parse_args()
     if args.step == "fetch":
         fetch()
     elif args.step == "run":
-        run(args.set, args.method, [f for f in args.only.split(",") if f])
+        only = [f for f in args.only.split(",") if f]
+        run(args.set, args.method, only, args.half, args.label, json.loads(args.options))
     else:
-        score(args.set, args.method)
+        score(args.set, args.method, args.half)
 
 
 if __name__ == "__main__":

@@ -88,12 +88,46 @@ def align(
 def run_kernel(
     pair: np.ndarray, gap_open: float, gap_extend: float, mode: str
 ) -> tuple[float, np.ndarray, np.ndarray]:
-    """:func:`.kernels.gotoh` on a matrix of pair scores (sequences or profiles)."""
-    from . import kernels  # numba: imported only when something is aligned
+    """:func:`.kernels.gotoh` on a matrix of pair scores with the same gap costs everywhere,
+    except that free end gaps cost nothing at the ends."""
+    n, m = pair.shape
+    row_open, row_extend = np.full(n + 1, float(gap_open)), np.full(n + 1, float(gap_extend))
+    col_open, col_extend = np.full(m + 1, float(gap_open)), np.full(m + 1, float(gap_extend))
+    if mode == ENDS_FREE:
+        for costs in (row_open, row_extend, col_open, col_extend):
+            costs[0] = costs[-1] = 0.0
+    return gotoh(pair, row_open, row_extend, col_open, col_extend, local=mode == LOCAL)
 
-    code = {GLOBAL: kernels.GLOBAL, LOCAL: kernels.LOCAL, ENDS_FREE: kernels.ENDS_FREE}[mode]
-    scores = np.ascontiguousarray(pair, dtype=np.float64)
-    best, cols_a, cols_b = kernels.gotoh(scores, float(gap_open), float(gap_extend), code)
+
+def gotoh(
+    pair: np.ndarray,
+    row_open: np.ndarray,
+    row_extend: np.ndarray,
+    col_open: np.ndarray,
+    col_extend: np.ndarray,
+    *,
+    row_occ: np.ndarray | None = None,
+    col_occ: np.ndarray | None = None,
+    local: bool = False,
+) -> tuple[float, np.ndarray, np.ndarray]:
+    """The compiled DP (:func:`.kernels.gotoh`), imported only when something is aligned;
+    occupancies default to 1 (sequences rather than profiles)."""
+    from . import kernels  # numba
+
+    n, m = pair.shape
+    row_occ = np.ones(n) if row_occ is None else row_occ
+    col_occ = np.ones(m) if col_occ is None else col_occ
+
+    best, cols_a, cols_b = kernels.gotoh(
+        np.ascontiguousarray(pair, dtype=np.float64),
+        np.ascontiguousarray(row_open, dtype=np.float64),
+        np.ascontiguousarray(row_extend, dtype=np.float64),
+        np.ascontiguousarray(col_open, dtype=np.float64),
+        np.ascontiguousarray(col_extend, dtype=np.float64),
+        np.ascontiguousarray(row_occ, dtype=np.float64),
+        np.ascontiguousarray(col_occ, dtype=np.float64),
+        local,
+    )
     return float(best), cols_a, cols_b
 
 

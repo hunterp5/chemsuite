@@ -16,10 +16,16 @@
 """The dynamic programming behind every alignment, compiled with numba.
 
 :func:`gotoh` aligns two sequences (or profiles) from their (n, m) matrix of pair scores with
-affine gaps (Gotoh, J. Mol. Biol. 1982, 162, 705): a gap of k positions costs
-``gap_open + k * gap_extend``. Three modes share it: global (Needleman & Wunsch, J. Mol. Biol.
-1970, 48, 443), local (Smith & Waterman, J. Mol. Biol. 1981, 147, 195) and global with free end
-gaps, for chains whose termini were not modelled or were cut differently.
+affine gaps (Gotoh, J. Mol. Biol. 1982, 162, 705) whose costs may change along each side: a
+gap of k positions at a place costs that place's ``open + k * extend``. Global alignment
+(Needleman & Wunsch, J. Mol. Biol. 1970, 48, 443) with zero costs at the ends is global with
+free end gaps; local alignment is Smith & Waterman's (J. Mol. Biol. 1981, 147, 195).
+
+A gap "at row boundary i" sits between rows i - 1 and i (0 before the first, n after the last);
+it holds columns against nothing. Column boundaries likewise hold rows against nothing. Each
+step of a gap is weighted by the occupancy of the row or column it holds (1 for a sequence; the
+share of a profile's sequences with a residue there), so under sum-of-pairs a column most
+sequences skip costs little to set against a gap, just as it scores little against a residue.
 
 Kernels release the GIL (``nogil``) and are cached on disk, so a job thread runs them without
 stalling the window and only the first use on a machine pays the compile.
@@ -30,7 +36,7 @@ from __future__ import annotations
 import numba
 import numpy as np
 
-GLOBAL, LOCAL, ENDS_FREE = 0, 1, 2
+GLOBAL, LOCAL = 0, 1
 
 _NEG = -1.0e18
 # the state a cell was reached from, kept per state for the traceback
@@ -38,21 +44,20 @@ _FROM_M, _FROM_X, _FROM_Y, _START = 0, 1, 2, 3
 
 
 @numba.njit(cache=True, nogil=True)
-def gotoh(score, gap_open, gap_extend, mode):  # noqa: C901 - one compiled DP: fill, then traceback
-    """Best alignment of rows against columns of ``score``.
+def gotoh(score, row_open, row_extend, col_open, col_extend, row_occ, col_occ, local):  # noqa: C901 - one compiled DP
+    """Best alignment of the rows against the columns of ``score``.
 
-    Returns ``(best, a, b)``: ``a[k]`` and ``b[k]`` are the row and column at alignment column
-    ``k``, -1 for a gap. Every row and column appears once: in local mode the unaligned ends
-    are laid out as gap columns before and after the aligned part (the rows' first).
+    ``row_open``/``row_extend`` (n + 1) cost a gap at each row boundary, ``col_open``/
+    ``col_extend`` (m + 1) one at each column boundary; ``row_occ`` (n) and ``col_occ`` (m)
+    weight each gap step by what it holds. Returns ``(best, a, b)``: ``a[k]`` and
+    ``b[k]`` are the row and column at alignment column ``k``, -1 for a gap. Every row and
+    column appears once: in local mode the unaligned ends are laid out as gap columns before and
+    after the aligned part (the rows' first).
     """
     n, m = score.shape
-    o = gap_open + gap_extend  # the first position of a gap
-    e = gap_extend
-    free_ends = mode == ENDS_FREE
-    local = mode == LOCAL
     pm = np.zeros((n + 1, m + 1), np.int8)
-    px = np.zeros((n + 1, m + 1), np.int8)
-    py = np.zeros((n + 1, m + 1), np.int8)
+    px = np.zeros((n + 1, m + 1), np.int8)  # a row against a gap (moving down)
+    py = np.zeros((n + 1, m + 1), np.int8)  # a column against a gap (moving right)
     m_prev = np.full(m + 1, _NEG)
     x_prev = np.full(m + 1, _NEG)
     y_prev = np.full(m + 1, _NEG)
@@ -61,22 +66,25 @@ def gotoh(score, gap_open, gap_extend, mode):  # noqa: C901 - one compiled DP: f
     y_cur = np.full(m + 1, _NEG)
     m_prev[0] = 0.0
     if not local:
+        held = 0.0
         for j in range(1, m + 1):
-            y_prev[j] = 0.0 if free_ends else -(gap_open + j * e)
+            held += col_occ[j - 1]
+            y_prev[j] = -(row_open[0] * col_occ[0] + held * row_extend[0])
             py[0, j] = _FROM_M if j == 1 else _FROM_Y
-    best = _NEG if not local else 0.0
-    end_i, end_j, end_state = (0, 0, 0) if local else (n, m, 0)
-    last_col_m = np.full(n + 1, _NEG)  # free ends: the best of each row's last cell
-    last_col_x = np.full(n + 1, _NEG)
-    last_col_y = np.full(n + 1, _NEG)
+    best = 0.0
+    end_i, end_j = 0, 0
+    held_rows = 0.0
     for i in range(1, n + 1):
+        held_rows += row_occ[i - 1]
+        occ_i = row_occ[i - 1]
         m_cur[0] = _NEG
         y_cur[0] = _NEG
-        if local:
-            x_cur[0] = _NEG
-        else:
-            x_cur[0] = 0.0 if free_ends else -(gap_open + i * e)
+        x_cur[0] = _NEG
+        if not local:
+            x_cur[0] = -(col_open[0] * row_occ[0] + held_rows * col_extend[0])
             px[i, 0] = _FROM_M if i == 1 else _FROM_X
+        r_open = row_open[i] + row_extend[i]
+        r_ext = row_extend[i]
         for j in range(1, m + 1):
             # match: from the diagonal
             v, p = m_prev[j - 1], _FROM_M
@@ -88,47 +96,43 @@ def gotoh(score, gap_open, gap_extend, mode):  # noqa: C901 - one compiled DP: f
                 v, p = 0.0, _START
             m_cur[j] = v + score[i - 1, j - 1]
             pm[i, j] = p
-            # a row's residue against a gap: from above
-            v, p = m_prev[j] - o, _FROM_M
-            if x_prev[j] - e > v:
-                v, p = x_prev[j] - e, _FROM_X
-            if y_prev[j] - o > v:
-                v, p = y_prev[j] - o, _FROM_Y
+            # row i - 1 against a gap at column boundary j: from above
+            c_open = (col_open[j] + col_extend[j]) * occ_i
+            c_ext = col_extend[j] * occ_i
+            v, p = m_prev[j] - c_open, _FROM_M
+            if x_prev[j] - c_ext > v:
+                v, p = x_prev[j] - c_ext, _FROM_X
+            if y_prev[j] - c_open > v:
+                v, p = y_prev[j] - c_open, _FROM_Y
             x_cur[j] = v
             px[i, j] = p
-            # a column's residue against a gap: from the left
-            v, p = m_cur[j - 1] - o, _FROM_M
-            if y_cur[j - 1] - e > v:
-                v, p = y_cur[j - 1] - e, _FROM_Y
-            if x_cur[j - 1] - o > v:
-                v, p = x_cur[j - 1] - o, _FROM_X
+            # column j - 1 against a gap at row boundary i: from the left
+            occ_j = col_occ[j - 1]
+            v, p = m_cur[j - 1] - r_open * occ_j, _FROM_M
+            if y_cur[j - 1] - r_ext * occ_j > v:
+                v, p = y_cur[j - 1] - r_ext * occ_j, _FROM_Y
+            if x_cur[j - 1] - r_open * occ_j > v:
+                v, p = x_cur[j - 1] - r_open * occ_j, _FROM_X
             y_cur[j] = v
             py[i, j] = p
             if local and m_cur[j] > best:
-                best, end_i, end_j, end_state = m_cur[j], i, j, _FROM_M
-        last_col_m[i], last_col_x[i], last_col_y[i] = m_cur[m], x_cur[m], y_cur[m]
+                best, end_i, end_j = m_cur[j], i, j
         m_prev, m_cur = m_cur, m_prev
         x_prev, x_cur = x_cur, x_prev
         y_prev, y_cur = y_cur, y_prev
-    if mode == GLOBAL or (free_ends and (n == 0 or m == 0)):
-        best, end_state = m_prev[m], _FROM_M
+    state = _FROM_M
+    if not local:
+        best, end_i, end_j = m_prev[m], n, m
         if x_prev[m] > best:
-            best, end_state = x_prev[m], _FROM_X
+            best, state = x_prev[m], _FROM_X
         if y_prev[m] > best:
-            best, end_state = y_prev[m], _FROM_Y
-        end_i, end_j = n, m
-    elif free_ends:
-        best = _NEG
-        for j in range(0, m + 1):  # the last row (m_prev and friends after the swap)
-            for state, value in ((_FROM_M, m_prev[j]), (_FROM_X, x_prev[j]), (_FROM_Y, y_prev[j])):
-                if value > best:
-                    best, end_i, end_j, end_state = value, n, j, state
-        for i in range(0, n + 1):
-            for state, value in ((_FROM_M, last_col_m[i]), (_FROM_X, last_col_x[i]),
-                                 (_FROM_Y, last_col_y[i])):  # fmt: skip
-                if value > best:
-                    best, end_i, end_j, end_state = value, i, m, state
-    # traceback, then the ends left out of it
+            best, state = y_prev[m], _FROM_Y
+    return best, *_traceback(pm, px, py, n, m, end_i, end_j, state)
+
+
+@numba.njit(cache=True, nogil=True)
+def _traceback(pm, px, py, n, m, end_i, end_j, state):  # pragma: no cover - compiled
+    """The path back from ``(end_i, end_j)``, with whatever it leaves out as gap columns."""
     a_out = np.empty(n + m, np.int64)
     b_out = np.empty(n + m, np.int64)
     k = 0
@@ -138,7 +142,7 @@ def gotoh(score, gap_open, gap_extend, mode):  # noqa: C901 - one compiled DP: f
     for ii in range(n - 1, end_i - 1, -1):
         a_out[k], b_out[k] = ii, -1
         k += 1
-    i, j, state = end_i, end_j, end_state
+    i, j = end_i, end_j
     while i > 0 or j > 0:
         if state == _FROM_M:
             if i == 0 or j == 0:
@@ -173,4 +177,4 @@ def gotoh(score, gap_open, gap_extend, mode):  # noqa: C901 - one compiled DP: f
     for ii in range(i - 1, -1, -1):
         a_out[k], b_out[k] = ii, -1
         k += 1
-    return best, a_out[:k][::-1].copy(), b_out[:k][::-1].copy()
+    return a_out[:k][::-1].copy(), b_out[:k][::-1].copy()
