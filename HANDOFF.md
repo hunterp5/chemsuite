@@ -1,9 +1,44 @@
-# Handoff: state of play (updated 2026-11-24, on Windows)
+# Handoff: state of play (updated 2026-11-25, on Windows)
 
 The rules live in `CLAUDE.md`; this file is only what is in flight, so the next session on the
 other machine can pick it up. Update it at the end of a session that leaves work open.
 
 ## In progress
+
+- **Permeability** (2026-11-25, Windows, committed to `dev` as `647054e`; ROADMAP §7.0d, plan
+  approved in-session). **Done and shipping:** two models at Chemistry ▸ Calculate ▸
+  Permeability…, MDR1-MDCK ER (0.360 MAE, R² 0.512, SVR) and Caco-2 (0.354 MAE, R² 0.655,
+  random forest), both out of fold on scaffold splits, fitted by `chemsuite/qsar` and applied
+  in numpy at ~13 ms a row. `chemsuite/permeability/data/*.csqm` (12 MB total) is pinned by
+  size and SHA-256 in `models.PINS`, with Biogen's MIT licence and a NOTICE beside it, and
+  `pyproject.toml` has the `package-data` entry they need to reach a wheel. Full suite green.
+  Everything measured is in `docs/PERMEABILITY_PLAN.md`.
+
+  **Tabled deliberately — four open items, none blocking:**
+  1. **The `pka` arm has no accuracy number.** It was abandoned on measured cost, about 60
+     CPU-seconds a molecule on two independent sets (MDCK ~67,000 CPU-s in 2 h, Caco-2
+     ~50,000 in 1 h, neither finishing its pool), against ~13 ms a row for what ships. The
+     same pass would run at predict time, so cost alone closes it as a *default* — but the
+     user's call during planning was that the bake-off decides on accuracy, so this reverses
+     that on different grounds and the accuracy question is genuinely still open. To settle
+     it: `train.py --arm pka --endpoint caco2` (the smaller endpoint) overnight. If it clears
+     +0.05 log MAE the answer is a second, slower, optional model, which is new scope.
+  2. **`train.py` does not pass a `progress` callback into `features.build`**, so pool
+     progress is invisible and the two runs above had to be killed blind. Fix this first, and
+     run an expensive arm on the smallest endpoint first.
+  3. **`certifi` is in `.venv` but not in `pyproject.toml`.** Python's HTTPS to
+     `dataverse.harvard.edu` fails on this PC without it, so `scripts/permeability/fetch.py`
+     needs it on a fresh venv. Whether it belongs in the dependencies is undecided.
+  4. **Caco-2 is data-limited**, not model-limited: three feature pools and three different
+     winning estimators give the same score. The lever is the Esaki 2024 ChEMBL curation
+     (+1,661 entries, with its exclusions applied), not more tuning.
+
+  **PAMPA was fitted and held back** (ROC-AUC 0.740 but balanced accuracy 0.570 on data that
+  is 85% permeable). It is still curated and trainable, and restoring it is one entry in
+  `ENDPOINTS` plus a pin; the classification column path stays covered by a test.
+
+  `samples/` is gitignored, so the pinned snapshot and curated CSVs are local to this PC —
+  `scripts/permeability/fetch.py` reproduces them by digest on the Mac.
 
 - **Scaffold Tree** (2026-11-25, Windows, merged to `main`; ROADMAP §7.0h item 2, plan
   approved in-session). New: `sar/scaffold_tree.py` (the engine; rules after ScaffoldGraph,
