@@ -677,7 +677,10 @@ other machine can pick it up. Update it at the end of a session that leaves work
    for a decision: 2D-only work on a 3D column loads every conformer (the report's two
    options). Owed: the by-hand pass on a 1k × 300 document and the same benches on the Mac.
    Conformer energies (2026-11-17) are also owed a by-hand run in the app with 3D drawing.
-2. Bioactive conformers (§7.0b) or protein Phase 1, Alignment (§7a), each starting in plan mode.
+2. Protein alignment (§7a 1): plan approved 2026-11-26 in
+   [`docs/ALIGN_PLAN.md`](docs/ALIGN_PLAN.md), phases A0–A6. A0 (licence decisions, the
+   benchmark against MAFFT L-INS-i, the numpy DP kernel timing) is next. Bioactive conformers
+   (§7.0b) still waits, starting in plan mode.
    (Graceful exit is done and checked on Windows; on the Mac, run its three tests and the
    by-hand checks in ROADMAP §7.0.)
 

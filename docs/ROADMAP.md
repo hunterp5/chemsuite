@@ -614,11 +614,13 @@ pip extra.
 0. **Viewer and selection.** Done (see §7.0c).
 1. **Alignment and correspondence** (base install: gemmi and numpy). Pairwise global
    (Needleman–Wunsch) and local (Smith–Waterman) alignment with chosen matrices and gap
-   penalties; MSA through the registered MAFFT tool; conservation shading in the sequence
-   strip; structural superposition on a whole chain or a pocket, with the linked ligand rows
-   moving in the same undo step; predicted models (AlphaFold DB, PDB-REDO) fetched by
-   accession. First because everything later needs residue correspondence: ensembles, PLIF
-   across proteins, FEP mapping.
+   penalties; MSA by chemsuite's own progressive aligner, structure-aware when coordinates
+   exist, gated on accuracy and speed against MAFFT L-INS-i (decided 2026-11-26: MAFFT is not
+   bundled); conservation shading in the sequence strip; structural superposition on a whole
+   chain or a pocket, with the linked ligand rows moving in the same undo step; predicted
+   models (AlphaFold DB, PDB-REDO) fetched by accession. First because everything later needs
+   residue correspondence: ensembles, PLIF across proteins, FEP mapping. **Plan approved
+   2026-11-26** in [ALIGN_PLAN.md](ALIGN_PLAN.md), phases A0–A6; A0 (licences, benchmark) next.
 2. **Docking and PLIF.** AutoDock Vina as an external program on every platform, Gnina optional
    (Linux, Windows through WSL); the box from a ligand or a selection; Meeko for PDBQT; one
    process per ligand with progress, cancel and finished rows kept; poses kept in the viewer's
