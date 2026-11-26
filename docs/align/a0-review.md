@@ -9,6 +9,39 @@ SHA-256 pins; BAliBASE, PREFAB, SABmark, HOMSTRAD and qscore are used for local 
 only (`samples/align/`, never committed); MAFFT, FAMSA and MUSCLE 5 run only in the WSL conda
 env `cs-align-bench`.
 
+## The benchmark (in progress)
+
+Sets: drive5's collection (`scripts/review/align_bench.py fetch`): BAliBASE 3 (386 families,
+ten categories), BALIS (its 180 families with structures), SABRE (423, from SABmark). Core
+columns are the reference's upper case. Families are split in halves by CRC32 of the ID;
+everything is tuned on the train half and the gates are judged on the test half.
+
+**The scorer.** Our Q and TC agree to three decimals with Edgar's `qscore` (built locally in
+WSL from its source, never committed) on the five families checked.
+
+**Comparators** (WSL env `cs-align-bench`, one thread each, run side by side): MAFFT 7.526
+(L-INS-i, FFT-NS-2, `--auto`), FAMSA 2.4.1, MUSCLE 5.3.
+
+**BAliBASE 3, train half, mean Q / TC** (n families; 2026-11-26):
+
+| Method | RV11 (BB11) | RV12 (BB12) | all |
+|---|---|---|---|
+| MAFFT L-INS-i | 0.687 / 0.460 (19) | 0.943 / 0.856 (23) | 0.874 / 0.628 (170 of 193 done) |
+| MAFFT `--auto` | 0.687 / 0.460 | 0.943 / 0.856 | 0.871 / 0.617 |
+| MUSCLE 5 | 0.714 / 0.480 | 0.946 / 0.869 | (62 done) |
+| FAMSA | 0.658 / 0.419 | 0.928 / 0.841 | 0.840 / 0.532 |
+| MAFFT FFT-NS-2 | 0.580 / 0.340 | 0.914 / 0.796 | 0.830 / 0.517 |
+| chemsuite, progressive + refinement (no library) | 0.623 / 0.384 | 0.926 / 0.841 | 0.831 / 0.526 |
+
+What it took to get there, measured on a 58-family sample of the train half:
+- The first progressive version scored Q 0.664: residues were set against gappy profile
+  columns almost for free while gaps paid full price. Weighting each gap step by the occupancy
+  of the column it holds fixed it (one family went from Q 0.44 to 0.96).
+- BLOSUM45 with open 15 / extend 1 reached ClustalW (0.780 / 0.443 against its 0.769 / 0.450).
+- Refinement on the weighted sum-of-pairs score: 0.804 / 0.491 (two passes; more gain nothing).
+- The consistency library (A3), weight 4 with BLOSUM62 11 / 1: 0.832 / 0.567, against
+  L-INS-i's 0.862 / 0.591 on the same sample.
+
 ## Kernel micro-benchmark (2026-11-26, Windows PC, Python 3.12, numpy 2.5.4, numba 0.68.1)
 
 `python scripts/review/align_kernel_bench.py`: a Gotoh global alignment with traceback
