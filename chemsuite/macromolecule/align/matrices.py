@@ -81,3 +81,33 @@ def matrix(name: str = DEFAULT) -> Matrix:
     scores = np.asarray(document["matrices"][name]["scores"], dtype=np.float64)
     scores.setflags(write=False)
     return Matrix(name, document["letters"], scores)
+
+
+@cache
+def odds(name: str = DEFAULT) -> tuple[float, np.ndarray]:
+    """``(lambda, odds)``: the scale and the (24, 24) odds ``exp(lambda * S)`` a matrix implies.
+
+    A log-odds matrix S stands for target frequencies ``p_ab = q_a q_b exp(lambda S_ab)``. Its
+    background q and lambda are found from S alone (Altschul, J. Mol. Biol. 1991, 219, 555;
+    Yu & Altschul, Bioinformatics 2005, 21, 902): for a lambda, ``q = M^-1 1`` with
+    ``M = exp(lambda S)`` over the 20 standard letters, and lambda is the one that makes q sum
+    to 1. Letters outside the 20 get odds 1 (no information).
+    """
+    table = matrix(name)
+    core = table.scores[:20, :20]
+
+    def background(lam: float) -> np.ndarray:
+        return np.linalg.solve(np.exp(lam * core), np.ones(20))
+
+    low, high = 1e-3, 2.0  # the sum of q falls as lambda rises through the root
+    for _ in range(200):
+        mid = 0.5 * (low + high)
+        if background(mid).sum() > 1.0:
+            low = mid
+        else:
+            high = mid
+    lam = 0.5 * (low + high)
+    out = np.ones_like(table.scores)
+    out[:20, :20] = np.exp(lam * core)
+    out.setflags(write=False)
+    return lam, out

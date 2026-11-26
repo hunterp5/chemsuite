@@ -45,6 +45,13 @@ MATRIX, GAP_OPEN, GAP_EXTEND = "BLOSUM62", 11.0, 1.0
 LIBRARY = 4.0
 #: the most sequences consistency is used for; above it, progressive alignment and refinement
 CONSISTENCY = 60
+#: where the library comes from: pair-HMM match posteriors, or identity-weighted alignments
+POSTERIOR, PAIRS = "posterior", "pairs"
+SOURCE = POSTERIOR
+#: the pair HMM's gap open and gap extend probabilities, and the consistency rounds
+DELTA, EPSILON, TRANSFORMS = 0.02, 0.8, 2
+#: posteriors below this are left out of the library
+FLOOR = 0.01
 
 
 def align_strings(sequences: Sequence[str], **options) -> list[str]:
@@ -80,6 +87,10 @@ def align(
     gap_extend: float = GAP_EXTEND,
     offset: float = 0.0,
     library: float = LIBRARY,
+    source: str = SOURCE,
+    delta: float = DELTA,
+    epsilon: float = EPSILON,
+    transforms: int = TRANSFORMS,
     passes: int = refine.PASSES,
     cancel: CancelToken | None = None,
 ) -> np.ndarray:
@@ -95,7 +106,7 @@ def align(
     starts = np.concatenate(([0], np.cumsum([len(c) for c in codes]))).astype(np.int64)
     use_library = library > 0 and n <= CONSISTENCY
     partner = pair_weight = identity = None
-    if use_library:
+    if use_library and source == PAIRS:
         from . import library as lib  # numba
 
         pair_open, pair_extend = matrices.GAPS[matrix]
@@ -103,6 +114,16 @@ def align(
         paths, identity = lib.direct(joined, starts, table.scores, pair_open, pair_extend)
         check(cancel)
         partner, pair_weight = lib.extend(paths, identity, starts, lib.KEEP)
+    elif use_library:
+        from . import library as lib  # numba
+
+        _, odds = matrices.odds(matrix)
+        check(cancel)
+        partner, pair_weight, _ = lib.posteriors(joined, starts, odds, delta, epsilon, lib.KEEP,
+                                                 FLOOR)  # fmt: skip
+        for _ in range(transforms):
+            check(cancel)
+            partner, pair_weight = lib.transform(partner, pair_weight, starts, lib.KEEP, FLOOR)
 
     def identities(first: np.ndarray, second: np.ndarray) -> np.ndarray:
         if identity is not None:

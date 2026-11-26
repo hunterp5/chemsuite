@@ -226,3 +226,166 @@ def sum_of_pairs(partner, weight, starts, rows, weights):  # pragma: no cover - 
                         pair += weight[t, starts[s] + i, slot]
             total += weights[s] * weights[t] * pair
     return total
+
+
+# -- probabilistic consistency (Do, Mahabhashyam, Brudno & Batzoglou, Genome Res. 2005, 15, 330)
+
+
+@numba.njit(cache=True, nogil=True)
+def _posterior(a, b, odds, delta, epsilon):  # noqa: C901 - forward, backward, posterior  # pragma: no cover
+    """The (n, m) probability that residue i of a and j of b are aligned under a three-state
+    pair HMM (match, and a gap in either), by forward-backward with each row scaled.
+
+    Match emits with the odds ``odds[a_i, b_j]`` (target over background frequencies), gaps
+    with 1; a gap opens with ``delta`` and goes on with ``epsilon``.
+    """
+    n, m = len(a), len(b)
+    stay = 1.0 - 2.0 * delta
+    leave = 1.0 - epsilon
+    fm = np.zeros((n + 1, m + 1))
+    fx = np.zeros((n + 1, m + 1))
+    fy = np.zeros((n + 1, m + 1))
+    scale = np.ones(n + 1)
+    # row 0: the start acts as a match at (0, 0)
+    fm[0, 0] = 1.0
+    for j in range(1, m + 1):
+        fy[0, j] = delta * fm[0, j - 1] + epsilon * fy[0, j - 1]
+    total = 0.0
+    for j in range(m + 1):
+        total += fm[0, j] + fy[0, j]
+    scale[0] = total
+    for j in range(m + 1):
+        fm[0, j] /= total
+        fy[0, j] /= total
+    for i in range(1, n + 1):
+        ai = a[i - 1]
+        fx[i, 0] = delta * fm[i - 1, 0] + epsilon * fx[i - 1, 0]
+        for j in range(1, m + 1):
+            fm[i, j] = odds[ai, b[j - 1]] * (
+                stay * fm[i - 1, j - 1] + leave * (fx[i - 1, j - 1] + fy[i - 1, j - 1])
+            )
+            fx[i, j] = delta * fm[i - 1, j] + epsilon * fx[i - 1, j]
+            fy[i, j] = delta * fm[i, j - 1] + epsilon * fy[i, j - 1]
+        total = 0.0
+        for j in range(m + 1):
+            total += fm[i, j] + fx[i, j] + fy[i, j]
+        scale[i] = total
+        for j in range(m + 1):
+            fm[i, j] /= total
+            fx[i, j] /= total
+            fy[i, j] /= total
+    end = fm[n, m] + fx[n, m] + fy[n, m]
+    bm = np.zeros((n + 1, m + 1))
+    bx = np.zeros((n + 1, m + 1))
+    by = np.zeros((n + 1, m + 1))
+    bm[n, m] = bx[n, m] = by[n, m] = 1.0
+    for i in range(n, -1, -1):
+        for j in range(m, -1, -1):
+            if i == n and j == m:
+                continue
+            down = 0.0  # into row i + 1, scaled by its factor
+            right = 0.0
+            diag_m = 0.0
+            if i < n and j < m:
+                diag_m = odds[a[i], b[j]] * bm[i + 1, j + 1] / scale[i + 1]
+            if i < n:
+                down = bx[i + 1, j] / scale[i + 1]
+            if j < m:
+                right = by[i, j + 1]
+            bm[i, j] = stay * diag_m + delta * down + delta * right
+            bx[i, j] = leave * diag_m + epsilon * down
+            by[i, j] = leave * diag_m + epsilon * right
+    post = np.zeros((n, m))
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            post[i - 1, j - 1] = fm[i, j] * bm[i, j] / end
+    return post
+
+
+@numba.njit(cache=True, nogil=True, parallel=True)
+def posteriors(codes, starts, odds, delta, epsilon, keep, floor):  # pragma: no cover - compiled
+    """Every pair's match posteriors, both directions, as ``(partner, weight)`` (count, total,
+    keep): each residue's strongest partners in every other sequence above ``floor``; and the
+    expected accuracy of each pair (the posterior mass over the shorter length), for the tree."""
+    count = len(starts) - 1
+    total = starts[count]
+    partner = np.full((count, total, keep), -1, np.int32)
+    weight = np.zeros((count, total, keep), np.float32)
+    accuracy = np.zeros((count, count))
+    for p in numba.prange(count * count):
+        s = p // count
+        t = p % count
+        if t <= s:
+            continue
+        a = codes[starts[s] : starts[s + 1]]
+        b = codes[starts[t] : starts[t + 1]]
+        if len(a) == 0 or len(b) == 0:
+            continue
+        post = _posterior(a, b, odds, delta, epsilon)
+        accuracy[s, t] = accuracy[t, s] = post.sum() / min(len(a), len(b))
+        _keep_rows(post, partner[t], weight[t], starts[s], keep, floor)
+        _keep_rows(post.T.copy(), partner[s], weight[s], starts[t], keep, floor)
+    return partner, weight, accuracy
+
+
+@numba.njit(cache=True, nogil=True)
+def _keep_rows(post, partner, weight, base, keep, floor):  # pragma: no cover - compiled
+    """Each row's ``keep`` largest entries above ``floor`` into ``partner/weight[base + i]``."""
+    n, m = post.shape
+    for i in range(n):
+        row = post[i].copy()
+        for slot in range(keep):
+            best_j = -1
+            best_w = floor
+            for j in range(m):
+                if row[j] > best_w:
+                    best_w = row[j]
+                    best_j = j
+            if best_j < 0:
+                break
+            partner[base + i, slot] = best_j
+            weight[base + i, slot] = best_w
+            row[best_j] = 0.0
+
+
+@numba.njit(cache=True, nogil=True, parallel=True)
+def transform(partner, weight, starts, keep, floor):  # pragma: no cover - compiled
+    """One consistency transformation: ``P'(s, t) = (1/N) sum over u of P(s, u) P(u, t)``,
+    u running over every sequence, s and t themselves included (their own P is the identity)."""
+    count = len(starts) - 1
+    total = starts[count]
+    out_partner = np.full((count, total, keep), -1, np.int32)
+    out_weight = np.zeros((count, total, keep), np.float32)
+    slots = partner.shape[2]
+    for p in numba.prange(count * count):
+        s = p // count
+        t = p % count
+        la = starts[s + 1] - starts[s]
+        lb = starts[t + 1] - starts[t]
+        if s == t or la == 0 or lb == 0:
+            continue
+        acc = np.zeros((la, lb))
+        for i in range(la):
+            for slot in range(slots):  # u = s and u = t: twice the direct posterior
+                j = partner[t, starts[s] + i, slot]
+                if j < 0:
+                    break
+                acc[i, j] += 2.0 * weight[t, starts[s] + i, slot]
+        for u in range(count):
+            if u in (s, t):
+                continue
+            for i in range(la):
+                for s1 in range(slots):
+                    k = partner[u, starts[s] + i, s1]
+                    if k < 0:
+                        break
+                    w1 = weight[u, starts[s] + i, s1]
+                    for s2 in range(slots):
+                        j = partner[t, starts[u] + k, s2]
+                        if j < 0:
+                            break
+                        acc[i, j] += w1 * weight[t, starts[u] + k, s2]
+        for i in range(la):
+            acc[i] /= count
+        _keep_rows(acc, out_partner[t], out_weight[t], starts[s], keep, floor)
+    return out_partner, out_weight
