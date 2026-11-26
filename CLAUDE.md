@@ -140,7 +140,9 @@ changes.
   cited (Henikoff 1992, Dayhoff 1978) and pinned by SHA-256. BAliBASE, PREFAB, SABmark,
   HOMSTRAD and qscore state no licence: they are fetched into `samples/align/` for local
   measurement only, never committed or shipped. The comparators (MAFFT, FAMSA, MUSCLE 5) live
-  in a WSL conda env, `cs-align-bench`, never in the app.
+  in a WSL conda env, `cs-align-bench`, never in the app. The DP kernels are numba (a direct
+  dependency since 2026-11-26): numpy took 8–11 s for the 1,225 pairs of 50 × 400 aa, numba 0.7 s
+  (`docs/align/a0-review.md`).
 - The user's email is private; never put it in requests to outside services.
 
 ## Two machines

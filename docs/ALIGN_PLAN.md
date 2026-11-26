@@ -96,8 +96,9 @@ This file is the approved plan, linked from ROADMAP §7a 1 and HANDOFF. Phases a
   - local (Smith–Waterman);
   - end-gap-free, the default for chains with missing termini.
 
-  Rows are vectorized in numpy (prefix max via `np.maximum.accumulate`). It is cancellable through
-  `CancelToken`. Output: an `Alignment` with identity, similarity and score.
+  The DP kernels are numba `njit(nogil=True)` (decided 2026-11-26 after A0's kernel timing:
+  numpy 8–11 s for all pairs of 50 × 400 aa, numba 0.7 s). It is cancellable through
+  `CancelToken` between pairs. Output: an `Alignment` with identity, similarity and score.
 - **`model.py`:**
   - `AlignedChain(protein, chain, columns)`, where each column holds a residue index or -1;
   - `Alignment` (rows, scores, method, parameters), with `to_json`/`from_json`. Saved keys stay
