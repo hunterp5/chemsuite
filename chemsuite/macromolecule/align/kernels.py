@@ -281,11 +281,20 @@ def profile_scores(freqs_a, substitution, freqs_b):  # pragma: no cover - compil
             if f != 0.0:
                 for y in range(letters):
                     left[i, y] += f * substitution[x, y]
+    # most columns hold a few letters: walk only those
+    present = np.empty((lb, letters), np.int64)
+    present_count = np.zeros(lb, np.int64)
+    for j in range(lb):
+        for y in range(letters):
+            if freqs_b[j, y] != 0.0:
+                present[j, present_count[j]] = y
+                present_count[j] += 1
     out = np.zeros((la, lb))
     for i in range(la):
         for j in range(lb):
             total = 0.0
-            for y in range(letters):
+            for c in range(present_count[j]):
+                y = present[j, c]
                 total += left[i, y] * freqs_b[j, y]
             out[i, j] = total
     return out

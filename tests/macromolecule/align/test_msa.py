@@ -43,20 +43,57 @@ def _random_family(rng: np.random.Generator, count: int) -> list[str]:
     return out
 
 
-def test_every_residue_is_placed_once_in_order() -> None:
+@pytest.mark.parametrize("library", [0.0, msa.LIBRARY])
+def test_every_residue_is_placed_once_in_order(library: float) -> None:
     rng = np.random.default_rng(5)
     for count in (2, 3, 7):
         sequences = _random_family(rng, count)
-        rows = msa.align(sequences)
+        rows = msa.align(sequences, library=library)
         assert rows.shape[0] == count
         for seq, row in zip(sequences, rows, strict=True):
             assert list(row[row >= 0]) == list(range(len(seq)))
         assert not (rows < 0).all(axis=0).any()
 
 
-def test_identical_sequences_need_no_gaps() -> None:
+@pytest.mark.parametrize("library", [0.0, msa.LIBRARY])
+def test_identical_sequences_need_no_gaps(library: float) -> None:
     seq = "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ"
-    assert msa.align_strings([seq] * 4) == [seq] * 4
+    assert msa.align_strings([seq] * 4, library=library) == [seq] * 4
+
+
+def test_consistency_recovers_a_mutated_family() -> None:
+    """Mutated copies of one ancestor, aligned without knowing it: the library keeps more of
+    the true columns than substitution alone."""
+    rng = np.random.default_rng(9)
+    ancestor = "".join(rng.choice(list(AMINO), 120))
+    sequences, truth = [], []
+    for _ in range(8):
+        seq, origin = [], []
+        for k, ch in enumerate(ancestor):
+            roll = rng.random()
+            if roll < 0.08:
+                continue
+            seq.append(rng.choice(list(AMINO)) if roll < 0.55 else ch)
+            origin.append(k)
+        sequences.append("".join(seq))
+        truth.append(origin)
+
+    def right(rows: np.ndarray) -> float:
+        good = total = 0
+        for s in range(len(rows)):
+            for t in range(s + 1, len(rows)):
+                where_t = {int(p): c for c, p in enumerate(rows[t]) if p >= 0}
+                origin_t = {k: i for i, k in enumerate(truth[t])}
+                for c, p in enumerate(rows[s]):
+                    if p < 0 or truth[s][p] not in origin_t:
+                        continue
+                    total += 1
+                    good += where_t.get(origin_t[truth[s][p]]) == c
+        return good / total
+
+    assert right(msa.align(sequences, library=msa.LIBRARY)) >= right(
+        msa.align(sequences, library=0)
+    )
 
 
 def test_a_shorter_copy_lines_up_with_its_parent() -> None:
