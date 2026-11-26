@@ -63,7 +63,9 @@ def build(
 
 def column_scores(a: Profile, b: Profile, substitution: np.ndarray) -> np.ndarray:
     """(La, Lb) sum-of-pairs scores between every column of ``a`` and of ``b``."""
-    return a.freqs @ substitution @ b.freqs.T
+    from . import kernels  # numba
+
+    return kernels.profile_scores(a.freqs, np.ascontiguousarray(substitution), b.freqs)
 
 
 def gap_costs(p: Profile, gap_open: float, gap_extend: float) -> tuple[np.ndarray, np.ndarray]:

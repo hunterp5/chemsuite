@@ -180,21 +180,20 @@ def _traceback(pm, px, py, n, m, end_i, end_j, state):  # pragma: no cover - com
     return a_out[:k][::-1].copy(), b_out[:k][::-1].copy()
 
 
-@numba.njit(cache=True, nogil=True)
-def pair_identities(
-    codes, starts, substitution, gap_open, gap_extend, first, second
-):  # pragma: no cover - compiled
+@numba.njit(cache=True, nogil=True, parallel=True)
+def pair_identities(codes, starts, substitution, gap_open, gap_extend, first, second):
     """The identity of the free-end-gap alignment of each pair ``(first[k], second[k])``.
 
     ``codes`` holds every sequence's matrix indices end to end, sequence ``s`` at
     ``starts[s]:starts[s + 1]``. Returns identical over aligned pairs (0 where none align).
     """
     out = np.zeros(len(first))
-    for k in range(len(first)):
+    for k in numba.prange(len(first)):
         a = codes[starts[first[k]] : starts[first[k] + 1]]
         b = codes[starts[second[k]] : starts[second[k] + 1]]
         n, m = len(a), len(b)
         if n == 0 or m == 0:
+            out[k] = 0.0
             continue
         score = np.empty((n, m))
         for i in range(n):
@@ -220,7 +219,7 @@ def pair_identities(
 
 
 @numba.njit(cache=True, nogil=True)
-def sum_of_pairs(letters, weights, substitution, gap_open, gap_extend, terminal, terminal_extend):  # noqa: C901 - one compiled pass  # pragma: no cover
+def sum_of_pairs(letters, weights, substitution, gap_open, gap_extend, terminal, terminal_extend):
     """The weighted sum-of-pairs score of an alignment.
 
     ``letters`` is (sequences x columns) of matrix indices, -1 for a gap. Each pair of rows is
@@ -267,3 +266,26 @@ def sum_of_pairs(letters, weights, substitution, gap_open, gap_extend, terminal,
                     seen_t += 1
             total += weights[s] * weights[t] * pair
     return total
+
+
+@numba.njit(cache=True, nogil=True)
+def profile_scores(freqs_a, substitution, freqs_b):  # pragma: no cover - compiled
+    """``freqs_a @ substitution @ freqs_b.T``, without BLAS: small products called often pay
+    more for waking a BLAS thread pool than for the arithmetic."""
+    la, letters = freqs_a.shape
+    lb = freqs_b.shape[0]
+    left = np.zeros((la, letters))
+    for i in range(la):
+        for x in range(letters):
+            f = freqs_a[i, x]
+            if f != 0.0:
+                for y in range(letters):
+                    left[i, y] += f * substitution[x, y]
+    out = np.zeros((la, lb))
+    for i in range(la):
+        for j in range(lb):
+            total = 0.0
+            for y in range(letters):
+                total += left[i, y] * freqs_b[j, y]
+            out[i, j] = total
+    return out

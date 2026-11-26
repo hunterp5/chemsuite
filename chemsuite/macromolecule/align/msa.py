@@ -99,7 +99,7 @@ def align(
 
 
 #: pairs handed to the compiled loop at a time, so a cancel is seen within a fraction of a second
-_CHUNK = 64
+_CHUNK = 256
 
 
 def _identities(
