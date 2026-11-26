@@ -19,7 +19,8 @@
 Polymer residues are built from their templates (:mod:`.templates`):
 
 - Asp and Glu charged, Lys and Arg charged, His neutral with H on NE2 (HIE), Cys, Ser, Thr
-  and Tyr neutral; nucleotides with a charged phosphate;
+  and Tyr neutral; phospho-Ser, -Thr and -Tyr (SEP, TPO, PTR) with a dianionic phosphate;
+  nucleotides with a charged phosphate;
 - the N-terminus NH₃⁺ and the C-terminus a carboxylate;
 - an atom bonded to another residue (a peptide or phosphodiester link, a disulfide, a glycan,
   a covalent ligand) carries one hydrogen fewer for each such bond, and the hydrogens it keeps
@@ -58,7 +59,15 @@ from .templates import HYDROGEN, Library, Template
 SOFT_METALS = frozenset([23, 24, 25, 26, 27, 28, 29, 30, 42, 47, 48, 74, 78, 79, 80])
 METAL_CONTACT = 2.9  # Å
 #: hydrogens a residue loses in its textbook state at neutral pH
-TEXTBOOK = {"ASP": ("HD2",), "GLU": ("HE2",)}
+TEXTBOOK = {
+    "ASP": ("HD2",),
+    "GLU": ("HE2",),
+    # a phosphomonoester's second pKa is about 6 for Ser, Thr and Tyr alike, so at neutral pH
+    # it is a dianion, the form Amber's phosaa14SB and phosaa19SB give PTR, SEP and TPO
+    "SEP": ("HOP2", "HOP3"),
+    "TPO": ("HOP2", "HOP3"),
+    "PTR": ("HO2P", "HO3P"),
+}
 PHOSPHATE = ("HOP2", "HOP3")
 POLAR = frozenset([7, 8, 16])
 KEPT = "Kept the hydrogens it has"  # the note on a residue that came with hydrogens

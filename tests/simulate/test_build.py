@@ -16,6 +16,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 from rdkit import Chem
@@ -110,15 +113,53 @@ def test_the_states_prepare_recorded_must_match_the_hydrogens(lysozyme) -> None:
         build.system_spec(s, wrong)
 
 
+def _residue(s: Structure, label: str) -> int:
+    (r,) = [r for r in range(s.n_residues) if s.residue_label(r) == label]
+    return r
+
+
+def test_phosphorylated_residues_take_amber_phosaa_forms(kinase) -> None:
+    s = kinase.structure
+    system = build.system_spec(*_without(kinase, ("ATP",)))
+    forms = {r.label: r.name for r in system.residues}
+    assert forms["E/TPO 197"] == "TPO" and forms["E/SEP 338"] == "SEP"  # dianions
+    assert system.net_charge == int(s.charge.sum()) - int(
+        s.charge[s.res_name[s.residue_of] == "ATP"].sum()
+    )
+    # one proton on the phosphate: the monoanion
+    tpo = _residue(s, "E/TPO 197")
+    o1p = _atom(s, "E/TPO 197/O1P")
+    mask = np.zeros(s.n_atoms, dtype=bool)
+    mask[o1p] = True
+    protonated = edit.add_atoms(edit.set_charge(s, mask, 0), np.array([tpo]), np.array(["HOP1"]),
+                                np.array([1]), s.xyz()[o1p][None] + [0.0, 0.0, 0.97],
+                                bonds=np.array([[o1p, s.n_atoms]]))  # fmt: skip
+    monoanion = build.system_spec(
+        *_without(SimpleNamespace(structure=protonated, states=kinase.states), ("ATP",))
+    )
+    assert {r.label: r.name for r in monoanion.residues}["E/TPO 197"] == "T1P"
+    # two protons: a neutral phosphate, which no template takes
+    o2p = _atom(protonated, "E/TPO 197/O2P")
+    mask = np.zeros(protonated.n_atoms, dtype=bool)
+    mask[o2p] = True
+    neutral = edit.add_atoms(edit.set_charge(protonated, mask, 0), np.array([tpo]),
+                             np.array(["HOP2"]), np.array([1]),
+                             protonated.xyz()[o2p][None] + [0.0, 0.0, 0.97],
+                             bonds=np.array([[o2p, protonated.n_atoms]]))  # fmt: skip
+    assert any("E/TPO 197" in t and "neutral phosphate" in t
+               for t in _texts(build.problems(neutral)))  # fmt: skip
+
+
 def test_what_no_template_covers_blocks_the_build(kinase, egfr, crambin) -> None:
-    found = _texts(build.problems(kinase.structure, kinase.states))
-    assert any("TPO 197" in t and "20 amino acids" in t for t in found)
-    assert any("SEP 338" in t for t in found)
     covalent = _texts(build.problems(egfr.structure, egfr.states))
     assert any("80U" in t and "CYS 797" in t for t in covalent)
     with pytest.raises(build.BuildError) as raised:
-        build.system_spec(kinase.structure, kinase.states)
-    assert len(raised.value.problems) == len(found)
+        build.system_spec(egfr.structure, egfr.states)
+    assert len(raised.value.problems) == len(covalent)
+    # a modified residue with no template: TPO renamed to one
+    k = kinase.structure
+    renamed = edit.rename_residues(k, np.array([_residue(k, "E/TPO 197")]), "XYZ")
+    assert any("XYZ 197" in t and "20 amino acids" in t for t in _texts(build.problems(renamed)))
     # tyrosinate, a neutral N-terminus, an ion with no charge, a water without hydrogens
     s = crambin.structure
     tym = _without_hydrogen_on(s, "A/TYR 29/OH")
@@ -137,6 +178,15 @@ def test_what_no_template_covers_blocks_the_build(kinase, egfr, crambin) -> None
     mask = np.zeros(w.n_atoms, dtype=bool)
     mask[one_h] = True
     assert any("two hydrogens" in t for t in _texts(build.problems(edit.delete(w, mask))))
+
+
+def test_a_crosslink_between_amino_acids_blocks(crambin) -> None:
+    s = crambin.structure
+    cb, nz = _atom(s, "A/THR 2/CB"), _atom(s, "A/ARG 10/CZ")
+    linked = replace(s, bonds=np.vstack([s.bonds, [[cb, nz]]]), order=np.append(s.order, 1))
+    found = _texts(build.problems(linked))
+    assert any(t.startswith("A/THR 2:") and "A/ARG 10/CZ (by CB)" in t for t in found), found
+    assert not build.problems(s)  # peptide bonds and disulfides are no crosslink
 
 
 def test_a_mid_chain_form_at_a_chain_end_blocks(crambin) -> None:

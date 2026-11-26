@@ -84,6 +84,7 @@ are trusted, not a blocker for minimisation.
 | **neutral N-terminus** (the `NH2` state) | **none** |
 | **`HIS-`** (imidazolate, a histidine bridging two metals, `hydrogens.py:230`) | **none** |
 | **modified residues** in Prepare's templates (ALY, CGU, CME, CSD, CSO, FME, …) | **none** |
+| SEP, TPO, PTR (dianion) and S1P, T1P, Y1P (monoanion) | yes, mid-chain only, from openmmforcefields' `amber/phosaa14SB.xml` and `phosaa19SB.xml` (added 2026-11-26; phosaa14SB needs `amber/ff14SB.xml` as its base, whose energies match `amber14/protein.ff14SB.xml` term for term on crambin) |
 
 Per the plan, a state with no template blocks with a ⚠ problem and is never substituted. Two
 of these were not in the plan's list: `HIS-`, and the modified residues. ASH/GLH/LYN/CYM on a

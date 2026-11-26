@@ -72,7 +72,12 @@ sys.stdout = sys.stderr
 _writing = threading.Lock()
 
 NM = 10.0  # angstroms in a nanometre
-PROTEIN_FILES = {"ff14SB": "amber14/protein.ff14SB.xml", "ff19SB": "amber19/protein.ff19SB.xml"}
+#: each protein force field with Amber's phosphorylated amino acids (phosaa14SB, phosaa19SB;
+#: Raguette et al., JCTC 2024), from openmmforcefields. phosaa14SB names ff14SB's atom types as
+#: AmberTools does, so it goes with openmmforcefields' ff14SB, whose energies are
+#: OpenMM's amber14 ff14SB's term for term.
+PROTEIN_FILES = {"ff14SB": ["amber/ff14SB.xml", "amber/phosaa14SB.xml"],
+                 "ff19SB": ["amber19/protein.ff19SB.xml", "amber/phosaa19SB.xml"]}
 WATER_FILES = {"tip3p": "amber14/tip3p.xml", "opc": "amber19/opc.xml"}
 SOLVENT_FILES = {"gbn2": ["implicit/gbn2.xml"], "vacuum": []}
 PREFERRED = ("CUDA", "OpenCL", "CPU", "Reference")
@@ -271,7 +276,7 @@ def _build(spec, ff):
     problems = []
     if ff["solvent"] not in SOLVENT_FILES:
         problems.append(("system", "explicit solvent is not available yet"))
-    files = [PROTEIN_FILES[ff["protein"]], WATER_FILES[ff["water"]],
+    files = [*PROTEIN_FILES[ff["protein"]], WATER_FILES[ff["water"]],
              *SOLVENT_FILES.get(ff["solvent"], [])]
     forcefield = app.ForceField(*files)
     molecules = []

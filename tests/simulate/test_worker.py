@@ -122,6 +122,15 @@ def test_the_force_fields_the_dialogs_offer_build(worker, protein, solvent, wate
         assert worker.build(charged, forcefield) == charged.n_atoms
 
 
+@pytest.mark.parametrize("protein", [spec.FF14SB, spec.FF19SB])
+def test_phosphorylated_residues_build_with_amber_phosaa(worker, kinase, protein) -> None:
+    """PKA's TPO 197 and SEP 338, dianions, with each protein force field's phosaa."""
+    system = build.system_spec(*_without(kinase, ("ATP",)))
+    assert {"TPO", "SEP"} <= {r.name for r in system.residues}
+    forcefield = spec.MinimiseSettings(protein=protein).forcefield()
+    assert worker.build(system, forcefield) == system.n_atoms
+
+
 def test_minimising_moves_hydrogens_first_and_holds_heavy_atoms_near(worker, complex_) -> None:
     s, system = complex_
     charged = worker.charges(system, ForceFieldSpec())

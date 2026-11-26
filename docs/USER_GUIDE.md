@@ -2209,6 +2209,10 @@ X-ray maps cannot tell an Asn's oxygen from its nitrogen, so these are worked ou
 - Ions take their formal charge from the file, else from the component (``FE`` is Fe³⁺, ``FE2``
   Fe²⁺, ``CU1`` Cu⁺) or the element (Na⁺, Mg²⁺, Zn²⁺, Cl⁻). An ion with neither is marked ⚠:
   set its charge by hand (Edit ▸ Charge).
+- Phosphoserine, phosphothreonine and phosphotyrosine (SEP, TPO, PTR) take a dianionic
+  phosphate (charge −2), their form at neutral pH. A protein prepared before chemsuite did
+  this has a neutral phosphate, which Minimise cannot take, and preparing it again keeps it
+  (Prepare keeps the hydrogens a residue already has): prepare the original structure again.
 - **Optimise** chooses each Asn/Gln flip, each His tautomer (HID, HIE or HIP) and each
   hydroxyl, thiol and amine orientation by the hydrogen bonds they make, the choices solved
   together rather than one at a time.
@@ -2331,6 +2335,15 @@ near where the file put them. OpenMM must be set up first (see
   first result instead of the deposit, so start again from the one it came from. Each new
   minimisation of the same protein is another copy (**X-min-2**…). With several models (NMR),
   the model shown is minimised.
+
+Besides the 20 amino acids and the ACE, NME and NH2 caps, the force fields take
+phosphoserine, phosphothreonine and phosphotyrosine (SEP, TPO, PTR, as dianions or with one
+proton on the phosphate) inside a chain, with Amber's phosaa14SB or phosaa19SB parameters.
+Anything else stops the run, each residue named with the reason: another modified residue, a
+phosphorylated residue at a chain end, a crosslink between two amino acids other than a
+disulfide, a ligand bonded to the protein, nucleic acids and glycans. A crosslink the file
+declares (6BBU's CYS 944 CB–LYS 953 NZ) can be broken by deleting one of its two atoms in the
+original structure and preparing again: Prepare rebuilds the atom without the link.
 
 Each new protein is shown in place of the one it was made from, which is hidden; Undo removes
 the new ones and shows the original again. The minimisation runs in three stages: hydrogens

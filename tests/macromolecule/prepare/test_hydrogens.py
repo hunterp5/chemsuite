@@ -175,3 +175,15 @@ def _with_zinc(s: Structure, atoms: list[str]) -> Structure:
         lines.append(f"HETATM{9000 + k:5d} ZN    ZN Z{900 + k:4d}    {x:8.3f}{y:8.3f}{z:8.3f}"
                      f"  1.00 20.00          ZN  ")  # fmt: skip
     return io.parse("\n".join([*lines, "END", ""]), "pdb")
+
+
+def test_a_phosphorylated_residue_is_a_dianion() -> None:
+    out = hydrogens.add_hydrogens(load("1atp.cif.gz"))
+    s = out.structure
+    for label in ("E/TPO 197", "E/SEP 338"):
+        r = _residue(s, label)
+        span = s.atoms_of(r)
+        oxygens = [i for i in range(span.start, span.stop) if s.name[i] in ("O1P", "O2P", "O3P")]
+        assert len(oxygens) == 3
+        assert all(_on(s, r, str(s.name[i])) == [] for i in oxygens), label
+        assert sorted(int(s.charge[i]) for i in oxygens) == [-1, -1, 0], label

@@ -25,8 +25,11 @@ forms unless a cap or a neighbour is bonded on. Where Prepare recorded the state
 
 What the force fields here cannot describe is a :class:`Problem` that blocks the build (the
 m0 review's template survey, ``docs/simulate/m0-review.md``): tyrosinate (TYM), a neutral
-N-terminus or C-terminus, imidazolate His, neutral Arg, ASH/GLH/LYN/CYM at a chain end, any
-residue that is not one of the 20 amino acids or a cap, nucleic acids and glycans, an ion
+N-terminus or C-terminus, imidazolate His, neutral Arg, ASH/GLH/LYN/CYM at a chain end, a
+phospho-Ser, -Thr or -Tyr with a neutral phosphate or at a chain end (Amber's phosaa templates
+take the dianion and the monoanion, mid-chain), any other residue that is not one of the 20
+amino acids or a cap, an amino acid bonded to another by anything but a peptide bond or a
+disulfide (a crosslink), nucleic acids and glycans, an ion
 without a charge, and a ligand bonded to the protein or whose hydrogens do not make a molecule.
 None of these is ever replaced by something close to it.
 """
@@ -80,10 +83,14 @@ STANDARD = frozenset(
         "VAL",
     ]
 )
+#: phospho-Ser, -Thr and -Tyr: the Amber form (phosaa14SB, phosaa19SB) by how many protons
+#: the phosphate oxygens carry, the dianion then the monoanion; a neutral one has no template
+PHOSPHO = {"SEP": ("SEP", "S1P"), "TPO": ("TPO", "T1P"), "PTR": ("PTR", "Y1P")}
+PHOSPHATE_O = ("O1P", "O2P", "O3P")
 #: caps, by the name Amber gives them (the PDB's NH2 is Amber's NHE)
 CAPS = {"ACE": "ACE", "NME": "NME", "NH2": "NHE"}
 #: forms with no N- or C-terminal template (gate 4 of the m0 review)
-MID_CHAIN_ONLY = frozenset(["ASH", "GLH", "LYN", "CYM"])
+MID_CHAIN_ONLY = frozenset(["ASH", "GLH", "LYN", "CYM", "SEP", "S1P", "TPO", "T1P", "PTR", "Y1P"])
 #: the forms Prepare records (``prepare.solve.RECORDED``), as this module names them
 NEUTRAL_N = "N-neutral"  # ``prepare.sites.NEUTRAL_N``
 PROTEIN_STATES = frozenset(["HID", "HIE", "HIP", "ASH", "GLH", "LYN", "CYM", "TYM", NEUTRAL_N])
@@ -240,7 +247,7 @@ class _Builder:
         if name in CAPS:
             self.add(r, atoms, CAPS[name], spec.CAP)
             return
-        if name not in STANDARD:
+        if name not in STANDARD and name not in PHOSPHO:
             self.problems.append(
                 Problem(
                     label,
@@ -248,6 +255,12 @@ class _Builder:
                     "force-field template (rename it, or remove it)",
                 )
             )
+            return
+        crosslinks = self.crosslinks(r, atoms)
+        if crosslinks:
+            self.problems.append(Problem(label, f"Bonded to {', '.join(crosslinks)}: no "
+                                         "force-field template takes this link (delete one of "
+                                         "its two atoms, then prepare again)"))  # fmt: skip
             return
         at = self.named(atoms)
         form = self.form(name, at, label)
@@ -281,7 +294,8 @@ class _Builder:
         self.add(r, atoms, prefix + form, spec.PROTEIN)
 
     def form(self, name: str, at: dict[str, int], label: str) -> str | None:
-        """The Amber form of a standard amino acid from its hydrogens (None: no template)."""
+        """The Amber form of a standard or phosphorylated amino acid from its hydrogens (None:
+        no template)."""
         h = {n: self.hydrogens(i) for n, i in at.items()}
         if name == "HIS":
             d, e = h.get("ND1", 0), h.get("NE2", 0)
@@ -294,6 +308,15 @@ class _Builder:
                 )
                 return None
             return "HIP" if d and e else "HID" if d else "HIE"
+        if name in PHOSPHO:
+            forms = PHOSPHO[name]
+            protons = sum(h.get(o, 0) for o in PHOSPHATE_O)
+            if protons >= len(forms):
+                self.problems.append(Problem(label, "A neutral phosphate has no force-field "
+                                             "template: prepare the original structure "
+                                             "again"))  # fmt: skip
+                return None
+            return forms[protons]
         if name == "ASP":
             return "ASH" if h.get("OD1", 0) + h.get("OD2", 0) else "ASP"
         if name == "GLU":
@@ -319,6 +342,20 @@ class _Builder:
                 return "CYX"
             return "CYS" if h.get("SG", 0) else "CYM"
         return name
+
+    def crosslinks(self, r: int, atoms: list[int]) -> list[str]:
+        """The atoms of other amino acids that residue *r* is bonded to other than by a peptide
+        bond or a disulfide (a ligand's or a glycan's link is reported on it)."""
+        s = self.s
+        found = []
+        for i in atoms:
+            for j in self.neighbours[i]:
+                if s.residue_of[j] == r or s.res_kind[s.residue_of[j]] != AMINO:
+                    continue
+                pair = {str(s.name[i]), str(s.name[j])}
+                if pair != {"C", "N"} and pair != {"SG"}:
+                    found.append(f"{s.atom_label(j)} (by {s.name[i]})")
+        return found
 
     def termini(self, r: int, at: dict[str, int]) -> tuple[bool, bool]:
         """Whether the residue starts a chain (its N bonded to no other residue) and ends one
