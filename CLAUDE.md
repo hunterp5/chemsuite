@@ -133,6 +133,14 @@ changes.
   read with `allow_pickle=False`, and the export refuses to write when the numpy prediction
   differs from scikit-learn's by more than 1e-9. The app never loads a pickle; "Export for
   Python" writes one for use outside chemsuite and nothing reads it back.
+- Protein alignment (`docs/ALIGN_PLAN.md`, decided 2026-11-26): MSA is chemsuite's own numpy
+  progressive aligner, gated against MAFFT L-INS-i on accuracy and speed; MAFFT is not bundled
+  (its extensions bundle carries Vienna RNA's non-commercial terms, never used) and T-Coffee is
+  out (non-commercial). BLOSUM/PAM matrices ship as data from NCBI's `blast/matrices` files,
+  cited (Henikoff 1992, Dayhoff 1978) and pinned by SHA-256. BAliBASE, PREFAB, SABmark,
+  HOMSTRAD and qscore state no licence: they are fetched into `samples/align/` for local
+  measurement only, never committed or shipped. The comparators (MAFFT, FAMSA, MUSCLE 5) live
+  in a WSL conda env, `cs-align-bench`, never in the app.
 - The user's email is private; never put it in requests to outside services.
 
 ## Two machines

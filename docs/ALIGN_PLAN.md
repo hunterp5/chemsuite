@@ -1,7 +1,9 @@
 # Protein alignment: sequences, MSA, superposition and predicted models
 
-Plan approved 2026-11-26. ROADMAP §7a 1 (Alignment and correspondence). A0, the licences and
-the benchmark, is next.
+Plan approved 2026-11-26. ROADMAP §7a 1 (Alignment and correspondence). A0's licence
+decisions taken with the user the same day (in CLAUDE.md "Decided": matrices shipped with
+citations; benchmark sets local only; comparators in the WSL env `cs-align-bench`); the
+benchmark itself is next.
 
 ## Context
 
