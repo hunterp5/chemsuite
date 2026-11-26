@@ -14,16 +14,17 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 """The proteins list: each protein (its box shows or hides it), its chains, its ligands, and
-its ions, waters and additives.
+its ions, waters and additives (each one's box includes it in calculations or leaves it out).
 
 Clicking an entry selects what it stands for (Shift adds, Ctrl or Cmd toggles); a double-click
-also frames it in the view (``focusRequested``).
+also frames it in the view (``focusRequested``). A protein's menu renames, duplicates or deletes
+the protein (the host's commands); a part's acts on that part (``partRequested``).
 """
 
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -46,12 +47,19 @@ from chemsuite.macromolecule.structure.model import (
     Structure,
 )
 from chemsuite.macromolecule.structure.select import chain_title, chain_word, select
+from chemsuite.macromolecule.workspace import parts
 from chemsuite.macromolecule.workspace.session import ADD, SET, TOGGLE
 
 from .session import SessionSignals
 
 _PROTEIN = Qt.ItemDataRole.UserRole
 _SELECTS = Qt.ItemDataRole.UserRole + 1
+_PART = Qt.ItemDataRole.UserRole + 2  # a part's kind: CHAIN, RESIDUE or GROUP
+#: the kinds of part, and the commands on one (``partRequested``)
+CHAIN, RESIDUE, GROUP = "chain", "residue", "group"
+RENAME, DUPLICATE, DELETE = "rename", "duplicate", "delete"
+#: a part's tooltip: what its box does
+INCLUDED_TIP = "Ticked: included in Prepare, Minimise and Dock. Unticked: left out of them"
 _GROUPS = ((ION, "Ions", "ion"), (WATER, "Waters", "water"), (ADDITIVE, "Additives", "additive"),
            (GLYCAN, "Glycans", "glycan"))  # fmt: skip
 
@@ -68,6 +76,9 @@ class StructureTree(QTreeWidget):
     removeRequested = Signal(str)  # a structure's id: Delete… from its menu, or the Delete key
     renameRequested = Signal(str)  # a structure's id: Rename… from its menu
     duplicateRequested = Signal(str)  # a structure's id: Duplicate from its menu
+    #: a part's command (RENAME, DUPLICATE, DELETE): protein id, the part's expression, its
+    #: name, its kind (CHAIN, RESIDUE, GROUP)
+    partRequested = Signal(str, str, str, str, str)
 
     def __init__(self, signals: SessionSignals, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -150,7 +161,9 @@ class StructureTree(QTreeWidget):
         font.setBold(some and not every)
         item.setFont(0, font)
         item.setBackground(0, QBrush(fill) if every else QBrush())
-        item.setForeground(0, QBrush(ink) if every else QBrush())
+        left_out = item.parent() is not None and item.checkState(0) == Qt.CheckState.Unchecked
+        grey = self.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
+        item.setForeground(0, QBrush(ink) if every else QBrush(grey) if left_out else QBrush())
 
     def _fill(self, top: QTreeWidgetItem, protein: str, structure: Structure) -> None:
         kinds = structure.res_kind
@@ -162,7 +175,7 @@ class StructureTree(QTreeWidget):
             if polymer:
                 name, segment = str(structure.chain_name[c]), str(structure.chain_segment[c])
                 self._child(top, protein, f"Chain {chain_title(name, segment)} ({polymer})",
-                            f"{chain_word(name, segment)} and polymer")  # fmt: skip
+                            f"{chain_word(name, segment)} and polymer", CHAIN)  # fmt: skip
         asset = self.session.store.assets.get(protein)
         guessed = set(asset.meta.get(GUESSED, "").splitlines()) if asset is not None else set()
         for residue in np.flatnonzero(kinds == LIGAND):
@@ -172,22 +185,42 @@ class StructureTree(QTreeWidget):
             if ligand_id in guessed:
                 label += " ⚠"
                 ligand_id += "\nBond orders guessed from the geometry"
-            item = self._child(top, protein, label, residue_expression(structure, int(residue)))
-            item.setToolTip(0, ligand_id)
+            item = self._child(top, protein, label,
+                               residue_expression(structure, int(residue)), RESIDUE)  # fmt: skip
+            item.setToolTip(0, f"{ligand_id}\n{INCLUDED_TIP}")
         for kind, title, expression in _GROUPS:
             count = int((kinds == kind).sum())
             if count:
-                self._child(top, protein, f"{title} ({count})", expression)
+                self._child(top, protein, f"{title} ({count})", expression, GROUP)
 
-    def _child(self, top: QTreeWidgetItem, protein: str, text: str, selects: str):
+    def _child(self, top: QTreeWidgetItem, protein: str, text: str, selects: str, kind: str):
         item = QTreeWidgetItem([text])
         item.setData(0, _PROTEIN, protein)
         item.setData(0, _SELECTS, selects)
+        item.setData(0, _PART, kind)
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+        share = parts.included_share(self.session, protein, self._atoms(item))
+        state = (Qt.CheckState.Checked if share == 1 else Qt.CheckState.Unchecked if share == 0
+                 else Qt.CheckState.PartiallyChecked)  # fmt: skip
+        item.setCheckState(0, state)
+        item.setToolTip(0, INCLUDED_TIP)
         top.addChild(item)
         return item
 
+    def _atoms(self, item: QTreeWidgetItem) -> np.ndarray:
+        """The atoms a part stands for, alternate locations and excluded atoms included."""
+        return parts.atoms_of(self.session, str(item.data(0, _PROTEIN)),
+                              str(item.data(0, _SELECTS)))  # fmt: skip
+
     def _item_changed(self, item: QTreeWidgetItem, _column: int) -> None:
-        if self._filling or item.parent() is not None:
+        if self._filling:
+            return
+        if item.parent() is not None:
+            # applied once Qt is out of the item's setData, since the edit reloads the tree
+            on = item.checkState(0) != Qt.CheckState.Unchecked
+            protein, atoms, what = str(item.data(0, _PROTEIN)), self._atoms(item), _name(item)
+            QTimer.singleShot(0, lambda: parts.set_included(self.session, protein, atoms, on,
+                                                            what))  # fmt: skip
             return
         visible = item.checkState(0) == Qt.CheckState.Checked
         self._ticking = True
@@ -219,16 +252,30 @@ class StructureTree(QTreeWidget):
 
     def _context_menu(self, where) -> None:
         item = self.itemAt(where)
-        if item is None:
-            return
+        if item is not None:
+            self.menu_for(item).exec(self.viewport().mapToGlobal(where))
+
+    def menu_for(self, item: QTreeWidgetItem) -> QMenu:
+        """*item*'s menu: a protein's commands, or a part's."""
         protein = str(item.data(0, _PROTEIN))
         menu = QMenu(self)
-        for title, signal in (("Rename…", self.renameRequested),
-                              ("Duplicate", self.duplicateRequested),
-                              ("Delete…", self.removeRequested)):  # fmt: skip
-            action = menu.addAction(title, lambda s=signal: s.emit(protein))
-            action.setEnabled(self._offered.get(title, False))
-        menu.exec(self.viewport().mapToGlobal(where))
+        if item.parent() is not None:
+            group = str(item.data(0, _PART)) == GROUP
+            for title, command in (("Rename…", RENAME), ("Duplicate", DUPLICATE),
+                                   ("Delete", DELETE)):  # fmt: skip
+                action = menu.addAction(title, lambda c=command: self._part(item, c))
+                action.setEnabled(command != RENAME or not group)
+        else:
+            for title, signal in (("Rename…", self.renameRequested),
+                                  ("Duplicate", self.duplicateRequested),
+                                  ("Delete…", self.removeRequested)):  # fmt: skip
+                action = menu.addAction(title, lambda s=signal: s.emit(protein))
+                action.setEnabled(self._offered.get(title, False))
+        return menu
+
+    def _part(self, item: QTreeWidgetItem, command: str) -> None:
+        self.partRequested.emit(command, str(item.data(0, _PROTEIN)), str(item.data(0, _SELECTS)),
+                                _name(item), str(item.data(0, _PART)))  # fmt: skip
 
     def offer(self, *, rename: bool, duplicate: bool, delete: bool) -> None:
         """Which of a structure's commands its menu offers (the host carries them out)."""
@@ -242,7 +289,10 @@ class StructureTree(QTreeWidget):
             return
         item = self.currentItem()
         if item is not None and event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-            self.removeRequested.emit(str(item.data(0, _PROTEIN)))
+            if item.parent() is not None:
+                self._part(item, DELETE)
+            else:
+                self.removeRequested.emit(str(item.data(0, _PROTEIN)))
             return
         super().keyPressEvent(event)
 
@@ -250,3 +300,13 @@ class StructureTree(QTreeWidget):
         super().changeEvent(event)
         if event.type() == QEvent.Type.PaletteChange:
             self.show_selection()  # the highlight's colours, light or dark
+
+
+def _name(item: QTreeWidgetItem) -> str:
+    """A part as an undo step names it: ``JZ4 A201``, ``waters``, ``chain A``."""
+    text = item.text(0).removesuffix(" ⚠")
+    kind = str(item.data(0, _PART))
+    if kind == RESIDUE:
+        return text
+    head = text.rsplit(" (", 1)[0]
+    return head.lower() if kind == GROUP else "chain " + head.removeprefix("Chain ")

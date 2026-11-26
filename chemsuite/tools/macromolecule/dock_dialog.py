@@ -33,7 +33,7 @@ from chemsuite.macromolecule.dock.box import PADDING, Box
 from chemsuite.macromolecule.structure.model import Structure
 
 from . import dock
-from .prepare_dialog import proteins, shown_protein, structure_of
+from .prepare_dialog import included_of, proteins, shown_protein, structure_of
 from .tool import dialog_parent, macromolecule_workspace
 
 #: where the search box comes from
@@ -301,7 +301,7 @@ class DockDialog(ToolDialog):
         if not isinstance(protein, str):
             protein = ""
         scope = self.write.value()
-        s = structure_of(self.ctx, protein) if protein else None
+        s = included_of(self.ctx, protein) if protein else None
         if scope != CONFIG and s is None:
             self.report("There is no such protein in this document")
             return
@@ -323,7 +323,7 @@ class DockDialog(ToolDialog):
         global _last
         _last = self.options()
         protein = self.protein.currentData()
-        s = structure_of(self.ctx, protein)
+        s = included_of(self.ctx, protein)
         box = self.box()
         if not isinstance(protein, str) or s is None or box is None:
             return None
@@ -437,7 +437,7 @@ class RescoreDialog(ToolDialog):
 
     def run(self):
         protein = self.protein.currentData()
-        s = structure_of(self.ctx, protein)
+        s = included_of(self.ctx, protein)
         if not isinstance(protein, str) or s is None:
             return None
         options = vina.Options(scoring=self.scoring.value())

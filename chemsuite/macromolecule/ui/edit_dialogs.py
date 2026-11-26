@@ -14,7 +14,8 @@
 # You should have received a copy of the GNU General Public License
 # along with chemsuite.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Rename a residue or a chain, renumber residues: small dialogs on the selection.
+"""Rename a residue or a chain, renumber residues: small dialogs on the selection, or on a part
+of the proteins list (:func:`part_command`, which also duplicates and deletes parts).
 
 Each asks for one value and makes its edit on OK; an edit that cannot be made (a name another
 chain has, a number already taken) is shown in the dialog, which stays open to fix it.
@@ -25,10 +26,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+import numpy as np
 from PySide6.QtWidgets import QLineEdit, QSpinBox, QWidget
 
 from chemsuite.app.widgets.dialogs.kit import ToolDialog
+from chemsuite.macromolecule.look.display import Display
 from chemsuite.macromolecule.structure.edit import EditError
+from chemsuite.macromolecule.workspace import parts
+
+from .tree import CHAIN, DELETE, DUPLICATE, RENAME
 
 if TYPE_CHECKING:
     from .panel import MacromoleculePanel
@@ -75,8 +81,44 @@ class EditDialog(ToolDialog):
         self.done(ToolDialog.DialogCode.Accepted)
 
 
-def rename_residue(panel: MacromoleculePanel) -> EditDialog | None:
-    found = panel.session.selected_residues()
+def part_command(
+    panel: MacromoleculePanel, command: str, protein: str, expression: str, what: str, kind: str
+) -> EditDialog | None:
+    """Rename, duplicate or delete a part of *protein* (the proteins list's menu); a problem
+    goes to the status line."""
+    session = panel.session
+    shown = session.display(protein)
+    if shown is None:
+        return None
+    atoms = parts.atoms_of(session, protein, expression)
+    if not atoms.any():
+        return None
+    s = shown.structure
+    if command == RENAME:
+        if kind == CHAIN:
+            return rename_chain(panel, (shown, int(s.atom_chain[atoms][0])))
+        return rename_residue(panel, (shown, np.unique(s.residue_of[atoms])))
+    try:
+        if command == DUPLICATE:
+            added = parts.duplicate(session, protein, atoms, what, chain=kind == CHAIN)
+            panel.status.setText(f"Duplicated {what}: {added} residue(s) added")
+        elif command == DELETE:
+            named = session.rows_naming(protein, atoms)
+            count = parts.delete(session, protein, atoms, what)
+            said = f"Deleted {what} ({count} atom{'s' if count != 1 else ''})"
+            if named:
+                said += f"; {named} table row(s) name a residue that lost atoms"
+            panel.status.setText(said)
+    except EditError as error:
+        panel.status.setText(f"⚠ {error}")
+    return None
+
+
+def rename_residue(
+    panel: MacromoleculePanel, part: tuple[Display, np.ndarray] | None = None
+) -> EditDialog | None:
+    """Rename the selected residues, or *part*'s."""
+    found = part or panel.session.selected_residues()
     if found is None:
         return None
     shown, residues = found
@@ -92,8 +134,11 @@ def rename_residue(panel: MacromoleculePanel) -> EditDialog | None:
                             "1 to 5 letters or digits, as in the PDB (HOH, LIG)"))  # fmt: skip
 
 
-def rename_chain(panel: MacromoleculePanel) -> EditDialog | None:
-    found = panel.session.selected_chain()
+def rename_chain(
+    panel: MacromoleculePanel, part: tuple[Display, int] | None = None
+) -> EditDialog | None:
+    """Rename the chain holding the selection, or *part*'s."""
+    found = part or panel.session.selected_chain()
     if found is None:
         return None
     shown, chain = found

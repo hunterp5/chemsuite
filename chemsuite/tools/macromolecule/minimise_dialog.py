@@ -25,7 +25,7 @@ from chemsuite.app.widgets.dialogs import ToolDialog
 
 from . import minimise
 from .minimise_options import MinimiseFields
-from .prepare_dialog import proteins, shown_protein, structure_of
+from .prepare_dialog import included_of, proteins, shown_protein
 from .tool import dialog_parent
 
 
@@ -48,7 +48,7 @@ class MinimiseDialog(ToolDialog):
 
     def refresh(self) -> None:
         protein = self.protein.currentData()
-        s = structure_of(self.ctx, protein) if isinstance(protein, str) else None
+        s = included_of(self.ctx, protein) if isinstance(protein, str) else None
         if s is not None:
             self.fields.allow_waters(minimise.has_waters(s))
         super().refresh()

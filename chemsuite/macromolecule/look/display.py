@@ -129,6 +129,9 @@ class Display:
     selected: np.ndarray = field(init=False)  # bool per atom
     ghost: np.ndarray = field(init=False)  # bool per atom
     query: np.ndarray = field(init=False)  # bool per atom: whose interactions are shown
+    #: bool per atom: left out of calculations (the asset's meta, :mod:`..structure.parts`), so
+    #: not drawn or selected; their look is kept for when they are included again
+    excluded: np.ndarray = field(init=False)
     _cache: dict = field(default_factory=dict, init=False, repr=False)
     _latest: dict = field(default_factory=dict, init=False, repr=False)  # last built, per part
     _rgba: dict = field(default_factory=dict, init=False, repr=False)  # surface and pocket colors
@@ -142,7 +145,8 @@ class Display:
         s = self.structure
         polymer = np.isin(s.res_kind, (AMINO, NUCLEIC))
         self.cartoon = polymer.copy()
-        self.styles = scenes.default_styles(s, self.active, cartoon=bool(polymer.any()))
+        self.excluded = np.zeros(s.n_atoms, bool)
+        self.styles = scenes.default_styles(s, self.located, cartoon=bool(polymer.any()))
         self.surface = np.zeros(s.n_atoms, bool)
         self.pocket = np.zeros(s.n_atoms, bool)
         self.colours = schemes.colour(s, self.scheme)
@@ -160,8 +164,25 @@ class Display:
                 self._versions["potential"] += 1
 
     @property
-    def active(self) -> np.ndarray:
+    def located(self) -> np.ndarray:
+        """The atoms at the locations shown (one per atom: :meth:`Structure.active`)."""
         return self.structure.active(self.altlocs)
+
+    @property
+    def active(self) -> np.ndarray:
+        """The atoms drawn, selected and measured: :attr:`located` less the excluded ones."""
+        located = self.located
+        return located & ~self.excluded if self.excluded.any() else located
+
+    def set_excluded(self, mask: np.ndarray) -> bool:
+        """Leave these atoms out (and only these); False when nothing changed."""
+        mask = np.asarray(mask, dtype=bool)
+        if np.array_equal(mask, self.excluded):
+            return False
+        self.excluded = mask.copy()
+        self.selected &= ~mask
+        self.touch("geometry", "cartoon", "surface", "pocket", "trace", "interactions")
+        return True
 
     @property
     def xyz(self) -> np.ndarray:
@@ -185,7 +206,7 @@ class Display:
     def show(self, atoms: np.ndarray, style: int) -> None:
         """Show these atoms in ``style`` (HIDDEN hides them); other locations stay hidden."""
         self.styles[atoms & self.active] = style
-        self.styles[~self.active] = scenes.HIDDEN
+        self.styles[~self.located] = scenes.HIDDEN
         self.touch("geometry")
 
     def show_cartoon(self, atoms: np.ndarray, on: bool = True) -> None:
@@ -196,7 +217,7 @@ class Display:
 
     def show_surface(self, atoms: np.ndarray, on: bool = True) -> None:
         heavy = self.structure.element != 1
-        self.surface[atoms & heavy & self.active] = on
+        self.surface[atoms & heavy & self.located] = on
         self.touch("surface")
 
     def show_pocket(self, atoms: np.ndarray | None) -> None:
@@ -271,11 +292,11 @@ class Display:
         self.colours[atoms, :3] = rgb
 
     def choose_altloc(self, residue: int, letter: str) -> None:
-        was = self.active
+        was = self.located
         for member in self.structure.altloc_members(residue).tolist():
             self.altlocs.pop(member, None)  # one pick for a place, under its first residue
         self.altlocs[int(self.structure.altloc_group[residue])] = letter
-        now = self.active
+        now = self.located
         span = self.structure.altloc_span(residue)  # a group's other residue may now show
         # the newly shown location takes the style its partner had
         for i in range(span.start, span.stop):
@@ -304,7 +325,7 @@ class Display:
         if part == "cartoon":
             return cartoons.build, (s, np.flatnonzero(self.cartoon), self.model, self.active)
         if part in ("surface", "pocket"):
-            atoms = self.surface if part == "surface" else self.pocket
+            atoms = (self.surface if part == "surface" else self.pocket) & ~self.excluded
             return surfaces.build, (s, np.flatnonzero(atoms), self.model, self.surface_options)
         if part == "trace":
             return cartoons.trace, (s, self.active)
@@ -498,8 +519,8 @@ class Display:
         same = kept.copy()
         same[kept] = s.element[kept] == o.element[was]
         self.colours[same] = old.colours[source[same]]
-        self.styles[~self.active] = scenes.HIDDEN
-        self.surface &= self.active
+        self.styles[~self.located] = scenes.HIDDEN
+        self.surface &= self.located
         self.touch("geometry", "cartoon", "surface", "pocket", "trace", "interactions")
 
     # saving

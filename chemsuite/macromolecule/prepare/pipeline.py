@@ -37,12 +37,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field, replace
+from typing import Any
 
 import numpy as np
 from scipy.spatial import cKDTree
 
 from chemsuite.core.jobs import CancelToken, check
 
+from ..structure import parts
 from ..structure.components import CcdCache
 from ..structure.model import LIGAND, WATER, Structure
 from . import energy, hydrogens, ligand_sites, loops, populations, repair, sites, solve, waters
@@ -185,6 +187,28 @@ class Prepared:
     @property
     def net_charge(self) -> int:
         return int(self.structure.charge.sum())
+
+
+def with_parts_back(prepared: Prepared, original: Structure, left_out: np.ndarray) -> Prepared:
+    """*prepared* (of ``parts.included(original, left_out)``) with *original*'s atoms
+    *left_out* put back untouched (:func:`.parts.restore`), its per-residue values and findings
+    renumbered to match. Its choices, energies and keys are dropped: they are for a review,
+    which a preparation that leaves parts out does not offer."""
+    if not left_out.any():
+        return prepared
+    before = prepared.structure
+    after = parts.restore(before, original, left_out)
+    found = after.indices(before.uid[before.res_start[:-1]])
+    moved = {r: int(after.residue_of[i]) for r, i in enumerate(found.tolist())}
+
+    def renumbered(values: Mapping[int, Any]) -> dict[int, Any]:
+        return {moved[r]: v for r, v in values.items() if r in moved}
+
+    report = tuple(replace(f, residue=moved.get(f.residue, -1)) if f.residue >= 0 else f
+                   for f in prepared.report)  # fmt: skip
+    return replace(prepared, structure=after, states=renumbered(prepared.states),
+                   pka=renumbered(prepared.pka), population=renumbered(prepared.population),
+                   report=report, choices=(), energies=(), keys=())  # fmt: skip
 
 
 def prepare(

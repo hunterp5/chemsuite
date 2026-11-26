@@ -35,7 +35,7 @@ from chemsuite.app.widgets.dialogs import ToolDialog
 from chemsuite.core.wording import plural
 from chemsuite.macromolecule.prepare import pipeline
 from chemsuite.macromolecule.prepare.inspect import SPAN
-from chemsuite.macromolecule.structure import store
+from chemsuite.macromolecule.structure import parts, store
 from chemsuite.macromolecule.structure.model import Structure
 from chemsuite.macromolecule.workspace.prepared import PreparedRecord, carried_built
 from chemsuite.macromolecule.workspace.reports import PrepareReport, Row
@@ -95,7 +95,7 @@ class PrepareDialog(ToolDialog):
         self.minimise.setToolTip(why or self._minimise_help)
         self.minimising.set_enabled(self.minimise.isChecked())
         protein = self.protein.currentData()
-        s = structure_of(self.ctx, protein) if isinstance(protein, str) else None
+        s = included_of(self.ctx, protein) if isinstance(protein, str) else None
         kept = self.fields.waters.value() != pipeline.NONE
         self.minimising.allow_waters(kept and s is not None and minimise.has_waters(s))
         super().refresh()
@@ -171,6 +171,15 @@ def structure_of(ctx: ToolContext, protein: str) -> Structure | None:
     return store.as_structure(asset.payload)
 
 
+def included_of(ctx: ToolContext, protein: str) -> Structure | None:
+    """*protein*'s structure less the parts left out of calculations (the proteins list's
+    boxes)."""
+    s = structure_of(ctx, protein)
+    if s is None:
+        return None
+    return parts.included(s, parts.excluded(ctx.table.assets[protein].meta, s))
+
+
 # -- running ------------------------------------------------------------------------------------
 def prepare_protein(
     ctx: ToolContext,
@@ -192,16 +201,26 @@ def prepare_protein(
     before = int((s.element == HYDROGEN).sum())
     earlier = macromolecule_workspace(ctx).prepared(protein)
     worker = minimise.simulator() if minimising is not None else None
+    meta = ctx.table.assets[protein].meta
+    left_out = parts.excluded(meta, s)
+    said = parts.describe(s, left_out)
 
     def work(job) -> Outcome:
-        prepared = pipeline.prepare(s, options, cache, job.cancel_token,
-                                    ligand_model=pka_model.ligand_pka(options))  # fmt: skip
+        prepared = pipeline.prepare(
+            parts.included(s, left_out),
+            options,
+            cache,
+            job.cancel_token,
+            ligand_model=pka_model.ligand_pka(options),
+        )
+        prepared = pipeline.with_parts_back(prepared, s, left_out)
         if worker is None or minimising is None:
             return Outcome(prepared)
         record = record_of(protein, prepared, options, earlier)
         try:
             relaxed = minimise.relax(worker, prepared.structure, record, minimising, cache,
-                                     report=job.report, cancel=job.cancel_token)  # fmt: skip
+                                     report=job.report, cancel=job.cancel_token,
+                                     left_out=parts.excluded(meta, prepared.structure))  # fmt: skip
         except minimise.FAILURES as error:
             return Outcome(prepared, failure=error)
         return Outcome(prepared, relaxed)
@@ -214,12 +233,12 @@ def prepare_protein(
         if minimising is None:
             workspace = macromolecule_workspace(ctx)
             workspace.session().edit(f"Prepare {protein}", {protein: prepared.structure})
-            report = summary(protein, prepared, options)
+            report = summary(protein, prepared, options, said)
             workspace.set_report(report)
             workspace.set_prepared(record_of(protein, prepared, options, earlier))
             show_report(ctx, report)
         else:
-            report = _add_copies(ctx, protein, options, outcome, earlier)
+            report = _add_copies(ctx, protein, options, outcome, earlier, said)
         added = int((prepared.structure.element == HYDROGEN).sum()) - before
         warnings = f", {report.warnings} to check" if report.warnings else ""
         ctx.show_message(
@@ -245,6 +264,7 @@ def _add_copies(
     options: pipeline.Options,
     outcome: Outcome,
     earlier: PreparedRecord | None,
+    left_out: str = "",
 ) -> PrepareReport:
     """Add the prepared protein, and the minimised one when there is one, in one step; keep
     their records and reports, and show the last. Returns the report shown."""
@@ -261,7 +281,7 @@ def _add_copies(
     ctx.edit(label, ops)
     record = record_of(prep, prepared, options, earlier)
     workspace.set_prepared(record)
-    report = summary(prep, prepared, options)
+    report = summary(prep, prepared, options, left_out)
     if outcome.failure is not None:
         report = replace(report, rows=(minimise.failed_row(outcome.failure), *report.rows))
     workspace.set_report(report)
@@ -273,7 +293,9 @@ def _add_copies(
     return report
 
 
-def summary(protein: str, prepared: pipeline.Prepared, options: pipeline.Options) -> PrepareReport:
+def summary(
+    protein: str, prepared: pipeline.Prepared, options: pipeline.Options, left_out: str = ""
+) -> PrepareReport:
     """What the preparation did, in the compact form the document keeps; led by the settings
     changed from the defaults, so the report says how it was made."""
     rows = tuple(
@@ -282,6 +304,8 @@ def summary(protein: str, prepared: pipeline.Prepared, options: pipeline.Options
     )
     if changed := describe(options):
         rows = (Row(SETTINGS, changed), *rows)
+    if left_out:
+        rows = (*rows, Row(minimise.LEFT_OUT, left_out))
     return PrepareReport(protein, rows, ph=options.ph, net_charge=prepared.net_charge)
 
 

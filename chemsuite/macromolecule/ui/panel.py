@@ -151,6 +151,7 @@ class MacromoleculePanel(ToolPanel):
                 signal.connect(self.commands[key])
         self.tree.offer(rename=RENAME in self.commands, duplicate=DUPLICATE in self.commands,
                         delete=REMOVE in self.commands)  # fmt: skip
+        self.tree.partRequested.connect(self.part_command)
         self._sequence_window: SequenceWindow | None = None
         self._sequence_state: dict = {}  # saved, for the window when it is first made
         self.views = QStackedWidget()
@@ -471,6 +472,12 @@ class MacromoleculePanel(ToolPanel):
         from . import edit_dialogs
 
         return edit_dialogs.rename_chain(self)
+
+    def part_command(self, command: str, protein: str, expression: str, what: str, kind: str):
+        """A part's command from the proteins list (rename, duplicate, delete)."""
+        from . import edit_dialogs
+
+        return edit_dialogs.part_command(self, command, protein, expression, what, kind)
 
     def renumber(self):
         from . import edit_dialogs

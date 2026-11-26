@@ -35,6 +35,7 @@ from chemsuite.app.document.tools import ToolContext
 from chemsuite.core.wording import plural
 from chemsuite.macromolecule.prepare import pipeline, review
 from chemsuite.macromolecule.prepare.ligand_pka import LigandPka
+from chemsuite.macromolecule.structure import parts
 from chemsuite.macromolecule.structure.model import Structure
 from chemsuite.macromolecule.workspace.reports import PrepareReport, Row
 from chemsuite.macromolecule.workspace.reviews import Review
@@ -42,6 +43,7 @@ from chemsuite.macromolecule.workspace.reviews import Review
 from ..pka import model as pka_model
 from .prepare_dialog import (
     PrepareDialog,
+    included_of,
     record_of,
     select_named,
     show_report,
@@ -115,8 +117,9 @@ def inspect_protein(
     base: review.Survey | None = None,
 ):
     """Survey *protein* in the background and open the Inspect panel on it (or fill the open
-    one). Returns the job, or None when there is no such protein."""
-    s = structure_of(ctx, protein)
+    one). Returns the job, or None when there is no such protein. The parts left out of
+    calculations are not surveyed."""
+    s = included_of(ctx, protein)
     if s is None:
         return None
     cache = ccd(ctx)
@@ -216,6 +219,8 @@ def apply_review(ctx: ToolContext, panel, skipped, overrides):
     s = structure_of(ctx, protein)
     if s is None:
         return None
+    left_out = parts.excluded(ctx.table.assets[protein].meta, s)
+    said = parts.describe(s, left_out)
     decisions = review.decisions_from(
         found, skip_issues=dict.fromkeys(skipped, True), overrides=overrides
     )
@@ -225,8 +230,10 @@ def apply_review(ctx: ToolContext, panel, skipped, overrides):
     panel.set_busy(True)
 
     def work(job):
-        return pipeline.prepare(s, options, cache, job.cancel_token, decisions,
-                                ligand_model=pka_model.ligand_pka(options))  # fmt: skip
+        prepared = pipeline.prepare(parts.included(s, left_out), options, cache,
+                                    job.cancel_token, decisions,
+                                    ligand_model=pka_model.ligand_pka(options))  # fmt: skip
+        return pipeline.with_parts_back(prepared, s, left_out)
 
     def done(prepared: pipeline.Prepared) -> None:
         panel.set_busy(False)
@@ -235,7 +242,7 @@ def apply_review(ctx: ToolContext, panel, skipped, overrides):
             return
         workspace = macromolecule_workspace(ctx)
         workspace.session().edit(f"Prepare {protein} (reviewed)", {protein: prepared.structure})
-        report = _with_provenance(summary(protein, prepared, options), found, skipped,
+        report = _with_provenance(summary(protein, prepared, options, said), found, skipped,
                                   overrides, prepared.structure)  # fmt: skip
         workspace.set_report(report)
         workspace.set_prepared(record_of(protein, prepared, options, workspace.prepared(protein)))

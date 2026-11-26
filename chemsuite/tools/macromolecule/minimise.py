@@ -34,11 +34,13 @@ from __future__ import annotations
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
 
+import numpy as np
+
 from chemsuite.app.document.tools import ToolContext
 from chemsuite.app.shell.settings_hub import settings_hub
 from chemsuite.core.assets import Asset, PutAsset
 from chemsuite.core.jobs import CancelToken
-from chemsuite.macromolecule.structure import store
+from chemsuite.macromolecule.structure import parts, store
 from chemsuite.macromolecule.structure.components import CcdCache
 from chemsuite.macromolecule.structure.model import WATER, Structure
 from chemsuite.macromolecule.workspace.prepared import Minimisation, PreparedRecord, atoms_digest
@@ -144,6 +146,10 @@ def minimised_already(ctx: ToolContext, protein: str) -> str:
     return f"{protein} is minimised already{instead}"
 
 
+#: the report line naming the parts a calculation left out
+LEFT_OUT = "Left out"
+
+
 def has_waters(s: Structure) -> bool:
     return bool((s.atom_kind == WATER).any())
 
@@ -163,7 +169,7 @@ def problem(ctx: ToolContext, protein: str, settings: MinimiseSettings) -> str:
     s = store.as_structure(asset.payload)
     if not record.matches(s):
         return f"{protein} was edited after it was prepared: prepare it again"
-    return settings.problem(has_waters(s))
+    return settings.problem(has_waters(parts.included(s, parts.excluded(asset.meta, s))))
 
 
 # -- the work ------------------------------------------------------------------------------------
@@ -174,6 +180,7 @@ class Relaxed:
     structure: Structure
     done: Done
     settings: MinimiseSettings
+    left_out: str = ""  # the parts left out, in words (:func:`.parts.describe`)
 
 
 def relax(
@@ -185,9 +192,14 @@ def relax(
     model: int = 0,
     report: Callable[[int, int], None] | None = None,
     cancel: CancelToken | None = None,
+    left_out: np.ndarray | None = None,
 ) -> Relaxed:
-    """*s*'s *model* minimised as *record* says it was prepared (on a worker thread). Raises
-    one of :data:`FAILURES` with what stopped it."""
+    """*s*'s *model* minimised as *record* says it was prepared (on a worker thread), less the
+    atoms *left_out*, which keep their places. Raises one of :data:`FAILURES` with what
+    stopped it."""
+    whole = s
+    if left_out is not None and left_out.any():
+        s = parts.included(s, left_out)
     system = build.system_spec(s, record.states_on(s), ccd=ccd, cancel=cancel)
     names = [stage.name for stage in STAGES]
 
@@ -198,8 +210,9 @@ def relax(
     done = minimise(worker, s, system, settings.forcefield(), settings.protocol(),
                     built=record.built_in(s), model=model, platform=settings.platform,
                     progress=progress, cancel=cancel)  # fmt: skip
-    out = s.with_coords(done.result.coordinates(s, model))
-    return Relaxed(out, done, settings)
+    out = whole.with_coords(done.result.coordinates(whole, model))
+    said = parts.describe(whole, left_out) if left_out is not None else ""
+    return Relaxed(out, done, settings, said)
 
 
 def record_of(new: str, source: str, record: PreparedRecord, relaxed: Relaxed) -> PreparedRecord:
@@ -254,6 +267,8 @@ def report_of(new: str, relaxed: Relaxed, ph: float) -> PrepareReport:
     if versions.get("openmm"):
         run += f", OpenMM {versions['openmm']}"
     rows.append(Row("Run", run))
+    if relaxed.left_out:
+        rows.append(Row(LEFT_OUT, relaxed.left_out))
     return PrepareReport(new, tuple(rows), ph=ph, net_charge=int(s.charge.sum()))
 
 
@@ -283,8 +298,11 @@ def minimise_protein(ctx: ToolContext, protein: str, settings: MinimiseSettings)
     cache = ccd(ctx)
     remember(settings)
 
+    left_out = parts.excluded(ctx.table.assets[protein].meta, s)
+
     def work(job) -> Relaxed:
-        return relax(worker, s, record, settings, cache, model, job.report, job.cancel_token)
+        return relax(worker, s, record, settings, cache, model, job.report, job.cancel_token,
+                     left_out)  # fmt: skip
 
     def done(relaxed: Relaxed) -> None:
         if protein not in ctx.table.assets:

@@ -1958,6 +1958,22 @@ the right-click menus:
   kept row whose structure is gone shows its **Protein** cell in red in the table (its tooltip
   names the missing structure), and says so on the viewer's status line when you make it
   current.
+- **Parts of a structure:** right-click a chain, a ligand or a group (Ions, Waters, Additives,
+  Glycans) under a structure to act on that part alone, each one undoable step:
+  - **Rename…** renames a chain or a ligand (not a group).
+  - **Duplicate** adds a copy in the same place: a ligand, ion, water or additive is copied
+    into its own chain, numbered on from the chain's last residue; a chain's polymer is copied
+    as a new chain, under the first free chain name. A group copies all its members.
+  - **Delete** (or press Delete) deletes the part.
+- **Including and leaving out parts:** each chain, ligand and group has a box. Untick it to
+  leave that part out of calculations: it is no longer drawn or selectable, and Prepare,
+  Minimise and Dock run without it. It stays in the structure, and ticking the box brings it
+  back. A box is half-ticked when only some of the part is left out. Prepare and Minimise carry
+  a part left out into their results (**X-prep**, **X-min**, or the protein prepared in place)
+  exactly as it was, with no hydrogens added and not moved, and still left out; their report
+  ends with a **Left out** line naming it. Include it later and it needs preparing. Dock
+  leaves it out of the receptor. Leaving a part out or in is one undoable step and is saved
+  with the document; it does not count as an edit, so a prepared protein stays prepared.
 - **Edit:** **Undo** and **Redo** (Ctrl+Z, Ctrl+Y: the document's last step, named in
   the menu, whether made here or in the table), **Copy** (Ctrl+C: the selected atoms as PDB
   text), **Copy Selection As ▸ PDB / mmCIF**, **Copy Image** (Ctrl+Shift+C: the view at twice
@@ -2025,8 +2041,8 @@ pocket and interactions, and the ligand of the file it stands in for faded besid
 comparison. Editing the current row's ligand updates the pose at once. The pose is not saved
 with the viewer; making the row current brings it back.
 
-**The viewer.** The structures list (tick a protein to show or hide it; click a chain or ligand to
-select it) beside the 3D view. The sequence has a window of its own (**Sequence ▸ Sequence
+**The viewer.** The structures list (tick a protein to show or hide it, a chain, ligand or group
+to include it in calculations; click a chain or ligand to select it) beside the 3D view. The sequence has a window of its own (**Sequence ▸ Sequence
 Viewer**): a row for each chain, its letters following the full sequence (residues missing
 from the model show faint), and under the chains one row each for the ligands, glycans,
 additives, ions and waters, every residue in a cell of its own named by its residue name
@@ -2356,7 +2372,7 @@ held twice as hard (up to three times).
 
 | Setting | Default | What it changes |
 |---|---|---|
-| **Force Field** | ff14SB | ff14SB with TIP3P water, or ff19SB with OPC water. Ligands take OpenFF Sage either way. ff19SB is not offered while crystal waters are kept (OPC's fourth site is not placed yet). |
+| **Force Field** | ff14SB | ff14SB with TIP3P water, or ff19SB with OPC water. Ligands take OpenFF Sage either way. ff19SB is not offered while crystal waters are kept and not left out (OPC's fourth site is not placed yet). |
 | **Solvent** | GBn2 | GBn2 implicit solvent, or none (vacuum). Kept crystal waters stay as explicit waters in both. |
 | **Restraints** | Normal | How hard the deposited heavy atoms are held: Loose (half), Normal or Firm (twice). |
 | **RMSD Limit** | 0.30 Å | The heavy-atom RMSD the run must end within; above it, the report marks ⚠. |

@@ -74,7 +74,7 @@ from chemsuite.macromolecule.chem import poses
 from chemsuite.macromolecule.look import display as displays
 from chemsuite.macromolecule.look import scene as scenes
 from chemsuite.macromolecule.structure import edit as edits
-from chemsuite.macromolecule.structure import store
+from chemsuite.macromolecule.structure import parts, store
 from chemsuite.macromolecule.structure.model import AMINO, LIGAND, NUCLEIC, Structure
 from chemsuite.macromolecule.structure.select import Mask, SelectionError, select
 from chemsuite.molview.measure import describe
@@ -185,11 +185,13 @@ class WorkbenchSession:
         replaced = False
         for asset in assets:
             current = old.get(asset.id)
-            same = self._shown_assets.get(asset.id) is asset or (
+            was = self._shown_assets.get(asset.id)
+            same = (was is not None and was.payload is asset.payload) or (
                 current is not None and current.structure is asset.payload
-            )  # assets are immutable: the same one (or a renamed one) needs no new display
+            )  # assets are immutable: the same payload (renamed, parts left out) needs no new one
             if current is not None and same:
                 current.name = asset.name
+                current.set_excluded(parts.excluded(asset.meta, current.structure))
                 new.append(current)
                 continue
             structure = structure_of(asset.payload)
@@ -200,6 +202,7 @@ class WorkbenchSession:
             elif current is not None:
                 shown.carry(current)  # replaced (an edit, or its undo): atoms keep their look
                 replaced = True
+            shown.set_excluded(parts.excluded(asset.meta, structure))
             new.append(shown)
         self._swap_sources(old, new, assets)
         here = {asset.id for asset in assets}
