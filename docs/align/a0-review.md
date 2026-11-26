@@ -32,6 +32,13 @@ WSL from its source, never committed) on the five families checked.
 | FAMSA | 0.658 / 0.419 | 0.928 / 0.841 | 0.840 / 0.532 |
 | MAFFT FFT-NS-2 | 0.580 / 0.340 | 0.914 / 0.796 | 0.830 / 0.517 |
 | chemsuite, progressive + refinement (no library) | 0.623 / 0.384 | 0.926 / 0.841 | 0.831 / 0.526 |
+| chemsuite, with the consistency library (A3) | 0.618 / 0.374 | 0.943 / 0.868 | 0.849 / 0.559 |
+
+With the library, chemsuite matches L-INS-i on RV12 and passes FAMSA overall, in under a third
+of L-INS-i's total time (480 s against 1,680 s for the same 193 families, ours using several
+threads). **RV11 (equidistant, under 20% identity) does not move: 7 Q and 8.6 TC short of
+L-INS-i**, so the proposed RV11 gate fails as things stand. The library is built from
+identity-weighted pairwise alignments, which are least reliable exactly there.
 
 What it took to get there, measured on a 58-family sample of the train half:
 - The first progressive version scored Q 0.664: residues were set against gappy profile
