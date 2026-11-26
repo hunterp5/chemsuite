@@ -178,3 +178,92 @@ def _traceback(pm, px, py, n, m, end_i, end_j, state):  # pragma: no cover - com
         a_out[k], b_out[k] = ii, -1
         k += 1
     return a_out[:k][::-1].copy(), b_out[:k][::-1].copy()
+
+
+@numba.njit(cache=True, nogil=True)
+def pair_identities(
+    codes, starts, substitution, gap_open, gap_extend, first, second
+):  # pragma: no cover - compiled
+    """The identity of the free-end-gap alignment of each pair ``(first[k], second[k])``.
+
+    ``codes`` holds every sequence's matrix indices end to end, sequence ``s`` at
+    ``starts[s]:starts[s + 1]``. Returns identical over aligned pairs (0 where none align).
+    """
+    out = np.zeros(len(first))
+    for k in range(len(first)):
+        a = codes[starts[first[k]] : starts[first[k] + 1]]
+        b = codes[starts[second[k]] : starts[second[k] + 1]]
+        n, m = len(a), len(b)
+        if n == 0 or m == 0:
+            continue
+        score = np.empty((n, m))
+        for i in range(n):
+            for j in range(m):
+                score[i, j] = substitution[a[i], b[j]]
+        row_open = np.full(n + 1, gap_open)
+        row_extend = np.full(n + 1, gap_extend)
+        col_open = np.full(m + 1, gap_open)
+        col_extend = np.full(m + 1, gap_extend)
+        row_open[0] = row_open[n] = row_extend[0] = row_extend[n] = 0.0
+        col_open[0] = col_open[m] = col_extend[0] = col_extend[m] = 0.0
+        _, cols_a, cols_b = gotoh(score, row_open, row_extend, col_open, col_extend,
+                                  np.ones(n), np.ones(m), False)  # fmt: skip
+        same = 0
+        aligned = 0
+        for c in range(len(cols_a)):
+            if cols_a[c] >= 0 and cols_b[c] >= 0:
+                aligned += 1
+                if a[cols_a[c]] == b[cols_b[c]]:
+                    same += 1
+        out[k] = same / aligned if aligned else 0.0
+    return out
+
+
+@numba.njit(cache=True, nogil=True)
+def sum_of_pairs(letters, weights, substitution, gap_open, gap_extend, terminal, terminal_extend):  # noqa: C901 - one compiled pass  # pragma: no cover
+    """The weighted sum-of-pairs score of an alignment.
+
+    ``letters`` is (sequences x columns) of matrix indices, -1 for a gap. Each pair of rows is
+    scored as its own pairwise alignment: substitutions where both have a residue, affine gaps
+    where one does (columns where neither does are skipped), end gaps at ``terminal`` and
+    ``terminal_extend`` of the cost.
+    """
+    count, width = letters.shape
+    total = 0.0
+    for s in range(count):
+        for t in range(s + 1, count):
+            pair = 0.0
+            state = 0  # 0: aligned, 1: gap in t, 2: gap in s
+            seen_s = 0
+            seen_t = 0
+            left_s = 0
+            left_t = 0
+            for c in range(width):
+                left_s += letters[s, c] >= 0
+                left_t += letters[t, c] >= 0
+            for c in range(width):
+                a = letters[s, c]
+                b = letters[t, c]
+                if a < 0 and b < 0:
+                    continue
+                if a >= 0 and b >= 0:
+                    pair += substitution[a, b]
+                    state = 0
+                else:
+                    gap = 1 if b < 0 else 2
+                    # an end gap: before the gapped row's first residue or after its last
+                    gapped_seen = seen_t if gap == 1 else seen_s
+                    gapped_left = left_t if gap == 1 else left_s
+                    end = gapped_seen == 0 or gapped_seen == gapped_left
+                    scale = terminal if end else 1.0
+                    escale = terminal_extend if end else 1.0
+                    if state != gap:
+                        pair -= gap_open * scale
+                    pair -= gap_extend * escale
+                    state = gap
+                if a >= 0:
+                    seen_s += 1
+                if b >= 0:
+                    seen_t += 1
+            total += weights[s] * weights[t] * pair
+    return total

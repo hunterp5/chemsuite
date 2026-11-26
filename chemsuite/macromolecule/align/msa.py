@@ -32,7 +32,7 @@ import numpy as np
 
 from chemsuite.core.jobs import CancelToken, check
 
-from . import matrices, pairwise, tree
+from . import matrices, pairwise, refine, tree
 from . import profile as profiles
 
 #: what a multiple alignment uses by default, tuned on BAliBASE 3's training half (A0 review)
@@ -55,6 +55,7 @@ def align(
     gap_open: float = GAP_OPEN,
     gap_extend: float = GAP_EXTEND,
     offset: float = 0.0,
+    passes: int = refine.PASSES,
     cancel: CancelToken | None = None,
 ) -> np.ndarray:
     """The (sequences x columns) matrix of positions of a progressive alignment."""
@@ -66,12 +67,10 @@ def align(
     if n == 1:
         return np.arange(len(sequences[0]), dtype=np.int32)[None, :]
 
-    def distance(i: int, j: int) -> float:
-        check(cancel)
-        pair = pairwise.align(sequences[i], sequences[j], mode=pairwise.ENDS_FREE, matrix=matrix)
-        return tree.kimura(pair.identity) if pair.aligned else 10.0
+    def identities(first: np.ndarray, second: np.ndarray) -> np.ndarray:
+        return _identities(codes, table.scores, matrix, first, second, cancel)
 
-    guide = tree.guide_tree(sequences, distance)
+    guide = tree.guide_tree(sequences, identities)
     letters = len(table.letters)
     clusters: dict[int, tuple[list[int], np.ndarray]] = {
         s: ([s], np.arange(len(codes[s]), dtype=np.int32)[None, :]) for s in range(n)
@@ -85,6 +84,41 @@ def align(
     ((members, rows),) = clusters.values()
     out = np.empty_like(rows)
     out[members] = rows
+    if passes <= 0:
+        return out
+    substitution = table.scores + offset
+
+    def realign(members_a, rows_a, members_b, rows_b) -> np.ndarray:
+        return _merge(members_a, rows_a, members_b, rows_b, codes, guide.weights, substitution,
+                      letters, gap_open, gap_extend)[1]  # fmt: skip
+
+    def objective(rows: np.ndarray) -> float:
+        return refine.sum_of_pairs(rows, codes, guide.weights, substitution, gap_open, gap_extend)
+
+    return refine.refine(out, codes, guide, objective, realign, passes=passes, cancel=cancel)
+
+
+#: pairs handed to the compiled loop at a time, so a cancel is seen within a fraction of a second
+_CHUNK = 64
+
+
+def _identities(
+    codes: Sequence[np.ndarray], substitution: np.ndarray, matrix: str, first: np.ndarray,
+    second: np.ndarray, cancel: CancelToken | None,
+) -> np.ndarray:  # fmt: skip
+    """Each pair's identity in its free-end-gap alignment, with the matrix's own gap costs."""
+    from . import kernels  # numba
+
+    gap_open, gap_extend = matrices.GAPS[matrix]
+    joined = np.concatenate(codes) if codes else np.zeros(0, np.int64)
+    starts = np.concatenate(([0], np.cumsum([len(c) for c in codes]))).astype(np.int64)
+    out = np.empty(len(first))
+    for k in range(0, len(first), _CHUNK):
+        check(cancel)
+        out[k : k + _CHUNK] = kernels.pair_identities(
+            joined, starts, substitution, gap_open, gap_extend,
+            first[k : k + _CHUNK].astype(np.int64), second[k : k + _CHUNK].astype(np.int64),
+        )  # fmt: skip
     return out
 
 

@@ -34,8 +34,8 @@ from scipy.cluster.hierarchy import linkage
 #: above this many sequences, distances come from k-mers rather than alignments
 ALIGNED_DISTANCES = 120
 #: Dayhoff's six groups of amino acids (AGPST, C, DENQ, FWY, HKR, ILMV), for k-mer counting
-_DAYHOFF = {**dict.fromkeys("AGPST", 0), "C": 1, **dict.fromkeys("DENQBZ", 2),
-            **dict.fromkeys("FWY", 3), **dict.fromkeys("HKR", 4), **dict.fromkeys("ILMV", 5)}  # fmt: skip
+_GROUPS = ("AGPST", "C", "DENQBZ", "FWY", "HKR", "ILMV")
+_DAYHOFF = {ch: group for group, letters in enumerate(_GROUPS) for ch in letters}
 _K = 4
 
 
@@ -46,13 +46,17 @@ class GuideTree:
     weights: np.ndarray  # one per sequence, summing to the number of sequences
 
 
-def guide_tree(sequences: Sequence[str], pair_distance: Callable[[int, int], float]) -> GuideTree:
-    """UPGMA over ``pair_distance`` (few sequences) or k-mer distances (many)."""
+def guide_tree(
+    sequences: Sequence[str], pair_identities: Callable[[np.ndarray, np.ndarray], np.ndarray]
+) -> GuideTree:
+    """UPGMA over Kimura distances from ``pair_identities`` (few sequences: the identity of
+    each pair's alignment, the pairs given as two index arrays) or k-mer distances (many)."""
     n = len(sequences)
     if n < 2:
         return GuideTree(np.zeros((0, 4)), np.ones(n))
     if n <= ALIGNED_DISTANCES:
-        condensed = np.array([pair_distance(i, j) for i in range(n) for j in range(i + 1, n)])
+        first, second = np.triu_indices(n, k=1)
+        condensed = np.array([kimura(x) for x in pair_identities(first, second)])
     else:
         condensed = kmer_distances(sequences)
     merges = linkage(condensed, method="average")
