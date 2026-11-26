@@ -138,7 +138,7 @@ def extend(paths, identity, starts, keep):  # noqa: C901 - one compiled pass  # 
                         touches[i] += 1
                     acc[i, j] += identity[s, t, source] + 1e-12
         for u in range(count):
-            if u == s or u == t:
+            if u in (s, t):
                 continue
             for i in range(la):
                 for src1 in range(2):
@@ -171,7 +171,7 @@ def extend(paths, identity, starts, keep):  # noqa: C901 - one compiled pass  # 
 
 
 @numba.njit(cache=True, nogil=True)
-def profile_scores(partner, weight, starts, members_a, rows_a, w_a, members_b, rows_b, w_b):  # noqa: E501  # pragma: no cover
+def profile_scores(partner, weight, starts, members_a, rows_a, w_a, members_b, rows_b, w_b):
     """(La, Lb) library scores between two clusters' columns.
 
     For every s in A and t in B, each library pair (s_i, t_j) adds its weight times
